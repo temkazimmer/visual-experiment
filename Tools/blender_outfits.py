@@ -319,7 +319,10 @@ OUTFITS = {
     ],
 }
 
-EDGE = 0.5   # cm over which coverage goes from 0 to 1 (the material cuts at 0.5)
+# cm over which coverage goes from 0 to 1 (the material cuts at 0.5). Wider than a
+# triangle, so the coverage stays a linear distance across each one and the cut runs
+# smooth; narrower, every vertex is 0 or 1 and the edge zigzags along the triangles.
+EDGE = 4.0
 SLOTS = ["Solid", "Sheer", "Lace", "Net", "Latex"]
 
 
@@ -360,7 +363,12 @@ def make_piece(name, slot, thickness, f):
     arr = np.zeros(len(me2.vertices) * 3)
     me2.vertices.foreach_get("co", arr)
     me2.vertices.foreach_set("co", (arr.reshape(-1, 3) + lift).ravel())
+    me2.polygons.foreach_set("use_smooth", np.ones(len(me2.polygons), dtype=bool))   # no facets
+    for ca in list(me2.color_attributes):   # UE reads the first colour layer: only Coverage
+        me2.color_attributes.remove(ca)
     col = me2.color_attributes.new("Coverage", "BYTE_COLOR", "POINT")
+    me2.color_attributes.active_color = col
+    me2.color_attributes.render_color_index = 0
     a = alpha[idx]
     rgba = np.stack([a, a, a, np.ones_like(a)], axis=1).ravel()
     col.data.foreach_set("color", rgba)
