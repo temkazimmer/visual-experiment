@@ -19,9 +19,10 @@ Every piece is cut from the skin itself, so it fits her exactly. Depth comes fro
 Each vertex copies bone weights and every shape key from the nearest skin, so animation,
 the body-slider morphs and the jiggle drive the clothes with the body.
 
-Material slots: Sheer, Lace, Net, Satin, Latex, Trim. UV0 is a garment coordinate in cm
-(around the leg or the torso, and height), wrapped per triangle into one 24 cm period so
-lace and fishnet patterns run round her without a seam.
+Material slots: Sheer, Lace, Net, Satin, Latex, Trim, Nylon, Binding. UV0 is a garment
+coordinate in cm (around the leg or the torso, and height), wrapped per triangle into one
+24 cm period so lace and fishnet patterns run round her without a seam. UV1 is (stretch,
+leg-ness) for the nylon: how far the knit is pulled open there, and which denier it is.
 """
 import math
 import os
@@ -40,7 +41,7 @@ PREVIEW = args[2] if len(args) > 2 and not args[2].startswith("--") else None
 ONLY = next((a.split("=", 1)[1].split(",") for a in args if a.startswith("--only=")), None)
 os.makedirs(OUT_DIR, exist_ok=True)
 
-SLOTS = ["Sheer", "Lace", "Net", "Satin", "Latex", "Trim"]
+SLOTS = ["Sheer", "Lace", "Net", "Satin", "Latex", "Trim", "Nylon", "Binding"]
 OPAQUE = ("Satin", "Latex", "Trim")
 CL, CP, PERIOD = 48.0, 96.0, 24.0     # nominal leg and torso girth (cm), pattern period
 
@@ -208,10 +209,12 @@ smooth01 = lambda a, b, x: (lambda t: t * t * (3 - 2 * t))(np.clip((x - a) / (b 
 # Leg and torso angles turn the same way and agree on the outer hip, so the pattern only
 # shears a little where one hands over to the other (crotch to hip).
 _UL = np.zeros(nv)
+_RLEG = np.zeros(nv)
 for s in (1, -1):
     a, b = Bn["thigh_" + SIDE[s]], Bn["foot_" + SIDE[s]]
     k = np.clip((a[2] - Z) / (a[2] - b[2]), -0.3, 1.2)
     d = X - (a + (b - a) * k[:, None])
+    _RLEG = np.where((LAT >= 0) == (s == 1), np.linalg.norm(d[:, :2], axis=1), _RLEG)
     c = s * math.pi / 2                                   # branch cut on the inner thigh
     th = (np.arctan2(d @ LEFT, d @ FWD) - c + math.pi) % (2 * math.pi) - math.pi + c
     _UL = np.where((LAT >= 0) == (s == 1), th / (2 * math.pi) * CL + s * CL / 4, _UL)
@@ -219,6 +222,18 @@ _UPL = np.arctan2(LAT, FW) / (2 * math.pi) * CP
 _TB = np.maximum(smooth01(LM["crotch"] + 1, LM["crotch"] + 11, Z),
                  (1 - smooth01(1.5, 7.0, ALAT)) * smooth01(LM["crotch"] - 1, LM["crotch"] + 2, Z))
 _TB = np.where(UPPERARM > 0.5, 1.0, _TB)
+
+# Nylon: where the knit is pulled open (bust, glutes, thighs: 1) or relaxed (ankles: 0),
+# and how much of a leg it is (the legs are a heavier denier than the top).
+_gd = np.linalg.norm(DELTAS["GlutesUp"], axis=1) if "GlutesUp" in DELTAS else np.zeros(nv)
+_LEGNESS = (1 - smooth01(LM["crotch_skin"], LM["crotch_skin"] + 8, Z)) * (UPPERARM < 0.3)
+STRETCH = diffuse(np.where(_LEGNESS > 0.5, smooth01(3.0, 9.5, _RLEG),
+                           np.clip(0.3 + 0.7 * np.maximum(_bd / _bd.max(), _gd / max(_gd.max(), 1e-6)), 0, 1)), 10)
+ZONE = diffuse(_LEGNESS, 8)
+# Tight cloth spans small hollows (navel, spine, creases) instead of following them in:
+# how far a smoothed body lies outside the real one, per vertex, in cm.
+_Xs = diffuse(X, 45)
+BRIDGE = diffuse(np.clip(np.einsum("ij,ij->i", _Xs - X, NRM), 0.0, 1.5), 4)
 
 # ---- spatial helpers ---------------------------------------------------------------------------
 kd = KDTree(nv)
@@ -281,11 +296,13 @@ def edge_loops(bm, min_len):
     return loops
 
 
-def region(val, offset, slot, rim=None, pipe=None, pipe_r=0.18, min_loop=10.0):
+def region(val, offset, slot, rim=None, pipe=None, pipe_r=0.18, min_loop=10.0, lift=None, bind=None):
     """The part of the skin where val >= 0, cut cleanly along the zero line and lifted
     off the skin. rim: a wall from the edge down to the skin (default: opaque slots).
-    pipe: slot of a cord run along every edge."""
+    pipe: slot of a cord run along every edge. lift: extra height per skin vertex (BRIDGE).
+    bind: (slot, width) of a flat binding sewn along every edge."""
     val = np.asarray(val, float)
+    ll = lift.tolist() if lift is not None else None
     sel = np.nonzero((val[T] >= 0).any(1))[0]
     if not len(sel):
         return None
@@ -298,11 +315,12 @@ def region(val, offset, slot, rim=None, pipe=None, pipe_r=0.18, min_loop=10.0):
         v = made.get(key)
         if v is None:
             if b is None:
-                p, n, sv = WV[a], NV[a], (a, a, 0.0)
+                p, n, sv, up_ = WV[a], NV[a], (a, a, 0.0), (ll[a] if ll else 0.0)
             else:
                 t = vl[a] / (vl[a] - vl[b])
                 p, n, sv = WV[a].lerp(WV[b], t), NV[a].lerp(NV[b], t).normalized(), (a, b, t)
-            v = made[key] = bm.verts.new(p + n * offset)
+                up_ = ll[a] + (ll[b] - ll[a]) * t if ll else 0.0
+            v = made[key] = bm.verts.new(p + n * (offset + up_))
             nrm[v] = n
             srcof[v] = sv
             src.append(sv)
@@ -322,7 +340,7 @@ def region(val, offset, slot, rim=None, pipe=None, pipe_r=0.18, min_loop=10.0):
                 bm.faces.new(poly)
             except ValueError:
                 pass
-    loops = edge_loops(bm, min_loop) if pipe else []
+    loops = edge_loops(bm, min_loop) if (pipe or bind) else []
     if rim if rim is not None else slot in OPAQUE:
         inner = {}
         for e in [e for e in bm.edges if e.is_boundary]:
@@ -334,7 +352,10 @@ def region(val, offset, slot, rim=None, pipe=None, pipe_r=0.18, min_loop=10.0):
             bm.faces.new((a, b, inner[b], inner[a]))
     PIECES.append((bm, slot, src))
     for pts, closed in loops:
-        tube(pts, pipe_r, pipe, closed, push=0.08)
+        if pipe:
+            tube(pts, pipe_r, pipe, closed, push=0.08)
+        if bind:
+            tube(pts, 0.0, bind[0], closed, push=0.015, flat=(bind[1], 0.045), step=0.5)
     return bm
 
 
@@ -363,8 +384,11 @@ def resample(pts, closed, step):
     return out
 
 
-def tube(pts, r, slot, closed=False, sides=6, push=0.0, step=0.8):
-    """A round cord along a point list."""
+def tube(pts, r, slot, closed=False, sides=6, push=0.0, step=0.8, flat=None, rigid=None):
+    """A round cord along a point list. flat=(width, thickness): a tape lying on the
+    surface instead. rigid: one skin vertex the whole piece rides (jewellery)."""
+    if flat:
+        sides = 4
     pts = smooth_pts(resample(pts, closed, step), closed)
     n = len(pts)
     if n < 4:
@@ -372,7 +396,7 @@ def tube(pts, r, slot, closed=False, sides=6, push=0.0, step=0.8):
     bm = bmesh.new()
     rings, src = [], []
     for i, p in enumerate(pts):
-        j = nearest(p)                      # the whole ring rides this skin vertex
+        j = rigid if rigid is not None else nearest(p)      # the whole ring rides this skin vertex
         src += [(j, j, 0.0)] * sides
         a_, b_ = (pts[i - 1], pts[(i + 1) % n]) if closed else (pts[max(i - 1, 0)], pts[min(i + 1, n - 1)])
         t = (b_ - a_).normalized()
@@ -383,8 +407,12 @@ def tube(pts, r, slot, closed=False, sides=6, push=0.0, step=0.8):
         a.normalize()
         b = t.cross(a)
         c = p + out * push
-        rings.append([bm.verts.new(c + (a * math.cos(2 * math.pi * k / sides) + b * math.sin(2 * math.pi * k / sides)) * r)
-                      for k in range(sides)])
+        if flat:
+            w_, t_ = flat
+            rings.append([bm.verts.new(c + b * sx * w_ * 0.5 + a * h) for sx, h in ((-1, 0), (1, 0), (1, t_), (-1, t_))])
+        else:
+            rings.append([bm.verts.new(c + (a * math.cos(2 * math.pi * k / sides) + b * math.sin(2 * math.pi * k / sides)) * r)
+                          for k in range(sides)])
     for i in range(n if closed else n - 1):
         r0, r1 = rings[i], rings[(i + 1) % n]
         for k in range(sides):
@@ -730,8 +758,79 @@ def sheer():
     region(np.minimum(arm_f, np.minimum((along - 0.45) * 30, (0.53 - along) * 30)), 0.58, "Latex", pipe="Trim", pipe_r=0.2)
 
 
+def bodystocking():
+    """The hero outfit, from Tema's references: one piece of sheer black nylon. Scoop-neck
+    tank with wide straps and deep armholes, a deep V back, open hips from the waist round
+    to the back, an open gusset, and stocking legs held by a front and a back strap each
+    side. Bound edges, centre seams front and back, thin gold jewellery."""
+    cs = LM["crotch_skin"]
+    # neckline: a scoop in front, a deeper one behind, sharing the strap over the shoulder
+    zn = LM["neck"] + 2.0
+    rz = 30.0 + (22.5 - 30.0) * SIDE_BLEND                      # back depth -> front depth
+    f_neck = (np.sqrt((ALAT / 7.0) ** 2 + (np.minimum(Z - zn, 0.0) / rz) ** 2) - 1.0) * 7.0
+    f_neck = np.where(Z > zn, ALAT - 7.0, f_neck)
+    # armholes: from the shoulder point down to the side of the bust
+    cx, cz = abs((Bn["upperarm_l"] - PEL).dot(LEFT)) + 1.5, LM["shoulder"] - 4.0
+    f_arm = (np.sqrt(((ALAT - cx) / 7.0) ** 2 + ((Z - cz) / 15.5) ** 2) - 1.0) * 7.0
+    f_arm = np.where(ALAT > cx, np.minimum(f_arm, -(ALAT - cx) + np.where(np.abs(Z - cz) < 15.5, -1.0, 9.0)), f_arm)
+    # open hips: a rounded window on each side, front strap edge round to the back strap edge
+    f_hip = np.full(nv, 99.0)
+    zb, zt, p_ = cs - 8.5, LM["waist"] + 0.5, 2.7
+    for s in (1, -1):
+        d = X - Bn["thigh_" + SIDE[s]]
+        phi = np.degrees(np.arctan2(d @ (LEFT * s), d @ FWD))
+        phi = np.where(phi < -80.0, phi + 360.0, phi)
+        e = (np.abs((phi - 99.0) / 104.0) ** p_ + np.abs((Z - (zb + zt) * 0.5) / ((zt - zb) * 0.5)) ** p_) ** (1.0 / p_)
+        f_hip = np.where((LAT * s > 0) & (Z < zt + 4) & (Z > zb - 4), np.minimum(f_hip, (e - 1.0) * 11.0), f_hip)
+    # open gusset: a teardrop below the navel, narrowing through to the small of the back
+    close = smooth01(cs - 7.0, cs + 1.5, Z)                     # runs out to a point on the inner thigh
+    wf = 3.1 * np.clip((LM["hip_top"] + 1.0 - Z) / 10.0, 0, 1) ** 0.85 * close
+    wb = 2.0 * np.clip((PEL[2] + 5.0 - Z) / 11.0, 0, 1) ** 0.85 * close
+    w_open = wb + (wf - wb) * SIDE_BLEND
+    f_open = np.where(w_open > 0.02, ALAT - w_open, 99.0)       # no opening: no edge either
+    g = np.minimum.reduce([(0.3 - UPPERARM) * 25.0, (0.5 - HEAD) * 30.0, f_neck, f_arm, f_hip, f_open])
+
+    region(g, 0.09, "Nylon", lift=BRIDGE, bind=("Binding", 0.3), min_loop=6.0)
+    # the stocking tops are knitted double: a second layer from the hip crease down the thigh
+    region(np.minimum(g, np.minimum((LEGS - 0.5) * 12.0, Z - (cs - 12.5))), 0.115, "Nylon", lift=BRIDGE)
+    for th in (0, 180):                                          # centre seams, front and back
+        line = [q + nearest_normal(q) * float(BRIDGE[nearest(q)]) for q in torso_line(th, zn - 6, cs, 0.12) if q]
+        seam(line, 0.085, "Binding", g)
+
+    # jewellery: a fine chain resting on the collarbones, bangles loose on the wrists
+    axis = V3(Bn["neck_01"])
+    chain = []
+    for k in range(72):
+        th = 2 * math.pi * k / 72
+        z = LM["neck"] + 2.2 + (-4.3 - 2.2) * (0.5 + 0.5 * math.cos(th)) ** 1.5
+        dv = fwd_v * math.cos(th) + left_v * math.sin(th)
+        hit = BODY_BVH.ray_cast(Vector((axis.x - fwd_v.x * 1.5, axis.y - fwd_v.y * 1.5, z)), dv, 30)
+        if hit[0]:
+            chain.append(hit[0] + hit[1] * (0.1 if hit[1].dot(dv) > 0 else -0.1))
+    tube(chain, 0.065, "Trim", closed=True, sides=6, step=0.5)
+    clip(chain[0] - Vector((0, 0, 0.55)) + nearest_normal(chain[0]) * 0.12, nearest_normal(chain[0]), Vector((0, 0, 1)), (0.5, 0.9, 0.22))
+    for s, offs in ((1, (0.90, 0.955)), (-1, (0.93,))):
+        a, b = Bn["lowerarm_" + SIDE[s]], Bn["hand_" + SIDE[s]]
+        u = (b - a) / np.linalg.norm(b - a)
+        e1 = np.cross(u, UP)
+        e1 /= np.linalg.norm(e1)
+        e2 = np.cross(u, e1)
+        for k_, t_ in enumerate(offs):
+            c = a + (b - a) * t_
+            cv = V3(c)
+            rad = 0.0
+            for q in range(24):
+                dv = V3(e1 * math.cos(2 * math.pi * q / 24) + e2 * math.sin(2 * math.pi * q / 24))
+                hit = BODY_BVH.ray_cast(cv, dv, 8)
+                rad = max(rad, hit[3] if hit[0] else 0.0)
+            tilt = u * (0.18 if k_ else -0.12)                    # loose: not square to the arm
+            ring = [V3(c + (e1 * math.cos(2 * math.pi * q / 48) + (e2 + tilt) * math.sin(2 * math.pi * q / 48)) * (rad + 0.3))
+                    for q in range(48)]
+            tube(ring, 0.1, "Trim", closed=True, sides=8, step=0.35, rigid=nearest(cv))
+
+
 OUTFITS = {"Noir": noir, "Garter": garter_set, "Cocoa": cocoa, "Fishnet": fishnet,
-           "Catsuit": catsuit_set, "Sheer": sheer}
+           "Catsuit": catsuit_set, "Sheer": sheer, "Bodystocking": bodystocking}
 
 
 # ---- assemble: one mesh, weights, shape keys, garment UVs ------------------------------------------
@@ -786,7 +885,9 @@ def finalize(ob):
     w3 /= w3.sum(1, keepdims=True)
 
     ow = sum(WM[idx3[:, k]] * w3[:, k, None] for k in range(3))
-    top = np.argsort(-ow, axis=1)[:, :4]
+    # keep every influence the skin has (it carries up to 7 round the hips): cutting to 4
+    # makes cloth and skin deform differently there, and skin shows through in slivers
+    top = np.argsort(-ow, axis=1)[:, :8]
     tw = np.take_along_axis(ow, top, 1)
     tw /= np.maximum(tw.sum(1, keepdims=True), 1e-9)
     vgs = [ob.vertex_groups.new(name=g) for g in gnames]
@@ -815,6 +916,8 @@ def finalize(ob):
     u = u - PERIOD * np.floor(u.mean(1, keepdims=True) / PERIOD)
     v = v - PERIOD * np.floor(v.mean(1, keepdims=True) / PERIOD)
     om.uv_layers.new(name="UVMap").data.foreach_set("uv", np.stack([u, v], -1).ravel())
+    per_vert = lambda arr: sum(arr[idx3[:, k]] * w3[:, k] for k in range(3))[loops]
+    om.uv_layers.new(name="UVStretch").data.foreach_set("uv", np.stack([per_vert(STRETCH), per_vert(ZONE)], -1).ravel())
     print(name, "verts", n, "tris", len(om.polygons))
 
 
@@ -845,7 +948,8 @@ def pmat(name, col, rough, coat=0.0, alpha=None, metal=0.0):
 
 MATS = dict(Sheer=pmat("Sheer", (0.01, 0.01, 0.012), 0.6, alpha=0.4), Lace=pmat("Lace", (0.01, 0.01, 0.012), 0.7, alpha=0.75),
             Net=pmat("Net", (0.01, 0.01, 0.012), 0.6, alpha=0.3), Satin=pmat("Satin", (0.02, 0.02, 0.025), 0.35),
-            Latex=pmat("Latex", (0.012, 0.013, 0.02), 0.3, coat=1.0), Trim=pmat("Trim", (0.75, 0.78, 0.82), 0.25, metal=1.0))
+            Latex=pmat("Latex", (0.012, 0.013, 0.02), 0.3, coat=1.0), Trim=pmat("Trim", (0.75, 0.78, 0.82), 0.25, metal=1.0),
+            Nylon=pmat("Nylon", (0.006, 0.006, 0.008), 0.5, alpha=0.5), Binding=pmat("Binding", (0.006, 0.006, 0.008), 0.7))
 scn = bpy.context.scene
 if PREVIEW:
     os.makedirs(PREVIEW, exist_ok=True)

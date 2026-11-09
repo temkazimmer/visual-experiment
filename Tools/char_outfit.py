@@ -10,6 +10,7 @@
   Sheer  see-through mesh that closes up at grazing angles     Satin  opaque, soft sheen
   Lace   sheer ground with fan embroidery                      Latex  black clear coat
   Net    fishnet: diamond cords, cut out between them          Trim   piping and hardware
+  Nylon  sheer knit: angle, stretch and denier set how much skin shows (the bodystocking)
 
 Detail comes from three 2K textures (Tools/blender_outfit_textures.py): a satin weave normal,
 a latex ripple normal and a mask for roughness variation, so nothing reads as flat plastic.
@@ -31,9 +32,13 @@ WARDROBE = {
     "Cocoa": dict(Satin=dict(Color=(0.14, 0.05, 0.025), Roughness=0.26, RoughnessVariation=0.18, NormalStrength=0.9), Trim=GOLD),
     "Fishnet": dict(Net=dict(Color=BLACK, Cell=3.0, Width=0.16), Satin=dict(Color=BLACK, Roughness=0.34, RoughnessVariation=0.16), Trim=STEEL),
     "Catsuit": dict(Latex=dict(Color=(0.01, 0.014, 0.05), Roughness=0.24, CoatRoughness=0.04, CoatVariation=0.04), Trim=dict(Color=(0.85, 0.85, 0.9), Roughness=0.25, Metallic=0.0)),
+    # the hero outfit: one piece of sheer nylon, heavier on the legs, with gold jewellery
+    "Bodystocking": dict(Nylon=dict(Color=(0.006, 0.006, 0.008), CoverTorso=0.6, CoverLeg=0.84, StretchSheer=0.36),
+                         Binding=dict(_base="Satin", Color=(0.006, 0.006, 0.008), Roughness=0.74, RoughnessVariation=0.1, NormalStrength=0.5),
+                         Trim=dict(Color=(1.0, 0.72, 0.36), Roughness=0.2, RoughnessVariation=0.08, Metallic=1.0)),
     "Sheer": dict(Sheer=dict(Color=BLACK, Opacity=0.66, EdgeExponent=1.5), Latex=dict(Color=(0.012, 0.013, 0.02), Roughness=0.34, CoatRoughness=0.06, CoatVariation=0.07, NormalStrength=0.6), Trim=STEEL),
 }
-MESH_DIR = {"Sheer": "/Game/Character/Clothes"}       # the rest: /Game/Character/Outfits
+MESH_DIR = {"Sheer": "/Game/Character/Clothes", "Bodystocking": "/Game/Character/Clothes"}       # the rest: /Game/Character/Outfits
 DIR = "/Game/Character/Clothes"
 SKELETON = "/Game/Characters/Mannequins/Meshes/SK_Mannequin"
 ONLY = globals().get("ONLY")
@@ -83,6 +88,21 @@ for (int r = 0; r < 3; r++)
 return m;
 """
 
+
+# Sheer knit, physically: a yarn grid covers a fraction c of the area head-on. Looking along
+# the cloth you look through more of it, so coverage rises as 1 - (1 - c)^(1 / cos). Where
+# the knit is stretched (UV1.x) the loops open and c falls; the legs (UV1.y) are heavier.
+NYLON_HLSL = """
+float c = lerp(CoverTorso, CoverLeg, saturate(UV1.y)) * lerp(1.0 + StretchSheer * 0.45, 1.0 - StretchSheer, saturate(UV1.x));
+float2 p = float2(UV.x, 1.0 - UV.y) / Cell;
+float fw = fwidth(p.x) + fwidth(p.y);
+float wale = 0.5 + 0.5 * cos(6.2831853 * p.x);
+float course = 0.5 + 0.5 * cos(6.2831853 * (p.y * 1.7 + 0.5 * floor(p.x + 0.5)));
+float knit = lerp(wale * 0.65 + course * 0.35, 0.5, saturate(fw * 1.3));
+c = saturate(c * (1.0 + Knit * (knit - 0.5) * 2.0));
+float nv = max(abs(NoV), 0.14);
+return 1.0 - pow(1.0 - min(c, 0.985), 1.0 / nv);
+"""
 
 TULLE_HLSL = """
 float2 p = float2(UV.x, 1.0 - UV.y) / Cell;
@@ -249,6 +269,21 @@ def build_materials():
     mel.connect_material_property(sheer_opacity(m, 0.5), "", MP.MP_OPACITY)
     base["Sheer"] = done(m)
 
+    m = material("M_OutfitNylon", T)
+    mel.connect_material_property(color(m, "Color", (0.006, 0.006, 0.008), -200), "", MP.MP_BASE_COLOR)
+    mel.connect_material_property(scalar(m, "Roughness", 0.46, -80), "", MP.MP_ROUGHNESS)
+    mel.connect_material_property(scalar(m, "Specular", 0.4, 0), "", MP.MP_SPECULAR)
+    nov = op(m, unreal.MaterialExpressionDotProduct, node(m, unreal.MaterialExpressionPixelNormalWS, -900, 520),
+             node(m, unreal.MaterialExpressionCameraVectorWS, -900, 580), 540)
+    nylon = custom(m, NYLON_HLSL, "Nylon", [
+        ("UV", node(m, unreal.MaterialExpressionTextureCoordinate, -900, 300)),
+        ("UV1", node(m, unreal.MaterialExpressionTextureCoordinate, -900, 360, coordinate_index=1)),
+        ("NoV", nov), ("CoverTorso", scalar(m, "CoverTorso", 0.44, 640)), ("CoverLeg", scalar(m, "CoverLeg", 0.7, 700)),
+        ("StretchSheer", scalar(m, "StretchSheer", 0.42, 760)), ("Cell", scalar(m, "KnitCell", 0.09, 820)),
+        ("Knit", scalar(m, "Knit", 0.5, 880))], 400)
+    mel.connect_material_property(nylon, "", MP.MP_OPACITY)
+    base["Nylon"] = done(m)
+
     m = material("M_OutfitLace", T)
     mel.connect_material_property(color(m, "Color", BLACK, -200), "", MP.MP_BASE_COLOR)
     mel.connect_material_property(scalar(m, "Roughness", 0.75, -80), "", MP.MP_ROUGHNESS)
@@ -349,7 +384,8 @@ base = build_materials()
 for outfit, fabrics in WARDROBE.items():
     if ONLY and outfit not in ONLY:
         continue
-    mis = {slot: instance(outfit, slot, base[slot], values) for slot, values in fabrics.items()}
+    mis = {slot: instance(outfit, slot, base[values.get("_base", slot)], {k: v for k, v in values.items() if k != "_base"})
+           for slot, values in fabrics.items()}
     if globals().get("MATERIALS_ONLY"):
         mesh = unreal.load_asset(MESH_DIR.get(outfit, "/Game/Character/Outfits") + "/SKM_Outfit_" + outfit)
     else:

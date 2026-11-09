@@ -135,6 +135,7 @@ const TArray<FVisexOutfit>& FVisexBodyProfile::Outfits()
 		O(TEXT("Catsuit"), LOCTEXT("OutfitCatsuit", "Latex catsuit"), TEXT("/Game/Character/Outfits/SKM_Outfit_Catsuit.SKM_Outfit_Catsuit")),
 		// layered build: Tools/blender_outfit.py, imported by Tools/char_outfit.py
 		O(TEXT("Sheer"),   LOCTEXT("OutfitSheer", "Sheer and latex"), TEXT("/Game/Character/Clothes/SKM_Outfit_Sheer.SKM_Outfit_Sheer")),
+		O(TEXT("Bodystocking"), LOCTEXT("OutfitBodystocking", "Sheer bodystocking"), TEXT("/Game/Character/Clothes/SKM_Outfit_Bodystocking.SKM_Outfit_Bodystocking")),
 	};
 	return Table;
 }
