@@ -88,13 +88,14 @@ void UVisexBodyComponent::Apply()
 	}
 
 	// morphs: the slider's middle is the base mesh; each side has its own target
-	auto Morph = [Mesh](FName Up, FName Down, float V)
+	// UpGain: the sculpted target extrapolates cleanly, so the top of a slider can push past it
+	auto Morph = [Mesh](FName Up, FName Down, float V, float UpGain)
 	{
-		Mesh->SetMorphTarget(Up, FMath::Max(0.f, (V - 0.5f) * 2.f), false);
+		Mesh->SetMorphTarget(Up, FMath::Max(0.f, (V - 0.5f) * 2.f) * UpGain, false);
 		Mesh->SetMorphTarget(Down, FMath::Max(0.f, (0.5f - V) * 2.f), false);
 	};
-	Morph(TEXT("BustUp"), TEXT("BustDown"), Profile.Get("Bust"));
-	Morph(TEXT("GlutesUp"), TEXT("GlutesDown"), Profile.Get("Glutes"));
+	Morph(TEXT("BustUp"), TEXT("BustDown"), Profile.Get("Bust"), 1.5f);
+	Morph(TEXT("GlutesUp"), TEXT("GlutesDown"), Profile.Get("Glutes"), 2.0f);   // past ~2 the shape goes conical
 
 	PushToAnim();
 }

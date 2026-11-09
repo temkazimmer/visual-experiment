@@ -39,8 +39,16 @@ SHELL = dict(
     roughness=0.75,                  # matte, like a display mannequin
     specular=0.25,
 )
-MODE = "skin"                        # "skin": opaque, hides the machine (Tema, current)
+MODE = "latex"                       # "latex": glossy clear-coat skin (Tema's reference, current)
+                                     # "skin": matte mannequin white
                                      # "aerogel": translucent, the machine shows through
+LATEX = dict(
+    skin=(0.72, 0.36, 0.19),         # warm peach latex (reference)
+    roughness=0.32,                  # the base under the coat: soft sheen
+    specular=0.55,
+    clearcoat=1.0,                   # the wet top layer
+    clearcoat_roughness=0.05,        # sharp, long highlights
+)
 SKIN = dict(
     inflate=0.0,                     # the skin is its own mesh now (char_skin.py)
     skin=(0.74, 0.72, 0.69),         # mannequin white with a living warmth
@@ -102,6 +110,7 @@ def op(cls, a, b, x, y, ia="A", ib="B"):
 def build_skin():
     """Opaque skin: hides the machine completely, soft light bleed like human skin."""
     K = SKIN
+    m.set_editor_property("use_material_attributes", False)
     m.set_editor_property("blend_mode", unreal.BlendMode.BLEND_OPAQUE)
     m.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_SUBSURFACE if K["subsurface_amount"] > 0 else unreal.MaterialShadingModel.MSM_DEFAULT_LIT)
     m.set_editor_property("used_with_skeletal_mesh", True)
@@ -113,6 +122,25 @@ def build_skin():
     nrm = node(unreal.MaterialExpressionVertexNormalWS, -450, 300)
     wpo = op(unreal.MaterialExpressionMultiply, nrm, scalar("Inflate", K["inflate"], -450, 400), -250, 300)
     mel.connect_material_property(wpo, "", MP.MP_WORLD_POSITION_OFFSET)
+
+
+def build_latex():
+    """Glossy latex: opaque base with a mirror-like clear coat on top. Python has no
+    clear-coat material pins, so everything goes through Make Material Attributes."""
+    K = LATEX
+    m.set_editor_property("blend_mode", unreal.BlendMode.BLEND_OPAQUE)
+    m.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_CLEAR_COAT)
+    m.set_editor_property("used_with_skeletal_mesh", True)
+    m.set_editor_property("use_material_attributes", True)
+    attrs = node(unreal.MaterialExpressionMakeMaterialAttributes, -150, 0)
+    for pin, n in (("BaseColor", vector("SkinColor", K["skin"], -450, -200)),
+                   ("Roughness", scalar("Roughness", K["roughness"], -450, -80)),
+                   ("Specular", scalar("Specular", K["specular"], -450, -40)),
+                   ("ClearCoat", scalar("ClearCoat", K["clearcoat"], -450, 40)),
+                   ("ClearCoatRoughness", scalar("ClearCoatRoughness", K["clearcoat_roughness"], -450, 120))):
+        if not mel.connect_material_expressions(n, "", attrs, pin):
+            raise RuntimeError("pin " + pin)
+    mel.connect_material_property(attrs, "", MP.MP_MATERIAL_ATTRIBUTES)
 
 
 def build_aerogel():
@@ -173,7 +201,7 @@ def build_aerogel():
     mel.connect_material_property(wpo, "", MP.MP_WORLD_POSITION_OFFSET)
 
 
-build_skin() if MODE == "skin" else build_aerogel()
+{"skin": build_skin, "latex": build_latex, "aerogel": build_aerogel}[MODE]()
 mel.recompile_material(m)
 eal.save_loaded_asset(m)
 
