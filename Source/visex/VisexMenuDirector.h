@@ -135,12 +135,15 @@ private:
 	void Down() { MoveSelection(1); }
 	void HandBack();
 	void TickOrbit(float DeltaSeconds);
+	class UCineCameraComponent* GetLens() const;
 
 	FTransform CameraBase;
 	bool bHaveBase = false;
 	bool bOrbiting = false;
 	float OrbitT = 0.f;
 	float OrbitA0 = 0.f, OrbitR0 = 0.f, OrbitZ0 = 0.f;
+	float MenuFocal = 0.f, MenuFStop = 0.f;
+	bool bHaveLens = false;
 	bool bOpen = false;
 	bool bInputBound = false;
 	float Clock = 0.f;

@@ -98,6 +98,18 @@ void AVisexMenuDirector::ShowMenu()
 		bHaveBase = true;
 	}
 	MenuCamera->SetActorTransform(CameraBase);
+	// and its lens, which the Start move turns into the play camera's
+	if (UCineCameraComponent* Lens = GetLens())
+	{
+		if (!bHaveLens)
+		{
+			MenuFocal = Lens->CurrentFocalLength;
+			MenuFStop = Lens->CurrentAperture;
+			bHaveLens = true;
+		}
+		Lens->SetCurrentFocalLength(MenuFocal);
+		Lens->SetCurrentAperture(MenuFStop);
+	}
 	bOrbiting = false;
 	PC->SetViewTarget(MenuCamera);
 	Clock = 0.f;
@@ -129,6 +141,12 @@ void AVisexMenuDirector::ShowMenu()
 	}
 	bOpen = true;
 	OnMenuShown();
+}
+
+UCineCameraComponent* AVisexMenuDirector::GetLens() const
+{
+	const ACineCameraActor* Cine = Cast<ACineCameraActor>(MenuCamera);
+	return Cine ? Cine->GetCineCameraComponent() : nullptr;
 }
 
 UVisexMenuWidget* AVisexMenuDirector::GetMenuWidget() const
@@ -282,11 +300,19 @@ void AVisexMenuDirector::TickOrbit(float DeltaSeconds)
 	const FQuat Rot = FQuat::Slerp(Watch.Quaternion(), Follow->GetComponentQuat(), Settle);
 	MenuCamera->SetActorLocationAndRotation(Loc, Rot);
 
-	if (ACineCameraActor* Cine = Cast<ACineCameraActor>(MenuCamera))
+	// lens: from the menu's cine lens to the play camera's field of view, depth of field
+	// opening out, so the cut at the end is invisible
+	if (UCineCameraComponent* Lens = GetLens())
 	{
-		FCameraFocusSettings Focus = Cine->GetCineCameraComponent()->FocusSettings;
+		const float HalfW = Lens->Filmback.SensorWidth * 0.5f;
+		const float FovStart = 2.f * FMath::RadiansToDegrees(FMath::Atan(HalfW / FMath::Max(1.f, MenuFocal)));
+		const float Fov = FMath::Lerp(FovStart, Follow->FieldOfView, S);
+		Lens->SetCurrentFocalLength(HalfW / FMath::Tan(FMath::DegreesToRadians(Fov * 0.5f)));
+		const float MaxStop = FMath::Max(MenuFStop, Lens->LensSettings.MaxFStop);
+		Lens->SetCurrentAperture(FMath::Exp(FMath::Lerp(FMath::Loge(FMath::Max(0.7f, MenuFStop)), FMath::Loge(MaxStop), S)));
+		FCameraFocusSettings Focus = Lens->FocusSettings;
 		Focus.ManualFocusDistance = FVector::Dist(Loc, Look);
-		Cine->GetCineCameraComponent()->FocusSettings = Focus;
+		Lens->FocusSettings = Focus;
 	}
 
 	if (T >= 1.f)
