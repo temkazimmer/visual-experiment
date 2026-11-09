@@ -4,7 +4,7 @@ right, monoliths fading into the haze. Rebuilds the level from scratch.
 Run: UnrealEditor visex.uproject -run=pythonscript -script=Tools/build_dust.py -unattended
 Then, live in the editor (via Tools/ue.py): import_sand_tex.py, bake_stone.py (twice: the
 first run compiles the generator), add_sand.py, add_dunes.py, add_ruins.py; then dump
-actors.json, run stone_geo.py outside the editor, and apply_geo.py.
+actors.json, run stone_geo.py outside the editor, apply_geo.py, then add_step_ramp.py.
 """
 import unreal
 
