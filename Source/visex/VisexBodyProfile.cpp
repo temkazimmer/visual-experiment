@@ -16,7 +16,8 @@ const TArray<FVisexBodySlider>& FVisexBodyProfile::Sliders()
 		Out.bCentimetres = bCm;
 		return Out;
 	};
-	// defaults: the starter build, an hourglass after Tema's reference (2026-11-09)
+	// defaults: the starter build, a slim athletic hourglass after Tema's second reference
+	// (2026-11-09): narrower hips, smaller glutes, thighs nearly touching
 	static TArray<FVisexBodySlider> Table = {
 		S(TEXT("Skin"),      LOCTEXT("Skin", "Skin tone"),      0.f,   1.f,   0.25f, false, true),
 		S(TEXT("Height"),    LOCTEXT("Height", "Height"),       145.f, 185.f, 159.f, true),
@@ -28,14 +29,14 @@ const TArray<FVisexBodySlider>& FVisexBodyProfile::Sliders()
 		S(TEXT("Waist"),     LOCTEXT("Waist", "Waist"),         0.60f, 1.20f, 0.72f),
 		S(TEXT("Abs"),       LOCTEXT("Abs", "Abs"),             0.f,   1.f,   0.33f),
 		S(TEXT("Fat"),       LOCTEXT("Fat", "Body fat"),        0.f,   1.f,   0.20f),
-		S(TEXT("Hips"),      LOCTEXT("Hips", "Hips"),           0.85f, 1.50f, 1.22f),
-		S(TEXT("Glutes"),    LOCTEXT("Glutes", "Glutes"),       0.f,   1.f,   0.55f),
+		S(TEXT("Hips"),      LOCTEXT("Hips", "Hips"),           0.85f, 1.50f, 1.15f),
+		S(TEXT("Glutes"),    LOCTEXT("Glutes", "Glutes"),       0.f,   1.f,   0.38f),
 		S(TEXT("Legs"),      LOCTEXT("Legs", "Leg length"),     0.90f, 1.12f, 1.f),
-		S(TEXT("Thighs"),    LOCTEXT("Thighs", "Thighs"),       0.80f, 1.40f, 1.12f),
-		S(TEXT("ThighGap"),  LOCTEXT("ThighGap", "Thigh gap"),  0.f,   1.f,   0.35f),
+		S(TEXT("Thighs"),    LOCTEXT("Thighs", "Thighs"),       0.80f, 1.40f, 1.09f),
+		S(TEXT("ThighGap"),  LOCTEXT("ThighGap", "Thigh gap"),  0.f,   1.f,   0.12f),
 		S(TEXT("Calves"),    LOCTEXT("Calves", "Calves"),       0.80f, 1.25f, 1.f),
 		S(TEXT("ArmLength"), LOCTEXT("ArmLength", "Arm length"),0.92f, 1.08f, 1.f),
-		S(TEXT("Arms"),      LOCTEXT("Arms", "Arms"),           0.80f, 1.25f, 1.f),
+		S(TEXT("Arms"),      LOCTEXT("Arms", "Arms"),           0.80f, 1.25f, 0.95f),
 		S(TEXT("Hands"),     LOCTEXT("Hands", "Hands"),         0.85f, 1.15f, 1.f),
 		S(TEXT("Feet"),      LOCTEXT("Feet", "Feet"),           0.85f, 1.15f, 1.f),
 	};
