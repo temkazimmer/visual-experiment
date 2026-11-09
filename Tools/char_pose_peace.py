@@ -1,0 +1,292 @@
+"""Cute peace-sign pose, written as a one-pose AnimSequence. Idempotent.
+
+  python3 Tools/ue.py Tools/char_pose_peace.py     # builds the asset, then shoots it
+
+Starts from MM_Idle and re-poses it with plain forward kinematics in mesh space
+(X = her left, Y = forward, Z = up), so every number below reads as a direction:
+weight on the left leg with the hip out, right heel kicked back, chest countering,
+head tipped toward a V sign held beside the right eye, left hand flared at the hip.
+Globals: BUILD=False to only shoot, SHOTS=["front","face","side"] or [] to skip.
+Shots land in Tools/.bridge/pose_<shot>.png (temporary character, level not saved).
+"""
+import math
+import os
+import shutil
+import unreal
+
+IDLE = "/Game/Characters/Mannequins/Anims/Unarmed/MM_Idle"
+OUT_DIR, OUT_NAME = "/Game/Characters/Poses", "A_Pose_Peace"
+BP_PATH = "/Game/ThirdPerson/Blueprints/BP_ThirdPersonCharacter"
+BUILD = globals().get("BUILD", True)
+SHOTS = globals().get("SHOTS", ["front", "face", "side"])
+
+if unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).is_in_play_in_editor():
+    raise RuntimeError("Play mode is running: stop PIE first")
+
+# ---- small vector / quaternion kit (x, y, z, w), same algebra as FQuat ----
+X, Y, Z = (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)
+def add(a, b): return (a[0] + b[0], a[1] + b[1], a[2] + b[2])
+def sub(a, b): return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+def mul(a, s): return (a[0] * s, a[1] * s, a[2] * s)
+def neg(a): return mul(a, -1.0)
+def dot(a, b): return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+def cross(a, b): return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+def length(a): return math.sqrt(dot(a, a))
+def norm(a):
+    n = length(a)
+    return mul(a, 1.0 / n) if n > 1e-9 else (0.0, 0.0, 0.0)
+def perp(a, n): return sub(a, mul(n, dot(a, n)))
+def qnorm(q):
+    n = math.sqrt(sum(c * c for c in q))
+    return tuple(c / n for c in q)
+def qmul(a, b):  # applies b first, then a
+    ax, ay, az, aw = a
+    bx, by, bz, bw = b
+    return (aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx,
+            aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz)
+def qinv(q): return (-q[0], -q[1], -q[2], q[3])
+def rot(q, v):
+    u = (q[0], q[1], q[2])
+    t = mul(cross(u, v), 2.0)
+    return add(add(v, mul(t, q[3])), cross(u, t))
+def axis_angle(axis, deg):
+    h = math.radians(deg) * 0.5
+    a = norm(axis)
+    return (a[0] * math.sin(h), a[1] * math.sin(h), a[2] * math.sin(h), math.cos(h))
+def between(a, b):
+    a, b = norm(a), norm(b)
+    d = dot(a, b)
+    if d < -0.9999:
+        return axis_angle(cross(a, X) if abs(a[0]) < 0.9 else cross(a, Y), 180.0)
+    c = cross(a, b)
+    return qnorm((c[0], c[1], c[2], 1.0 + d))
+def turn(a, b, deg):
+    """Rotation that swings direction a toward direction b by deg."""
+    return axis_angle(cross(a, b), deg)
+def align2(p0, s0, p1, s1):
+    """Rotation taking direction p0 onto p1, then twisting about p1 so s0 lines up with s1."""
+    q1 = between(p0, p1)
+    p1 = norm(p1)
+    a, b = norm(perp(rot(q1, s0), p1)), norm(perp(s1, p1))
+    q2 = axis_angle(p1, 180.0) if dot(a, b) < -0.9999 else between(a, b)
+    return qmul(q2, q1)
+
+# ---- read the idle pose ----
+idle = unreal.load_asset(IDLE)
+APE = unreal.AnimPoseExtensions
+src = APE.get_anim_pose_at_frame(idle, 0, unreal.AnimPoseEvaluationOptions())
+bones = [str(n) for n in APE.get_bone_names(src)]
+local, parent = {}, {}
+for b in bones:
+    t = APE.get_bone_pose(src, b, unreal.AnimPoseSpaces.LOCAL)
+    r = t.rotation
+    local[b] = [(t.translation.x, t.translation.y, t.translation.z), qnorm((r.x, r.y, r.z, r.w)),
+                (t.scale3d.x, t.scale3d.y, t.scale3d.z)]
+    path = [str(n) for n in unreal.AnimationLibrary.find_bone_path_to_root(idle, b)]
+    parent[b] = path[1] if len(path) > 1 else None
+
+_cache = {}
+def world(b):
+    if b is None:
+        return ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0))
+    if b not in _cache:
+        pp, pq = world(parent[b])
+        _cache[b] = (add(pp, rot(pq, local[b][0])), qnorm(qmul(pq, local[b][1])))
+    return _cache[b]
+def pos(b): return world(b)[0]
+def set_world_rot(b, q):
+    local[b][1] = qnorm(qmul(qinv(world(parent[b])[1]), q))
+    _cache.clear()
+def rotate(b, q): set_world_rot(b, qmul(q, world(b)[1]))
+def translate(b, d):
+    local[b][0] = add(local[b][0], rot(qinv(world(parent[b])[1]), d))
+    _cache.clear()
+def aim(b, child, direction):
+    rotate(b, between(sub(pos(child), pos(b)), direction))
+def aim_at(b, child, point): aim(b, child, sub(point, pos(b)))
+
+worst = max(length(sub(pos(b), (lambda v: (v.x, v.y, v.z))(APE.get_bone_pose(src, b, unreal.AnimPoseSpaces.WORLD).translation)))
+            for b in bones)
+print("FK check, worst error cm:", round(worst, 3))
+
+# ---- hand helpers ----
+def palm_normal_local(side):
+    """Palm-facing direction in the hand's own frame, read off the idle pose (palms face the thighs)."""
+    h = "hand_" + side
+    n = norm(cross(sub(pos("index_01_" + side), pos(h)), sub(pos("pinky_01_" + side), pos(h))))
+    if dot(n, sub(pos("pelvis"), pos(h))) < 0:
+        n = neg(n)
+    return rot(qinv(world(h)[1]), n)
+PALM = {s: palm_normal_local(s) for s in "lr"}
+def palm(side): return rot(world("hand_" + side)[1], PALM[side])
+def fingers(side): return norm(sub(pos("middle_01_" + side), pos("hand_" + side)))
+def across(side):  # index toward pinky, square to the fingers
+    return norm(perp(sub(pos("pinky_01_" + side), pos("index_01_" + side)), fingers(side)))
+def set_hand(side, finger_dir, palm_dir):
+    rotate("hand_" + side, align2(fingers(side), palm(side), finger_dir, palm_dir))
+def curl(side, finger, degs):
+    """Bend each joint toward the palm by degs (01, 02, 03)."""
+    for i, deg in enumerate(degs):
+        b = "%s_0%d_%s" % (finger, i + 1, side)
+        axis = cross(fingers(side), palm(side))
+        rotate(b, axis_angle(axis, deg))
+def straighten(side, finger, spread_deg):
+    """Lay the finger out along the hand, fanned sideways by spread_deg (+ toward the pinky)."""
+    d = rot(axis_angle(palm(side), 1.0), fingers(side))
+    sign = 1.0 if dot(sub(d, fingers(side)), across(side)) > 0 else -1.0
+    d = rot(axis_angle(palm(side), sign * spread_deg), fingers(side))
+    aim("%s_01_%s" % (finger, side), "%s_02_%s" % (finger, side), d)
+    aim("%s_02_%s" % (finger, side), "%s_03_%s" % (finger, side), d)
+    set_world_rot("%s_03_%s" % (finger, side), world("%s_02_%s" % (finger, side))[1])
+def reach(side, wrist, pole):
+    """Two-bone arm: put the wrist at a point, elbow toward pole."""
+    up, lo, h = "upperarm_" + side, "lowerarm_" + side, "hand_" + side
+    s = pos(up)
+    l1, l2 = length(sub(pos(lo), s)), length(sub(pos(h), pos(lo)))
+    to = sub(wrist, s)
+    d = min(length(to), (l1 + l2) * 0.999)
+    u = norm(to)
+    a = (l1 * l1 - l2 * l2 + d * d) / (2 * d)
+    hgt = math.sqrt(max(l1 * l1 - a * a, 0.0))
+    elbow = add(add(s, mul(u, a)), mul(norm(perp(pole, u)), hgt))
+    n0 = cross(sub(pos(lo), s), sub(pos(h), pos(lo)))
+    n1 = cross(sub(elbow, s), sub(add(s, mul(u, d)), elbow))
+    rotate(up, align2(sub(pos(lo), s), n0, sub(elbow, s), n1))
+    aim_at(lo, h, add(s, mul(u, d)))
+def share_twist(side):
+    """Spread the wrist's twist along the forearm so the skin doesn't candy-wrap."""
+    h = "hand_" + side
+    delta = qmul(local[h][1], qinv(IDLE_LOCAL[h]))          # in the forearm's frame
+    axis = norm(local[h][0])                                # forearm's long axis
+    p = dot((delta[0], delta[1], delta[2]), axis)
+    tw = qnorm((axis[0] * p, axis[1] * p, axis[2] * p, delta[3]))
+    if tw[3] < 0:
+        tw = tuple(-c for c in tw)
+    ang = 2.0 * math.degrees(math.atan2(math.sqrt(tw[0] ** 2 + tw[1] ** 2 + tw[2] ** 2), tw[3]))
+    sgn = 1.0 if dot((tw[0], tw[1], tw[2]), axis) >= 0 else -1.0
+    for b, share in (("lowerarm_twist_01_" + side, 0.7), ("lowerarm_twist_02_" + side, 0.35)):
+        local[b][1] = qnorm(qmul(axis_angle(axis, sgn * ang * share), IDLE_LOCAL[b]))
+    _cache.clear()
+
+IDLE_LOCAL = {b: local[b][1] for b in bones}
+foot_l_at, foot_l_rot = pos("foot_l"), world("foot_l")[1]
+head_rot0 = world("head")[1]
+
+# ---- the pose ----
+# hips: weight on her left leg, left hip up and out
+rotate("pelvis", turn(X, Z, 9.0))
+translate("pelvis", (5.0, 0.0, 0.0))
+aim_at("thigh_l", "foot_l", foot_l_at)                      # standing leg stays planted
+translate("pelvis", (0.0, 0.0, foot_l_at[2] - pos("foot_l")[2]))
+aim_at("thigh_l", "foot_l", foot_l_at)
+set_world_rot("foot_l", foot_l_rot)
+# free leg: knee in beside the other, heel kicked back
+aim("thigh_r", "calf_r", (0.20, 0.30, -1.0))
+aim("calf_r", "foot_r", (-0.35, -1.0, 0.20))
+aim("foot_r", "ball_r", (0.0, -0.55, -0.85))
+
+# spine: counter the hips, lean in a touch, bring the right shoulder forward
+for b in ("spine_01", "spine_02", "spine_03", "spine_04", "spine_05"):
+    rotate(b, turn(X, neg(Z), 15.0 / 5))
+    rotate(b, turn(Z, Y, 8.0 / 5))
+    rotate(b, turn(Y, X, 8.0 / 5))
+# head: back to the camera, tipped toward the hand, chin slightly down
+for b, share in (("neck_01", 0.25), ("neck_02", 0.25), ("head", 0.5)):
+    rotate(b, turn(X, Y, 8.0 * share))
+    rotate(b, turn(Z, neg(X), 25.0 * share))
+    rotate(b, turn(Y, neg(Z), 3.0 * share))
+head_turn = qmul(world("head")[1], qinv(head_rot0))
+
+# right arm: V sign beside the eye, palm to the camera
+reach("r", add(pos("head"), rot(head_turn, (-17.0, 9.0, 0.0))), (-0.6, 0.1, -1.0))
+set_hand("r", rot(head_turn, (0.30, 0.05, 0.95)), (0.0, 1.0, 0.1))
+share_twist("r")
+straighten("r", "index", -11.0)
+straighten("r", "middle", 9.0)
+curl("r", "ring", (75.0, 95.0, 60.0))
+curl("r", "pinky", (75.0, 95.0, 60.0))
+aim_at("thumb_01_r", "thumb_02_r", add(pos("middle_01_r"), mul(palm("r"), 3.0)))
+aim_at("thumb_02_r", "thumb_03_r", add(pos("ring_02_r"), mul(palm("r"), 1.0)))
+curl("r", "thumb", (0.0, 0.0, 25.0))
+
+if globals().get("DEBUG"):
+    for f in ("index", "middle", "ring", "pinky", "thumb"):
+        d = norm(sub(pos(f + "_03_r"), pos(f + "_01_r")))
+        print(f, "along fingers %.2f, toward palm %.2f, across %.2f" % (dot(d, fingers("r")), dot(d, palm("r")), dot(d, across("r"))))
+    print("palm faces", [round(v, 2) for v in palm("r")], "fingers", [round(v, 2) for v in fingers("r")])
+
+# left arm: down and a little out, hand flared flat like a small wing
+aim("upperarm_l", "lowerarm_l", (0.30, -0.18, -1.0))
+aim("lowerarm_l", "hand_l", (0.42, 0.02, -1.0))
+set_hand("l", (0.95, 0.10, -0.20), (-0.15, 0.0, -1.0))
+share_twist("l")
+for f, s in (("index", -8.0), ("middle", -2.0), ("ring", 4.0), ("pinky", 11.0)):
+    straighten("l", f, s)
+
+# ---- write the asset ----
+path = OUT_DIR + "/" + OUT_NAME
+if BUILD:
+    if unreal.EditorAssetLibrary.does_asset_exist(path):
+        seq = unreal.load_asset(path)
+    else:
+        factory = unreal.AnimSequenceFactory()
+        factory.set_editor_property("target_skeleton", idle.get_editor_property("skeleton"))
+        seq = unreal.AssetToolsHelpers.get_asset_tools().create_asset(OUT_NAME, OUT_DIR, unreal.AnimSequence, factory)
+    c = seq.controller
+    c.open_bracket(unreal.Text("Peace pose"), False)
+    c.remove_all_bone_tracks(False)
+    c.set_frame_rate(unreal.FrameRate(30, 1), False)
+    c.set_number_of_frames(unreal.FrameNumber(1), False)
+    for b in bones:
+        p, q, s = local[b]
+        c.add_bone_curve(b, False)
+        c.set_bone_track_keys(b, [unreal.Vector(*p)] * 2, [unreal.Quat(*q)] * 2, [unreal.Vector(*s)] * 2, False)
+    c.close_bracket(False)
+    unreal.EditorAssetLibrary.save_loaded_asset(seq, only_if_is_dirty=False)
+    back = APE.get_anim_pose_at_frame(seq, 0, unreal.AnimPoseEvaluationOptions())
+    got = APE.get_bone_pose(back, "hand_r", unreal.AnimPoseSpaces.WORLD).translation
+    print("saved", path, "hand_r read back", [round(v, 1) for v in (got.x, got.y, got.z)],
+          "wanted", [round(v, 1) for v in pos("hand_r")])
+
+# ---- shoot it on a temporary character ----
+if SHOTS:
+    eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    by = {a.get_actor_label(): a for a in eas.get_all_level_actors()}
+    stand = by["MenuModel"]
+    root = os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir()), "Tools")
+    capture_src = open(os.path.join(root, "capture.py")).read()
+    bp = unreal.load_asset(BP_PATH)
+    hh = unreal.get_default_object(bp.generated_class()).get_editor_property("capsule_component").get_unscaled_capsule_half_height()
+    loc = stand.get_actor_location() + unreal.Vector(0, 0, hh)
+    char = eas.spawn_actor_from_class(bp.generated_class(), loc,
+                                      unreal.Rotator(roll=0, pitch=0, yaw=stand.get_actor_rotation().yaw + 90.0))
+    for comp in char.get_components_by_class(unreal.SkeletalMeshComponent):
+        if comp.get_class().get_name() != "VisexShellComponent":
+            body = comp
+            comp.override_animation_data(unreal.load_asset(path))
+    was_hidden = stand.get_editor_property("hidden")
+    stand.set_actor_hidden_in_game(True)
+    stand.set_is_temporarily_hidden_in_editor(True)
+    f, r, up = char.get_actor_forward_vector(), char.get_actor_right_vector(), unreal.Vector(0, 0, 1)
+    to_world = body.get_world_transform()
+    def at(bone): return to_world.transform_location(unreal.Vector(*pos(bone)))
+    mid, head, hand = at("spine_01"), at("head") + up * 8, at("middle_01_r")
+    views = {
+        "front": (mid + f * 560 - up * 15, mid - up * 12, 30.0),
+        "side": (mid + f * 400 + r * 400 - up * 15, mid - up * 12, 30.0),
+        "back": (mid - f * 560 - up * 15, mid - up * 12, 30.0),
+        "face": (head + f * 150 + up * 4, head - up * 6, 30.0),
+        "hand": (hand + f * 60, hand, 30.0),
+    }
+    try:
+        for shot in SHOTS:
+            cam, tgt, fov = views[shot]
+            g = {"__name__": "__bridge__", "VIEW": ((cam.x, cam.y, cam.z), (tgt.x, tgt.y, tgt.z), fov)}
+            exec(compile(capture_src, "capture.py", "exec"), g)
+            dst = os.path.join(root, ".bridge", "pose_%s.png" % shot)
+            shutil.move(os.path.join(root, ".bridge", "capture.png"), dst)
+            print("shot", dst)
+    finally:
+        eas.destroy_actor(char)
+        stand.set_actor_hidden_in_game(was_hidden)
+        stand.set_is_temporarily_hidden_in_editor(False)
