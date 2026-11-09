@@ -11,11 +11,18 @@
 #include "Components/VerticalBoxSlot.h"
 #include "Styling/CoreStyle.h"
 
+#define LOCTEXT_NAMESPACE "VisexBody"
+
 UVisexBodyWidget::UVisexBodyWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	Title = FText::FromString(TEXT("BODY"));
-	Hint = FText::FromString(TEXT("UP DOWN  choose      LEFT RIGHT  shape      TRIANGLE  reset      CIRCLE  done"));
+	Title = LOCTEXT("Title", "CHARACTER");
+	Hint = LOCTEXT("Hint", "L1 R1  tab      UP DOWN  choose      LEFT RIGHT  shape\nCROSS  apply      TRIANGLE  reset      CIRCLE  back");
+}
+
+int32 UVisexBodyWidget::RowCount(int32 Tab)
+{
+	return (Tab == 0 ? FVisexBodyProfile::Sliders().Num() : FVisexBodyProfile::Outfits().Num()) + 1;
 }
 
 TSharedRef<SWidget> UVisexBodyWidget::RebuildWidget()
@@ -38,34 +45,26 @@ UTextBlock* UVisexBodyWidget::MakeText(const FText& Text, int32 Size, FName Type
 	return Block;
 }
 
-void UVisexBodyWidget::Build()
+UVisexBodyWidget::FRow UVisexBodyWidget::MakeRow(const FText& Label, bool bTrack)
 {
-	UVerticalBox* Root = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("Root"));
-	WidgetTree->RootWidget = Root;
-	Root->AddChildToVerticalBox(MakeText(Title, TitleSize, TEXT("Light"), 420, TextColor));
-	USpacer* Gap = WidgetTree->ConstructWidget<USpacer>(USpacer::StaticClass());
-	Gap->SetSize(FVector2D(1.f, 40.f));
-	Root->AddChildToVerticalBox(Gap);
+	FRow Row;
+	Row.Box = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+	Row.Marker = MakeText(FText::FromString(TEXT("—")), RowSize, TEXT("Light"), 0, AccentColor);
+	Row.Label = MakeText(Label, RowSize, TEXT("Light"), 140, TextColor);
+	Row.Value = MakeText(FText::GetEmpty(), RowSize - 4, TEXT("Light"), 80, TextColor);
 
-	Rows.Reset();
-	Keep.Reset();
-	for (const FVisexBodySlider& S : FVisexBodyProfile::Sliders())
+	UHorizontalBoxSlot* M = Row.Box->AddChildToHorizontalBox(Row.Marker);
+	M->SetPadding(FMargin(0.f, 0.f, 16.f, 0.f));
+	M->SetVerticalAlignment(VAlign_Center);
+
+	USizeBox* LabelBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+	LabelBox->SetWidthOverride(bTrack ? 250.f : 420.f);
+	LabelBox->AddChild(Row.Label);
+	Row.Box->AddChildToHorizontalBox(LabelBox)->SetVerticalAlignment(VAlign_Center);
+	Keep.Append({Row.Box, Row.Marker, Row.Label, Row.Value, LabelBox});
+
+	if (bTrack)
 	{
-		FRow Row;
-		Row.Box = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
-		Row.Marker = MakeText(FText::FromString(TEXT("—")), RowSize, TEXT("Light"), 0, AccentColor);
-		Row.Label = MakeText(S.Label, RowSize, TEXT("Light"), 140, TextColor);
-		Row.Value = MakeText(FText::GetEmpty(), RowSize - 4, TEXT("Light"), 80, TextColor);
-
-		UHorizontalBoxSlot* M = Row.Box->AddChildToHorizontalBox(Row.Marker);
-		M->SetPadding(FMargin(0.f, 0.f, 16.f, 0.f));
-		M->SetVerticalAlignment(VAlign_Center);
-
-		USizeBox* LabelBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
-		LabelBox->SetWidthOverride(250.f);
-		LabelBox->AddChild(Row.Label);
-		Row.Box->AddChildToHorizontalBox(LabelBox)->SetVerticalAlignment(VAlign_Center);
-
 		// the track: a filled part and the rest, 3 px tall
 		USizeBox* TrackBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
 		TrackBox->SetWidthOverride(TrackWidth);
@@ -81,34 +80,97 @@ void UVisexBodyWidget::Build()
 		UHorizontalBoxSlot* T = Row.Box->AddChildToHorizontalBox(TrackBox);
 		T->SetVerticalAlignment(VAlign_Center);
 		T->SetPadding(FMargin(0.f, 0.f, 24.f, 0.f));
-
-		Row.Box->AddChildToHorizontalBox(Row.Value)->SetVerticalAlignment(VAlign_Center);
-		UVerticalBoxSlot* RowSlot = Root->AddChildToVerticalBox(Row.Box);
-		RowSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
-		Keep.Append({Row.Box, Row.Marker, Row.Label, Row.Fill, Row.Rest, Row.Value, LabelBox, TrackBox, Track});
-		Rows.Add(Row);
+		Keep.Append({Row.Fill, Row.Rest, TrackBox, Track});
 	}
-
-	USpacer* Gap2 = WidgetTree->ConstructWidget<USpacer>(USpacer::StaticClass());
-	Gap2->SetSize(FVector2D(1.f, 30.f));
-	Root->AddChildToVerticalBox(Gap2);
-	UTextBlock* HintText = MakeText(Hint, 15, TEXT("Regular"), 300, AccentColor);
-	Root->AddChildToVerticalBox(HintText);
+	Row.Box->AddChildToHorizontalBox(Row.Value)->SetVerticalAlignment(VAlign_Center);
+	return Row;
 }
 
-void UVisexBodyWidget::Show(const FVisexBodyProfile& Profile, int32 Selected)
+void UVisexBodyWidget::Build()
 {
-	if (Rows.Num() == 0 && WidgetTree && !WidgetTree->RootWidget)
+	UVerticalBox* Root = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("Root"));
+	WidgetTree->RootWidget = Root;
+	Root->AddChildToVerticalBox(MakeText(Title, TitleSize, TEXT("Light"), 260, TextColor));
+
+	// tabs, left to right
+	UHorizontalBox* Tabs = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+	const FText TabNames[2] = {LOCTEXT("TabBody", "BODY"), LOCTEXT("TabDress", "DRESS")};
+	for (int32 t = 0; t < 2; ++t)
+	{
+		TabText[t] = MakeText(TabNames[t], TabSize, TEXT("Regular"), 320, TextColor);
+		Tabs->AddChildToHorizontalBox(TabText[t])->SetPadding(FMargin(0.f, 0.f, 70.f, 0.f));
+		Keep.Add(TabText[t]);
+	}
+	Root->AddChildToVerticalBox(Tabs)->SetPadding(FMargin(4.f, 18.f, 0.f, 26.f));
+	Keep.Add(Tabs);
+
+	const FText ApplyText = LOCTEXT("Apply", "APPLY");
+	BodyRows.Reset();
+	DressRows.Reset();
+	BodyList = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
+	DressList = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
+	Keep.Append({BodyList, DressList});
+	for (const FVisexBodySlider& S : FVisexBodyProfile::Sliders())
+	{
+		BodyRows.Add(MakeRow(S.Label, true));
+	}
+	for (const FVisexOutfit& O : FVisexBodyProfile::Outfits())
+	{
+		DressRows.Add(MakeRow(O.Label, false));
+	}
+	BodyRows.Add(MakeRow(ApplyText, false));
+	DressRows.Add(MakeRow(ApplyText, false));
+	for (int32 i = 0; i < BodyRows.Num(); ++i)
+	{
+		const bool bLast = i == BodyRows.Num() - 1;
+		BodyList->AddChildToVerticalBox(BodyRows[i].Box)->SetPadding(FMargin(0.f, bLast ? 18.f : 0.f, 0.f, 8.f));
+	}
+	for (int32 i = 0; i < DressRows.Num(); ++i)
+	{
+		const bool bLast = i == DressRows.Num() - 1;
+		DressList->AddChildToVerticalBox(DressRows[i].Box)->SetPadding(FMargin(0.f, bLast ? 22.f : 0.f, 0.f, 14.f));
+	}
+	Root->AddChildToVerticalBox(BodyList);
+	Root->AddChildToVerticalBox(DressList);
+
+	USpacer* Gap = WidgetTree->ConstructWidget<USpacer>(USpacer::StaticClass());
+	Gap->SetSize(FVector2D(1.f, 30.f));
+	Root->AddChildToVerticalBox(Gap);
+	Root->AddChildToVerticalBox(MakeText(Hint, 15, TEXT("Regular"), 300, AccentColor));
+}
+
+void UVisexBodyWidget::Show(const FVisexCharacterView& View)
+{
+	if (BodyRows.Num() == 0 && WidgetTree && !WidgetTree->RootWidget)
 	{
 		Build();
 	}
+	if (!View.Shown || !View.Applied || BodyRows.Num() == 0)
+	{
+		return;
+	}
+	for (int32 t = 0; t < 2; ++t)
+	{
+		TabText[t]->SetRenderOpacity(View.Tab == t ? 1.f : IdleOpacity);
+		TabText[t]->SetColorAndOpacity(FSlateColor(View.Tab == t ? AccentColor : TextColor));
+	}
+	BodyList->SetVisibility(View.Tab == 0 ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	DressList->SetVisibility(View.Tab == 1 ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+
+	auto Mark = [&](FRow& R, bool bOn)
+	{
+		R.Label->SetRenderOpacity(bOn ? 1.f : IdleOpacity);
+		R.Value->SetRenderOpacity(bOn ? 1.f : IdleOpacity);
+		R.Marker->SetVisibility(bOn ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
+	};
+
 	const TArray<FVisexBodySlider>& Sliders = FVisexBodyProfile::Sliders();
-	for (int32 i = 0; i < Rows.Num() && i < Sliders.Num(); ++i)
+	for (int32 i = 0; i < Sliders.Num(); ++i)
 	{
 		const FVisexBodySlider& S = Sliders[i];
-		const float V = Profile.Get(S.Name);
+		const float V = View.Shown->Get(S.Name);
 		const float T = FMath::Clamp((V - S.Min) / FMath::Max(S.Max - S.Min, KINDA_SMALL_NUMBER), 0.f, 1.f);
-		FRow& R = Rows[i];
+		FRow& R = BodyRows[i];
 		if (UHorizontalBoxSlot* F = Cast<UHorizontalBoxSlot>(R.Fill->Slot))
 		{
 			FSlateChildSize Size(ESlateSizeRule::Fill);
@@ -121,13 +183,39 @@ void UVisexBodyWidget::Show(const FVisexBodyProfile& Profile, int32 Selected)
 			Size.Value = FMath::Max(1.f - T, 0.001f);
 			Rr->SetSize(Size);
 		}
-		const FString Text = S.bCentimetres
-			? FString::Printf(TEXT("%d cm"), FMath::RoundToInt(V))
-			: FString::Printf(TEXT("%d"), FMath::RoundToInt(T * 100.f));
-		R.Value->SetText(FText::FromString(Text));
-		const bool bOn = i == Selected;
-		R.Label->SetRenderOpacity(bOn ? 1.f : IdleOpacity);
-		R.Value->SetRenderOpacity(bOn ? 1.f : IdleOpacity);
-		R.Marker->SetVisibility(bOn ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
+		if (S.bSkinTone)
+		{
+			R.Value->SetText(FVisexBodyProfile::SkinToneName(V));
+			R.Fill->SetBrushColor(FVisexBodyProfile::SkinColor(V) * 1.6f);
+		}
+		else
+		{
+			R.Value->SetText(FText::FromString(S.bCentimetres
+				? FString::Printf(TEXT("%d cm"), FMath::RoundToInt(V))
+				: FString::Printf(TEXT("%d"), FMath::RoundToInt(T * 100.f))));
+		}
+		Mark(R, View.Tab == 0 && View.Selected == i);
+	}
+
+	const TArray<FVisexOutfit>& Outfits = FVisexBodyProfile::Outfits();
+	const int32 Worn = FVisexBodyProfile::OutfitIndex(View.Applied->Outfit);
+	const int32 Trying = FVisexBodyProfile::OutfitIndex(View.Shown->Outfit);
+	for (int32 i = 0; i < Outfits.Num(); ++i)
+	{
+		FRow& R = DressRows[i];
+		R.Value->SetText(i == Worn ? LOCTEXT("Worn", "WORN") : (i == Trying ? LOCTEXT("Trying", "TRYING ON") : FText::GetEmpty()));
+		Mark(R, View.Tab == 1 && View.Selected == i);
+	}
+
+	// APPLY rows: lit when there is something to apply
+	FRow* Apply[2] = {&BodyRows.Last(), &DressRows.Last()};
+	const bool bDirty[2] = {View.bBodyDirty, View.bDressDirty};
+	for (int32 t = 0; t < 2; ++t)
+	{
+		Apply[t]->Label->SetColorAndOpacity(FSlateColor(bDirty[t] ? AccentColor : TextColor));
+		Apply[t]->Value->SetText(bDirty[t] ? FText::GetEmpty() : LOCTEXT("Applied", "applied"));
+		Mark(*Apply[t], View.Tab == t && View.Selected == RowCount(t) - 1);
 	}
 }
+
+#undef LOCTEXT_NAMESPACE
