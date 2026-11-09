@@ -8,6 +8,11 @@ class ACameraActor;
 class UWidgetComponent;
 class UVisexMenuWidget;
 class AVisexBodyEditor;
+class USpotLightComponent;
+class URectLightComponent;
+class ADirectionalLight;
+class ASkyLight;
+class APostProcessVolume;
 
 /**
  * Main menu as a scene state, not a separate level. On play the view holds MenuCamera
@@ -96,6 +101,36 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Body")
 	TSubclassOf<AVisexBodyEditor> BodyEditorClass;
 
+	/** Character page lighting: the desert goes nearly dark and a theatrical spot plus a
+	 * rim light pick her out, so body shape, clothes and motion read clearly. The two lights
+	 * use lighting channel 1 and only reach her (and whatever she wears). */
+	/** Seconds to fade the studio look in or out. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Studio")
+	float StudioBlendTime = 1.2f;
+
+	/** How much of the sun, the sky light and the vignette stay on the page. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Studio")
+	float StudioSunScale = 0.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Studio")
+	float StudioSkyScale = 0.4f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Studio")
+	float StudioVignette = 0.8f;
+
+	/** Spot placement around her, relative to the camera's side of her: yaw (deg), distance, height (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Studio")
+	FVector SpotPlacement = FVector(-25.f, 140.f, 330.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Studio")
+	float SpotIntensity = 140.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Studio")
+	FVector RimPlacement = FVector(165.f, 200.f, 200.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Studio")
+	float RimIntensity = 35.f;
+
 	/** Hides the menu and opens the body page; the menu comes back when it closes. */
 	UFUNCTION(BlueprintCallable, Category = "Menu")
 	void OpenBody();
@@ -147,6 +182,23 @@ private:
 	UFUNCTION()
 	void HandleBodyClosed();
 	class UCineCameraComponent* GetLens() const;
+	void TickStudio(float DeltaSeconds);
+	void PlaceStudioLight(class ULocalLightComponent* Light, const FVector& Placement, const FVector& Feet, float CamYaw, float AimHeight) const;
+
+	float StudioAlpha = 0.f;
+	bool bStudio = false;
+	bool bHaveStudioBase = false;
+	float BaseSun = 0.f, BaseSky = 0.f, BaseVignette = 0.f;
+	bool bBaseVignetteOverride = false;
+	TWeakObjectPtr<ADirectionalLight> Sun;
+	TWeakObjectPtr<ASkyLight> Sky;
+	TWeakObjectPtr<APostProcessVolume> Post;
+	// spawned on first use: light components on a level-placed director didn't render
+	UPROPERTY(Transient)
+	TObjectPtr<AActor> StudioSpot;
+	UPROPERTY(Transient)
+	TObjectPtr<AActor> StudioRim;
+	void SpawnStudioLights();
 
 	FTransform CameraBase;
 	bool bHaveBase = false;

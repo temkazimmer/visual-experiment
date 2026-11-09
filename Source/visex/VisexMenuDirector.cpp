@@ -7,6 +7,16 @@
 #include "CineCameraActor.h"
 #include "CineCameraComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/DirectionalLightComponent.h"
+#include "Components/RectLightComponent.h"
+#include "Components/SkyLightComponent.h"
+#include "Components/SpotLightComponent.h"
+#include "Engine/DirectionalLight.h"
+#include "Engine/RectLight.h"
+#include "Engine/SpotLight.h"
+#include "Engine/PostProcessVolume.h"
+#include "Engine/SkyLight.h"
+#include "EngineUtils.h"
 #include "Components/InputComponent.h"
 #include "Components/WidgetComponent.h"
 #include "GameFramework/Character.h"
@@ -119,7 +129,13 @@ void AVisexMenuDirector::ShowMenu()
 	Panel->AttachToComponent(MenuCamera->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
 	Panel->SetRelativeLocation(PanelOffset);
 	Panel->SetRelativeRotation(FRotator(0.f, 180.f + PanelYaw, 0.f));
-	Panel->SetRelativeScale3D(FVector(PanelScale));
+	// draw the panel's texture larger and shrink it back to the same size on screen
+	const UVisexMenuWidget* MenuDefaults = Panel->GetWidgetClass()
+		? Cast<UVisexMenuWidget>(Panel->GetWidgetClass()->GetDefaultObject()) : nullptr;
+	const float SS = GetMenuWidget() ? FMath::Max(1.f, GetMenuWidget()->Supersample)
+		: MenuDefaults ? FMath::Max(1.f, MenuDefaults->Supersample) : 1.f;
+	Panel->SetDrawSize(FVector2D(1100.f, 1000.f) * SS);
+	Panel->SetRelativeScale3D(FVector(PanelScale / SS));
 	Panel->SetTintColorAndOpacity(FLinearColor(PanelBrightness, PanelBrightness, PanelBrightness, 1.f));
 	Panel->SetVisibility(true);
 	if (UVisexMenuWidget* W = GetMenuWidget())
@@ -219,6 +235,7 @@ void AVisexMenuDirector::OpenBody()
 	{
 		return;   // no body to edit on this pawn: stay on the menu
 	}
+	bStudio = true;
 	// the menu steps aside while the body page has the screen
 	bOpen = false;
 	Panel->SetVisibility(false);
@@ -228,6 +245,7 @@ void AVisexMenuDirector::OpenBody()
 void AVisexMenuDirector::HandleBodyClosed()
 {
 	// the body page blends back to the menu shot; bring the menu up once it has landed
+	bStudio = false;
 	const float Wait = BodyEditor ? FMath::Max(0.05f, BodyEditor->BlendTime) : 0.05f;
 	GetWorldTimerManager().SetTimer(BodyTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
 	{
@@ -294,6 +312,11 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 	if (bOrbiting)
 	{
 		TickOrbit(DeltaSeconds);
+	}
+
+	if (bStudio || StudioAlpha > 0.f)
+	{
+		TickStudio(DeltaSeconds);
 	}
 
 	if (FadeOut >= 0.f)
@@ -370,5 +393,131 @@ void AVisexMenuDirector::TickOrbit(float DeltaSeconds)
 		bOrbiting = false;
 		PC->SetViewTarget(Pawn);      // same place, same angle: an invisible cut
 		HandBack();
+	}
+}
+
+void AVisexMenuDirector::TickStudio(float DeltaSeconds)
+{
+	if (!bHaveStudioBase)
+	{
+		// the scene's own lights, read once, so the page can dim them and give them back
+		for (TActorIterator<ADirectionalLight> It(GetWorld()); It && !Sun.IsValid(); ++It) { Sun = *It; }
+		for (TActorIterator<ASkyLight> It(GetWorld()); It && !Sky.IsValid(); ++It) { Sky = *It; }
+		for (TActorIterator<APostProcessVolume> It(GetWorld()); It && !Post.IsValid(); ++It)
+		{
+			if (It->bUnbound) { Post = *It; }
+		}
+		BaseSun = Sun.IsValid() ? Sun->GetLightComponent()->Intensity : 0.f;
+		BaseSky = Sky.IsValid() ? Sky->GetLightComponent()->Intensity : 0.f;
+		if (Post.IsValid())
+		{
+			BaseVignette = Post->Settings.VignetteIntensity;
+			bBaseVignetteOverride = Post->Settings.bOverride_VignetteIntensity;
+		}
+		bHaveStudioBase = true;
+	}
+
+	const float Step = DeltaSeconds / FMath::Max(0.05f, StudioBlendTime);
+	StudioAlpha = FMath::Clamp(StudioAlpha + (bStudio ? Step : -Step), 0.f, 1.f);
+	const float S = FMath::SmoothStep(0.f, 1.f, StudioAlpha);
+
+	if (Sun.IsValid()) { Sun->GetLightComponent()->SetIntensity(BaseSun * FMath::Lerp(1.f, StudioSunScale, S)); }
+	if (Sky.IsValid()) { Sky->GetLightComponent()->SetIntensity(BaseSky * FMath::Lerp(1.f, StudioSkyScale, S)); }
+	if (Post.IsValid())
+	{
+		Post->Settings.bOverride_VignetteIntensity = StudioAlpha > 0.f ? true : bBaseVignetteOverride;
+		Post->Settings.VignetteIntensity = FMath::Lerp(BaseVignette, StudioVignette, S);
+	}
+
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	SpawnStudioLights();
+	ULocalLightComponent* Spot = StudioSpot ? StudioSpot->FindComponentByClass<ULocalLightComponent>() : nullptr;
+	ULocalLightComponent* Rim = StudioRim ? StudioRim->FindComponentByClass<ULocalLightComponent>() : nullptr;
+	const bool bOn = StudioAlpha > 0.f && Pawn && PC->PlayerCameraManager && Spot && Rim;
+	if (Spot) { Spot->SetIntensity(0.f); }
+	if (Rim) { Rim->SetIntensity(0.f); }
+	if (!bOn)
+	{
+		return;
+	}
+
+	// she joins channel 1 (and keeps 0), clothes included, which can change while the page is open
+	TArray<UPrimitiveComponent*> Parts;
+	Pawn->GetComponents(Parts);
+	for (UPrimitiveComponent* P : Parts)
+	{
+		if (!P->LightingChannels.bChannel1)
+		{
+			P->SetLightingChannels(true, true, P->LightingChannels.bChannel2);
+		}
+	}
+
+	float Half = 90.f;
+	if (const ACharacter* C = Cast<ACharacter>(Pawn))
+	{
+		Half = C->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	}
+	const FVector Feet = Pawn->GetActorLocation() - FVector(0.f, 0.f, Half);
+	const FVector ToCam = PC->PlayerCameraManager->GetCameraLocation() - Feet;
+	const float CamYaw = FMath::RadiansToDegrees(FMath::Atan2(ToCam.Y, ToCam.X));
+	PlaceStudioLight(Spot, SpotPlacement, Feet, CamYaw, 110.f);
+	PlaceStudioLight(Rim, RimPlacement, Feet, CamYaw, 110.f);
+	Spot->SetIntensity(SpotIntensity * S);
+	Rim->SetIntensity(RimIntensity * S);
+}
+
+void AVisexMenuDirector::PlaceStudioLight(ULocalLightComponent* Light, const FVector& Placement, const FVector& Feet, float CamYaw, float AimHeight) const
+{
+	const float Yaw = FMath::DegreesToRadians(CamYaw + Placement.X);
+	const FVector Loc = Feet + FVector(FMath::Cos(Yaw) * Placement.Y, FMath::Sin(Yaw) * Placement.Y, Placement.Z);
+	const FVector Aim = Feet + FVector(0.f, 0.f, AimHeight);
+	Light->GetOwner()->SetActorLocationAndRotation(Loc, (Aim - Loc).Rotation());
+}
+
+void AVisexMenuDirector::SpawnStudioLights()
+{
+	if (StudioSpot && StudioRim)
+	{
+		return;
+	}
+	// lighting channel 1 only: these touch her (and her clothes), not the stone or sand
+	auto Setup = [](ULocalLightComponent* L, float Temperature)
+	{
+		L->SetMobility(EComponentMobility::Movable);
+		// the editor gives placed lights candelas; spawned ones default to unitless (~50x dimmer)
+		L->SetIntensityUnits(ELightUnits::Candelas);
+		L->SetIntensity(0.f);
+		L->SetTemperature(Temperature);
+		L->bUseTemperature = true;
+		L->SetLightingChannels(false, true, false);
+		L->SetVolumetricScatteringIntensity(0.f);   // no glow blobs in the haze
+		L->SetAttenuationRadius(1200.f);
+	};
+	FActorSpawnParameters P;
+	P.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	const FVector Away = GetActorLocation() - FVector(0.f, 0.f, 5000.f);
+	if (!StudioSpot)
+	{
+		if (ASpotLight* L = GetWorld()->SpawnActor<ASpotLight>(Away, FRotator::ZeroRotator, P))
+		{
+			USpotLightComponent* C = Cast<USpotLightComponent>(L->GetLightComponent());
+			Setup(C, 4800.f);
+			C->SetOuterConeAngle(44.f);
+			C->SetSourceRadius(12.f);
+			StudioSpot = L;
+		}
+	}
+	if (!StudioRim)
+	{
+		if (ARectLight* L = GetWorld()->SpawnActor<ARectLight>(Away, FRotator::ZeroRotator, P))
+		{
+			URectLightComponent* C = Cast<URectLightComponent>(L->GetLightComponent());
+			Setup(C, 4000.f);
+			C->SetSourceWidth(40.f);
+			C->SetSourceHeight(200.f);
+			C->SetBarnDoorAngle(70.f);
+			StudioRim = L;
+		}
 	}
 }
