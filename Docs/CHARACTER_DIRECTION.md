@@ -280,3 +280,6 @@ one, a side's work is lost.
    Still to do: the small dent on the index knuckle; a relaxed hand resting on the thigh.
 2. Navel.
 3. ~~Skin tone choice~~: done, the first BODY row (East Asian, European, Mediterranean, South Asian, African, and in between).
+4. Thigh gap: a BODY slider for the distance between the legs (inner-thigh volume, from
+   touching to a clear gap), sculpted as a morph so the stance stays the same.
+5. Abs: a BODY slider with named stops (soft, flat, toned, defined, six-pack), sculpted morphs.
