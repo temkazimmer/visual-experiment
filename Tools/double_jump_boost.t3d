@@ -1,0 +1,44 @@
+Begin Object Class=/Script/BlueprintGraph.K2Node_Event Name="K2Node_Event_DJ"
+   EventReference=(MemberParent="/Script/CoreUObject.Class'/Script/Engine.Character'",MemberName="OnJumped")
+   bOverrideFunction=True
+   NodePosX=0
+   NodePosY=0
+   NodeGuid=D0000000000000000000000000000001
+   CustomProperties Pin (PinId=D1000000000000000000000000000001,PinName="then",Direction="EGPD_Output",PinType.PinCategory="exec",LinkedTo=(K2Node_IfThenElse_DJ D4000000000000000000000000000001,),)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_VariableGet Name="K2Node_VariableGet_DJ"
+   VariableReference=(MemberName="JumpCurrentCount",bSelfContext=True)
+   NodePosX=0
+   NodePosY=160
+   NodeGuid=D0000000000000000000000000000002
+   CustomProperties Pin (PinId=D2000000000000000000000000000001,PinName="JumpCurrentCount",Direction="EGPD_Output",PinType.PinCategory="int",LinkedTo=(K2Node_CallFunction_DJEq D3000000000000000000000000000001,),)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_CallFunction Name="K2Node_CallFunction_DJEq"
+   FunctionReference=(MemberParent="/Script/CoreUObject.Class'/Script/Engine.KismetMathLibrary'",MemberName="EqualEqual_IntInt")
+   NodePosX=240
+   NodePosY=160
+   NodeGuid=D0000000000000000000000000000003
+   CustomProperties Pin (PinId=D3000000000000000000000000000001,PinName="A",PinType.PinCategory="int",DefaultValue="0",LinkedTo=(K2Node_VariableGet_DJ D2000000000000000000000000000001,),)
+   CustomProperties Pin (PinId=D3000000000000000000000000000002,PinName="B",PinType.PinCategory="int",DefaultValue="2",)
+   CustomProperties Pin (PinId=D3000000000000000000000000000003,PinName="ReturnValue",Direction="EGPD_Output",PinType.PinCategory="bool",LinkedTo=(K2Node_IfThenElse_DJ D4000000000000000000000000000002,),)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_IfThenElse Name="K2Node_IfThenElse_DJ"
+   NodePosX=480
+   NodePosY=0
+   NodeGuid=D0000000000000000000000000000004
+   CustomProperties Pin (PinId=D4000000000000000000000000000001,PinName="execute",PinType.PinCategory="exec",LinkedTo=(K2Node_Event_DJ D1000000000000000000000000000001,),)
+   CustomProperties Pin (PinId=D4000000000000000000000000000002,PinName="Condition",PinType.PinCategory="bool",DefaultValue="true",LinkedTo=(K2Node_CallFunction_DJEq D3000000000000000000000000000003,),)
+   CustomProperties Pin (PinId=D4000000000000000000000000000003,PinName="then",Direction="EGPD_Output",PinType.PinCategory="exec",LinkedTo=(K2Node_CallFunction_DJLaunch D5000000000000000000000000000001,),)
+   CustomProperties Pin (PinId=D4000000000000000000000000000004,PinName="else",Direction="EGPD_Output",PinType.PinCategory="exec",)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_CallFunction Name="K2Node_CallFunction_DJLaunch"
+   FunctionReference=(MemberName="LaunchCharacter",bSelfContext=True)
+   NodePosX=720
+   NodePosY=0
+   NodeGuid=D0000000000000000000000000000005
+   CustomProperties Pin (PinId=D5000000000000000000000000000001,PinName="execute",PinType.PinCategory="exec",LinkedTo=(K2Node_IfThenElse_DJ D4000000000000000000000000000003,),)
+   CustomProperties Pin (PinId=D5000000000000000000000000000002,PinName="then",Direction="EGPD_Output",PinType.PinCategory="exec",)
+   CustomProperties Pin (PinId=D5000000000000000000000000000003,PinName="LaunchVelocity",PinType.PinCategory="struct",PinType.PinSubCategoryObject="/Script/CoreUObject.ScriptStruct'/Script/CoreUObject.Vector'",DefaultValue="0.000000,0.000000,778.000000",)
+   CustomProperties Pin (PinId=D5000000000000000000000000000004,PinName="bXYOverride",PinType.PinCategory="bool",DefaultValue="false",)
+   CustomProperties Pin (PinId=D5000000000000000000000000000005,PinName="bZOverride",PinType.PinCategory="bool",DefaultValue="true",)
+End Object
