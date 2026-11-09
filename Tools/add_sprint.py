@@ -3,8 +3,8 @@
   python3 Tools/ue.py Tools/add_sprint.py
 
 The speed switch lives in BP_ThirdPersonCharacter's Event Graph: paste
-Tools/sprint_nodes.t3d (IA_Sprint Started -> MaxWalkSpeed 540, Completed -> 300).
-Walk speed default (300 = MF_Unarmed_Walk_Fwd's own speed) is set in tune_movement.py.
+Tools/sprint_nodes.t3d (IA_Sprint Started -> MaxWalkSpeed 540, Completed -> 150).
+Walk speed default (150) is set in tune_movement.py; calm_walk.py matches the walk anim.
 """
 import unreal
 

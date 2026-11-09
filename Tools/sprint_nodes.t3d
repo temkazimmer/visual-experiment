@@ -31,5 +31,5 @@ Begin Object Class=/Script/BlueprintGraph.K2Node_VariableSet Name="K2Node_Variab
    CustomProperties Pin (PinId=E4000000000000000000000000000001,PinName="execute",PinType.PinCategory="exec",LinkedTo=(K2Node_EnhancedInputAction_Sprint E1000000000000000000000000000002,),)
    CustomProperties Pin (PinId=E4000000000000000000000000000002,PinName="then",Direction="EGPD_Output",PinType.PinCategory="exec",)
    CustomProperties Pin (PinId=E4000000000000000000000000000003,PinName="self",PinType.PinCategory="object",PinType.PinSubCategoryObject="/Script/CoreUObject.Class'/Script/Engine.CharacterMovementComponent'",LinkedTo=(K2Node_VariableGet_SprintMove E2000000000000000000000000000001,),)
-   CustomProperties Pin (PinId=E4000000000000000000000000000004,PinName="MaxWalkSpeed",PinType.PinCategory="real",PinType.PinSubCategory="float",DefaultValue="300.0",)
+   CustomProperties Pin (PinId=E4000000000000000000000000000004,PinName="MaxWalkSpeed",PinType.PinCategory="real",PinType.PinSubCategory="float",DefaultValue="150.0",)
 End Object
