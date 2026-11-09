@@ -3,6 +3,8 @@
 #include "Blueprint/WidgetTree.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
+#include "Components/ScaleBox.h"
+#include "Components/ScaleBoxSlot.h"
 #include "Components/Spacer.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
@@ -44,8 +46,17 @@ UTextBlock* UVisexMenuWidget::MakeText(const FText& Text, int32 Size, FName Type
 
 void UVisexMenuWidget::Build()
 {
+	// a layout scale (not a render transform), so text is rasterised at the larger size
+	UScaleBox* Scale = WidgetTree->ConstructWidget<UScaleBox>(UScaleBox::StaticClass(), TEXT("Supersample"));
+	Scale->SetStretch(EStretch::UserSpecified);
+	Scale->SetUserSpecifiedScale(FMath::Max(1.f, Supersample));
+	WidgetTree->RootWidget = Scale;
 	UVerticalBox* Root = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("Root"));
-	WidgetTree->RootWidget = Root;
+	if (UScaleBoxSlot* Inner = Cast<UScaleBoxSlot>(Scale->AddChild(Root)))
+	{
+		Inner->SetHorizontalAlignment(HAlign_Left);
+		Inner->SetVerticalAlignment(VAlign_Top);
+	}
 
 	// logo, then the tagline in wide-spaced small caps under it
 	Root->AddChildToVerticalBox(MakeText(Title, TitleSize, TEXT("Light"), TitleLetterSpacing, TextColor));

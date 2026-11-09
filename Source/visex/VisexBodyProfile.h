@@ -48,9 +48,11 @@ struct FVisexBodyProfile
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body")
 	TMap<FName, float> Values;
 
-	/** The outfit she wears (a name from Outfits(); None = nothing). */
+	/** The outfit she wears (a name from Outfits(); None = nothing). She starts in the
+	 *  bodystocking. Saves only store this when it differs from the default, so a save made
+	 *  before she had a default outfit loads as the bodystocking too. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body")
-	FName Outfit = NAME_None;
+	FName Outfit = TEXT("Bodystocking");
 
 	float Get(FName Name) const;
 	void Set(FName Name, float Value);
