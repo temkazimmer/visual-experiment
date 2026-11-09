@@ -15,6 +15,7 @@ IMC_PATH = "/Game/Input/IMC_Default"
 ACTIONS = {
     "IA_Sprint": ["LeftShift", "Gamepad_LeftTrigger"],  # L2
     "IA_Dash": ["Q", "Gamepad_LeftShoulder"],           # L1
+    "IA_PoseWheel": ["E", "Gamepad_RightShoulder"],     # R1; hold, handled in VisexPoseWheel.cpp
 }
 
 if unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).is_in_play_in_editor():
