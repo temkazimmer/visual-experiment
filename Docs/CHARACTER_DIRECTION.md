@@ -276,7 +276,7 @@ one, a side's work is lost.
 
 ## Next details (Tema, 2026-11-09)
 
-1. Hands: real anatomy — slim relaxed fingers with nails and knuckles (reference: a hand
-   resting flat on the thigh). Today they are remeshed mannequin gloves and read melted.
-2. Feet: real bare feet — toes, arch, heel, ankle bones. Quinn's feet are shoes.
-3. Navel.
+1. ~~Hands and feet~~: done, grafted from the MakeHuman base mesh (Tools/blender_extremities.py).
+   Still to do: the small dent on the index knuckle; a relaxed hand resting on the thigh.
+2. Navel.
+3. Skin tone choice on the BODY tab: Asian, European, African (and in between).
