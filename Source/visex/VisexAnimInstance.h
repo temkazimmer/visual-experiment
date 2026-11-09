@@ -7,7 +7,9 @@
 #include "VisexAnimInstance.generated.h"
 
 /**
- * Runs the Anim Blueprint's graph as usual, then reshapes the body from the profile:
+ * Runs the Anim Blueprint's graph as usual, then adds the catwalk layer to the walk
+ * (hips sway and turn with each step, the chest counters them, the head stays level,
+ * the feet land near one line), then reshapes the body from the profile:
  * each body region scales its bone (width, depth or length, worked out from the
  * reference pose) and counter-scales the next segment, so only that region changes.
  * Being the last step before skinning, it works for every animation, montage and
@@ -23,9 +25,21 @@ struct FVisexAnimProxy : public FAnimInstanceProxy
 
 private:
 	void Reshape(FCompactPose& Pose) const;
+	void Catwalk(FCompactPose& Pose);
 
 	FVisexBodyProfile Profile;
 	bool bHasProfile = false;
+
+	// catwalk layer: tuning read from the visex.Catwalk.* console variables each update
+	struct FCatwalkTune
+	{
+		float HipRoll = 0.f, HipYaw = 0.f, HipShift = 0.f, Line = 0.f, Shoulders = 0.f, Head = 0.f;
+	} Tune;
+	float GaitTarget = 0.f; // 0 standing or airborne, 1 walking, less when sprinting
+	float Gait = 0.f;       // GaitTarget, eased
+	float Step = 0.f;       // -1..1: which foot is ahead (+ left)
+	float Lift = 0.f;       // -1..1: which foot is in the air (+ left)
+	float Dt = 0.f;
 };
 
 UCLASS(Transient, Blueprintable)
