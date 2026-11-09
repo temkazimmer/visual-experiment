@@ -62,6 +62,8 @@ for a in man["assign"]:
     smc.set_material(0, mat)
     if "scale" in a:
         actor.set_actor_scale3d(unreal.Vector(*a["scale"]))
+    if "loc" in a:
+        actor.set_actor_location(unreal.Vector(*a["loc"]), False, False)
     if "rot" in a:
         actor.set_actor_rotation(unreal.Rotator(roll=a["rot"][0], pitch=a["rot"][1], yaw=a["rot"][2]), False)
     done += 1
