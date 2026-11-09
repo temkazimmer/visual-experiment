@@ -1,4 +1,10 @@
-"""In Play: pose/slide the player pawn and shoot it from the game world."""
+"""In Play: dress, pose and reshape the player pawn, and shoot it through PhotoCam.
+
+  ( echo 'OUTFIT = "Sheer"; SHOT = "front"'; cat Tools/char_play_shot.py ) > Tools/.bridge/j.py
+  python3 Tools/ue.py Tools/.bridge/j.py        # writes Tools/.bridge/play_<SHOT>.png
+
+Globals: OUTFIT (wardrobe name), ANIM (asset path), BODY ({slider: value}),
+SHOT (file label), CAMV (forward, right, up, look-at height, fov). Nothing is saved."""
 import os, unreal
 world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_game_world()
 if not world:
@@ -11,6 +17,8 @@ anim = globals().get("ANIM")
 if anim:
     body.override_animation_data(unreal.load_asset(anim), True, True, 0.0, 1.0)
 bc = pawn.get_component_by_class(unreal.VisexBodyComponent)
+if globals().get("OUTFIT"):
+    bc.set_outfit(globals()["OUTFIT"])
 for k, v in globals().get("BODY", {}).items():
     bc.set_value(k, v)
 name = globals().get("SHOT")

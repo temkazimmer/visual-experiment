@@ -30,7 +30,7 @@ FIT = dict(
     seam_r=0.2, seam_off=0.45, pipe_r=0.22, strap_w=1.3, strap_off=0.9,
     yoke_drop=4.0,        # cm above the bust peak where the opaque yoke ends
     band_h=3.2,           # underbust band height
-    belt_h=4.5, belt_above_pelvis=7.0, boot_h=13.0,
+    belt_h=4.5, belt_above_pelvis=7.0,
     welt_h=6.0, welt_below_crotch=17.0,
     glove_from=0.42,      # 0 = shoulder, 1 = wrist: where the opera gloves start
 )
@@ -355,13 +355,6 @@ for s in (1, -1):
         t = (pts[-1] - pts[-5]).normalized()
         for at, size in ((pts[-2], (2.1, 2.6, 0.55)), (pts[1], (1.9, 1.3, 0.5)), (pts[len(pts) // 2], (1.7, 0.9, 0.45))):
             clip(at + nearest_normal(at) * 0.3, nearest_normal(at), t, size, "Trim")
-
-# ---- ankle boots: weight at the bottom of the figure --------------------------------------
-boot_top = B("foot_l").z + FIT["boot_h"]
-boot = region(lambda i: min(wLEG[i] - 0.5, boot_top - Z[i]), FIT["welt"], "Latex")
-piping(boot)
-bcuff = region(lambda i: min(wLEG[i] - 0.5, boot_top - 1.2 - Z[i], Z[i] - boot_top + 4.0), FIT["welt"] + 0.3, "Latex")
-piping(bcuff)
 
 # ---- 8. opera gloves ----------------------------------------------------------------------
 sh = {s: B(n) for n in ("upperarm_l", "upperarm_r") for s in (1, -1) if lat(B(n)) * s > 0}

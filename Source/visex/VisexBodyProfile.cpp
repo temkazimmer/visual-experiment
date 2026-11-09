@@ -114,6 +114,8 @@ const TArray<FVisexOutfit>& FVisexBodyProfile::Outfits()
 		O(TEXT("Cocoa"),   LOCTEXT("OutfitCocoa", "Cocoa satin"),     TEXT("/Game/Character/Outfits/SKM_Outfit_Cocoa.SKM_Outfit_Cocoa")),
 		O(TEXT("Fishnet"), LOCTEXT("OutfitFishnet", "Fishnet"),       TEXT("/Game/Character/Outfits/SKM_Outfit_Fishnet.SKM_Outfit_Fishnet")),
 		O(TEXT("Catsuit"), LOCTEXT("OutfitCatsuit", "Latex catsuit"), TEXT("/Game/Character/Outfits/SKM_Outfit_Catsuit.SKM_Outfit_Catsuit")),
+		// layered build: Tools/blender_outfit.py, imported by Tools/char_outfit.py
+		O(TEXT("Sheer"),   LOCTEXT("OutfitSheer", "Sheer and latex"), TEXT("/Game/Character/Clothes/SKM_Outfit_Sheer.SKM_Outfit_Sheer")),
 	};
 	return Table;
 }

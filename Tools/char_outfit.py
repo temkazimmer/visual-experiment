@@ -6,7 +6,7 @@
   body-slider morphs (BustUp/BustDown, GlutesUp/GlutesDown).
 - Builds three materials, one per slot: M_OutfitSheer (see-through mesh that closes up at
   grazing angles), M_OutfitLatex (black clear coat), M_OutfitTrim (metal piping, clips).
-The character is not edited: UVisexOutfitSubsystem dresses her at spawn (visex.Outfit).
+She wears it through the wardrobe row "Sheer" in FVisexBodyProfile::Outfits() (DRESS tab).
 Look values are in LOOK.
 """
 import os
