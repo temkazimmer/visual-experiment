@@ -9,7 +9,7 @@ import unreal
 MAT = "/Game/VisEx/M_SandCover"
 STONE = (0.46, 0.30, 0.19)  # sandstone, a touch less red so the blocks read
 SAND = (0.92, 0.62, 0.36)
-CLEAN_CENTRE = (1500, -2000, 0)   # the steps: least sand here
+CLEAN_CENTRE = (1500, -2800, 0)   # the steps: least sand here
 NEAR, FAR = 3000.0, 22000.0       # cm: sand ramps from MIN_COVER to full over this range
 MIN_COVER = 0.15
 
