@@ -4,7 +4,7 @@ Branch `character-clothes` (cut from `character-animation`). The clothes session
 outfit tools and assets: `Tools/blender_outfit.py`, `Tools/char_outfit.py`,
 `Tools/char_play_shot.py`, `SourceArt/Character/Outfits/`, `Content/Character/Outfits/`,
 `Content/Character/Clothes/`. The skin, body sliders and Character page belong to the
-character session. The only touch on `VisexBody*` is two rows ("Sheer", "Bodystocking") in the wardrobe table
+character session. The only touch on `VisexBody*` is the wardrobe table and the default outfit
 (`VisexBodyProfile.cpp`).
 
 ## Direction (Tema, 2026-11-09)
@@ -15,6 +15,11 @@ lacking depth". So every outfit is built in layers that sit at different heights
 skin, with thickness on opaque pieces, piping, raised seams, strap geometry and hardware.
 
 ## The wardrobe
+
+**One outfit for now** (Tema, 2026-11-09): the DRESS tab lists only "Nothing" and "Sheer
+bodystocking", and the bodystocking is her default. The other six below are still built,
+imported and on disk, but unlisted; add a row in `FVisexBodyProfile::Outfits()` to bring
+one back.
 
 | Name | What it is | Fabrics |
 |---|---|---|
@@ -66,7 +71,9 @@ black open-hip bodystocking. What it has that the others do not:
    and one instance per outfit and fabric. Colours and weights: `WARDROBE` in that file.
 4. She wears an outfit through its row in `FVisexBodyProfile::Outfits()`, picked on the
    DRESS tab or with `UVisexBodyComponent::SetOutfit`. Game worlds only. Her default
-   outfit is "Nothing": a fresh Play shows her bare until one is picked.
+   outfit is "Bodystocking" (`FVisexBodyProfile::Outfit`). Saves store the outfit only when
+   it differs from the default: a save from before the default loads as the bodystocking, a
+   saved "Nothing" stays nothing, and a save naming an unlisted outfit shows nothing.
 
 **When the skin FBX changes** (new sculpt or morphs): re-run steps 1 and 3. New morphs come
 across by name.

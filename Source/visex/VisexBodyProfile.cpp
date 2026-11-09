@@ -125,16 +125,12 @@ const TArray<FVisexOutfit>& FVisexBodyProfile::Outfits()
 		Out.Mesh = Asset;
 		return Out;
 	};
-	// meshes: Tools/blender_outfits.py, imported by Tools/char_outfits.py
+	// One outfit for now (Tema, 2026-11-09). Meshes: Tools/blender_outfit.py, imported by
+	// Tools/char_outfit.py. The other six (Noir, Garter, Cocoa, Fishnet, Catsuit, Sheer) are
+	// still on disk under /Game/Character/Outfits and /Game/Character/Clothes; add a row to
+	// list one again. A saved profile naming an unlisted outfit falls back to "None".
 	static const TArray<FVisexOutfit> Table = {
 		O(TEXT("None"),    LOCTEXT("OutfitNone", "Nothing"),          TEXT("")),
-		O(TEXT("Noir"),    LOCTEXT("OutfitNoir", "Noir bodysuit"),    TEXT("/Game/Character/Outfits/SKM_Outfit_Noir.SKM_Outfit_Noir")),
-		O(TEXT("Garter"),  LOCTEXT("OutfitGarter", "Lace garter set"), TEXT("/Game/Character/Outfits/SKM_Outfit_Garter.SKM_Outfit_Garter")),
-		O(TEXT("Cocoa"),   LOCTEXT("OutfitCocoa", "Cocoa satin"),     TEXT("/Game/Character/Outfits/SKM_Outfit_Cocoa.SKM_Outfit_Cocoa")),
-		O(TEXT("Fishnet"), LOCTEXT("OutfitFishnet", "Fishnet"),       TEXT("/Game/Character/Outfits/SKM_Outfit_Fishnet.SKM_Outfit_Fishnet")),
-		O(TEXT("Catsuit"), LOCTEXT("OutfitCatsuit", "Latex catsuit"), TEXT("/Game/Character/Outfits/SKM_Outfit_Catsuit.SKM_Outfit_Catsuit")),
-		// layered build: Tools/blender_outfit.py, imported by Tools/char_outfit.py
-		O(TEXT("Sheer"),   LOCTEXT("OutfitSheer", "Sheer and latex"), TEXT("/Game/Character/Clothes/SKM_Outfit_Sheer.SKM_Outfit_Sheer")),
 		O(TEXT("Bodystocking"), LOCTEXT("OutfitBodystocking", "Sheer bodystocking"), TEXT("/Game/Character/Clothes/SKM_Outfit_Bodystocking.SKM_Outfit_Bodystocking")),
 	};
 	return Table;
