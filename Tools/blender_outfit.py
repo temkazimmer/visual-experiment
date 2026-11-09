@@ -102,7 +102,7 @@ keys = me.shape_keys.key_blocks if me.shape_keys else []
 DELTAS = {k.name: (vget(k.data, "co", nv) - CO) @ R3.T for k in keys[1:]}
 # The rest shape is flat: bust and glutes come from the slider morphs. Design on her
 # default body (the Character page's starting values) and derive the rest shape at the end.
-DESIGN = {k: w for k, w in (("BustUp", 0.55), ("GlutesUp", 0.55), ("Fat", 0.20), ("ThighGap", 0.35)) if k in DELTAS}
+DESIGN = {k: w for k, w in (("BustUp", 0.55), ("GlutesUp", 0.38), ("Fat", 0.20), ("ThighGap", 0.12)) if k in DELTAS}
 for k, w in DESIGN.items():
     X = X + DELTAS[k] * w
 _dm = bpy.data.meshes.new("design")
@@ -801,11 +801,12 @@ def bodystocking():
     f_open = np.where(w_open > 0.02, ALAT - w_open, 99.0)       # no opening: no edge either
     g = np.minimum.reduce([(0.3 - UPPERARM) * 25.0, (0.5 - HEAD) * 30.0, f_neck, f_arm, f_hip, f_open])
 
-    region(g, 0.09, "Nylon", lift=BRIDGE, bind=("Binding", 0.3), min_loop=6.0)
+    fit = BRIDGE
+    region(g, 0.09, "Nylon", lift=fit, bind=("Binding", 0.3), min_loop=6.0)
     # the stocking tops are knitted double: a second layer from the hip crease down the thigh
-    region(np.minimum(g, np.minimum((LEGS - 0.5) * 12.0, Z - (cs - 12.5))), 0.115, "Nylon", lift=BRIDGE)
+    region(np.minimum(g, np.minimum((LEGS - 0.5) * 12.0, Z - (cs - 12.5))), 0.115, "Nylon", lift=fit)
     for th in (0, 180):                                          # centre seams, front and back
-        line = [q + nearest_normal(q) * float(BRIDGE[nearest(q)]) for q in torso_line(th, zn - 6, cs, 0.12) if q]
+        line = [q + nearest_normal(q) * float(fit[nearest(q)]) for q in torso_line(th, zn - 6, cs, 0.19) if q]
         seam(line, 0.085, "Binding", g)
 
     # jewellery: a fine chain resting on the collarbones, bangles loose on the wrists
