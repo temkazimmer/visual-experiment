@@ -273,3 +273,10 @@ one, a side's work is lost.
    it's your own look)?
 7. **Handoff timing:** OK to merge `main` into `character-animation` now and freeze
    character files on main?
+
+## Next details (Tema, 2026-11-09)
+
+1. Hands: real anatomy — slim relaxed fingers with nails and knuckles (reference: a hand
+   resting flat on the thigh). Today they are remeshed mannequin gloves and read melted.
+2. Feet: real bare feet — toes, arch, heel, ankle bones. Quinn's feet are shoes.
+3. Navel.

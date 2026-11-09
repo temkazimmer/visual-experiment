@@ -39,7 +39,8 @@ SHELL = dict(
     roughness=0.75,                  # matte, like a display mannequin
     specular=0.25,
 )
-MODE = "latex"                       # "latex": glossy clear-coat skin (Tema's reference, current)
+MODE = "real"                        # "real": human skin, subsurface profile, soft sheen (current)
+                                     # "latex": glossy clear-coat skin (Tema's first reference)
                                      # "skin": matte mannequin white
                                      # "aerogel": translucent, the machine shows through
 LATEX = dict(
@@ -48,6 +49,14 @@ LATEX = dict(
     specular=0.55,
     clearcoat=1.0,                   # the wet top layer
     clearcoat_roughness=0.05,        # sharp, long highlights
+)
+REAL = dict(
+    skin=(0.58, 0.36, 0.25),         # warm tan albedo (linear); real skin is far less saturated than latex
+    scatter=(0.85, 0.34, 0.20),      # blood-red bleed in shadows, ears, fingers, at the terminator
+    roughness=0.52,                  # broad soft highlight, no mirror streaks
+    roughness_var=0.10,              # pore-scale break-up, so the sheen isn't plastic
+    pore_scale=0.35,                 # noise cells per cm on the body at rest
+    specular=0.35,                   # skin is ~2.8% reflective at normal incidence
 )
 SKIN = dict(
     inflate=0.0,                     # the skin is its own mesh now (char_skin.py)
@@ -122,6 +131,40 @@ def build_skin():
     nrm = node(unreal.MaterialExpressionVertexNormalWS, -450, 300)
     wpo = op(unreal.MaterialExpressionMultiply, nrm, scalar("Inflate", K["inflate"], -450, 400), -250, 300)
     mel.connect_material_property(wpo, "", MP.MP_WORLD_POSITION_OFFSET)
+
+
+def build_real():
+    """Human skin: Subsurface Profile shading (UE's screen-space skin scatter) and a broad,
+    slightly broken-up sheen. The roughness noise is fixed to the body at rest (pre-skinned
+    position), so it doesn't swim when she moves."""
+    K = REAL
+    prof = asset("SSP_Skin", unreal.SubsurfaceProfile, unreal.SubsurfaceProfileFactory())
+    st = prof.get_editor_property("settings")
+    st.set_editor_property("surface_albedo", unreal.LinearColor(*K["skin"], 1.0))
+    st.set_editor_property("mean_free_path_color", unreal.LinearColor(*K["scatter"], 1.0))
+    st.set_editor_property("mean_free_path_distance", 0.9)
+    prof.set_editor_property("settings", st)
+    eal.save_loaded_asset(prof)
+    m.set_editor_property("use_material_attributes", False)
+    m.set_editor_property("blend_mode", unreal.BlendMode.BLEND_OPAQUE)
+    m.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_SUBSURFACE_PROFILE)
+    m.set_editor_property("subsurface_profile", prof)
+    m.set_editor_property("used_with_skeletal_mesh", True)
+    mel.connect_material_property(vector("SkinColor", K["skin"], -450, -200), "", MP.MP_BASE_COLOR)
+    mel.connect_material_property(scalar("Specular", K["specular"], -450, -40), "", MP.MP_SPECULAR)
+    mel.connect_material_property(scalar("Scatter", 1.0, -450, 160), "", MP.MP_OPACITY)
+    vs = node(unreal.MaterialExpressionPreSkinnedPosition, -1300, 0)
+    pos = node(unreal.MaterialExpressionVertexInterpolator, -1150, 0)
+    mel.connect_material_expressions(vs, "", pos, "VS")
+    noise = node(unreal.MaterialExpressionNoise, -950, 0)
+    mel.connect_material_expressions(pos, "", noise, "Position")
+    noise.set_editor_property("scale", K["pore_scale"])
+    noise.set_editor_property("levels", 3)
+    noise.set_editor_property("output_min", -1.0)
+    noise.set_editor_property("output_max", 1.0)
+    var = op(unreal.MaterialExpressionMultiply, noise, scalar("RoughnessVar", K["roughness_var"], -950, 120), -750, 0)
+    rough = op(unreal.MaterialExpressionAdd, scalar("Roughness", K["roughness"], -750, -100), var, -600, -80)
+    mel.connect_material_property(rough, "", MP.MP_ROUGHNESS)
 
 
 def build_latex():
@@ -201,7 +244,7 @@ def build_aerogel():
     mel.connect_material_property(wpo, "", MP.MP_WORLD_POSITION_OFFSET)
 
 
-{"skin": build_skin, "latex": build_latex, "aerogel": build_aerogel}[MODE]()
+{"real": build_real, "skin": build_skin, "latex": build_latex, "aerogel": build_aerogel}[MODE]()
 mel.recompile_material(m)
 eal.save_loaded_asset(m)
 
