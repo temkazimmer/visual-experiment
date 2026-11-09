@@ -1,0 +1,18 @@
+# Unreal build output and caches
+Binaries/
+Build/
+DerivedDataCache/
+Intermediate/
+Saved/
+.vs/
+.idea/
+*.xcworkspace
+*.xcodeproj
+.DS_Store
+
+# live editor bridge: jobs, captures, generated OBJs (regenerate with stone_geo.py)
+Tools/.bridge/
+
+# Fab / Quixel Megascans assets: licensed, not redistributable. See README.
+SourceArt/Megascans/
+Content/VisEx/Megascans/
