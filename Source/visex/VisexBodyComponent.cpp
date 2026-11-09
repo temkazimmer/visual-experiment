@@ -177,6 +177,11 @@ void UVisexBodyComponent::ApplyOutfit()
 		OutfitMesh->SetSkeletalMeshAsset(Asset);
 		OutfitMesh->SetVisibility(Asset != nullptr);
 		OutfitMesh->SetLeaderPoseComponent(Mesh, true);
+		// clothes shadow her skin and the ground (shells don't by default), and take the same
+		// lights as the body: the Character page lights her on their own lighting channel
+		OutfitMesh->SetCastShadow(true);
+		const FLightingChannels& Ch = Mesh->LightingChannels;
+		OutfitMesh->SetLightingChannels(Ch.bChannel0, Ch.bChannel1, Ch.bChannel2);
 	}
 	WornOutfit = Profile.Outfit;
 }

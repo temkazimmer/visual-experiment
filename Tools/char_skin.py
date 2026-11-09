@@ -1,6 +1,7 @@
 """Import the android's skin mesh (made by Tools/blender_skin.py) and put it on the player.
 
   python3 Tools/ue.py Tools/char_skin.py        # FBX path: SKIN_FBX global or default below
+                                                # SKIN_ONLY=True: mesh only, Blueprint untouched
 
 - Imports the FBX as /Game/Character/Android/SKM_AndroidSkin on Quinn's skeleton
   (SK_Mannequin), with its morph targets (BustUp/BustDown, GlutesUp/GlutesDown).
@@ -53,22 +54,24 @@ if not skin:
 b = skin.get_bounds()
 print("skin height", round(b.box_extent.z * 2, 1), "morphs", [m.get_name() for m in skin.get_editor_property("morph_targets")])
 
-bp = unreal.load_asset(BP_PATH)
-sds = unreal.get_engine_subsystem(unreal.SubobjectDataSubsystem)
-lib = unreal.SubobjectDataBlueprintFunctionLibrary
-by = {str(lib.get_variable_name(lib.get_data(h))): h for h in sds.k2_gather_subobject_data_for_blueprint(bp)}
-shell = lib.get_object(lib.get_data(by["Shell"]))
-shell.set_skeletal_mesh_asset(skin)
-shell.set_editor_property("override_materials", [unreal.load_asset(DIR + "/M_AerogelShell")])
-shell.set_editor_property("cast_shadow", True)
+# SKIN_ONLY=True re-imports the mesh and leaves the character Blueprint alone
+if not globals().get("SKIN_ONLY"):
+    bp = unreal.load_asset(BP_PATH)
+    sds = unreal.get_engine_subsystem(unreal.SubobjectDataSubsystem)
+    lib = unreal.SubobjectDataBlueprintFunctionLibrary
+    by = {str(lib.get_variable_name(lib.get_data(h))): h for h in sds.k2_gather_subobject_data_for_blueprint(bp)}
+    shell = lib.get_object(lib.get_data(by["Shell"]))
+    shell.set_skeletal_mesh_asset(skin)
+    shell.set_editor_property("override_materials", [unreal.load_asset(DIR + "/M_AerogelShell")])
+    shell.set_editor_property("cast_shadow", True)
 
-body = unreal.get_default_object(bp.generated_class()).get_editor_property("mesh")
-body.set_editor_property("visible", False)
-body.set_editor_property("cast_shadow", False)
-# hidden, but it still leads the pose
-body.set_editor_property("visibility_based_anim_tick_option",
-                         unreal.VisibilityBasedAnimTickOption.ALWAYS_TICK_POSE_AND_REFRESH_BONES)
+    body = unreal.get_default_object(bp.generated_class()).get_editor_property("mesh")
+    body.set_editor_property("visible", False)
+    body.set_editor_property("cast_shadow", False)
+    # hidden, but it still leads the pose
+    body.set_editor_property("visibility_based_anim_tick_option",
+                             unreal.VisibilityBasedAnimTickOption.ALWAYS_TICK_POSE_AND_REFRESH_BONES)
 
-unreal.BlueprintEditorLibrary.compile_blueprint(bp)
-unreal.EditorAssetLibrary.save_loaded_asset(bp)
-print("shell ->", shell.get_editor_property("skeletal_mesh_asset").get_name())
+    unreal.BlueprintEditorLibrary.compile_blueprint(bp)
+    unreal.EditorAssetLibrary.save_loaded_asset(bp)
+    print("shell ->", shell.get_editor_property("skeletal_mesh_asset").get_name())
