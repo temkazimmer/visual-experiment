@@ -7,6 +7,11 @@ PlazaSlabs_* mesh one box (its own bounds, so the top sits on the tread) and mak
 the player collide with that. The chips stay visual; traces (foot IK, the camera)
 still see the detailed surface.
 
+Works alongside add_step_ramp.py and doesn't replace it. That script makes the Step_*
+actors ignore the Pawn channel, so the player walks the stairs on the hidden StepRamp,
+and these step boxes only affect other channels. The slabs have no ramp, so for the
+player the slab boxes are the fix.
+
 Idempotent. Run after apply_geo.py:  python3 Tools/ue.py Tools/flat_collision.py
 """
 import unreal
