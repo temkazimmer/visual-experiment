@@ -71,9 +71,22 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
 	float StartCameraPitch = -12.f;
 
-	/** Seconds for the camera to swing from the menu shot onto the character. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
-	float BlendToPlayTime = 2.5f;
+	/** Seconds for the Start move: the menu camera circles low around her and lands
+	 * exactly on the play camera behind her. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Start")
+	float BlendToPlayTime = 3.5f;
+
+	/** Which way round her the camera circles: 1 or -1. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Start")
+	int32 OrbitDirection = 1;
+
+	/** Point the camera watches during the move, above her feet (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Start")
+	float OrbitLookHeight = 120.f;
+
+	/** Share of the move spent low by the ground before rising to the play camera. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Start", meta = (ClampMin = "0", ClampMax = "1"))
+	float OrbitStayLow = 0.55f;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Menu")
 	TObjectPtr<UWidgetComponent> Panel;
@@ -121,8 +134,13 @@ private:
 	void Up() { MoveSelection(-1); }
 	void Down() { MoveSelection(1); }
 	void HandBack();
+	void TickOrbit(float DeltaSeconds);
 
 	FTransform CameraBase;
+	bool bHaveBase = false;
+	bool bOrbiting = false;
+	float OrbitT = 0.f;
+	float OrbitA0 = 0.f, OrbitR0 = 0.f, OrbitZ0 = 0.f;
 	bool bOpen = false;
 	bool bInputBound = false;
 	float Clock = 0.f;

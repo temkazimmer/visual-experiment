@@ -2,6 +2,9 @@
 
 #include "VisexMenuWidget.h"
 #include "Camera/CameraActor.h"
+#include "Camera/CameraComponent.h"
+#include "CineCameraActor.h"
+#include "CineCameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
 #include "Components/WidgetComponent.h"
@@ -88,8 +91,15 @@ void AVisexMenuDirector::ShowMenu()
 	{
 		Pawn->DisableInput(PC);
 	}
+	// the Start move flies MenuCamera away: remember where the shot lives
+	if (!bHaveBase)
+	{
+		CameraBase = MenuCamera->GetActorTransform();
+		bHaveBase = true;
+	}
+	MenuCamera->SetActorTransform(CameraBase);
+	bOrbiting = false;
 	PC->SetViewTarget(MenuCamera);
-	CameraBase = MenuCamera->GetActorTransform();
 	Clock = 0.f;
 
 	// the panel rides with the camera, turned toward the figure on the right
@@ -174,9 +184,14 @@ void AVisexMenuDirector::StartGame()
 	}
 	bOpen = false;
 	FadeOut = 0.f;
-	PC->SetViewTargetWithBlend(PC->GetPawn(), BlendToPlayTime, EViewTargetBlendFunction::VTBlend_EaseInOut, 2.f);
-	// hand control back a little before the swing lands, so it feels responsive
-	GetWorldTimerManager().SetTimer(HandBackTimer, this, &AVisexMenuDirector::HandBack, FMath::Max(0.1f, BlendToPlayTime * 0.7f), false);
+	// start of the orbit, in polar terms around her
+	const FVector Pivot = PC->GetPawn()->GetActorLocation();
+	const FVector S = MenuCamera->GetActorLocation() - Pivot;
+	OrbitA0 = FMath::RadiansToDegrees(FMath::Atan2(S.Y, S.X));
+	OrbitR0 = FVector2D(S.X, S.Y).Size();
+	OrbitZ0 = S.Z;
+	OrbitT = 0.f;
+	bOrbiting = true;
 }
 
 void AVisexMenuDirector::HandBack()
@@ -208,6 +223,11 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 		MenuCamera->SetActorLocationAndRotation(Loc, Rot);
 	}
 
+	if (bOrbiting)
+	{
+		TickOrbit(DeltaSeconds);
+	}
+
 	if (FadeOut >= 0.f)
 	{
 		FadeOut += DeltaSeconds;
@@ -221,5 +241,58 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 			Panel->SetVisibility(false);
 			FadeOut = -1.f;
 		}
+	}
+}
+
+void AVisexMenuDirector::TickOrbit(float DeltaSeconds)
+{
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	const UCameraComponent* Follow = Pawn ? Pawn->FindComponentByClass<UCameraComponent>() : nullptr;
+	if (!Pawn || !Follow || !MenuCamera)
+	{
+		bOrbiting = false;
+		return;
+	}
+	OrbitT = FMath::Min(1.f, OrbitT + DeltaSeconds / FMath::Max(0.1f, BlendToPlayTime));
+	const float T = OrbitT;
+	const float S = FMath::SmoothStep(0.f, 1.f, T);
+
+	// end of the orbit: the play camera behind her (it is live, so the landing is exact)
+	const FVector Pivot = Pawn->GetActorLocation();
+	const FVector E = Follow->GetComponentLocation() - Pivot;
+	const float A1 = FMath::RadiansToDegrees(FMath::Atan2(E.Y, E.X));
+	const float R1 = FVector2D(E.X, E.Y).Size();
+	float Delta = FMath::FindDeltaAngleDegrees(OrbitA0, A1);
+	if (OrbitDirection != 0 && FMath::Sign(Delta) != FMath::Sign((float)OrbitDirection))
+	{
+		Delta += OrbitDirection > 0 ? 360.f : -360.f;
+	}
+	const float A = FMath::DegreesToRadians(OrbitA0 + Delta * S);
+	const float R = FMath::Lerp(OrbitR0, R1, S);
+	// hug the ground first, rise into the play camera's height at the end
+	const float Rise = FMath::SmoothStep(OrbitStayLow, 1.f, T);
+	const float Z = FMath::Lerp(OrbitZ0, E.Z, Rise);
+	const FVector Loc = Pivot + FVector(FMath::Cos(A) * R, FMath::Sin(A) * R, Z);
+
+	// watch her, then settle into the play camera's exact angle
+	const FVector Look = Pivot + FVector(0.f, 0.f, OrbitLookHeight - 90.f);
+	const FRotator Watch = (Look - Loc).Rotation();
+	const float Settle = FMath::SmoothStep(0.7f, 1.f, T);
+	const FQuat Rot = FQuat::Slerp(Watch.Quaternion(), Follow->GetComponentQuat(), Settle);
+	MenuCamera->SetActorLocationAndRotation(Loc, Rot);
+
+	if (ACineCameraActor* Cine = Cast<ACineCameraActor>(MenuCamera))
+	{
+		FCameraFocusSettings Focus = Cine->GetCineCameraComponent()->FocusSettings;
+		Focus.ManualFocusDistance = FVector::Dist(Loc, Look);
+		Cine->GetCineCameraComponent()->FocusSettings = Focus;
+	}
+
+	if (T >= 1.f)
+	{
+		bOrbiting = false;
+		PC->SetViewTarget(Pawn);      // same place, same angle: an invisible cut
+		HandBack();
 	}
 }
