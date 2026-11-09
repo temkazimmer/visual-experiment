@@ -1,7 +1,11 @@
 #include "VisexMenuDirector.h"
 
 #include "VisexMenuWidget.h"
+#include "VisexBodyEditor.h"
 #include "Camera/CameraActor.h"
+#include "Camera/CameraComponent.h"
+#include "CineCameraActor.h"
+#include "CineCameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
 #include "Components/WidgetComponent.h"
@@ -88,8 +92,27 @@ void AVisexMenuDirector::ShowMenu()
 	{
 		Pawn->DisableInput(PC);
 	}
+	// the Start move flies MenuCamera away: remember where the shot lives
+	if (!bHaveBase)
+	{
+		CameraBase = MenuCamera->GetActorTransform();
+		bHaveBase = true;
+	}
+	MenuCamera->SetActorTransform(CameraBase);
+	// and its lens, which the Start move turns into the play camera's
+	if (UCineCameraComponent* Lens = GetLens())
+	{
+		if (!bHaveLens)
+		{
+			MenuFocal = Lens->CurrentFocalLength;
+			MenuFStop = Lens->CurrentAperture;
+			bHaveLens = true;
+		}
+		Lens->SetCurrentFocalLength(MenuFocal);
+		Lens->SetCurrentAperture(MenuFStop);
+	}
+	bOrbiting = false;
 	PC->SetViewTarget(MenuCamera);
-	CameraBase = MenuCamera->GetActorTransform();
 	Clock = 0.f;
 
 	// the panel rides with the camera, turned toward the figure on the right
@@ -119,6 +142,12 @@ void AVisexMenuDirector::ShowMenu()
 	}
 	bOpen = true;
 	OnMenuShown();
+}
+
+UCineCameraComponent* AVisexMenuDirector::GetLens() const
+{
+	const ACineCameraActor* Cine = Cast<ACineCameraActor>(MenuCamera);
+	return Cine ? Cine->GetCineCameraComponent() : nullptr;
 }
 
 UVisexMenuWidget* AVisexMenuDirector::GetMenuWidget() const
@@ -153,16 +182,65 @@ void AVisexMenuDirector::OnItemChosen_Implementation(int32 Index)
 	switch (Index)
 	{
 	case 1:
+		OpenBody();
+		break;
+	case 2:
 		StartGame();
 		OnPhotoMode();
 		break;
-	case 2:
+	case 3:
 		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
 		break;
 	default:
 		StartGame();
 		break;
 	}
+}
+
+void AVisexMenuDirector::OpenBody()
+{
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	if (!bOpen || !PC)
+	{
+		return;
+	}
+	if (!BodyEditor)
+	{
+		UClass* Cls = BodyEditorClass ? BodyEditorClass.Get() : AVisexBodyEditor::StaticClass();
+		BodyEditor = GetWorld()->SpawnActor<AVisexBodyEditor>(Cls, GetActorTransform());
+		if (!BodyEditor)
+		{
+			return;
+		}
+		BodyEditor->OnClosed.AddDynamic(this, &AVisexMenuDirector::HandleBodyClosed);
+	}
+	BodyEditor->Open();
+	if (!BodyEditor->IsOpen())
+	{
+		return;   // no body to edit on this pawn: stay on the menu
+	}
+	// the menu steps aside while the body page has the screen
+	bOpen = false;
+	Panel->SetVisibility(false);
+	DisableInput(PC);
+}
+
+void AVisexMenuDirector::HandleBodyClosed()
+{
+	// the body page blends back to the menu shot; bring the menu up once it has landed
+	const float Wait = BodyEditor ? FMath::Max(0.05f, BodyEditor->BlendTime) : 0.05f;
+	GetWorldTimerManager().SetTimer(BodyTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
+	{
+		if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
+		{
+			EnableInput(PC);
+		}
+		ShowMenu();
+		if (UVisexMenuWidget* W = GetMenuWidget())
+		{
+			W->SetSelected(1);
+		}
+	}), Wait, false);
 }
 
 void AVisexMenuDirector::StartGame()
@@ -174,9 +252,14 @@ void AVisexMenuDirector::StartGame()
 	}
 	bOpen = false;
 	FadeOut = 0.f;
-	PC->SetViewTargetWithBlend(PC->GetPawn(), BlendToPlayTime, EViewTargetBlendFunction::VTBlend_EaseInOut, 2.f);
-	// hand control back a little before the swing lands, so it feels responsive
-	GetWorldTimerManager().SetTimer(HandBackTimer, this, &AVisexMenuDirector::HandBack, FMath::Max(0.1f, BlendToPlayTime * 0.7f), false);
+	// start of the orbit, in polar terms around her
+	const FVector Pivot = PC->GetPawn()->GetActorLocation();
+	const FVector S = MenuCamera->GetActorLocation() - Pivot;
+	OrbitA0 = FMath::RadiansToDegrees(FMath::Atan2(S.Y, S.X));
+	OrbitR0 = FVector2D(S.X, S.Y).Size();
+	OrbitZ0 = S.Z;
+	OrbitT = 0.f;
+	bOrbiting = true;
 }
 
 void AVisexMenuDirector::HandBack()
@@ -208,6 +291,11 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 		MenuCamera->SetActorLocationAndRotation(Loc, Rot);
 	}
 
+	if (bOrbiting)
+	{
+		TickOrbit(DeltaSeconds);
+	}
+
 	if (FadeOut >= 0.f)
 	{
 		FadeOut += DeltaSeconds;
@@ -221,5 +309,66 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 			Panel->SetVisibility(false);
 			FadeOut = -1.f;
 		}
+	}
+}
+
+void AVisexMenuDirector::TickOrbit(float DeltaSeconds)
+{
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	const UCameraComponent* Follow = Pawn ? Pawn->FindComponentByClass<UCameraComponent>() : nullptr;
+	if (!Pawn || !Follow || !MenuCamera)
+	{
+		bOrbiting = false;
+		return;
+	}
+	OrbitT = FMath::Min(1.f, OrbitT + DeltaSeconds / FMath::Max(0.1f, BlendToPlayTime));
+	const float T = OrbitT;
+	const float S = FMath::SmoothStep(0.f, 1.f, T);
+
+	// end of the orbit: the play camera behind her (it is live, so the landing is exact)
+	const FVector Pivot = Pawn->GetActorLocation();
+	const FVector E = Follow->GetComponentLocation() - Pivot;
+	const float A1 = FMath::RadiansToDegrees(FMath::Atan2(E.Y, E.X));
+	const float R1 = FVector2D(E.X, E.Y).Size();
+	float Delta = FMath::FindDeltaAngleDegrees(OrbitA0, A1);
+	if (OrbitDirection != 0 && FMath::Sign(Delta) != FMath::Sign((float)OrbitDirection))
+	{
+		Delta += OrbitDirection > 0 ? 360.f : -360.f;
+	}
+	const float A = FMath::DegreesToRadians(OrbitA0 + Delta * S);
+	const float R = FMath::Lerp(OrbitR0, R1, S);
+	// hug the ground first, rise into the play camera's height at the end
+	const float Rise = FMath::SmoothStep(OrbitStayLow, 1.f, T);
+	const float Z = FMath::Lerp(OrbitZ0, E.Z, Rise);
+	const FVector Loc = Pivot + FVector(FMath::Cos(A) * R, FMath::Sin(A) * R, Z);
+
+	// watch her, then settle into the play camera's exact angle
+	const FVector Look = Pivot + FVector(0.f, 0.f, OrbitLookHeight - 90.f);
+	const FRotator Watch = (Look - Loc).Rotation();
+	const float Settle = FMath::SmoothStep(0.7f, 1.f, T);
+	const FQuat Rot = FQuat::Slerp(Watch.Quaternion(), Follow->GetComponentQuat(), Settle);
+	MenuCamera->SetActorLocationAndRotation(Loc, Rot);
+
+	// lens: from the menu's cine lens to the play camera's field of view, depth of field
+	// opening out, so the cut at the end is invisible
+	if (UCineCameraComponent* Lens = GetLens())
+	{
+		const float HalfW = Lens->Filmback.SensorWidth * 0.5f;
+		const float FovStart = 2.f * FMath::RadiansToDegrees(FMath::Atan(HalfW / FMath::Max(1.f, MenuFocal)));
+		const float Fov = FMath::Lerp(FovStart, Follow->FieldOfView, S);
+		Lens->SetCurrentFocalLength(HalfW / FMath::Tan(FMath::DegreesToRadians(Fov * 0.5f)));
+		const float MaxStop = FMath::Max(MenuFStop, Lens->LensSettings.MaxFStop);
+		Lens->SetCurrentAperture(FMath::Exp(FMath::Lerp(FMath::Loge(FMath::Max(0.7f, MenuFStop)), FMath::Loge(MaxStop), S)));
+		FCameraFocusSettings Focus = Lens->FocusSettings;
+		Focus.ManualFocusDistance = FVector::Dist(Loc, Look);
+		Lens->FocusSettings = Focus;
+	}
+
+	if (T >= 1.f)
+	{
+		bOrbiting = false;
+		PC->SetViewTarget(Pawn);      // same place, same angle: an invisible cut
+		HandBack();
 	}
 }

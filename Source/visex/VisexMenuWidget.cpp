@@ -16,6 +16,7 @@ UVisexMenuWidget::UVisexMenuWidget(const FObjectInitializer& ObjectInitializer)
 	Tagline = FText::FromString(TEXT("A  VISUAL  EXPERIMENT"));
 	Items = {
 		FText::FromString(TEXT("Start")),
+		FText::FromString(TEXT("Body")),
 		FText::FromString(TEXT("Photo mode")),
 		FText::FromString(TEXT("Quit")),
 	};
