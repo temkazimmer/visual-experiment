@@ -7,6 +7,7 @@
 class ACameraActor;
 class UWidgetComponent;
 class UVisexMenuWidget;
+class AVisexBodyEditor;
 
 /**
  * Main menu as a scene state, not a separate level. On play the view holds MenuCamera
@@ -91,6 +92,14 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Menu")
 	TObjectPtr<UWidgetComponent> Panel;
 
+	/** What the Body item opens; spawned on first use. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Body")
+	TSubclassOf<AVisexBodyEditor> BodyEditorClass;
+
+	/** Hides the menu and opens the body page; the menu comes back when it closes. */
+	UFUNCTION(BlueprintCallable, Category = "Menu")
+	void OpenBody();
+
 	UFUNCTION(BlueprintCallable, Category = "Menu")
 	void ShowMenu();
 
@@ -109,7 +118,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Menu")
 	UVisexMenuWidget* GetMenuWidget() const;
 
-	/** Item 0 starts, 1 is photo mode, 2 quits. Override in Blueprint to change. */
+	/** Item 0 starts, 1 opens the body page, 2 is photo mode, 3 quits. Override in Blueprint to change. */
 	UFUNCTION(BlueprintNativeEvent, Category = "Menu")
 	void OnItemChosen(int32 Index);
 
@@ -135,6 +144,8 @@ private:
 	void Down() { MoveSelection(1); }
 	void HandBack();
 	void TickOrbit(float DeltaSeconds);
+	UFUNCTION()
+	void HandleBodyClosed();
 	class UCineCameraComponent* GetLens() const;
 
 	FTransform CameraBase;
@@ -150,4 +161,7 @@ private:
 	float FadeOut = -1.f;
 	FTimerHandle SetupTimer;
 	FTimerHandle HandBackTimer;
+	FTimerHandle BodyTimer;
+	UPROPERTY(Transient)
+	TObjectPtr<AVisexBodyEditor> BodyEditor;
 };

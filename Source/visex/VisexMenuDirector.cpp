@@ -1,6 +1,7 @@
 #include "VisexMenuDirector.h"
 
 #include "VisexMenuWidget.h"
+#include "VisexBodyEditor.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
 #include "CineCameraActor.h"
@@ -181,16 +182,65 @@ void AVisexMenuDirector::OnItemChosen_Implementation(int32 Index)
 	switch (Index)
 	{
 	case 1:
+		OpenBody();
+		break;
+	case 2:
 		StartGame();
 		OnPhotoMode();
 		break;
-	case 2:
+	case 3:
 		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
 		break;
 	default:
 		StartGame();
 		break;
 	}
+}
+
+void AVisexMenuDirector::OpenBody()
+{
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	if (!bOpen || !PC)
+	{
+		return;
+	}
+	if (!BodyEditor)
+	{
+		UClass* Cls = BodyEditorClass ? BodyEditorClass.Get() : AVisexBodyEditor::StaticClass();
+		BodyEditor = GetWorld()->SpawnActor<AVisexBodyEditor>(Cls, GetActorTransform());
+		if (!BodyEditor)
+		{
+			return;
+		}
+		BodyEditor->OnClosed.AddDynamic(this, &AVisexMenuDirector::HandleBodyClosed);
+	}
+	BodyEditor->Open();
+	if (!BodyEditor->IsOpen())
+	{
+		return;   // no body to edit on this pawn: stay on the menu
+	}
+	// the menu steps aside while the body page has the screen
+	bOpen = false;
+	Panel->SetVisibility(false);
+	DisableInput(PC);
+}
+
+void AVisexMenuDirector::HandleBodyClosed()
+{
+	// the body page blends back to the menu shot; bring the menu up once it has landed
+	const float Wait = BodyEditor ? FMath::Max(0.05f, BodyEditor->BlendTime) : 0.05f;
+	GetWorldTimerManager().SetTimer(BodyTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
+	{
+		if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
+		{
+			EnableInput(PC);
+		}
+		ShowMenu();
+		if (UVisexMenuWidget* W = GetMenuWidget())
+		{
+			W->SetSelected(1);
+		}
+	}), Wait, false);
 }
 
 void AVisexMenuDirector::StartGame()
