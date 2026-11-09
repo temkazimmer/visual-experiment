@@ -279,4 +279,4 @@ one, a side's work is lost.
 1. ~~Hands and feet~~: done, grafted from the MakeHuman base mesh (Tools/blender_extremities.py).
    Still to do: the small dent on the index knuckle; a relaxed hand resting on the thigh.
 2. Navel.
-3. Skin tone choice on the BODY tab: Asian, European, African (and in between).
+3. ~~Skin tone choice~~: done, the first BODY row (East Asian, European, Mediterranean, South Asian, African, and in between).

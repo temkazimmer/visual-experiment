@@ -183,9 +183,17 @@ void UVisexBodyWidget::Show(const FVisexCharacterView& View)
 			Size.Value = FMath::Max(1.f - T, 0.001f);
 			Rr->SetSize(Size);
 		}
-		R.Value->SetText(FText::FromString(S.bCentimetres
-			? FString::Printf(TEXT("%d cm"), FMath::RoundToInt(V))
-			: FString::Printf(TEXT("%d"), FMath::RoundToInt(T * 100.f))));
+		if (S.bSkinTone)
+		{
+			R.Value->SetText(FVisexBodyProfile::SkinToneName(V));
+			R.Fill->SetBrushColor(FVisexBodyProfile::SkinColor(V) * 1.6f);
+		}
+		else
+		{
+			R.Value->SetText(FText::FromString(S.bCentimetres
+				? FString::Printf(TEXT("%d cm"), FMath::RoundToInt(V))
+				: FString::Printf(TEXT("%d"), FMath::RoundToInt(T * 100.f))));
+		}
 		Mark(R, View.Tab == 0 && View.Selected == i);
 	}
 

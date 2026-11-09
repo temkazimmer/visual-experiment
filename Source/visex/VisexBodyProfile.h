@@ -17,6 +17,8 @@ struct FVisexBodySlider
 	UPROPERTY(BlueprintReadOnly, Category = "Body") float Default = 0.f;
 	/** Shown as cm instead of a percentage. */
 	UPROPERTY(BlueprintReadOnly, Category = "Body") bool bCentimetres = false;
+	/** The skin tone: shown by name, the track filled with the colour. */
+	UPROPERTY(BlueprintReadOnly, Category = "Body") bool bSkinTone = false;
 };
 
 /** One outfit she can wear: a skeletal mesh fitted to the skin (Tools/blender_outfits.py). */
@@ -54,6 +56,10 @@ struct FVisexBodyProfile
 	/** The slider table, in menu order. */
 	static VISEX_API const TArray<FVisexBodySlider>& Sliders();
 	static VISEX_API const FVisexBodySlider* Find(FName Name);
+
+	/** Skin tone 0..1 across the named stops: the skin's base colour (linear) and its name. */
+	static VISEX_API FLinearColor SkinColor(float Tone);
+	static VISEX_API FText SkinToneName(float Tone);
 
 	/** The wardrobe, in menu order; the first entry is "none". */
 	static VISEX_API const TArray<FVisexOutfit>& Outfits();

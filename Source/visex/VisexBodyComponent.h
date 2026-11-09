@@ -104,6 +104,9 @@ private:
 	void TickJiggle(float DeltaTime);
 
 	UPROPERTY(Transient) TObjectPtr<class UVisexShellComponent> OutfitMesh;
+	/** The skin's material, made dynamic so the tone can change. */
+	UPROPERTY(Transient) TObjectPtr<class UMaterialInstanceDynamic> SkinMaterial;
+	void ApplySkin();
 	FName WornOutfit = NAME_None;
 	FVisexJiggleState Jiggle[4];   // bust L, bust R, glute L, glute R
 };

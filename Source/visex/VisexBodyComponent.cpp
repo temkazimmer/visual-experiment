@@ -7,6 +7,7 @@
 #include "Engine/SkeletalMesh.h"
 #include "GameFramework/Character.h"
 #include "Kismet/GameplayStatics.h"
+#include "Materials/MaterialInstanceDynamic.h"
 
 UVisexBodyComponent::UVisexBodyComponent()
 {
@@ -96,8 +97,36 @@ void UVisexBodyComponent::Apply()
 	Mesh->SetMorphTarget(TEXT("BustUp"), Profile.Get("Bust"), false);
 	Mesh->SetMorphTarget(TEXT("GlutesUp"), Profile.Get("Glutes"), false);
 
+	ApplySkin();
 	ApplyOutfit();
 	PushToAnim();
+}
+
+void UVisexBodyComponent::ApplySkin()
+{
+	// game worlds only: a dynamic material set in the editor would land in the saved level
+	if (!GetWorld() || !GetWorld()->IsGameWorld())
+	{
+		return;
+	}
+	// the skin is the Shell (the body itself is hidden); outfits are shells too, skip them
+	if (!SkinMaterial)
+	{
+		TArray<UVisexShellComponent*> Shells;
+		GetOwner()->GetComponents(Shells);
+		for (UVisexShellComponent* Shell : Shells)
+		{
+			if (Shell != OutfitMesh && Shell->GetFName() == TEXT("Shell"))
+			{
+				SkinMaterial = Shell->CreateDynamicMaterialInstance(0);
+				break;
+			}
+		}
+	}
+	if (SkinMaterial)
+	{
+		SkinMaterial->SetVectorParameterValue(TEXT("SkinColor"), FVisexBodyProfile::SkinColor(Profile.Get("Skin")));
+	}
 }
 
 void UVisexBodyComponent::SetValue(FName Name, float Value)

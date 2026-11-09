@@ -54,8 +54,8 @@ REAL = dict(
     skin=(0.58, 0.36, 0.25),         # warm tan albedo (linear); real skin is far less saturated than latex
     scatter=(0.85, 0.34, 0.20),      # blood-red bleed in shadows, ears, fingers, at the terminator
     roughness=0.52,                  # broad soft highlight, no mirror streaks
-    roughness_var=0.10,              # pore-scale break-up, so the sheen isn't plastic
-    pore_scale=0.35,                 # noise cells per cm on the body at rest
+    roughness_var=0.035,             # pore-scale break-up, so the sheen isn't plastic (more reads as a cracked web)
+    pore_scale=2.5,                  # noise cells per cm on the body at rest: pore-sized
     specular=0.35,                   # skin is ~2.8% reflective at normal incidence
 )
 SKIN = dict(
