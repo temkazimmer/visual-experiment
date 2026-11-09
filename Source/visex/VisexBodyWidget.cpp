@@ -188,6 +188,10 @@ void UVisexBodyWidget::Show(const FVisexCharacterView& View)
 			R.Value->SetText(FVisexBodyProfile::SkinToneName(V));
 			R.Fill->SetBrushColor(FVisexBodyProfile::SkinColor(V) * 1.6f);
 		}
+		else if (S.bAbs)
+		{
+			R.Value->SetText(FVisexBodyProfile::AbsName(V));
+		}
 		else
 		{
 			R.Value->SetText(FText::FromString(S.bCentimetres
