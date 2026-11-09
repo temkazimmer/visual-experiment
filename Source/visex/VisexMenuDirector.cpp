@@ -119,7 +119,13 @@ void AVisexMenuDirector::ShowMenu()
 	Panel->AttachToComponent(MenuCamera->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
 	Panel->SetRelativeLocation(PanelOffset);
 	Panel->SetRelativeRotation(FRotator(0.f, 180.f + PanelYaw, 0.f));
-	Panel->SetRelativeScale3D(FVector(PanelScale));
+	// draw the panel's texture larger and shrink it back to the same size on screen
+	const UVisexMenuWidget* MenuDefaults = Panel->GetWidgetClass()
+		? Cast<UVisexMenuWidget>(Panel->GetWidgetClass()->GetDefaultObject()) : nullptr;
+	const float SS = GetMenuWidget() ? FMath::Max(1.f, GetMenuWidget()->Supersample)
+		: MenuDefaults ? FMath::Max(1.f, MenuDefaults->Supersample) : 1.f;
+	Panel->SetDrawSize(FVector2D(1100.f, 1000.f) * SS);
+	Panel->SetRelativeScale3D(FVector(PanelScale / SS));
 	Panel->SetTintColorAndOpacity(FLinearColor(PanelBrightness, PanelBrightness, PanelBrightness, 1.f));
 	Panel->SetVisibility(true);
 	if (UVisexMenuWidget* W = GetMenuWidget())

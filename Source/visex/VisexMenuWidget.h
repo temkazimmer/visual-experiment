@@ -28,6 +28,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu")
 	TArray<FText> Items;
 
+	/** Layout scale inside the panel's texture. The director draws the panel this many times
+	 * larger and shrinks it back, so text stays sharp at 1440p and up. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
+	float Supersample = 2.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
 	int32 TitleSize = 150;
 
