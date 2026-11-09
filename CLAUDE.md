@@ -1,54 +1,44 @@
-# visex — character & movement animation branch
+# visex
 
-You're the agent on the **`character-animation`** branch of `visual-experiment` (UE 5.7
-project `visex`, macOS / Apple silicon). Tema works on this branch from a second laptop.
-Another agent works on `main` in parallel. Read this file before doing anything.
+UE 5.7 project `visex` (repo `visual-experiment`), macOS / Apple silicon. Read this file
+before doing anything, then the brief for your branch.
 
 ## What the game is
 
 A posing / photo-mode playground: 3D characters in different poses and outfits, in
 cinematic environments, with a photo mode and stackable photo filters (CRT, 80s anime,
 low poly). The first scene, `Content/VisEx/Lvl_Dust`, is an orange dust-fog plaza: a
-giant ruined colonnade, wide steps, wind-shaped dunes. The bar is **maximal cinematic
-look**. Movement should feel weighty and deliberate, like a figure in a Villeneuve shot,
-not floaty or arcade.
+giant ruined colonnade climbing into the haze, wide steps, wind-shaped dunes. The bar is
+**maximal cinematic look**. Movement should feel weighty and deliberate, like a figure in
+a Villeneuve shot, not floaty or arcade.
 
-## Your scope on this branch
+## Branches and who owns what
 
-The playable character and its movement animation: locomotion (idle, walk, run, starts,
-stops, turns), jump and double jump, landing, slopes and steps, camera feel while
-moving. Poses for photo mode count too.
+Two agents work in parallel, often on two laptops. Binary `.uasset`/`.umap` files can't
+be merged, so each folder has one owner; edit the other side's files only through a
+merge.
 
-**Files this branch owns** (edit freely):
-- `Content/ThirdPerson/`: `BP_ThirdPersonCharacter`, `BP_ThirdPersonGameMode`,
-  `BP_ThirdPersonPlayerController`
-- `Content/Characters/`: mannequins, `ABP_Unarmed`, `BS_Idle_Walk_Run`, anims
-- `Content/Input/`: input mapping and actions
-- any new folder for this work, e.g. `Content/Character/` and `Tools/char_*.py`
+| Branch | Scope | Owns | Brief |
+|---|---|---|---|
+| `main` | Look and atmosphere, the scene, the menu, music, the Start camera move | `Content/VisEx/` (levels, materials, stone, dunes, menu, audio), the scene-building `Tools/` scripts, `Source/visex/VisexMenu*` | this file |
+| `character-animation` | The character's body, skin, body page and movement | `Content/Character/`, `Content/Characters/`, `Content/ThirdPerson/`, `Content/Input/`, `Tools/char_*.py`, `Source/visex/VisexBody*`, `VisexShell*`, `VisexAnimInstance*` | [Docs/AGENT_CHARACTER.md](Docs/AGENT_CHARACTER.md) |
 
-**Don't touch** (main owns them; binary `.uasset`/`.umap` files can't be merged, so
-editing them on both branches loses one side's changes):
-- `Content/VisEx/`: levels, materials, stone, dunes
-- `Tools/` scripts that build the scene (`build_dust.py`, `add_*.py`, `bake_stone.py`,
-  `stone_geo.py`, `apply_geo.py`, `import_sand_tex.py`)
+Character direction: [Docs/CHARACTER_DIRECTION.md](Docs/CHARACTER_DIRECTION.md). If
+something needs a change on the other branch, write it down for that agent (or message
+its session) rather than doing it.
 
-If you need a test map, make your own under `Content/Character/`. You can play-test in
-`Lvl_Dust`, but don't save it. If something here truly needs a change on main, write
-it down in `HANDOFF.md` on this branch rather than doing it.
+## The game flow (C++ in `Source/visex`)
 
-## Current state of the character
-
-- Lvl_Dust has no game-mode override, so it uses the project default `BP_ThirdPersonGameMode`,
-  which spawns `BP_ThirdPersonCharacter` (UE Third Person template, Manny/Quinn mannequin).
-- Double jump (`Tools/add_double_jump.py`, idempotent): `JumpMaxCount 2`,
-  `JumpZVelocity 550` (template default 500), `AirControl 0.5` (default 0.35).
-- Second-jump boost: **not applied yet**. Python in 5.7 can't add nodes to a Blueprint
-  graph, so the nodes are in `Tools/double_jump_boost.t3d`. Copy its text, open
-  `BP_ThirdPersonCharacter` → Event Graph, paste, compile, save. It adds an `OnJumped`
-  event that pushes extra Z velocity on the air jump. Tema decides whether he wants it.
-- The level's floor is uneven on purpose (chipped slabs, worn step nosings, dunes).
-  Collision is the full-res mesh, so foot IK / step-up tuning has something real to hit.
-  `Lvl_Dust` steps are being resized to the mannequin (lower risers, 220 cm treads) on main.
+- `AVisexMenuDirector` (Blueprint child `BP_MenuDirector` in Lvl_Dust): on Play the view
+  holds `MenuCam`, she stands where `MenuModel` stands, and the menu is a 3D panel
+  (`UVisexMenuWidget`, Blueprint `WBP_Menu`) turned toward her.
+- Items: Start · Body · Photo mode · Quit. Start circles the camera low around her and lands
+  exactly on the third-person camera, lens and field of view included. Body opens
+  `AVisexBodyEditor`; closing it brings the menu back.
+- There's no live coding on Mac. After a C++ change, build with
+  `Engine/Build/BatchFiles/Mac/Build.sh visexEditor Mac Development -Project=... -WaitMutex`,
+  then fully quit and relaunch the editor. A restart is only real if the editor process
+  started after the dylib was built.
 
 ## Tooling: drive the editor live
 
@@ -57,16 +47,24 @@ Tema wants to **watch you work in the open editor**. A folder bridge makes that 
   `Tools/.bridge/in/`. Output appears in `Tools/.bridge/out/`.
 - Client: `python3 Tools/ue.py -c "import unreal; ..."` or `python3 Tools/ue.py some_script.py`.
   It exits 1 on a Python error. For long jobs, raise the wait with `UE_WAIT=6000` (tenths of a second).
+- The bridge is per project folder. A second editor opened from another worktree has its
+  own; both windows are titled "visex", so check which folder you're talking to.
 - Screenshots: `Tools/capture.py` renders through a SceneCapture2D to
   `Tools/.bridge/capture.png`. Set a global `VIEW = ((x,y,z), (tx,ty,tz), fov)` to shoot
-  from anywhere:
-  `( echo 'VIEW = (...)'; cat Tools/capture.py ) > Tools/.bridge/v.py && python3 Tools/ue.py Tools/.bridge/v.py`
+  from anywhere, or `CAM = "MenuCam"` to shoot through a level camera.
+- In Play, `HighResShot` can grab the editor viewport instead of the game. Render through
+  a SceneCapture2D placed in the level before Play, moved to the player camera instead.
+  It skips the post grade, so use it to check framing, not the look.
 - Python Remote Execution (UDP multicast) never worked on these Macs. Don't retry it.
 
 ## Gotchas learned the hard way
 
-- **Play mode:** check `unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).is_in_play_in_editor()`.
-  While Tema is playing, actor queries return nothing and saving is unsafe. Ask him to stop.
+- **Play mode:** check `unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).is_in_play_in_editor()`
+  first, and **never stop a Play session you didn't start**: it's probably Tema playing.
+  Abort the whole run, not just the step. While he's playing, actor queries return nothing
+  and saving is unsafe.
+- Save the level with `LevelEditorSubsystem.save_current_level()`, not "save all dirty":
+  that also saves whatever Tema has open.
 - `unreal.Rotator(a, b, c)` is **(roll, pitch, yaw)**. Always use keywords.
 - **Blueprint defaults:** use `unreal.get_default_object(bp.generated_class())`, then
   `BlueprintEditorLibrary.compile_blueprint` and `EditorAssetLibrary.save_loaded_asset`.
@@ -75,15 +73,19 @@ Tema wants to **watch you work in the open editor**. A folder bridge makes that 
 - `unreal.CustomInput()` takes no constructor kwargs. Use `set_editor_property`.
 - In Custom-node HLSL, `?:` evaluates both sides, so use if/else when there are out-params.
 - Don't run a headless commandlet against a level the open editor has loaded.
+- Exponential height fog only gets thicker going down, and local fog volumes don't render
+  here. The haze that swallows the columns' tops is in the stone material
+  (`Tools/add_sand.py`), and its colour must equal the fog's inscattering colour
+  (`Tools/cinematic_pass.py`), or a seam shows.
 
 ## Git
 
 - Binary assets are in **Git LFS**: run `git lfs install` once per machine.
 - Fab/Megascans sand textures are gitignored (licensed). Download them as described in
   `README.md`, or the sand material won't compile. That only matters when you open Lvl_Dust.
-- Commit small and often on `character-animation`. Push when Tema asks.
-- Before merging: rebase or merge `main` into this branch, check the Content conflicts list
-  is empty, play-test Lvl_Dust, then open a PR to `main`.
+- Commit small and often on your branch. Push only when Tema asks.
+- Moving work across: merge the other branch in, check no binary file changed on both
+  sides, rebuild, play-test Lvl_Dust.
 - Commit messages: short imperative summary line, body explains why.
 
 ## Working with Tema

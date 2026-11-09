@@ -7,6 +7,7 @@
 class ACameraActor;
 class UWidgetComponent;
 class UVisexMenuWidget;
+class AVisexBodyEditor;
 
 /**
  * Main menu as a scene state, not a separate level. On play the view holds MenuCamera
@@ -71,12 +72,33 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
 	float StartCameraPitch = -12.f;
 
-	/** Seconds for the camera to swing from the menu shot onto the character. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
-	float BlendToPlayTime = 2.5f;
+	/** Seconds for the Start move: the menu camera circles low around her and lands
+	 * exactly on the play camera behind her. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Start")
+	float BlendToPlayTime = 3.5f;
+
+	/** Which way round her the camera circles: 1 or -1. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Start")
+	int32 OrbitDirection = 1;
+
+	/** Point the camera watches during the move, above her feet (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Start")
+	float OrbitLookHeight = 120.f;
+
+	/** Share of the move spent low by the ground before rising to the play camera. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Start", meta = (ClampMin = "0", ClampMax = "1"))
+	float OrbitStayLow = 0.55f;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Menu")
 	TObjectPtr<UWidgetComponent> Panel;
+
+	/** What the Body item opens; spawned on first use. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Body")
+	TSubclassOf<AVisexBodyEditor> BodyEditorClass;
+
+	/** Hides the menu and opens the body page; the menu comes back when it closes. */
+	UFUNCTION(BlueprintCallable, Category = "Menu")
+	void OpenBody();
 
 	UFUNCTION(BlueprintCallable, Category = "Menu")
 	void ShowMenu();
@@ -96,7 +118,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Menu")
 	UVisexMenuWidget* GetMenuWidget() const;
 
-	/** Item 0 starts, 1 is photo mode, 2 quits. Override in Blueprint to change. */
+	/** Item 0 starts, 1 opens the body page, 2 is photo mode, 3 quits. Override in Blueprint to change. */
 	UFUNCTION(BlueprintNativeEvent, Category = "Menu")
 	void OnItemChosen(int32 Index);
 
@@ -121,12 +143,25 @@ private:
 	void Up() { MoveSelection(-1); }
 	void Down() { MoveSelection(1); }
 	void HandBack();
+	void TickOrbit(float DeltaSeconds);
+	UFUNCTION()
+	void HandleBodyClosed();
+	class UCineCameraComponent* GetLens() const;
 
 	FTransform CameraBase;
+	bool bHaveBase = false;
+	bool bOrbiting = false;
+	float OrbitT = 0.f;
+	float OrbitA0 = 0.f, OrbitR0 = 0.f, OrbitZ0 = 0.f;
+	float MenuFocal = 0.f, MenuFStop = 0.f;
+	bool bHaveLens = false;
 	bool bOpen = false;
 	bool bInputBound = false;
 	float Clock = 0.f;
 	float FadeOut = -1.f;
 	FTimerHandle SetupTimer;
 	FTimerHandle HandBackTimer;
+	FTimerHandle BodyTimer;
+	UPROPERTY(Transient)
+	TObjectPtr<AVisexBodyEditor> BodyEditor;
 };

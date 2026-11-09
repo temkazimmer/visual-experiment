@@ -1,11 +1,13 @@
 #include "VisexBodyComponent.h"
 
 #include "VisexAnimInstance.h"
+#include "VisexShellComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "GameFramework/Character.h"
 #include "Kismet/GameplayStatics.h"
+#include "Materials/MaterialInstanceDynamic.h"
 
 UVisexBodyComponent::UVisexBodyComponent()
 {
@@ -40,6 +42,10 @@ void UVisexBodyComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	// the anim instance can be rebuilt (mesh or class change); keep it fed
 	PushToAnim();
+	if (bJiggle)
+	{
+		TickJiggle(DeltaTime);
+	}
 }
 
 void UVisexBodyComponent::PushToAnim() const
@@ -87,17 +93,40 @@ void UVisexBodyComponent::Apply()
 		Capsule->SetCapsuleSize(ReferenceCapsule.Y * S, ReferenceCapsule.X * S + LegDelta * 0.5f);
 	}
 
-	// morphs: the slider's middle is the base mesh; each side has its own target
-	// UpGain: the sculpted target extrapolates cleanly, so the top of a slider can push past it
-	auto Morph = [Mesh](FName Up, FName Down, float V, float UpGain)
-	{
-		Mesh->SetMorphTarget(Up, FMath::Max(0.f, (V - 0.5f) * 2.f) * UpGain, false);
-		Mesh->SetMorphTarget(Down, FMath::Max(0.f, (0.5f - V) * 2.f), false);
-	};
-	Morph(TEXT("BustUp"), TEXT("BustDown"), Profile.Get("Bust"), 1.5f);
-	Morph(TEXT("GlutesUp"), TEXT("GlutesDown"), Profile.Get("Glutes"), 2.0f);   // past ~2 the shape goes conical
+	// shape morphs: 0 = the base body, 1 = the full sculpt (Tools/blender_skin.py)
+	Mesh->SetMorphTarget(TEXT("BustUp"), Profile.Get("Bust"), false);
+	Mesh->SetMorphTarget(TEXT("GlutesUp"), Profile.Get("Glutes"), false);
 
+	ApplySkin();
+	ApplyOutfit();
 	PushToAnim();
+}
+
+void UVisexBodyComponent::ApplySkin()
+{
+	// game worlds only: a dynamic material set in the editor would land in the saved level
+	if (!GetWorld() || !GetWorld()->IsGameWorld())
+	{
+		return;
+	}
+	// the skin is the Shell (the body itself is hidden); outfits are shells too, skip them
+	if (!SkinMaterial)
+	{
+		TArray<UVisexShellComponent*> Shells;
+		GetOwner()->GetComponents(Shells);
+		for (UVisexShellComponent* Shell : Shells)
+		{
+			if (Shell != OutfitMesh && Shell->GetFName() == TEXT("Shell"))
+			{
+				SkinMaterial = Shell->CreateDynamicMaterialInstance(0);
+				break;
+			}
+		}
+	}
+	if (SkinMaterial)
+	{
+		SkinMaterial->SetVectorParameterValue(TEXT("SkinColor"), FVisexBodyProfile::SkinColor(Profile.Get("Skin")));
+	}
 }
 
 void UVisexBodyComponent::SetValue(FName Name, float Value)
@@ -112,10 +141,107 @@ void UVisexBodyComponent::ResetValue(FName Name)
 	Apply();
 }
 
+void UVisexBodyComponent::SetOutfit(FName Outfit)
+{
+	Profile.Outfit = Outfit;
+	ApplyOutfit();
+}
+
+void UVisexBodyComponent::ApplyOutfit()
+{
+	USkeletalMeshComponent* Mesh = Body();
+	const UWorld* World = GetWorld();
+	if (!Mesh || !World || !World->IsGameWorld()
+		|| (WornOutfit == Profile.Outfit && (OutfitMesh || Profile.Outfit.IsNone())))
+	{
+		return;
+	}
+	const FVisexOutfit& O = FVisexBodyProfile::Outfits()[FVisexBodyProfile::OutfitIndex(Profile.Outfit)];
+	USkeletalMesh* Asset = O.Mesh.IsEmpty() ? nullptr : LoadObject<USkeletalMesh>(nullptr, *O.Mesh);
+	if (Asset && !OutfitMesh && GetOwner())
+	{
+		// at runtime only: the outfit follows the body's pose and morphs (Leader Pose)
+		OutfitMesh = NewObject<UVisexShellComponent>(GetOwner(), TEXT("Outfit"), RF_Transient);
+		OutfitMesh->SetupAttachment(Mesh);
+		OutfitMesh->RegisterComponent();
+	}
+	if (OutfitMesh)
+	{
+		OutfitMesh->SetSkeletalMeshAsset(Asset);
+		OutfitMesh->SetVisibility(Asset != nullptr);
+		OutfitMesh->SetLeaderPoseComponent(Mesh, true);
+	}
+	WornOutfit = Profile.Outfit;
+}
+
+void UVisexBodyComponent::TickJiggle(float DeltaTime)
+{
+	USkeletalMeshComponent* Mesh = Body();
+	if (!Mesh || DeltaTime <= 0.f)
+	{
+		return;
+	}
+	// each spring hangs on the bone the tissue sits on: the chest bob plus the shoulder on
+	// that side (arm swing alternates them), the hip joint on that side (stride alternates)
+	static const FName Chest(TEXT("spine_05"));
+	static const FName Hangers[4] = {TEXT("clavicle_l"), TEXT("clavicle_r"), TEXT("thigh_l"), TEXT("thigh_r")};
+	static const FName Up[4] = {TEXT("BustBounceL_Up"), TEXT("BustBounceR_Up"), TEXT("GluteBounceL_Up"), TEXT("GluteBounceR_Up")};
+	static const FName Down[4] = {TEXT("BustBounceL_Down"), TEXT("BustBounceR_Down"), TEXT("GluteBounceL_Down"), TEXT("GluteBounceR_Down")};
+
+	const float Scale = Mesh->GetComponentScale().Z;   // the springs work in body cm
+	const bool bTeleport = DeltaTime > 0.1f;
+	for (int32 i = 0; i < 4; ++i)
+	{
+		const bool bBust = i < 2;
+		float Z = Mesh->GetBoneLocation(Hangers[i]).Z;
+		if (bBust)
+		{
+			Z = 0.5f * (Z + Mesh->GetBoneLocation(Chest).Z);
+		}
+		Z /= FMath::Max(Scale, 0.01f);
+		FVisexJiggleState& J = Jiggle[i];
+		if (!J.bStarted || bTeleport)
+		{
+			J = FVisexJiggleState();
+			J.LastZ = Z;
+			J.bStarted = true;
+			continue;
+		}
+		// the tissue is left behind by the bone's move, then pulled back by a damped spring
+		const float BoneVelocity = (Z - J.LastZ) / DeltaTime;
+		J.LastZ = Z;
+		const float W = 2.f * PI * (bBust ? BustFrequency : GluteFrequency);
+		const float Zeta = bBust ? BustDamping : GluteDamping;
+		const int32 Steps = FMath::Clamp(FMath::CeilToInt(DeltaTime * W * 2.f), 1, 8);
+		const float H = DeltaTime / Steps;
+		for (int32 s = 0; s < Steps; ++s)
+		{
+			// Offset = tissue - bone; its acceleration = spring + damping - the bone's acceleration,
+			// which we feed as the change in relative velocity
+			const float Rel = J.Velocity - BoneVelocity;
+			const float Acc = -W * W * J.Offset - 2.f * Zeta * W * Rel;
+			J.Velocity += Acc * H;
+			J.Offset += (J.Velocity - BoneVelocity) * H;
+		}
+		const float Travel = bBust ? BustTravel : GluteTravel;
+		J.Offset = FMath::Clamp(J.Offset, -2.5f * Travel, 2.5f * Travel);
+		// bigger is heavier: a small bust barely moves
+		const float Size = Profile.Get(bBust ? FName("Bust") : FName("Glutes"));
+		const float Weight = FMath::Clamp(J.Offset / Travel * JiggleStrength * (0.25f + Size), -1.f, 1.f);
+		Mesh->SetMorphTarget(Up[i], FMath::Max(0.f, Weight), false);
+		Mesh->SetMorphTarget(Down[i], FMath::Max(0.f, -Weight), false);
+	}
+}
+
 bool UVisexBodyComponent::Save() const
 {
+	return SaveProfile(Profile);
+}
+
+bool UVisexBodyComponent::SaveProfile(const FVisexBodyProfile& Saved) const
+{
 	UVisexBodySave* Data = Cast<UVisexBodySave>(UGameplayStatics::CreateSaveGameObject(UVisexBodySave::StaticClass()));
-	Data->Profile = Profile;
+	Data->Profile = Saved;
 	return UGameplayStatics::SaveGameToSlot(Data, SaveSlot, 0);
 }
 

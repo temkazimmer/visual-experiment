@@ -42,7 +42,8 @@ All live in the open editor via the bridge (`python3 Tools/ue.py <script>`), unl
 6. `add_ruins.py` — snapped and toppled columns, rubble
 7. dump actors to `Tools/.bridge/actors.json`, then `python3 Tools/stone_geo.py` (outside the
    editor) and `apply_geo.py` — weathered Nanite geometry: chipped edges, grooved joints, drum
-   columns, separate floor slabs
+   columns, separate floor slabs. Then `flat_collision.py`: steps and slabs collide as clean
+   boxes, so running onto worn stone doesn't snag
 8. `go_tall.py` — the back wall and monoliths rise into the sky (columns: `VISEX_TALL` in step 7)
 9. `cinematic_pass.py` — the look: sun, sky light, dust fog, grade, lens (all values in one place)
 10. `capture.py` — render a shot to `Tools/.bridge/capture.png`

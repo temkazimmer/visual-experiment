@@ -273,3 +273,13 @@ one, a side's work is lost.
    it's your own look)?
 7. **Handoff timing:** OK to merge `main` into `character-animation` now and freeze
    character files on main?
+
+## Next details (Tema, 2026-11-09)
+
+1. ~~Hands and feet~~: done, grafted from the MakeHuman base mesh (Tools/blender_extremities.py).
+   Still to do: the small dent on the index knuckle; a relaxed hand resting on the thigh.
+2. Navel.
+3. ~~Skin tone choice~~: done, the first BODY row (East Asian, European, Mediterranean, South Asian, African, and in between).
+4. Thigh gap: a BODY slider for the distance between the legs (inner-thigh volume, from
+   touching to a clear gap), sculpted as a morph so the stance stays the same.
+5. Abs: a BODY slider with named stops (soft, flat, toned, defined, six-pack), sculpted morphs.
