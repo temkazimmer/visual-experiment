@@ -1,12 +1,13 @@
 """Render PhotoCam's view to Tools/.bridge/capture.png without using the editor viewport.
 Run live: python3 Tools/ue.py Tools/capture.py
-Set VIEW = ((x, y, z), (target x, y, z), fov) in the job's globals to shoot from elsewhere."""
+Set VIEW = ((x, y, z), (target x, y, z), fov) in the job's globals to shoot from elsewhere,
+or CAM = "MenuCam" to shoot through another camera actor."""
 import os
 import unreal
 
 eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
 world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
-cam = next(a for a in eas.get_all_level_actors() if a.get_actor_label() == "PhotoCam")
+cam = next(a for a in eas.get_all_level_actors() if a.get_actor_label() == globals().get("CAM", "PhotoCam"))
 out_dir = os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir()), "Tools", ".bridge")
 
 rt = unreal.RenderingLibrary.create_render_target2d(world, 1920, 1080, unreal.TextureRenderTargetFormat.RTF_RGBA8_SRGB)

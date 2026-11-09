@@ -6,7 +6,7 @@ import unreal
 
 BP_PATH = "/Game/ThirdPerson/Blueprints/BP_ThirdPersonCharacter"
 MOVE = {
-    "max_walk_speed": 150.0,                # calm walk (calm_walk.py halves the walk anim rate); Shift runs at 540 (sprint_nodes.t3d)
+    "max_walk_speed": 190.0,                # calm walk (Stride Warping shortens steps); Shift/L2 runs at 540 (sprint_nodes.t3d)
     "max_acceleration": 800.0,              # template 1500: ~0.7s to full speed
     "braking_deceleration_walking": 900.0,  # template 2000: glides ~0.6s to a stop
     "ground_friction": 4.0,                 # template 8: softer direction changes

@@ -1,0 +1,12 @@
+Begin Object Class=/Script/AnimationWarpingEditor.AnimGraphNode_StrideWarping Name="AnimGraphNode_StrideWarping_Walk"
+   Node=(Mode=Graph,PelvisBone=(BoneName="pelvis"),IKFootRootBone=(BoneName="ik_foot_root"),FootDefinitions=((IKFootBone=(BoneName="ik_foot_l"),FKFootBone=(BoneName="foot_l"),ThighBone=(BoneName="thigh_l")),(IKFootBone=(BoneName="ik_foot_r"),FKFootBone=(BoneName="foot_r"),ThighBone=(BoneName="thigh_r"))),StrideScaleModifier=(bClampResult=True,bInterpResult=False,ClampMin=0.400000,ClampMax=1.500000))
+   NodePosX=300
+   NodePosY=0
+   NodeGuid=F0000000000000000000000000000001
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_VariableGet Name="K2Node_VariableGet_StrideSpeed"
+   VariableReference=(MemberName="GroundSpeed",bSelfContext=True)
+   NodePosX=0
+   NodePosY=200
+   NodeGuid=F0000000000000000000000000000002
+End Object

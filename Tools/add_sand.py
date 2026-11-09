@@ -92,6 +92,10 @@ return normalize(N + float3(dir * s * Mask * Strength * lee * patchy, 0));
 
 # Glints: a few grains catch the light, sparse random cells that twinkle with the
 # view angle and vanish beyond ~15 m before they can alias.
+# emissive the hazed stone fades to; calibrated so fully hazed stone matches the fog
+# behind it (Tools/.bridge calibration: HAZE_O Start=0 End=1, compare stone vs sky)
+HAZE_COLOR = (1.5, 0.55, 0.12)       # = DustFog inscattering in cinematic_pass.py: keep them equal
+
 HAZE = """
 // 0..1: how far this point has dissolved into the high dust. Rises with height, wobbles
 // so the haze line billows, and stays off right next to the camera.
@@ -377,14 +381,25 @@ def build_material():
                     unreal.CustomMaterialOutputType.CMOT_FLOAT1)
     link(wp, "", haze_t, "WP")
     link(node(unreal.MaterialExpressionCameraPositionWS, -400, -380), "", haze_t, "Cam")
-    for name, v, y in (("Start", 3000.0, -560), ("End", 30000.0, -520), ("Amount", 0.97, -480), ("Near", 4000.0, -440)):
-        link(sparam("Haze" + name, v, -400, y), "", haze_t, name)
+    # HAZE_O (job global) overrides these for calibration runs
+    hz = dict(Start=3000.0, End=30000.0, Amount=1.0, Near=4000.0, Color=HAZE_COLOR)
+    hz.update(globals().get("HAZE_O") or {})
+    for name, y in (("Start", -560), ("End", -520), ("Amount", -480), ("Near", -440)):
+        link(sparam("Haze" + name, hz[name], -400, y), "", haze_t, name)
     hazed = node(unreal.MaterialExpressionLinearInterpolate, -50, -250)
     link(base, "", hazed, "A")
     zero = node(unreal.MaterialExpressionConstant3Vector, -200, -280)
     link(zero, "", hazed, "B")
     link(haze_t, "", hazed, "Alpha")
     mel.connect_material_property(hazed, "", unreal.MaterialProperty.MP_BASE_COLOR)
+    # no sun glints on hazed stone, or the tops catch light the fog doesn't
+    spec = node(unreal.MaterialExpressionLinearInterpolate, -50, -150)
+    half = node(unreal.MaterialExpressionConstant, -200, -150)
+    half.set_editor_property("r", 0.5)
+    link(half, "", spec, "A")
+    link(zero, "", spec, "B")
+    link(haze_t, "", spec, "Alpha")
+    mel.connect_material_property(spec, "", unreal.MaterialProperty.MP_SPECULAR)
     # wind ripples bend the world-space normal where there is sand (see RIPPLES)
     ripples = custom(STONE_LIB + RIPPLES, ("WP", "Cam", "N", "Mask", "Strength"), -200, 600)
     link(wp, "", ripples, "WP")
@@ -417,7 +432,7 @@ def build_material():
     link(sparam("GlintStrength", 1.0, -400, 1000), "", glints, "Strength")
     glow = node(unreal.MaterialExpressionLinearInterpolate, 0, 900)
     link(glints, "", glow, "A")
-    link(vparam("HazeColor", (0.95, 0.36, 0.08), -200, 1000), "", glow, "B")
+    link(vparam("HazeColor", hz["Color"], -200, 1000), "", glow, "B")
     link(haze_t, "", glow, "Alpha")
     mel.connect_material_property(glow, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
 
@@ -443,7 +458,11 @@ def build_material():
     one_ao.set_editor_property("r", 1.0)
     link(one_ao, "", ao, "B")
     link(mask, "", ao, "Alpha")
-    mel.connect_material_property(ao, "", unreal.MaterialProperty.MP_AMBIENT_OCCLUSION)
+    ao_h = node(unreal.MaterialExpressionLinearInterpolate, 0, 160)     # hazed stone: no AO pattern
+    link(ao, "", ao_h, "A")
+    link(one_ao, "", ao_h, "B")
+    link(haze_t, "", ao_h, "Alpha")
+    mel.connect_material_property(ao_h, "", unreal.MaterialProperty.MP_AMBIENT_OCCLUSION)
 
     mel.recompile_material(mat)
     unreal.EditorAssetLibrary.save_asset(MAT)

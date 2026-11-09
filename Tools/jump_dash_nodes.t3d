@@ -1,0 +1,216 @@
+Begin Object Class=/Script/BlueprintGraph.K2Node_Event Name="K2Node_Event_DJ2"
+   EventReference=(MemberParent="/Script/CoreUObject.Class'/Script/Engine.Character'",MemberName="OnJumped")
+   bOverrideFunction=True
+   NodePosX=0
+   NodePosY=0
+   NodeGuid=B0000000000000000000000000000001
+   CustomProperties Pin (PinId=B1000000000000000000000000000001,PinName="then",Direction="EGPD_Output",PinType.PinCategory="exec",LinkedTo=(K2Node_IfThenElse_DJ2 B4000000000000000000000000000001,),)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_VariableGet Name="K2Node_VariableGet_DJ2Count"
+   VariableReference=(MemberName="JumpCurrentCount",bSelfContext=True)
+   NodePosX=0
+   NodePosY=160
+   NodeGuid=B0000000000000000000000000000002
+   CustomProperties Pin (PinId=B2000000000000000000000000000001,PinName="JumpCurrentCount",Direction="EGPD_Output",PinType.PinCategory="int",LinkedTo=(K2Node_CallFunction_DJ2Eq B3000000000000000000000000000001,),)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_CallFunction Name="K2Node_CallFunction_DJ2Eq"
+   FunctionReference=(MemberParent="/Script/CoreUObject.Class'/Script/Engine.KismetMathLibrary'",MemberName="EqualEqual_IntInt")
+   NodePosX=240
+   NodePosY=160
+   NodeGuid=B0000000000000000000000000000003
+   CustomProperties Pin (PinId=B3000000000000000000000000000001,PinName="A",PinType.PinCategory="int",DefaultValue="0",LinkedTo=(K2Node_VariableGet_DJ2Count B2000000000000000000000000000001,),)
+   CustomProperties Pin (PinId=B3000000000000000000000000000002,PinName="B",PinType.PinCategory="int",DefaultValue="2",)
+   CustomProperties Pin (PinId=B3000000000000000000000000000003,PinName="ReturnValue",Direction="EGPD_Output",PinType.PinCategory="bool",LinkedTo=(K2Node_IfThenElse_DJ2 B4000000000000000000000000000002,),)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_IfThenElse Name="K2Node_IfThenElse_DJ2"
+   NodePosX=480
+   NodePosY=0
+   NodeGuid=B0000000000000000000000000000004
+   CustomProperties Pin (PinId=B4000000000000000000000000000001,PinName="execute",PinType.PinCategory="exec",LinkedTo=(K2Node_Event_DJ2 B1000000000000000000000000000001,),)
+   CustomProperties Pin (PinId=B4000000000000000000000000000002,PinName="Condition",PinType.PinCategory="bool",DefaultValue="true",LinkedTo=(K2Node_CallFunction_DJ2Eq B3000000000000000000000000000003,),)
+   CustomProperties Pin (PinId=B4000000000000000000000000000003,PinName="then",Direction="EGPD_Output",PinType.PinCategory="exec",LinkedTo=(K2Node_CallFunction_DJ2Launch B5000000000000000000000000000001,),)
+   CustomProperties Pin (PinId=B4000000000000000000000000000004,PinName="else",Direction="EGPD_Output",PinType.PinCategory="exec",)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_CallFunction Name="K2Node_CallFunction_DJ2Launch"
+   FunctionReference=(MemberName="LaunchCharacter",bSelfContext=True)
+   NodePosX=720
+   NodePosY=0
+   NodeGuid=B0000000000000000000000000000005
+   CustomProperties Pin (PinId=B5000000000000000000000000000001,PinName="execute",PinType.PinCategory="exec",LinkedTo=(K2Node_IfThenElse_DJ2 B4000000000000000000000000000003,),)
+   CustomProperties Pin (PinId=B5000000000000000000000000000002,PinName="then",Direction="EGPD_Output",PinType.PinCategory="exec",LinkedTo=(K2Node_CallFunction_DJ2Play B8000000000000000000000000000001,),)
+   CustomProperties Pin (PinId=B5000000000000000000000000000003,PinName="LaunchVelocity",PinType.PinCategory="struct",PinType.PinSubCategoryObject="/Script/CoreUObject.ScriptStruct'/Script/CoreUObject.Vector'",DefaultValue="0.000000,0.000000,778.000000",)
+   CustomProperties Pin (PinId=B5000000000000000000000000000004,PinName="bXYOverride",PinType.PinCategory="bool",DefaultValue="false",)
+   CustomProperties Pin (PinId=B5000000000000000000000000000005,PinName="bZOverride",PinType.PinCategory="bool",DefaultValue="true",)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_VariableGet Name="K2Node_VariableGet_DJ2Mesh"
+   VariableReference=(MemberName="Mesh",bSelfContext=True)
+   NodePosX=720
+   NodePosY=260
+   NodeGuid=B0000000000000000000000000000006
+   CustomProperties Pin (PinId=B6000000000000000000000000000001,PinName="Mesh",Direction="EGPD_Output",PinType.PinCategory="object",PinType.PinSubCategoryObject="/Script/CoreUObject.Class'/Script/Engine.SkeletalMeshComponent'",LinkedTo=(K2Node_CallFunction_DJ2AnimInst B7000000000000000000000000000001,),)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_CallFunction Name="K2Node_CallFunction_DJ2AnimInst"
+   bIsPureFunc=True
+   FunctionReference=(MemberParent="/Script/CoreUObject.Class'/Script/Engine.SkeletalMeshComponent'",MemberName="GetAnimInstance")
+   NodePosX=900
+   NodePosY=260
+   NodeGuid=B0000000000000000000000000000007
+   CustomProperties Pin (PinId=B7000000000000000000000000000001,PinName="self",PinType.PinCategory="object",PinType.PinSubCategoryObject="/Script/CoreUObject.Class'/Script/Engine.SkeletalMeshComponent'",LinkedTo=(K2Node_VariableGet_DJ2Mesh B6000000000000000000000000000001,),)
+   CustomProperties Pin (PinId=B7000000000000000000000000000002,PinName="ReturnValue",Direction="EGPD_Output",PinType.PinCategory="object",PinType.PinSubCategoryObject="/Script/CoreUObject.Class'/Script/Engine.AnimInstance'",LinkedTo=(K2Node_CallFunction_DJ2Play B8000000000000000000000000000003,),)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_CallFunction Name="K2Node_CallFunction_DJ2Play"
+   FunctionReference=(MemberParent="/Script/CoreUObject.Class'/Script/Engine.AnimInstance'",MemberName="PlaySlotAnimationAsDynamicMontage")
+   NodePosX=1080
+   NodePosY=0
+   NodeGuid=B0000000000000000000000000000008
+   CustomProperties Pin (PinId=B8000000000000000000000000000001,PinName="execute",PinType.PinCategory="exec",LinkedTo=(K2Node_CallFunction_DJ2Launch B5000000000000000000000000000002,),)
+   CustomProperties Pin (PinId=B8000000000000000000000000000002,PinName="then",Direction="EGPD_Output",PinType.PinCategory="exec",)
+   CustomProperties Pin (PinId=B8000000000000000000000000000003,PinName="self",PinType.PinCategory="object",PinType.PinSubCategoryObject="/Script/CoreUObject.Class'/Script/Engine.AnimInstance'",LinkedTo=(K2Node_CallFunction_DJ2AnimInst B7000000000000000000000000000002,),)
+   CustomProperties Pin (PinId=B8000000000000000000000000000004,PinName="Asset",PinType.PinCategory="object",PinType.PinSubCategoryObject="/Script/CoreUObject.Class'/Script/Engine.AnimSequenceBase'",DefaultObject="/Script/Engine.AnimSequence'/Game/Characters/Mannequins/Anims/Unarmed/Jump/MM_Jump.MM_Jump'",)
+   CustomProperties Pin (PinId=B8000000000000000000000000000005,PinName="SlotNodeName",PinType.PinCategory="name",DefaultValue="DefaultSlot",)
+   CustomProperties Pin (PinId=B8000000000000000000000000000006,PinName="BlendInTime",PinType.PinCategory="real",PinType.PinSubCategory="float",DefaultValue="0.05",)
+   CustomProperties Pin (PinId=B8000000000000000000000000000007,PinName="BlendOutTime",PinType.PinCategory="real",PinType.PinSubCategory="float",DefaultValue="0.2",)
+End Object
+Begin Object Class=/Script/InputBlueprintNodes.K2Node_EnhancedInputAction Name="K2Node_EnhancedInputAction_Dash2"
+   InputAction="/Script/EnhancedInput.InputAction'/Game/Input/Actions/IA_Dash.IA_Dash'"
+   NodePosX=0
+   NodePosY=500
+   NodeGuid=C0000000000000000000000000000001
+   CustomProperties Pin (PinId=C1000000000000000000000000000001,PinName="Started",Direction="EGPD_Output",PinType.PinCategory="exec",LinkedTo=(K2Node_IfThenElse_Dash2Can C3000000000000000000000000000001,),)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_VariableGet Name="K2Node_VariableGet_Dash2Can"
+   VariableReference=(MemberName="CanDash",bSelfContext=True)
+   NodePosX=0
+   NodePosY=720
+   NodeGuid=C0000000000000000000000000000002
+   CustomProperties Pin (PinId=C2000000000000000000000000000001,PinName="CanDash",Direction="EGPD_Output",PinType.PinCategory="bool",LinkedTo=(K2Node_IfThenElse_Dash2Can C3000000000000000000000000000002,),)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_IfThenElse Name="K2Node_IfThenElse_Dash2Can"
+   NodePosX=280
+   NodePosY=500
+   NodeGuid=C0000000000000000000000000000003
+   CustomProperties Pin (PinId=C3000000000000000000000000000001,PinName="execute",PinType.PinCategory="exec",LinkedTo=(K2Node_EnhancedInputAction_Dash2 C1000000000000000000000000000001,),)
+   CustomProperties Pin (PinId=C3000000000000000000000000000002,PinName="Condition",PinType.PinCategory="bool",DefaultValue="true",LinkedTo=(K2Node_VariableGet_Dash2Can C2000000000000000000000000000001,),)
+   CustomProperties Pin (PinId=C3000000000000000000000000000003,PinName="then",Direction="EGPD_Output",PinType.PinCategory="exec",LinkedTo=(K2Node_VariableSet_Dash2Off C4000000000000000000000000000001,),)
+   CustomProperties Pin (PinId=C3000000000000000000000000000004,PinName="else",Direction="EGPD_Output",PinType.PinCategory="exec",)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_VariableSet Name="K2Node_VariableSet_Dash2Off"
+   VariableReference=(MemberName="CanDash",bSelfContext=True)
+   NodePosX=520
+   NodePosY=500
+   NodeGuid=C0000000000000000000000000000004
+   CustomProperties Pin (PinId=C4000000000000000000000000000001,PinName="execute",PinType.PinCategory="exec",LinkedTo=(K2Node_IfThenElse_Dash2Can C3000000000000000000000000000003,),)
+   CustomProperties Pin (PinId=C4000000000000000000000000000002,PinName="then",Direction="EGPD_Output",PinType.PinCategory="exec",LinkedTo=(K2Node_IfThenElse_Dash2Air C5000000000000000000000000000001,),)
+   CustomProperties Pin (PinId=C4000000000000000000000000000003,PinName="CanDash",PinType.PinCategory="bool",DefaultValue="false",)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_IfThenElse Name="K2Node_IfThenElse_Dash2Air"
+   NodePosX=760
+   NodePosY=500
+   NodeGuid=C0000000000000000000000000000005
+   CustomProperties Pin (PinId=C5000000000000000000000000000001,PinName="execute",PinType.PinCategory="exec",LinkedTo=(K2Node_VariableSet_Dash2Off C4000000000000000000000000000002,),)
+   CustomProperties Pin (PinId=C5000000000000000000000000000002,PinName="Condition",PinType.PinCategory="bool",DefaultValue="false",LinkedTo=(K2Node_CallFunction_Dash2IsFalling C7000000000000000000000000000002,),)
+   CustomProperties Pin (PinId=C5000000000000000000000000000003,PinName="then",Direction="EGPD_Output",PinType.PinCategory="exec",LinkedTo=(K2Node_CallFunction_Dash2Hold C8000000000000000000000000000001,),)
+   CustomProperties Pin (PinId=C5000000000000000000000000000004,PinName="else",Direction="EGPD_Output",PinType.PinCategory="exec",LinkedTo=(K2Node_CallFunction_Dash2Play CA000000000000000000000000000001,),)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_VariableGet Name="K2Node_VariableGet_Dash2Move"
+   VariableReference=(MemberName="CharacterMovement",bSelfContext=True)
+   NodePosX=520
+   NodePosY=720
+   NodeGuid=C0000000000000000000000000000006
+   CustomProperties Pin (PinId=C6000000000000000000000000000001,PinName="CharacterMovement",Direction="EGPD_Output",PinType.PinCategory="object",PinType.PinSubCategoryObject="/Script/CoreUObject.Class'/Script/Engine.CharacterMovementComponent'",LinkedTo=(K2Node_CallFunction_Dash2IsFalling C7000000000000000000000000000001,K2Node_VariableSet_Dash2GravLow C9000000000000000000000000000003,K2Node_VariableSet_Dash2GravBack CE000000000000000000000000000003,),)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_CallFunction Name="K2Node_CallFunction_Dash2IsFalling"
+   bIsPureFunc=True
+   FunctionReference=(MemberParent="/Script/CoreUObject.Class'/Script/Engine.CharacterMovementComponent'",MemberName="IsFalling")
+   NodePosX=760
+   NodePosY=720
+   NodeGuid=C0000000000000000000000000000007
+   CustomProperties Pin (PinId=C7000000000000000000000000000001,PinName="self",PinType.PinCategory="object",PinType.PinSubCategoryObject="/Script/CoreUObject.Class'/Script/Engine.CharacterMovementComponent'",LinkedTo=(K2Node_VariableGet_Dash2Move C6000000000000000000000000000001,),)
+   CustomProperties Pin (PinId=C7000000000000000000000000000002,PinName="ReturnValue",Direction="EGPD_Output",PinType.PinCategory="bool",LinkedTo=(K2Node_IfThenElse_Dash2Air C5000000000000000000000000000002,),)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_CallFunction Name="K2Node_CallFunction_Dash2Hold"
+   FunctionReference=(MemberName="LaunchCharacter",bSelfContext=True)
+   NodePosX=1000
+   NodePosY=400
+   NodeGuid=C0000000000000000000000000000008
+   CustomProperties Pin (PinId=C8000000000000000000000000000001,PinName="execute",PinType.PinCategory="exec",LinkedTo=(K2Node_IfThenElse_Dash2Air C5000000000000000000000000000003,),)
+   CustomProperties Pin (PinId=C8000000000000000000000000000002,PinName="then",Direction="EGPD_Output",PinType.PinCategory="exec",LinkedTo=(K2Node_VariableSet_Dash2GravLow C9000000000000000000000000000001,),)
+   CustomProperties Pin (PinId=C8000000000000000000000000000003,PinName="LaunchVelocity",PinType.PinCategory="struct",PinType.PinSubCategoryObject="/Script/CoreUObject.ScriptStruct'/Script/CoreUObject.Vector'",DefaultValue="0.000000,0.000000,0.000000",)
+   CustomProperties Pin (PinId=C8000000000000000000000000000004,PinName="bXYOverride",PinType.PinCategory="bool",DefaultValue="false",)
+   CustomProperties Pin (PinId=C8000000000000000000000000000005,PinName="bZOverride",PinType.PinCategory="bool",DefaultValue="true",)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_VariableSet Name="K2Node_VariableSet_Dash2GravLow"
+   VariableReference=(MemberParent="/Script/CoreUObject.Class'/Script/Engine.CharacterMovementComponent'",MemberName="GravityScale")
+   NodePosX=1260
+   NodePosY=400
+   NodeGuid=C0000000000000000000000000000009
+   CustomProperties Pin (PinId=C9000000000000000000000000000001,PinName="execute",PinType.PinCategory="exec",LinkedTo=(K2Node_CallFunction_Dash2Hold C8000000000000000000000000000002,),)
+   CustomProperties Pin (PinId=C9000000000000000000000000000002,PinName="then",Direction="EGPD_Output",PinType.PinCategory="exec",LinkedTo=(K2Node_CallFunction_Dash2Play CA000000000000000000000000000001,),)
+   CustomProperties Pin (PinId=C9000000000000000000000000000003,PinName="self",PinType.PinCategory="object",PinType.PinSubCategoryObject="/Script/CoreUObject.Class'/Script/Engine.CharacterMovementComponent'",LinkedTo=(K2Node_VariableGet_Dash2Move C6000000000000000000000000000001,),)
+   CustomProperties Pin (PinId=C9000000000000000000000000000004,PinName="GravityScale",PinType.PinCategory="real",PinType.PinSubCategory="float",DefaultValue="0.2",)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_CallFunction Name="K2Node_CallFunction_Dash2Play"
+   FunctionReference=(MemberParent="/Script/CoreUObject.Class'/Script/Engine.AnimInstance'",MemberName="PlaySlotAnimationAsDynamicMontage")
+   NodePosX=1520
+   NodePosY=500
+   NodeGuid=C000000000000000000000000000000A
+   CustomProperties Pin (PinId=CA000000000000000000000000000001,PinName="execute",PinType.PinCategory="exec",LinkedTo=(K2Node_IfThenElse_Dash2Air C5000000000000000000000000000004,K2Node_VariableSet_Dash2GravLow C9000000000000000000000000000002,),)
+   CustomProperties Pin (PinId=CA000000000000000000000000000002,PinName="then",Direction="EGPD_Output",PinType.PinCategory="exec",LinkedTo=(K2Node_CallFunction_Dash2Wait1 CD000000000000000000000000000001,),)
+   CustomProperties Pin (PinId=CA000000000000000000000000000003,PinName="self",PinType.PinCategory="object",PinType.PinSubCategoryObject="/Script/CoreUObject.Class'/Script/Engine.AnimInstance'",LinkedTo=(K2Node_CallFunction_Dash2AnimInst CC000000000000000000000000000002,),)
+   CustomProperties Pin (PinId=CA000000000000000000000000000004,PinName="Asset",PinType.PinCategory="object",PinType.PinSubCategoryObject="/Script/CoreUObject.Class'/Script/Engine.AnimSequenceBase'",DefaultObject="/Script/Engine.AnimSequence'/Game/Characters/Mannequins/Anims/Unarmed/Jump/MM_Dash.MM_Dash'",)
+   CustomProperties Pin (PinId=CA000000000000000000000000000005,PinName="SlotNodeName",PinType.PinCategory="name",DefaultValue="DefaultSlot",)
+   CustomProperties Pin (PinId=CA000000000000000000000000000006,PinName="BlendInTime",PinType.PinCategory="real",PinType.PinSubCategory="float",DefaultValue="0.1",)
+   CustomProperties Pin (PinId=CA000000000000000000000000000007,PinName="BlendOutTime",PinType.PinCategory="real",PinType.PinSubCategory="float",DefaultValue="0.25",)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_VariableGet Name="K2Node_VariableGet_Dash2Mesh"
+   VariableReference=(MemberName="Mesh",bSelfContext=True)
+   NodePosX=1180
+   NodePosY=760
+   NodeGuid=C000000000000000000000000000000B
+   CustomProperties Pin (PinId=CB000000000000000000000000000001,PinName="Mesh",Direction="EGPD_Output",PinType.PinCategory="object",PinType.PinSubCategoryObject="/Script/CoreUObject.Class'/Script/Engine.SkeletalMeshComponent'",LinkedTo=(K2Node_CallFunction_Dash2AnimInst CC000000000000000000000000000001,),)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_CallFunction Name="K2Node_CallFunction_Dash2AnimInst"
+   bIsPureFunc=True
+   FunctionReference=(MemberParent="/Script/CoreUObject.Class'/Script/Engine.SkeletalMeshComponent'",MemberName="GetAnimInstance")
+   NodePosX=1340
+   NodePosY=760
+   NodeGuid=C000000000000000000000000000000C
+   CustomProperties Pin (PinId=CC000000000000000000000000000001,PinName="self",PinType.PinCategory="object",PinType.PinSubCategoryObject="/Script/CoreUObject.Class'/Script/Engine.SkeletalMeshComponent'",LinkedTo=(K2Node_VariableGet_Dash2Mesh CB000000000000000000000000000001,),)
+   CustomProperties Pin (PinId=CC000000000000000000000000000002,PinName="ReturnValue",Direction="EGPD_Output",PinType.PinCategory="object",PinType.PinSubCategoryObject="/Script/CoreUObject.Class'/Script/Engine.AnimInstance'",LinkedTo=(K2Node_CallFunction_Dash2Play CA000000000000000000000000000003,),)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_CallFunction Name="K2Node_CallFunction_Dash2Wait1"
+   FunctionReference=(MemberParent="/Script/CoreUObject.Class'/Script/Engine.KismetSystemLibrary'",MemberName="Delay")
+   NodePosX=1860
+   NodePosY=500
+   NodeGuid=C000000000000000000000000000000D
+   CustomProperties Pin (PinId=CD000000000000000000000000000001,PinName="execute",PinType.PinCategory="exec",LinkedTo=(K2Node_CallFunction_Dash2Play CA000000000000000000000000000002,),)
+   CustomProperties Pin (PinId=CD000000000000000000000000000002,PinName="then",Direction="EGPD_Output",PinType.PinCategory="exec",LinkedTo=(K2Node_VariableSet_Dash2GravBack CE000000000000000000000000000001,),)
+   CustomProperties Pin (PinId=CD000000000000000000000000000003,PinName="Duration",PinType.PinCategory="real",PinType.PinSubCategory="float",DefaultValue="0.6",)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_VariableSet Name="K2Node_VariableSet_Dash2GravBack"
+   VariableReference=(MemberParent="/Script/CoreUObject.Class'/Script/Engine.CharacterMovementComponent'",MemberName="GravityScale")
+   NodePosX=2100
+   NodePosY=500
+   NodeGuid=C000000000000000000000000000000E
+   CustomProperties Pin (PinId=CE000000000000000000000000000001,PinName="execute",PinType.PinCategory="exec",LinkedTo=(K2Node_CallFunction_Dash2Wait1 CD000000000000000000000000000002,),)
+   CustomProperties Pin (PinId=CE000000000000000000000000000002,PinName="then",Direction="EGPD_Output",PinType.PinCategory="exec",LinkedTo=(K2Node_CallFunction_Dash2Wait2 CF000000000000000000000000000001,),)
+   CustomProperties Pin (PinId=CE000000000000000000000000000003,PinName="self",PinType.PinCategory="object",PinType.PinSubCategoryObject="/Script/CoreUObject.Class'/Script/Engine.CharacterMovementComponent'",LinkedTo=(K2Node_VariableGet_Dash2Move C6000000000000000000000000000001,),)
+   CustomProperties Pin (PinId=CE000000000000000000000000000004,PinName="GravityScale",PinType.PinCategory="real",PinType.PinSubCategory="float",DefaultValue="1.0",)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_CallFunction Name="K2Node_CallFunction_Dash2Wait2"
+   FunctionReference=(MemberParent="/Script/CoreUObject.Class'/Script/Engine.KismetSystemLibrary'",MemberName="Delay")
+   NodePosX=2360
+   NodePosY=500
+   NodeGuid=C000000000000000000000000000000F
+   CustomProperties Pin (PinId=CF000000000000000000000000000001,PinName="execute",PinType.PinCategory="exec",LinkedTo=(K2Node_VariableSet_Dash2GravBack CE000000000000000000000000000002,),)
+   CustomProperties Pin (PinId=CF000000000000000000000000000002,PinName="then",Direction="EGPD_Output",PinType.PinCategory="exec",LinkedTo=(K2Node_VariableSet_Dash2On D0000000000000000000000000000001,),)
+   CustomProperties Pin (PinId=CF000000000000000000000000000003,PinName="Duration",PinType.PinCategory="real",PinType.PinSubCategory="float",DefaultValue="0.6",)
+End Object
+Begin Object Class=/Script/BlueprintGraph.K2Node_VariableSet Name="K2Node_VariableSet_Dash2On"
+   VariableReference=(MemberName="CanDash",bSelfContext=True)
+   NodePosX=2600
+   NodePosY=500
+   NodeGuid=D0000000000000000000000000000010
+   CustomProperties Pin (PinId=D0000000000000000000000000000001,PinName="execute",PinType.PinCategory="exec",LinkedTo=(K2Node_CallFunction_Dash2Wait2 CF000000000000000000000000000002,),)
+   CustomProperties Pin (PinId=D0000000000000000000000000000002,PinName="CanDash",PinType.PinCategory="bool",DefaultValue="true",)
+End Object

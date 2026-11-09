@@ -15,9 +15,10 @@ SUN = dict(pitch=-24.0, yaw=125.0, intensity=12.0, color=(255, 184, 120),
            shaft_bloom=True, bloom_scale=0.25, bloom_threshold=0.6, bloom_tint=(255, 190, 120))
 # a cool, weak sky light gives the shadow side its blue-grey against the warm sun
 SKY = dict(intensity=0.8, color=(190, 200, 225))
-FOG = dict(density=0.03, falloff=0.02, start_distance=400.0,
-           inscatter=(1.5, 0.55, 0.12),            # ambient dust: the orange identity
-           directional=(1.8, 0.75, 0.22),           # glow when looking toward the sun
+FOG = dict(density=0.06, falloff=0.006, start_distance=400.0,
+           inscatter=(1.5, 0.55, 0.12),            # ambient dust: the orange identity. = HAZE_COLOR in add_sand.py
+           directional=(0.0, 0.0, 0.0),             # off: one fog colour everywhere, so the
+                                                     # height haze on stone (M_SandCover) matches it
            directional_exponent=6.0,
            second=dict(fog_density=0.0, fog_height_falloff=0.2, fog_height_offset=0.0),  # a low layer washes all shading out: keep off
            vol_distance=9000.0, vol_scatter=0.75, vol_albedo=(255, 200, 150), vol_extinction=0.9)
@@ -74,6 +75,7 @@ for p, v in (("fog_density", FOG["density"]), ("fog_height_falloff", FOG["fallof
              ("fog_inscattering_luminance", L(FOG["inscatter"])),
              ("directional_inscattering_luminance", L(FOG["directional"])),
              ("directional_inscattering_exponent", FOG["directional_exponent"]),
+             ("sky_atmosphere_ambient_contribution_color_scale", unreal.LinearColor(0, 0, 0, 1)),
              ("volumetric_fog_distance", FOG["vol_distance"]),
              ("volumetric_fog_scattering_distribution", FOG["vol_scatter"]),
              ("volumetric_fog_albedo", C(FOG["vol_albedo"])),
