@@ -1,4 +1,4 @@
-"""The android under aerogel skin (Docs/CHARACTER_DIRECTION.md, first task). Idempotent.
+"""The android: a smooth opaque skin over a mechanical body (Docs/CHARACTER_DIRECTION.md). Idempotent.
 
   python3 Tools/ue.py Tools/char_shell.py
 
@@ -39,6 +39,16 @@ SHELL = dict(
     roughness=0.75,                  # matte, like a display mannequin
     specular=0.25,
 )
+MODE = "skin"                        # "skin": opaque, hides the machine (Tema, current)
+                                     # "aerogel": translucent, the machine shows through
+SKIN = dict(
+    inflate=0.0,                     # the skin is its own mesh now (char_skin.py)
+    skin=(0.74, 0.72, 0.69),         # mannequin white with a living warmth
+    subsurface=(0.85, 0.66, 0.58),   # light bleeding through thin skin, like a human ear
+    subsurface_amount=0.0,           # 0 = plain lit: the low sun blows subsurface out to flat white
+    roughness=0.62,
+    specular=0.30,
+)
 CORE_TINT = (0.20, 0.21, 0.23)       # mid-grey machine: low contrast under the skin
 
 if unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).is_in_play_in_editor():
@@ -60,17 +70,6 @@ def asset(name, cls, factory):
 # ---- shell material ----------------------------------------------------------------
 m = asset("M_AerogelShell", unreal.Material, unreal.MaterialFactoryNew())
 mel.delete_all_material_expressions(m)
-m.set_editor_property("blend_mode", unreal.BlendMode.BLEND_TRANSLUCENT)
-m.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_DEFAULT_LIT)
-m.set_editor_property("translucency_lighting_mode", unreal.TranslucencyLightingMode.TLM_SURFACE_PER_PIXEL_LIGHTING)
-m.set_editor_property("used_with_skeletal_mesh", True)
-for prop, val in (("apply_fogging", True), ("compute_fog_per_pixel", True),
-                  ("output_translucent_velocity", False)):
-    try:
-        m.set_editor_property(prop, val)
-    except Exception as e:
-        print("skip", prop, e)
-
 X = [-1400]
 
 
@@ -100,50 +99,81 @@ def op(cls, a, b, x, y, ia="A", ib="B"):
     return n
 
 
-S = SHELL
-# thickness: how much skin-to-body gap is behind this pixel
-sd = node(unreal.MaterialExpressionSceneDepth, -1400, 0)
-pd = node(unreal.MaterialExpressionPixelDepth, -1400, 120)
-gap = op(unreal.MaterialExpressionSubtract, sd, pd, -1200, 40)
-thick = op(unreal.MaterialExpressionDivide, gap, scalar("ThickScale", S["thick_scale"], -1400, 220), -1000, 60)
-thick = op(unreal.MaterialExpressionSaturate, thick, None, -850, 60, ia="")
-# rim
-fr = node(unreal.MaterialExpressionFresnel, -1200, 320)
-mel.connect_material_expressions(scalar("FresnelExponent", S["fresnel_exponent"], -1400, 340), "", fr, "ExponentIn")
-milk = op(unreal.MaterialExpressionMax, thick, fr, -700, 160)
-# opacity
-lo, hi = scalar("OpacityMin", S["opacity_min"], -700, 300), scalar("OpacityMax", S["opacity_max"], -700, 380)
-opac = node(unreal.MaterialExpressionLinearInterpolate, -450, 260)
-mel.connect_material_expressions(lo, "", opac, "A")
-mel.connect_material_expressions(hi, "", opac, "B")
-mel.connect_material_expressions(milk, "", opac, "Alpha")
-mel.connect_material_property(opac, "", MP.MP_OPACITY)
-# color
-mel.connect_material_property(vector("SkinColor", S["skin"], -450, -200), "", MP.MP_BASE_COLOR)
-mel.connect_material_property(scalar("Roughness", S["roughness"], -450, -80), "", MP.MP_ROUGHNESS)
-mel.connect_material_property(scalar("Specular", S["specular"], -450, -40), "", MP.MP_SPECULAR)
-# emissive: blue scatter at the rim + inner pulse where the skin is thin
-sc = op(unreal.MaterialExpressionMultiply, vector("ScatterColor", S["scatter"], -700, 480),
-        scalar("ScatterStrength", S["scatter_strength"], -700, 600), -500, 500)
-sc = op(unreal.MaterialExpressionMultiply, sc, fr, -350, 500)
-t = node(unreal.MaterialExpressionTime, -1200, 700)
-wave = op(unreal.MaterialExpressionMultiply, t, scalar("GlowSpeed", S["glow_speed"], -1200, 780), -1000, 720)
-wave = op(unreal.MaterialExpressionSine, wave, None, -850, 720, ia="")
-wave = op(unreal.MaterialExpressionMultiply, wave, None, -700, 720)
-wave.set_editor_property("const_b", 0.35)
-wave = op(unreal.MaterialExpressionAdd, wave, None, -550, 720)
-wave.set_editor_property("const_b", 0.65)
-thin = op(unreal.MaterialExpressionOneMinus, milk, None, -550, 820, ia="")
-glow = op(unreal.MaterialExpressionMultiply, vector("GlowColor", S["glow"], -550, 900),
-          scalar("GlowStrength", S["glow_strength"], -550, 1020), -350, 900)
-glow = op(unreal.MaterialExpressionMultiply, glow, wave, -200, 800)
-glow = op(unreal.MaterialExpressionMultiply, glow, thin, -50, 800)
-emis = op(unreal.MaterialExpressionAdd, sc, glow, 100, 600)
-mel.connect_material_property(emis, "", MP.MP_EMISSIVE_COLOR)
-# float the skin above the body
-nrm = node(unreal.MaterialExpressionVertexNormalWS, -450, 1150)
-wpo = op(unreal.MaterialExpressionMultiply, nrm, scalar("Inflate", S["inflate"], -450, 1250), -250, 1150)
-mel.connect_material_property(wpo, "", MP.MP_WORLD_POSITION_OFFSET)
+def build_skin():
+    """Opaque skin: hides the machine completely, soft light bleed like human skin."""
+    K = SKIN
+    m.set_editor_property("blend_mode", unreal.BlendMode.BLEND_OPAQUE)
+    m.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_SUBSURFACE if K["subsurface_amount"] > 0 else unreal.MaterialShadingModel.MSM_DEFAULT_LIT)
+    m.set_editor_property("used_with_skeletal_mesh", True)
+    mel.connect_material_property(vector("SkinColor", K["skin"], -450, -200), "", MP.MP_BASE_COLOR)
+    mel.connect_material_property(scalar("Roughness", K["roughness"], -450, -80), "", MP.MP_ROUGHNESS)
+    mel.connect_material_property(scalar("Specular", K["specular"], -450, -40), "", MP.MP_SPECULAR)
+    mel.connect_material_property(vector("SubsurfaceColor", K["subsurface"], -450, 40), "", MP.MP_SUBSURFACE_COLOR)
+    mel.connect_material_property(scalar("SubsurfaceAmount", K["subsurface_amount"], -450, 160), "", MP.MP_OPACITY)
+    nrm = node(unreal.MaterialExpressionVertexNormalWS, -450, 300)
+    wpo = op(unreal.MaterialExpressionMultiply, nrm, scalar("Inflate", K["inflate"], -450, 400), -250, 300)
+    mel.connect_material_property(wpo, "", MP.MP_WORLD_POSITION_OFFSET)
+
+
+def build_aerogel():
+    m.set_editor_property("blend_mode", unreal.BlendMode.BLEND_TRANSLUCENT)
+    m.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_DEFAULT_LIT)
+    m.set_editor_property("translucency_lighting_mode", unreal.TranslucencyLightingMode.TLM_SURFACE_PER_PIXEL_LIGHTING)
+    m.set_editor_property("used_with_skeletal_mesh", True)
+    for prop, val in (("apply_fogging", True), ("compute_fog_per_pixel", True),
+                      ("output_translucent_velocity", False)):
+        try:
+            m.set_editor_property(prop, val)
+        except Exception as e:
+            print("skip", prop, e)
+
+    S = SHELL
+    # thickness: how much skin-to-body gap is behind this pixel
+    sd = node(unreal.MaterialExpressionSceneDepth, -1400, 0)
+    pd = node(unreal.MaterialExpressionPixelDepth, -1400, 120)
+    gap = op(unreal.MaterialExpressionSubtract, sd, pd, -1200, 40)
+    thick = op(unreal.MaterialExpressionDivide, gap, scalar("ThickScale", S["thick_scale"], -1400, 220), -1000, 60)
+    thick = op(unreal.MaterialExpressionSaturate, thick, None, -850, 60, ia="")
+    # rim
+    fr = node(unreal.MaterialExpressionFresnel, -1200, 320)
+    mel.connect_material_expressions(scalar("FresnelExponent", S["fresnel_exponent"], -1400, 340), "", fr, "ExponentIn")
+    milk = op(unreal.MaterialExpressionMax, thick, fr, -700, 160)
+    # opacity
+    lo, hi = scalar("OpacityMin", S["opacity_min"], -700, 300), scalar("OpacityMax", S["opacity_max"], -700, 380)
+    opac = node(unreal.MaterialExpressionLinearInterpolate, -450, 260)
+    mel.connect_material_expressions(lo, "", opac, "A")
+    mel.connect_material_expressions(hi, "", opac, "B")
+    mel.connect_material_expressions(milk, "", opac, "Alpha")
+    mel.connect_material_property(opac, "", MP.MP_OPACITY)
+    # color
+    mel.connect_material_property(vector("SkinColor", S["skin"], -450, -200), "", MP.MP_BASE_COLOR)
+    mel.connect_material_property(scalar("Roughness", S["roughness"], -450, -80), "", MP.MP_ROUGHNESS)
+    mel.connect_material_property(scalar("Specular", S["specular"], -450, -40), "", MP.MP_SPECULAR)
+    # emissive: blue scatter at the rim + inner pulse where the skin is thin
+    sc = op(unreal.MaterialExpressionMultiply, vector("ScatterColor", S["scatter"], -700, 480),
+            scalar("ScatterStrength", S["scatter_strength"], -700, 600), -500, 500)
+    sc = op(unreal.MaterialExpressionMultiply, sc, fr, -350, 500)
+    t = node(unreal.MaterialExpressionTime, -1200, 700)
+    wave = op(unreal.MaterialExpressionMultiply, t, scalar("GlowSpeed", S["glow_speed"], -1200, 780), -1000, 720)
+    wave = op(unreal.MaterialExpressionSine, wave, None, -850, 720, ia="")
+    wave = op(unreal.MaterialExpressionMultiply, wave, None, -700, 720)
+    wave.set_editor_property("const_b", 0.35)
+    wave = op(unreal.MaterialExpressionAdd, wave, None, -550, 720)
+    wave.set_editor_property("const_b", 0.65)
+    thin = op(unreal.MaterialExpressionOneMinus, milk, None, -550, 820, ia="")
+    glow = op(unreal.MaterialExpressionMultiply, vector("GlowColor", S["glow"], -550, 900),
+              scalar("GlowStrength", S["glow_strength"], -550, 1020), -350, 900)
+    glow = op(unreal.MaterialExpressionMultiply, glow, wave, -200, 800)
+    glow = op(unreal.MaterialExpressionMultiply, glow, thin, -50, 800)
+    emis = op(unreal.MaterialExpressionAdd, sc, glow, 100, 600)
+    mel.connect_material_property(emis, "", MP.MP_EMISSIVE_COLOR)
+    # float the skin above the body
+    nrm = node(unreal.MaterialExpressionVertexNormalWS, -450, 1150)
+    wpo = op(unreal.MaterialExpressionMultiply, nrm, scalar("Inflate", S["inflate"], -450, 1250), -250, 1150)
+    mel.connect_material_property(wpo, "", MP.MP_WORLD_POSITION_OFFSET)
+
+
+build_skin() if MODE == "skin" else build_aerogel()
 mel.recompile_material(m)
 eal.save_loaded_asset(m)
 
@@ -182,9 +212,16 @@ if "Shell" not in by:
     sds.rename_subobject(h, unreal.Text("Shell"))
     by["Shell"] = h
 shell = lib.get_object(lib.get_data(by["Shell"]))
-shell.set_skeletal_mesh_asset(quinn)
-shell.set_editor_property("override_materials", [m] * len(quinn.materials))
-shell.set_editor_property("cast_shadow", False)
+# the shell wears the smooth skin mesh once Tools/char_skin.py has imported it
+skin_mesh = unreal.load_asset(DIR + "/SKM_AndroidSkin") if eal.does_asset_exist(DIR + "/SKM_AndroidSkin") else quinn
+shell.set_skeletal_mesh_asset(skin_mesh)
+shell.set_editor_property("override_materials", [m] * len(skin_mesh.materials))
+shell.set_editor_property("cast_shadow", skin_mesh != quinn)
+if skin_mesh != quinn:   # opaque skin over its own mesh: the body only leads the pose
+    body.set_editor_property("visible", False)
+    body.set_editor_property("cast_shadow", False)
+    body.set_editor_property("visibility_based_anim_tick_option",
+                             unreal.VisibilityBasedAnimTickOption.ALWAYS_TICK_POSE_AND_REFRESH_BONES)
 
 unreal.BlueprintEditorLibrary.compile_blueprint(bp)
 eal.save_loaded_asset(bp)
