@@ -12,7 +12,7 @@ Every piece is cut from the skin itself, so it fits her exactly. Depth comes fro
             cleanly through the triangles and lifted 0.1-0.6 cm; opaque pieces get a rim
             down to the skin so they read as material with thickness
   piping    a round cord along a piece's edge
-  seams     raised cords along the body (boning, stocking seams, catsuit stripes)
+  seams     flat tapes sewn along the body (boning, stocking seams, catsuit stripes)
   straps    taut ribbons between two points (garters), lifted where the body bulges
   hardware  small bevelled blocks (sliders, clips, rings)
 
@@ -90,7 +90,7 @@ keys = me.shape_keys.key_blocks if me.shape_keys else []
 DELTAS = {k.name: (vget(k.data, "co", nv) - CO) @ R3.T for k in keys[1:]}
 # The rest shape is flat: bust and glutes come from the slider morphs. Design on her
 # default body (the Character page's starting values) and derive the rest shape at the end.
-DESIGN = {k: w for k, w in (("BustUp", 0.55), ("GlutesUp", 0.55)) if k in DELTAS}
+DESIGN = {k: w for k, w in (("BustUp", 0.55), ("GlutesUp", 0.55), ("Fat", 0.20), ("ThighGap", 0.35)) if k in DELTAS}
 for k, w in DESIGN.items():
     X = X + DELTAS[k] * w
 _dm = bpy.data.meshes.new("design")
@@ -212,7 +212,8 @@ for s in (1, -1):
     a, b = Bn["thigh_" + SIDE[s]], Bn["foot_" + SIDE[s]]
     k = np.clip((a[2] - Z) / (a[2] - b[2]), -0.3, 1.2)
     d = X - (a + (b - a) * k[:, None])
-    th = np.arctan2(d @ LEFT, d @ FWD)
+    c = s * math.pi / 2                                   # branch cut on the inner thigh
+    th = (np.arctan2(d @ LEFT, d @ FWD) - c + math.pi) % (2 * math.pi) - math.pi + c
     _UL = np.where((LAT >= 0) == (s == 1), th / (2 * math.pi) * CL + s * CL / 4, _UL)
 _UPL = np.arctan2(LAT, FW) / (2 * math.pi) * CP
 _TB = np.maximum(smooth01(LM["crotch"] + 1, LM["crotch"] + 11, Z),
@@ -250,7 +251,8 @@ def ray(bvh, c, z, theta, offset):
 
 
 # ---- builders ----------------------------------------------------------------------------------
-PIECES = []          # (bmesh, slot) of the outfit being built
+PIECES = []          # (bmesh, slot, sources) of the outfit being built
+SRC_OF = {}          # outfit object name -> per-vertex (skin a, skin b, t), a = -1 if unknown
 
 
 def edge_loops(bm, min_len):
@@ -289,19 +291,21 @@ def region(val, offset, slot, rim=None, pipe=None, pipe_r=0.18, min_loop=10.0):
         return None
     vl = val.tolist()
     bm = bmesh.new()
-    made, nrm = {}, {}
+    made, nrm, srcof, src = {}, {}, {}, []      # src: the skin vertices each new vertex came from
 
     def vert(a, b=None):
         key = a if b is None else (min(a, b), max(a, b))
         v = made.get(key)
         if v is None:
             if b is None:
-                p, n = WV[a], NV[a]
+                p, n, sv = WV[a], NV[a], (a, a, 0.0)
             else:
                 t = vl[a] / (vl[a] - vl[b])
-                p, n = WV[a].lerp(WV[b], t), NV[a].lerp(NV[b], t).normalized()
+                p, n, sv = WV[a].lerp(WV[b], t), NV[a].lerp(NV[b], t).normalized(), (a, b, t)
             v = made[key] = bm.verts.new(p + n * offset)
             nrm[v] = n
+            srcof[v] = sv
+            src.append(sv)
         return v
 
     for f in T[sel].tolist():
@@ -326,8 +330,9 @@ def region(val, offset, slot, rim=None, pipe=None, pipe_r=0.18, min_loop=10.0):
             for v in (a, b):
                 if v not in inner:
                     inner[v] = bm.verts.new(v.co - nrm[v] * max(0.0, offset - 0.03))
+                    src.append(srcof[v])
             bm.faces.new((a, b, inner[b], inner[a]))
-    PIECES.append((bm, slot))
+    PIECES.append((bm, slot, src))
     for pts, closed in loops:
         tube(pts, pipe_r, pipe, closed, push=0.08)
     return bm
@@ -365,8 +370,10 @@ def tube(pts, r, slot, closed=False, sides=6, push=0.0, step=0.8):
     if n < 4:
         return
     bm = bmesh.new()
-    rings = []
+    rings, src = [], []
     for i, p in enumerate(pts):
+        j = nearest(p)                      # the whole ring rides this skin vertex
+        src += [(j, j, 0.0)] * sides
         a_, b_ = (pts[i - 1], pts[(i + 1) % n]) if closed else (pts[max(i - 1, 0)], pts[min(i + 1, n - 1)])
         t = (b_ - a_).normalized()
         out = nearest_normal(p)
@@ -385,21 +392,23 @@ def tube(pts, r, slot, closed=False, sides=6, push=0.0, step=0.8):
     if not closed:
         bm.faces.new(rings[0][::-1])
         bm.faces.new(rings[-1])
-    PIECES.append((bm, slot))
+    PIECES.append((bm, slot, src))
 
 
 def seam(pts, r, slot, field=None):
-    """A raised cord along surface points; with a field, only where the garment is."""
+    """A flat tape sewn along surface points (boning channel, stocking seam, stripe); with a
+    field, only where the garment is. Kept low: the engine's screen-space shadow trace turns
+    a raised cord into a row of dark dashes on the skin beside it in raking light."""
     pts = [p for p in pts if p]
+    tape = lambda run: ribbon(run, r * 2.6, 0.07, slot) if len(run) > 5 else None
     if field is None:
-        return tube(pts, r, slot)
+        return tape(pts)
     run = []
     for p in pts + [None]:
         if p is not None and field[nearest(p)] > 0.6:
             run.append(p)
         else:
-            if len(run) > 5:
-                tube(run, r, slot)
+            tape(run)
             run = []
 
 
@@ -417,8 +426,10 @@ def leg_line(s, theta, z0, z1, offset, step=0.8):
 def ribbon(pts, w, thick, slot):
     pts = smooth_pts(resample(pts, False, 0.8), False, 8)
     bm = bmesh.new()
-    rows = []
+    rows, src = [], []
     for i, p in enumerate(pts):
+        j = nearest(p)
+        src += [(j, j, 0.0)] * 4
         t = (pts[min(i + 1, len(pts) - 1)] - pts[max(i - 1, 0)]).normalized()
         n = nearest_normal(p)
         b = t.cross(n).normalized()
@@ -428,7 +439,7 @@ def ribbon(pts, w, thick, slot):
             bm.faces.new((r0[k], r0[(k + 1) % 4], r1[(k + 1) % 4], r1[k]))
     bm.faces.new(rows[0][::-1])
     bm.faces.new(rows[-1])
-    PIECES.append((bm, slot))
+    PIECES.append((bm, slot, src))
     return pts
 
 
@@ -444,7 +455,8 @@ def clip(center, n, t, size, slot="Trim"):
     Mx.translation = center
     bmesh.ops.transform(bm, matrix=Mx, verts=bm.verts)
     bmesh.ops.bevel(bm, geom=bm.edges[:], offset=min(size) * 0.22, segments=2, affect="EDGES")
-    PIECES.append((bm, slot))
+    j = nearest(center)                     # rigid: the whole piece rides one skin vertex
+    PIECES.append((bm, slot, [(j, j, 0.0)] * len(bm.verts)))
 
 
 def hardware(point, along, size, lift=0.5):
@@ -552,7 +564,7 @@ def brief(back="thong", rise=0.0, cut=1.6):
     else:   # cheeky: the leg line rises steeply over the cheek
         z_back = LM["crotch"] + (top - LM["crotch"]) * np.clip(a * 1.15, 0, 1) ** 0.7
         rear = np.minimum(top - Z, Z - z_back + 2.0)
-    f = np.where(FW > 0, front, rear)
+    f = rear + (front - rear) * SIDE_BLEND       # front and back lines meet smoothly at the side
     reg = TORSO & (Z > LM["crotch"] - 4) & (Z < top + 2) & ~((LEGS > 0.9) & (Z < LM["crotch"] - 1))
     return where(reg, f)
 
@@ -561,8 +573,8 @@ def bodysuit(neck=None):
     neck = neck if neck is not None else LM["bust"] + 8.0
     a = np.clip(ALAT / LM["hip_half"], 0, 1)
     z_leg = LM["crotch"] + (LM["hip_top"] + 2 - LM["crotch"]) * a ** 1.6
-    f_leg = np.where(FW > 0, Z - z_leg,
-                     Z - (LM["crotch"] + (LM["hip_top"] - LM["crotch"]) * np.clip(a * 1.15, 0, 1) ** 0.7) + 2.0)
+    f_rear = Z - (LM["crotch"] + (LM["hip_top"] - LM["crotch"]) * np.clip(a * 1.15, 0, 1) ** 0.7) + 2.0
+    f_leg = f_rear + (Z - z_leg - f_rear) * SIDE_BLEND
     f = np.minimum(np.minimum(neck - Z, (0.30 - ARMS) * 25.0), f_leg)
     return where((HEAD < 0.5) & (Z > LM["crotch"] - 4), f)
 
@@ -574,12 +586,13 @@ def catsuit():
     for s in (1, -1):   # side waist ovals
         side_pt = surface_near(PEL + LEFT * s * 30 + UP * (LM["waist"] - PEL[2] + 1), LEFT * s)
         r = np.sqrt(((Z - side_pt[2]) / 7.5) ** 2 + ((FW - (side_pt - PEL).dot(FWD)) / 4.0) ** 2)
-        f = np.minimum(f, (np.where((LAT * s) > 0, r, 9.0) - 1.0) * 4.0)
+        f = np.minimum(f, (np.where(((LAT * s) > 0) & (UPPERARM < 0.3), r, 9.0) - 1.0) * 4.0)   # torso only: not the arm beside it
     rw = ALAT / 4.0 + np.abs(Z - (LM["bust"] + 1.0)) / 7.0   # window between the breasts
     return np.minimum(f, (np.where(FW > 0, rw, 9.0) - 1.0) * 4.0)
 
 
 LEGMASK = UPPERARM < 0.3
+SIDE_BLEND = smooth01(-3.5, 3.5, FW)     # 0 behind the side seam, 1 in front of it
 ST_TOP = LM["thigh_mid"] + 5.0
 BELT_Z = LM["waist"] - 3.0
 
@@ -593,10 +606,10 @@ def bra(cup_slot, cup_top=0.30, band_w=1.6, strap_w=1.0, pipe="Satin"):
 
 
 def stockings(top=ST_TOP, welt="Lace", welt_h=6.0, slot="Sheer"):
-    region(where(LEGMASK & (Z < LM["crotch"]), top - Z), 0.2, slot)
+    region(where(LEGMASK & (Z < LM["crotch"]), top - Z), 0.26, slot)
     region(band(top - welt_h * 0.5, welt_h, LEGMASK & (Z < LM["crotch"])), 0.32, welt, pipe="Satin", pipe_r=0.16)
     for s in (1, -1):
-        seam(leg_line(s, 180, top - welt_h, LM["ankle"] + 3, 0.34), 0.12, "Satin")
+        seam(leg_line(s, 180, top - welt_h, LM["ankle"] + 3, 0.29), 0.12, "Satin")
 
 
 def garters(belt_z, bot_z, back=True, off_top=0.6, off_bot=0.5, slot="Satin", width=1.2):
@@ -610,13 +623,13 @@ def garters(belt_z, bot_z, back=True, off_top=0.6, off_bot=0.5, slot="Satin", wi
 def noir():
     """Sheer bodysuit with boning, lace cups, satin underband and straps, seamed thigh-highs."""
     body = bodysuit()
-    region(body, 0.2, "Sheer", pipe="Satin", pipe_r=0.15)
+    region(body, 0.26, "Sheer", pipe="Satin", pipe_r=0.15)
     bra("Lace", 0.55, 1.8, 1.0)
     z0 = LM["fold"] - 2.2
     for th in (18, -18, 52, -52, 98, -98, 148, -148, 180):
-        seam(torso_line(th, z0, LM["crotch"] - 2, 0.38), 0.15, "Satin", body)
-    seam(torso_line(0, z0, LM["crotch"] - 1, 0.38), 0.13, "Satin", body)
-    region(band(LM["waist"] - 6.0, 1.4), 0.44, "Satin")
+        seam(torso_line(th, z0, LM["crotch"] - 2, 0.29), 0.15, "Satin", body)
+    seam(torso_line(0, z0, LM["crotch"] - 1, 0.29), 0.13, "Satin", body)
+    region(band(LM["waist"] - 4.4, 1.4), 0.38, "Satin")     # clear of the leg line: piping under a band flickers through it
     stockings()
 
 
@@ -626,7 +639,7 @@ def garter_set():
     region(brief("cheeky"), 0.24, "Lace", pipe="Satin", pipe_r=0.14)
     region(band(BELT_Z, 7.0), 0.42, "Lace", pipe="Satin", pipe_r=0.17)
     for th in (0, 40, -40, 90, -90, 140, -140, 180):
-        seam(torso_line(th, BELT_Z + 3.4, BELT_Z - 3.4, 0.62), 0.13, "Satin")
+        seam(torso_line(th, BELT_Z + 3.4, BELT_Z - 3.4, 0.45), 0.13, "Satin")
     hardware(surface_near(PEL + FWD * 30 + UP * (BELT_Z - 3.0 - PEL[2]), FWD), LEFT, (1.6, 1.0, 0.5), 0.7)
     garters(BELT_Z - 3.2, ST_TOP - 1.5)
     stockings()
@@ -651,12 +664,12 @@ def cocoa():
 def fishnet():
     """Fishnet tights with a satin waistband, satin bra and a high thong over them."""
     top = LM["hip_top"] + 4.0
-    region(where(LEGMASK, top - Z), 0.14, "Net")
-    region(band(top - 1.1, 2.2, LEGMASK), 0.3, "Satin")
+    region(where(LEGMASK, top - Z), 0.22, "Net")
+    region(band(top - 1.1, 2.2, LEGMASK), 0.38, "Satin")
     bra("Satin", 0.25, 1.4, 0.8)
-    region(brief("thong", rise=1.5), 0.4, "Satin")
+    region(brief("thong", rise=0.4), 0.46, "Satin")
     for s in (1, -1):
-        seam(leg_line(s, 180, LM["crotch"] - 6, LM["ankle"] + 3, 0.26), 0.14, "Satin")
+        seam(leg_line(s, 180, LM["crotch"] - 6, LM["ankle"] + 3, 0.25), 0.14, "Satin")
 
 
 def catsuit_set():
@@ -664,11 +677,11 @@ def catsuit_set():
     f = catsuit()
     region(f, 0.25, "Latex", pipe="Trim", pipe_r=0.22)
     top = LM["shoulder"] + 5.0
-    seam(torso_line(0, top - 1.0, LM["crotch"] + 1, 0.4), 0.16, "Trim", f)          # zip line
+    seam(torso_line(0, top - 1.0, LM["crotch"] + 1, 0.28), 0.16, "Trim", f)          # zip line
     for th in (34, -34, 150, -150):
-        seam(torso_line(th, LM["fold"] - 1, LM["crotch"] + 6, 0.4), 0.15, "Latex", f)
+        seam(torso_line(th, LM["fold"] - 1, LM["crotch"] + 6, 0.28), 0.15, "Latex", f)
     for s in (1, -1):                                                                # leg stripes, ankle cuffs
-        seam(leg_line(s, 90 * s, LM["hip_top"] - 4, LM["ankle"] + 6, 0.42), 0.2, "Trim", f)
+        seam(leg_line(s, 90 * s, LM["hip_top"] - 4, LM["ankle"] + 6, 0.28), 0.2, "Trim", f)
         region(where(LEGMASK & (LEGS > 0.5), 1.6 - np.abs(Z - (LM["ankle"] + 7.5))), 0.5, "Latex", pipe="Trim", pipe_r=0.14)
     bz = LM["hip_top"] + 5.0
     region(band(bz, 3.0), 0.55, "Latex", pipe="Trim", pipe_r=0.14)
@@ -697,15 +710,15 @@ def sheer():
     dip = 2.2 * np.maximum(0.0, 1 - (ALAT / 9.0) ** 2) * np.clip(FW / 4.0, 0, 1)     # soft V at the front
     region(np.minimum(wT - 0.5, np.minimum(belt_lo + belt_h - Z, Z - belt_lo + dip)), 0.75, "Latex", pipe="Trim", pipe_r=0.22)
     for th in (16, -16, 50, -50, 92, -92, 140, -140, 180):
-        seam(torso_line(th, ub_top - band_h + 0.3, belt_lo + belt_h - 0.3, 0.45), 0.2, "Latex")
+        seam(torso_line(th, ub_top - band_h + 0.3, belt_lo + belt_h - 0.3, 0.28), 0.2, "Latex")
     for th in (24, -24):
-        seam(torso_line(th, ub_top, yoke_lo + 0.5, 0.45), 0.2, "Latex")
+        seam(torso_line(th, ub_top, yoke_lo + 0.5, 0.28), 0.2, "Latex")
     welt_top, welt_h = crotch_z - 17.0, 6.0
     leg = LEGS - 0.5
-    region(np.minimum(leg, welt_top - 1 - Z), 0.22, "Sheer")
+    region(np.minimum(leg, welt_top - 1 - Z), 0.26, "Sheer")
     region(np.minimum(leg, np.minimum(welt_top - Z, Z - (welt_top - welt_h))), 0.5, "Latex", pipe="Trim", pipe_r=0.22)
     for s in (1, -1):
-        seam(leg_line(s, 180, welt_top - welt_h, LM["ankle"] + 3, 0.34), 0.13, "Latex")
+        seam(leg_line(s, 180, welt_top - welt_h, LM["ankle"] + 3, 0.29), 0.13, "Latex")
         for th_belt, th_leg in ((16, 6), (72, 88), (140, 172)):
             garter(s, th_belt, th_leg, belt_lo + 0.6, welt_top - 2.2, 0.95, 0.7, "Latex", 1.3)
     along = np.zeros(nv)
@@ -724,7 +737,10 @@ OUTFITS = {"Noir": noir, "Garter": garter_set, "Cocoa": cocoa, "Fishnet": fishne
 # ---- assemble: one mesh, weights, shape keys, garment UVs ------------------------------------------
 def assemble(name):
     out_bm = bmesh.new()
-    for bm, slot in PIECES:
+    srcs = []
+    for bm, slot, src in PIECES:
+        srcs += src if src is not None else [(-1, -1, 0.0)] * len(bm.verts)
+        assert src is None or len(src) == len(bm.verts)
         tmp = bpy.data.meshes.new("tmp")
         bm.to_mesh(tmp)
         bm.free()
@@ -744,6 +760,8 @@ def assemble(name):
     bpy.context.collection.objects.link(ob)
     for s in SLOTS:
         om.materials.append(MATS[s])
+    assert len(srcs) == len(om.vertices)
+    SRC_OF[ob.name] = np.array(srcs, float)
     return ob
 
 
@@ -753,9 +771,15 @@ def finalize(ob):
     n = len(om.vertices)
     oc = vget(om.vertices, "co", n)
 
+    # fabric cut from the skin moves exactly with the skin vertices it came from, so it
+    # cannot sink into the body at a joint; cords, straps and hardware take the nearest skin
     idx3 = np.empty((n, 3), int)
     w3 = np.empty((n, 3))
-    for i in range(n):
+    src = SRC_OF.pop(ob.name)
+    known = src[:, 0] >= 0
+    idx3[known] = np.stack([src[known, 0], src[known, 1], src[known, 0]], 1).astype(int)
+    w3[known] = np.stack([1.0 - src[known, 2], src[known, 2], np.zeros(known.sum())], 1)
+    for i in np.nonzero(~known)[0].tolist():
         h = kd.find_n(oc[i], 3)
         idx3[i] = (h[0][1], h[1][1], h[2][1])
         w3[i] = (1.0 / (h[0][2] + 0.05), 1.0 / (h[1][2] + 0.05), 1.0 / (h[2][2] + 0.05))
