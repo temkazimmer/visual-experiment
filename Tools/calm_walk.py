@@ -3,14 +3,14 @@
   python3 Tools/ue.py Tools/calm_walk.py
 
 The walk clips cover 300 cm/s, so in BS_Idle_Walk_Run they move to Speed=150 and
-play at half rate (no foot sliding). Walk speed default comes from tune_movement.py;
-the Shift-release node in the Event Graph must also say 150.
+play at normal rate; Stride Warping in ABP_Unarmed shrinks the stride to fit 150.
+The Shift-release node in the Event Graph must also say 150.
 """
 import unreal
 
 BS_PATH = "/Game/Characters/Mannequins/Anims/Unarmed/BS_Idle_Walk_Run"
 WALK_SPEED = 150.0
-WALK_RATE = WALK_SPEED / 300.0
+WALK_RATE = 1.0  # natural cadence; Stride Warping (stride_warping.t3d in ABP_Unarmed) shortens the steps
 
 if unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).is_in_play_in_editor():
     raise RuntimeError("Play mode is running: stop PIE before saving assets")
