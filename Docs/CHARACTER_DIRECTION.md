@@ -70,6 +70,15 @@ A humanoid android. A smooth pseudo-skin shell covers a mechanical body, and the
 is translucent like aerogel: milky and soft, so the machine inside shows only as a
 blurred shape and a faint glow. There is no face. At this distance it would blur anyway.
 
+**Face and hair** *(Tema, 2026-11-09; replaces "no face")*
+- Few features, calm ones: ears, nose, lips, and eyes that are only suggested (blank,
+  like a statue's). Halfway to 90s anime, not all the way: a face that narrows to a small
+  chin, a small nose, long pointed ears that come out sideways through the hair.
+- Hair: short, blue-black, layered spikes with a long fringe. Solid locks, not strands.
+- Built by `Tools/blender_face.py` (MakeHuman CC0 head grafted on) and
+  `Tools/blender_hair.py`; the hair is the skin mesh's second material slot (`M_Hair`,
+  `Tools/char_hair.py`). All look values are in each script's `LOOK`.
+
 **Body** *(Tema)*
 - A female android, **159 cm**. At this height the scale contrast with the colonnade is
   stronger than with the default 1.8 m.
