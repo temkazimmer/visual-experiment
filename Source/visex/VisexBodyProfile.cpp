@@ -25,7 +25,7 @@ const TArray<FVisexBodySlider>& FVisexBodyProfile::Sliders()
 		S(TEXT("Bust"),      LOCTEXT("Bust", "Bust"),           0.f,   1.f,   0.55f),
 		S(TEXT("Waist"),     LOCTEXT("Waist", "Waist"),         0.60f, 1.20f, 0.72f),
 		S(TEXT("Hips"),      LOCTEXT("Hips", "Hips"),           0.85f, 1.50f, 1.22f),
-		S(TEXT("Glutes"),    LOCTEXT("Glutes", "Glutes"),       0.f,   1.f,   0.60f),
+		S(TEXT("Glutes"),    LOCTEXT("Glutes", "Glutes"),       0.f,   1.f,   0.55f),
 		S(TEXT("Legs"),      LOCTEXT("Legs", "Leg length"),     0.90f, 1.12f, 1.f),
 		S(TEXT("Thighs"),    LOCTEXT("Thighs", "Thighs"),       0.80f, 1.40f, 1.12f),
 		S(TEXT("Calves"),    LOCTEXT("Calves", "Calves"),       0.80f, 1.25f, 1.f),
@@ -59,6 +59,34 @@ void FVisexBodyProfile::Set(FName Name, float Value)
 		Value = FMath::Clamp(Value, S->Min, S->Max);
 	}
 	Values.Add(Name, Value);
+}
+
+const TArray<FVisexOutfit>& FVisexBodyProfile::Outfits()
+{
+	auto O = [](const TCHAR* Name, const FText& Label, const TCHAR* Asset)
+	{
+		FVisexOutfit Out;
+		Out.Name = Name;
+		Out.Label = Label;
+		Out.Mesh = Asset;
+		return Out;
+	};
+	// meshes: Tools/blender_outfits.py, imported by Tools/char_outfits.py
+	static const TArray<FVisexOutfit> Table = {
+		O(TEXT("None"),    LOCTEXT("OutfitNone", "Nothing"),          TEXT("")),
+		O(TEXT("Noir"),    LOCTEXT("OutfitNoir", "Noir bodysuit"),    TEXT("/Game/Character/Outfits/SKM_Outfit_Noir.SKM_Outfit_Noir")),
+		O(TEXT("Garter"),  LOCTEXT("OutfitGarter", "Lace garter set"), TEXT("/Game/Character/Outfits/SKM_Outfit_Garter.SKM_Outfit_Garter")),
+		O(TEXT("Cocoa"),   LOCTEXT("OutfitCocoa", "Cocoa satin"),     TEXT("/Game/Character/Outfits/SKM_Outfit_Cocoa.SKM_Outfit_Cocoa")),
+		O(TEXT("Fishnet"), LOCTEXT("OutfitFishnet", "Fishnet"),       TEXT("/Game/Character/Outfits/SKM_Outfit_Fishnet.SKM_Outfit_Fishnet")),
+		O(TEXT("Catsuit"), LOCTEXT("OutfitCatsuit", "Latex catsuit"), TEXT("/Game/Character/Outfits/SKM_Outfit_Catsuit.SKM_Outfit_Catsuit")),
+	};
+	return Table;
+}
+
+int32 FVisexBodyProfile::OutfitIndex(FName Name)
+{
+	const int32 I = Outfits().IndexOfByPredicate([Name](const FVisexOutfit& O) { return O.Name == Name; });
+	return I == INDEX_NONE ? 0 : I;
 }
 
 #undef LOCTEXT_NAMESPACE

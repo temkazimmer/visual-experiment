@@ -19,10 +19,22 @@ struct FVisexBodySlider
 	UPROPERTY(BlueprintReadOnly, Category = "Body") bool bCentimetres = false;
 };
 
+/** One outfit she can wear: a skeletal mesh fitted to the skin (Tools/blender_outfits.py). */
+USTRUCT(BlueprintType)
+struct FVisexOutfit
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Body") FName Name;
+	UPROPERTY(BlueprintReadOnly, Category = "Body") FText Label;
+	/** Empty for "none". */
+	UPROPERTY(BlueprintReadOnly, Category = "Body") FString Mesh;
+};
+
 /**
- * The character's body: every slider value by name. Bone sliders are multipliers
- * (1 = Quinn's proportions), Bust and Glutes drive morph targets (0..1, 0.5 = base),
- * Height is in cm. Missing names fall back to the slider default.
+ * The character: every body slider value by name, and the outfit she wears. Bone sliders
+ * are multipliers (1 = Quinn's proportions), Bust and Glutes are morph weights (0 = the base
+ * body, 1 = the full sculpt), Height is in cm. Missing names fall back to the default.
  */
 USTRUCT(BlueprintType)
 struct FVisexBodyProfile
@@ -32,12 +44,20 @@ struct FVisexBodyProfile
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body")
 	TMap<FName, float> Values;
 
+	/** The outfit she wears (a name from Outfits(); None = nothing). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body")
+	FName Outfit = NAME_None;
+
 	float Get(FName Name) const;
 	void Set(FName Name, float Value);
 
 	/** The slider table, in menu order. */
 	static VISEX_API const TArray<FVisexBodySlider>& Sliders();
 	static VISEX_API const FVisexBodySlider* Find(FName Name);
+
+	/** The wardrobe, in menu order; the first entry is "none". */
+	static VISEX_API const TArray<FVisexOutfit>& Outfits();
+	static VISEX_API int32 OutfitIndex(FName Name);
 };
 
 UCLASS()

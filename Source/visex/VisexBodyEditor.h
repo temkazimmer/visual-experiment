@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "VisexBodyProfile.h"
 #include "VisexBodyEditor.generated.h"
 
 class UCineCameraComponent;
@@ -12,10 +13,13 @@ class UVisexBodyComponent;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FVisexBodyEditorClosed);
 
 /**
- * The body page. Open() moves the view to a closer full-body camera in front of the
- * player character, who turns slowly on the spot (turntable), with the slider panel
- * on the left. Up/down picks a slider, left/right shapes her live, triangle resets
- * the slider, circle saves and closes (OnClosed fires; the menu shows itself again).
+ * The Character page. Open() moves the view to a closer full-body camera in front of the
+ * player character, who turns slowly on the spot (turntable), with the panel on the left.
+ * Two tabs, left to right: BODY (sliders) and DRESS (outfits). L1/R1 (Q/E, Tab) switch
+ * tabs, up/down picks a row, left/right shapes her (body), picking an outfit tries it on.
+ * Every change shows on her at once; CROSS (Enter, Space) applies that tab and saves it.
+ * TRIANGLE resets a slider. CIRCLE goes back: what was not applied is undone, OnClosed
+ * fires and the menu shows itself again.
  *
  * The menu director spawns one of these (no level edit needed) and calls Open().
  */
@@ -64,6 +68,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Body") void Select(int32 Delta);
 	UFUNCTION(BlueprintCallable, Category = "Body") void Adjust(float Steps);
 	UFUNCTION(BlueprintCallable, Category = "Body") void ResetSelected();
+	UFUNCTION(BlueprintCallable, Category = "Body") void SwitchTab(int32 Delta);
+	/** Apply the current tab: what she shows now becomes what she keeps (and is saved). */
+	UFUNCTION(BlueprintCallable, Category = "Body") void ApplyTab();
 
 	virtual void Tick(float DeltaSeconds) override;
 
@@ -79,11 +86,16 @@ private:
 	void Down() { Select(1); }
 	void Left() { Adjust(-1.f); }
 	void Right() { Adjust(1.f); }
+	void PrevTab() { SwitchTab(-1); }
+	void NextTab() { SwitchTab(1); }
 	void TryOpen();
 
 	bool bOpen = false;
 	bool bKeysBound = false;
+	int32 Tab = 0;
 	int32 Selected = 0;
+	int32 TabRow[2] = {0, 0};
+	FVisexBodyProfile Applied;
 	FRotator StartRotation;
 	TWeakObjectPtr<AActor> PreviousView;
 	FTimerHandle OpenTimer;
