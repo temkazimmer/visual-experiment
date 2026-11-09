@@ -13,8 +13,10 @@ class UVisexBodyComponent;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FVisexBodyEditorClosed);
 
 /**
- * The Character page. Open() moves the view to a closer full-body camera in front of the
- * player character, who turns slowly on the spot (turntable), with the panel on the left.
+ * The Character page. Open() moves the view to a camera in front of the player character,
+ * with the panel on the left. Picking a body row eases the camera to a close-up of that part
+ * (longer lens, shallow focus, framed from her bones so it follows the sliders); rows about
+ * her back turn her round. The right stick (or a mouse drag) turns her on the spot.
  * Two tabs, left to right: BODY (sliders) and DRESS (outfits). L1/R1 (Q/E, Tab) switch
  * tabs, up/down picks a row, left/right shapes her (body), picking an outfit tries it on.
  * Every change shows on her at once; CROSS (Enter, Space) applies that tab and saves it.
@@ -46,8 +48,22 @@ public:
 	/** Shift the camera so she stands right of centre and the panel has the left. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Camera") float SideShift = 70.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Camera") float BlendTime = 1.2f;
-	/** Turntable speed, degrees per second. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Camera") float TurnSpeed = 14.f;
+	/** Seconds the camera takes to ease from one row's framing to the next. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Camera") float CloseUpTime = 0.6f;
+	/** f-stop of the full-body shot and of the close-ups. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Camera") float WideAperture = 2.8f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Camera") float CloseAperture = 4.f;
+
+	/** Idle turntable, degrees per second (0 = she holds still until turned). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Turn") float TurnSpeed = 0.f;
+	/** Right stick fully over, degrees per second. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Turn") float StickTurnSpeed = 150.f;
+	/** How quickly the turn picks up and settles (higher = less inertia). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Turn") float TurnResponse = 6.f;
+	/** Degrees per unit of mouse travel while the left button is held. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Turn") float MouseTurn = 0.4f;
+	/** How far she is turned from the row's own side, degrees. Kept from row to row. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Turn") float Turn = 0.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Panel") FVector PanelOffset = FVector(100.f, -25.f, 3.f);
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Panel") float PanelYaw = 18.f;
@@ -66,6 +82,10 @@ public:
 
 	/** Scriptable control (also what the keys call). */
 	UFUNCTION(BlueprintCallable, Category = "Body") void Select(int32 Delta);
+	/** Jump straight to a row of the current tab. */
+	UFUNCTION(BlueprintCallable, Category = "Body") void SelectRow(int32 Row) { Select(Row - Selected); }
+	/** Turn her back to the side the row shows (front, or her back for glutes and calves). */
+	UFUNCTION(BlueprintCallable, Category = "Body") void FaceCamera();
 	UFUNCTION(BlueprintCallable, Category = "Body") void Adjust(float Steps);
 	UFUNCTION(BlueprintCallable, Category = "Body") void ResetSelected();
 	UFUNCTION(BlueprintCallable, Category = "Body") void SwitchTab(int32 Delta);
@@ -90,6 +110,18 @@ private:
 	void NextTab() { SwitchTab(1); }
 	void TryOpen();
 
+	/** One framing: the point looked at, how far the camera stands, the lens. */
+	struct FShot
+	{
+		FVector Look = FVector::ZeroVector;
+		float Distance = 420.f;
+		float Focal = 28.f;
+		float Aperture = 2.8f;
+	};
+	FShot ShotNow(bool& bOutBack) const;
+	void Reframe(bool bSnap);
+	void PlaceCamera(const FShot& Shot);
+
 	bool bOpen = false;
 	bool bKeysBound = false;
 	int32 Tab = 0;
@@ -97,6 +129,15 @@ private:
 	int32 TabRow[2] = {0, 0};
 	FVisexBodyProfile Applied;
 	FRotator StartRotation;
+	FShot From;
+	FShot Current;
+	float ShotTime = 1.f;
+	FName ShotRow = NAME_None;
+	FVector SmoothLook = FVector::ZeroVector;
+	bool bBack = false;
+	bool bRecentre = false;
+	float SideYaw = 0.f;
+	float TurnVelocity = 0.f;
 	TWeakObjectPtr<AActor> PreviousView;
 	FTimerHandle OpenTimer;
 };
