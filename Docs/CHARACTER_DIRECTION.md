@@ -215,6 +215,11 @@ exposes "hold pose N" and "current outfit".
   height scales mesh and capsule (`UVisexBodyComponent`, saved to slot `VisexBody`).
   `AVisexBodyEditor` is the page: turntable cam, slider panel. The menu "Body" item is
   main's to add (`Source/visex` menu code).
+- Starter build and latex skin *(Tema's reference, 2026-11-09)*: the body page opens on
+  an hourglass (waist 0.72, hips 1.22, glutes 0.8, thighs 1.12, shoulders 0.9, ribcage
+  0.92) in glossy peach latex (`M_AerogelShell`, `MODE="latex"`: clear coat 1, coat
+  roughness 0.05). Glute morph runs up to 2× its sculpt; past that it turns conical.
+  A fuller hourglass than this needs a sculpted base mesh, not more slider range.
 
 **Open**
 - Play-test at the new scale: steps, dash distance, Stride Warping, the menu hand-back.
