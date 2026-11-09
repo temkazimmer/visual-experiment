@@ -57,6 +57,10 @@ REAL = dict(
     roughness_var=0.035,             # pore-scale break-up, so the sheen isn't plastic (more reads as a cracked web)
     pore_scale=2.5,                  # noise cells per cm on the body at rest: pore-sized
     specular=0.35,                   # skin is ~2.8% reflective at normal incidence
+    bump=0.012,                      # cm of pore relief: breaks the highlight into grain up close
+    patch_rough=0.06,                # palm-sized areas a little drier or oilier
+    patch_color=0.05,                # the same areas a little paler or ruddier
+    patch_scale=0.09,                # noise cells per cm: about 11 cm patches
 )
 SKIN = dict(
     inflate=0.0,                     # the skin is its own mesh now (char_skin.py)
@@ -150,21 +154,74 @@ def build_real():
     m.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_SUBSURFACE_PROFILE)
     m.set_editor_property("subsurface_profile", prof)
     m.set_editor_property("used_with_skeletal_mesh", True)
-    mel.connect_material_property(vector("SkinColor", K["skin"], -450, -200), "", MP.MP_BASE_COLOR)
     mel.connect_material_property(scalar("Specular", K["specular"], -450, -40), "", MP.MP_SPECULAR)
     mel.connect_material_property(scalar("Scatter", 1.0, -450, 160), "", MP.MP_OPACITY)
+    m.set_editor_property("tangent_space_normal", False)
+    skin = vector("SkinColor", K["skin"], -450, -200)
     vs = node(unreal.MaterialExpressionPreSkinnedPosition, -1300, 0)
     pos = node(unreal.MaterialExpressionVertexInterpolator, -1150, 0)
     mel.connect_material_expressions(vs, "", pos, "VS")
-    noise = node(unreal.MaterialExpressionNoise, -950, 0)
-    mel.connect_material_expressions(pos, "", noise, "Position")
-    noise.set_editor_property("scale", K["pore_scale"])
-    noise.set_editor_property("levels", 3)
-    noise.set_editor_property("output_min", -1.0)
-    noise.set_editor_property("output_max", 1.0)
-    var = op(unreal.MaterialExpressionMultiply, noise, scalar("RoughnessVar", K["roughness_var"], -950, 120), -750, 0)
+
+    def noise_at(scale, levels, y):
+        n = node(unreal.MaterialExpressionNoise, -950, y)
+        mel.connect_material_expressions(pos, "", n, "Position")
+        n.set_editor_property("scale", scale)
+        n.set_editor_property("levels", levels)
+        n.set_editor_property("output_min", -1.0)
+        n.set_editor_property("output_max", 1.0)
+        return n
+
+    def custom(code, out, inputs, x, y):
+        c = node(unreal.MaterialExpressionCustom, x, y)
+        c.set_editor_property("code", code)
+        c.set_editor_property("output_type", out)
+        ins = []
+        for name, _ in inputs:
+            i = unreal.CustomInput()
+            i.set_editor_property("input_name", name)
+            ins.append(i)
+        c.set_editor_property("inputs", ins)
+        for name, src in inputs:
+            if not mel.connect_material_expressions(src, "", c, name):
+                raise RuntimeError("custom pin " + name)
+        return c
+
+    pore = noise_at(K["pore_scale"], 3, 0)
+    patch = noise_at(K["patch_scale"], 2, 260)
+    # how much of the pore grain a pixel can still resolve: 1 up close, 0 once a pixel
+    # covers more than about half a pore (then the grain would only shimmer)
+    near = custom("float f = length(ddx(P)) + length(ddy(P)); return saturate((0.6 - f * 0.5 * S) / 0.35);",
+                  unreal.CustomMaterialOutputType.CMOT_FLOAT1,
+                  [("P", pos), ("S", scalar("PoreScale", K["pore_scale"], -950, 140))], -750, 140)
+    # pore relief as a normal, from screen-space slopes of the noise (no UVs or textures needed)
+    height = op(unreal.MaterialExpressionMultiply, pore, scalar("Bump", K["bump"], -750, 420), -600, 400)
+    height = op(unreal.MaterialExpressionMultiply, height, near, -480, 400)
+    bump = custom("float3 dpx = ddx(W), dpy = ddy(W); float dhx = ddx(H), dhy = ddy(H);\n"
+                  "float3 r1 = cross(dpy, N), r2 = cross(N, dpx); float det = dot(dpx, r1);\n"
+                  "float3 g = sign(det) * (dhx * r1 + dhy * r2);\n"
+                  "return normalize(abs(det) * N - g);",
+                  unreal.CustomMaterialOutputType.CMOT_FLOAT3,
+                  [("W", node(unreal.MaterialExpressionWorldPosition, -480, 520)),
+                   ("N", node(unreal.MaterialExpressionVertexNormalWS, -480, 620)),
+                   ("H", height)], -300, 480)
+    mel.connect_material_property(bump, "", MP.MP_NORMAL)
+    # roughness: pore break-up, drier and oilier patches, and the grain a far pixel can't
+    # show any more folded back in as a slightly broader highlight
+    var = op(unreal.MaterialExpressionMultiply, pore, scalar("RoughnessVar", K["roughness_var"], -950, 120), -750, 0)
     rough = op(unreal.MaterialExpressionAdd, scalar("Roughness", K["roughness"], -750, -100), var, -600, -80)
+    rough = op(unreal.MaterialExpressionAdd, rough,
+               op(unreal.MaterialExpressionMultiply, patch, scalar("PatchRoughness", K["patch_rough"], -950, 380), -750, 280),
+               -450, -80)
+    far = op(unreal.MaterialExpressionOneMinus, near, None, -600, 160, ia="")
+    far = op(unreal.MaterialExpressionMultiply, far, None, -480, 160)
+    far.set_editor_property("const_b", 0.05)
+    rough = op(unreal.MaterialExpressionAdd, rough, far, -300, -80)
     mel.connect_material_property(rough, "", MP.MP_ROUGHNESS)
+    # colour: the same patches, a touch paler or ruddier
+    tone = op(unreal.MaterialExpressionMultiply, patch, scalar("PatchColor", K["patch_color"], -950, 460), -750, -260)
+    tone = op(unreal.MaterialExpressionAdd, tone, None, -600, -260)
+    tone.set_editor_property("const_b", 1.0)
+    mel.connect_material_property(op(unreal.MaterialExpressionMultiply, skin, tone, -300, -240), "", MP.MP_BASE_COLOR)
 
 
 def build_latex():
@@ -248,57 +305,60 @@ def build_aerogel():
 mel.recompile_material(m)
 eal.save_loaded_asset(m)
 
-# ---- inner machine -------------------------------------------------------------------
-quinn = unreal.load_asset(QUINN)
-base = quinn.materials[0].material_interface
-parent = base.get_base_material() if base else unreal.load_asset("/Game/Characters/Mannequins/Materials/M_Mannequin")
-core = asset("MI_AndroidCore", unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())
-mel.set_material_instance_parent(core, parent)
-names = [str(n) for n in mel.get_vector_parameter_names(parent)]
-tinted = [n for n in names if "tint" in n.lower() or "color" in n.lower()]
-for n in tinted:
-    mel.set_material_instance_vector_parameter_value(core, n, unreal.LinearColor(*CORE_TINT, 1.0))
-eal.save_loaded_asset(core)
-print("core parent", parent.get_name(), "vector params", names, "tinted", tinted)
+# MATERIAL_ONLY = True (a global set by the caller) rebuilds the skin material and stops:
+# nothing below is touched, so BP_ThirdPersonCharacter is not saved.
+if not globals().get("MATERIAL_ONLY"):
+    # ---- inner machine -------------------------------------------------------------------
+    quinn = unreal.load_asset(QUINN)
+    base = quinn.materials[0].material_interface
+    parent = base.get_base_material() if base else unreal.load_asset("/Game/Characters/Mannequins/Materials/M_Mannequin")
+    core = asset("MI_AndroidCore", unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())
+    mel.set_material_instance_parent(core, parent)
+    names = [str(n) for n in mel.get_vector_parameter_names(parent)]
+    tinted = [n for n in names if "tint" in n.lower() or "color" in n.lower()]
+    for n in tinted:
+        mel.set_material_instance_vector_parameter_value(core, n, unreal.LinearColor(*CORE_TINT, 1.0))
+    eal.save_loaded_asset(core)
+    print("core parent", parent.get_name(), "vector params", names, "tinted", tinted)
 
-# ---- Blueprint: scale, core material, shell component --------------------------------
-bp = unreal.load_asset(BP_PATH)
-cdo = unreal.get_default_object(bp.generated_class())
-cap = cdo.get_editor_property("capsule_component")
-cap.set_capsule_size(CAPSULE[1] * SCALE, CAPSULE[0] * SCALE)
-body = cdo.get_editor_property("mesh")
-body.set_editor_property("relative_scale3d", unreal.Vector(SCALE, SCALE, SCALE))
-body.set_editor_property("relative_location", unreal.Vector(0, 0, MESH_Z * SCALE))
-body.set_editor_property("override_materials", [core] * len(quinn.materials))
+    # ---- Blueprint: scale, core material, shell component --------------------------------
+    bp = unreal.load_asset(BP_PATH)
+    cdo = unreal.get_default_object(bp.generated_class())
+    cap = cdo.get_editor_property("capsule_component")
+    cap.set_capsule_size(CAPSULE[1] * SCALE, CAPSULE[0] * SCALE)
+    body = cdo.get_editor_property("mesh")
+    body.set_editor_property("relative_scale3d", unreal.Vector(SCALE, SCALE, SCALE))
+    body.set_editor_property("relative_location", unreal.Vector(0, 0, MESH_Z * SCALE))
+    body.set_editor_property("override_materials", [core] * len(quinn.materials))
 
-sds = unreal.get_engine_subsystem(unreal.SubobjectDataSubsystem)
-lib = unreal.SubobjectDataBlueprintFunctionLibrary
-handles = sds.k2_gather_subobject_data_for_blueprint(bp)
-by = {str(lib.get_variable_name(lib.get_data(h))): h for h in handles}
-if "Shell" not in by:
-    h, fail = sds.add_new_subobject(unreal.AddNewSubobjectParams(
-        parent_handle=by["Mesh"], new_class=unreal.VisexShellComponent, blueprint_context=bp))
-    if not fail.is_empty():
-        raise RuntimeError("add Shell failed: %s" % fail)
-    sds.rename_subobject(h, unreal.Text("Shell"))
-    by["Shell"] = h
-shell = lib.get_object(lib.get_data(by["Shell"]))
-# the shell wears the smooth skin mesh once Tools/char_skin.py has imported it
-skin_mesh = unreal.load_asset(DIR + "/SKM_AndroidSkin") if eal.does_asset_exist(DIR + "/SKM_AndroidSkin") else quinn
-shell.set_skeletal_mesh_asset(skin_mesh)
-shell.set_editor_property("override_materials", [m] * len(skin_mesh.materials))
-shell.set_editor_property("cast_shadow", skin_mesh != quinn)
-if skin_mesh != quinn:   # opaque skin over its own mesh: the body only leads the pose
-    body.set_editor_property("visible", False)
-    body.set_editor_property("cast_shadow", False)
-    body.set_editor_property("visibility_based_anim_tick_option",
-                             unreal.VisibilityBasedAnimTickOption.ALWAYS_TICK_POSE_AND_REFRESH_BONES)
+    sds = unreal.get_engine_subsystem(unreal.SubobjectDataSubsystem)
+    lib = unreal.SubobjectDataBlueprintFunctionLibrary
+    handles = sds.k2_gather_subobject_data_for_blueprint(bp)
+    by = {str(lib.get_variable_name(lib.get_data(h))): h for h in handles}
+    if "Shell" not in by:
+        h, fail = sds.add_new_subobject(unreal.AddNewSubobjectParams(
+            parent_handle=by["Mesh"], new_class=unreal.VisexShellComponent, blueprint_context=bp))
+        if not fail.is_empty():
+            raise RuntimeError("add Shell failed: %s" % fail)
+        sds.rename_subobject(h, unreal.Text("Shell"))
+        by["Shell"] = h
+    shell = lib.get_object(lib.get_data(by["Shell"]))
+    # the shell wears the smooth skin mesh once Tools/char_skin.py has imported it
+    skin_mesh = unreal.load_asset(DIR + "/SKM_AndroidSkin") if eal.does_asset_exist(DIR + "/SKM_AndroidSkin") else quinn
+    shell.set_skeletal_mesh_asset(skin_mesh)
+    shell.set_editor_property("override_materials", [m] * len(skin_mesh.materials))
+    shell.set_editor_property("cast_shadow", skin_mesh != quinn)
+    if skin_mesh != quinn:   # opaque skin over its own mesh: the body only leads the pose
+        body.set_editor_property("visible", False)
+        body.set_editor_property("cast_shadow", False)
+        body.set_editor_property("visibility_based_anim_tick_option",
+                                 unreal.VisibilityBasedAnimTickOption.ALWAYS_TICK_POSE_AND_REFRESH_BONES)
 
-unreal.BlueprintEditorLibrary.compile_blueprint(bp)
-eal.save_loaded_asset(bp)
+    unreal.BlueprintEditorLibrary.compile_blueprint(bp)
+    eal.save_loaded_asset(bp)
 
-cdo = unreal.get_default_object(bp.generated_class())
-cap = cdo.get_editor_property("capsule_component")
-print("scale %.3f -> %.1f cm; capsule %.1f/%.1f" % (SCALE, QUINN_HEIGHT * SCALE,
-      cap.get_unscaled_capsule_half_height(), cap.get_unscaled_capsule_radius()))
-print("shell:", shell.get_class().get_name(), shell.get_editor_property("skeletal_mesh_asset").get_name())
+    cdo = unreal.get_default_object(bp.generated_class())
+    cap = cdo.get_editor_property("capsule_component")
+    print("scale %.3f -> %.1f cm; capsule %.1f/%.1f" % (SCALE, QUINN_HEIGHT * SCALE,
+          cap.get_unscaled_capsule_half_height(), cap.get_unscaled_capsule_radius()))
+    print("shell:", shell.get_class().get_name(), shell.get_editor_property("skeletal_mesh_asset").get_name())
