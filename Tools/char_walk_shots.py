@@ -5,7 +5,7 @@
   python3 Tools/ue.py -c "import unreal; unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).editor_request_end_play()"
 
 Only for a Play session you started yourself, in a level where the pawn spawns free
-(Lvl_ThirdPerson). Don't save the level afterwards: the capture actor is scratch. Globals: SIDE = "front" | "back" | "side", SPRINT = True, FRAMES, EVERY.
+(Lvl_ThirdPerson). Don't save the level afterwards: the capture actor is scratch. Globals: SIDE = "front" | "back" | "side" | "rear34" | "front34", DIST, HEIGHT, WARMUP, SPRINT = True, FRAMES, EVERY.
 """
 import os
 import unreal
@@ -13,7 +13,7 @@ import unreal
 SIDE = globals().get("SIDE", "front")
 FRAMES = globals().get("FRAMES", 6)
 EVERY = globals().get("EVERY", 0.1)       # seconds between frames
-WARMUP = 1.6                               # seconds of walking before the first frame
+WARMUP = globals().get("WARMUP", 2.6)                              # seconds of walking before the first frame
 SPEED = 540.0 if globals().get("SPRINT") else None
 
 world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_game_world()
@@ -34,9 +34,23 @@ comp.set_editor_property("capture_source", unreal.SceneCaptureSource.SCS_FINAL_T
 comp.set_editor_property("capture_every_frame", False)
 comp.set_editor_property("fov_angle", 30.0)
 
-fwd = pawn.get_actor_forward_vector()
-right = pawn.get_actor_right_vector()
-offset = {"front": fwd * 420.0, "back": fwd * -420.0, "side": right * 420.0}[SIDE]
+# walk toward the most open side of the level
+at = pawn.get_actor_location()
+best = (0.0, pawn.get_actor_forward_vector())
+for yaw in range(0, 360, 30):
+    d = unreal.MathLibrary.get_forward_vector(unreal.Rotator(roll=0.0, pitch=0.0, yaw=float(yaw)))
+    hit = unreal.SystemLibrary.line_trace_single(world, at, at + d * 4000.0, unreal.TraceTypeQuery.TRACE_TYPE_QUERY1, False, [pawn],
+                                                 unreal.DrawDebugTrace.NONE, True)
+    dist = hit.to_tuple()[3] if hit else 4000.0
+    if dist > best[0]:
+        best = (dist, d)
+fwd = best[1]
+right = unreal.Vector(-fwd.y, fwd.x, 0.0)
+DIST = globals().get("DIST", 420.0)
+offset = {"front": fwd * DIST, "back": fwd * -DIST, "side": right * DIST,
+          "rear34": (fwd * -0.8 + right * 0.6) * DIST, "front34": (fwd * 0.8 + right * 0.6) * DIST}[SIDE]
+unreal.SystemLibrary.execute_console_command(world, "t.IdleWhenNotForeground 0")
+print("clear run", round(best[0]))
 state = {"t": 0.0, "n": 0}
 
 
@@ -46,7 +60,7 @@ def tick(dt):
         state["t"] += dt
         if state["t"] >= WARMUP + state["n"] * EVERY:
             at = pawn.get_actor_location()
-            eye = at + offset + unreal.Vector(0, 0, 10)
+            eye = at + offset + unreal.Vector(0, 0, globals().get("HEIGHT", 10))
             cap.set_actor_location_and_rotation(eye, unreal.MathLibrary.find_look_at_rotation(eye, at), False, False)
             comp.capture_scene()
             unreal.RenderingLibrary.export_render_target(world, rt, out_dir, "walk_%s_%d.png" % (SIDE, state["n"]))
