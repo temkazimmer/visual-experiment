@@ -61,6 +61,11 @@ stand-in, and it has no identity yet.
 
 ### Direction: an android under aerogel skin *(Tema, 2026-11-09)*
 
+> **Update (Tema, same day):** the skin moved away from aerogel. It is now opaque and
+> human-like: a matte, mannequin-white skin that hides the machine completely, with no
+> joints or panel lines (one smooth sculpted mesh, `SKM_AndroidSkin`). The aerogel text
+> below is kept as history.
+
 A humanoid android. A smooth pseudo-skin shell covers a mechanical body, and the shell
 is translucent like aerogel: milky and soft, so the machine inside shows only as a
 blurred shape and a faint glow. There is no face. At this distance it would blur anyway.
@@ -201,6 +206,15 @@ exposes "hold pose N" and "current outfit".
   (`MI_AndroidCore`), aerogel skin (`M_AerogelShell`) on `UVisexShellComponent`, which
   follows the body by Leader Pose. Build: `Tools/char_shell.py`. Shots:
   `Tools/char_capture.py`. Menu, backlit and fog shots render; awaiting Tema's verdict.
+- Skin v3 (`character-animation`): one smooth opaque skin mesh sculpted in Blender
+  (`Tools/blender_skin.py` → `Tools/char_skin.py`), matte mannequin white, no joints.
+  Bust and glute morph targets.
+- Body page (`character-animation`): 16 sliders (height, head, neck, shoulders, ribcage,
+  bust, waist, hips, glutes, leg length, thighs, calves, arm length, arms, hands, feet).
+  Bones reshape after the anim graph (`UVisexAnimInstance`), bust/glutes are morphs,
+  height scales mesh and capsule (`UVisexBodyComponent`, saved to slot `VisexBody`).
+  `AVisexBodyEditor` is the page: turntable cam, slider panel. The menu "Body" item is
+  main's to add (`Source/visex` menu code).
 
 **Open**
 - Play-test at the new scale: steps, dash distance, Stride Warping, the menu hand-back.
