@@ -3,8 +3,9 @@
   python3 Tools/ue.py Tools/add_double_jump.py
 
 Second-jump boost (2x height) lives in the Event Graph: OnJumped ->
-JumpCurrentCount == 2 -> LaunchCharacter(0,0,778, Z override). Python can't
-add graph nodes, so they're in Tools/double_jump_boost.t3d: copy, paste, compile.
+JumpCurrentCount == 2 -> LaunchCharacter(0,0,778, Z override) -> replay MM_Jump
+on DefaultSlot. Python can't
+add graph nodes, so they're in Tools/jump_dash_nodes.t3d: copy, paste, compile.
 """
 import unreal
 

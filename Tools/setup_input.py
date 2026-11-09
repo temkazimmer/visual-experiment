@@ -6,7 +6,7 @@ IA_Sprint: hold to run (keyboard Left Shift, PlayStation L2). The speed switch l
 in BP_ThirdPersonCharacter's Event Graph: Tools/sprint_nodes.t3d (Started -> 540,
 Completed -> 190). Walk default is in tune_movement.py.
 IA_Dash: burst in the facing direction (keyboard Q, PlayStation L1). Logic in
-Tools/dash_nodes.t3d, set up by Tools/add_dash.py.
+Tools/jump_dash_nodes.t3d, set up by Tools/add_dash.py.
 """
 import unreal
 

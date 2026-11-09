@@ -3,8 +3,9 @@
   python3 Tools/ue.py Tools/setup_input.py   # IA_Dash + keys
   python3 Tools/ue.py Tools/add_dash.py      # CanDash variable
 
-Then paste Tools/dash_nodes.t3d into the Event Graph: IA_Dash Started -> if CanDash ->
-CanDash=false -> play MM_Dash on DefaultSlot -> Delay 1.2s -> CanDash=true.
+Then paste Tools/jump_dash_nodes.t3d into the Event Graph: IA_Dash Started -> if CanDash ->
+CanDash=false -> if falling: Z velocity 0 + GravityScale 0.2 -> play MM_Dash
+on DefaultSlot -> Delay 0.6 -> GravityScale 1 -> Delay 0.6 -> CanDash=true.
 MM_Dash carries root motion (~8.75 m over ~0.6 s) and ABP_Unarmed applies root
 motion from montages, so the animation itself moves the character.
 """
