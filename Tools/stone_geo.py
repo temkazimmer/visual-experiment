@@ -290,6 +290,10 @@ def job(spec):
     return name, n
 
 
+# column height multiplier (1 = the original 100 m colossi); 5 sends them up into the sky
+TALL = float(os.environ.get("VISEX_TALL", "5"))
+
+
 def plan(actors):
     specs, assign = [], []
     rng = random.Random(7)
@@ -303,8 +307,11 @@ def plan(actors):
             assign.append(dict(label=L, asset=name, scale=[1, 1, 1], rot=[0, 0, 0], collide=True))
         elif L.startswith("Column_"):
             name = "SM_" + L
-            specs.append(dict(kind="column", name=name, centre=loc, radius=size[0] / 2, height=size[2], seed=len(specs)))
-            assign.append(dict(label=L, asset=name, scale=[1, 1, 1], collide=True))
+            # TALL: columns rise into the dust ceiling; base stays on the plinth
+            h = size[2] * TALL
+            c = [loc[0], loc[1], loc[2] - size[2] / 2 + h / 2]
+            specs.append(dict(kind="column", name=name, centre=c, radius=size[0] / 2, height=h, seed=len(specs)))
+            assign.append(dict(label=L, asset=name, scale=[1, 1, 1], loc=c, collide=True))
         elif L.startswith("Step_") and size[2] > 1:
             name = "SM_" + L
             # only the visible part: tread, the top of the riser, the ends

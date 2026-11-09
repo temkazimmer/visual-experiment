@@ -92,6 +92,15 @@ return normalize(N + float3(dir * s * Mask * Strength * lee * patchy, 0));
 
 # Glints: a few grains catch the light, sparse random cells that twinkle with the
 # view angle and vanish beyond ~15 m before they can alias.
+HAZE = """
+// 0..1: how far this point has dissolved into the high dust. Rises with height, wobbles
+// so the haze line billows, and stays off right next to the camera.
+float wob = sin(WP.x * 0.00031 + WP.y * 0.00017) * 0.5 + sin(WP.y * 0.00043 - WP.x * 0.00011) * 0.5;
+float h = smoothstep(Start, End, WP.z + wob * 1500.0);
+float nearFade = saturate(distance(WP, Cam) / Near);
+return Amount * h * h * (3.0 - 2.0 * h) * nearFade;
+"""
+
 GLINTS = """
 float d = distance(WP, Cam);
 float fade = 1 - saturate((d - 400) / 1100);
@@ -362,7 +371,20 @@ def build_material():
     link(stone_col, "", base, "A")
     link(sand_col, "", base, "B")
     link(mask, "", base, "Alpha")
-    mel.connect_material_property(base, "", unreal.MaterialProperty.MP_BASE_COLOR)
+    # height haze: high stone dissolves into the dust (height fog only thickens downward,
+    # and local fog volumes don't render here). Lit colour fades out, dust colour fades in.
+    haze_t = custom(HAZE, ("WP", "Cam", "Start", "End", "Amount", "Near"), -200, -350,
+                    unreal.CustomMaterialOutputType.CMOT_FLOAT1)
+    link(wp, "", haze_t, "WP")
+    link(node(unreal.MaterialExpressionCameraPositionWS, -400, -380), "", haze_t, "Cam")
+    for name, v, y in (("Start", 3000.0, -560), ("End", 30000.0, -520), ("Amount", 0.97, -480), ("Near", 4000.0, -440)):
+        link(sparam("Haze" + name, v, -400, y), "", haze_t, name)
+    hazed = node(unreal.MaterialExpressionLinearInterpolate, -50, -250)
+    link(base, "", hazed, "A")
+    zero = node(unreal.MaterialExpressionConstant3Vector, -200, -280)
+    link(zero, "", hazed, "B")
+    link(haze_t, "", hazed, "Alpha")
+    mel.connect_material_property(hazed, "", unreal.MaterialProperty.MP_BASE_COLOR)
     # wind ripples bend the world-space normal where there is sand (see RIPPLES)
     ripples = custom(STONE_LIB + RIPPLES, ("WP", "Cam", "N", "Mask", "Strength"), -200, 600)
     link(wp, "", ripples, "WP")
@@ -393,7 +415,11 @@ def build_material():
     for name, src in (("WP", wp), ("Cam", cam_pos), ("N", normal), ("Sand", sand), ("Mask", mask)):
         link(src, "", glints, name)
     link(sparam("GlintStrength", 1.0, -400, 1000), "", glints, "Strength")
-    mel.connect_material_property(glints, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    glow = node(unreal.MaterialExpressionLinearInterpolate, 0, 900)
+    link(glints, "", glow, "A")
+    link(vparam("HazeColor", (0.95, 0.36, 0.08), -200, 1000), "", glow, "B")
+    link(haze_t, "", glow, "Alpha")
+    mel.connect_material_property(glow, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
 
     # roughness and AO from the baked ORM where there's stone; dry sand is matte
     orm = stone_node(STONE_ORM, (), -500, 50)
@@ -428,7 +454,9 @@ mat = build_material()
 n = 0
 for a in eas.get_all_level_actors():
     # the dune field has its own all-sand instance (add_dunes.py), which replaced the drifts
-    if isinstance(a, unreal.StaticMeshActor) and a.get_actor_label() != "Dunes" and not a.get_actor_label().startswith("Drift_"):
+    # StepRamp is the steps' invisible collision ramp: leave its material alone
+    if isinstance(a, unreal.StaticMeshActor) and a.get_actor_label() not in ("Dunes", "StepRamp") \
+            and not a.get_actor_label().startswith("Drift_"):
         a.static_mesh_component.set_material(0, mat)
         n += 1
 print("sand material on %d meshes" % n)
