@@ -197,7 +197,13 @@ exposes "hold pose N" and "current outfit".
 - Calm walk at 190 with Stride Warping, run on Shift/L2 (`429e9ba` → `c0c3fae`)
 - Dash on Q/L1 with root motion and cooldown (`b98120c`, `c0c3fae`)
 
+- Shell prototype v1 (`character-animation`): Quinn at 159 cm, graphite core
+  (`MI_AndroidCore`), aerogel skin (`M_AerogelShell`) on `UVisexShellComponent`, which
+  follows the body by Leader Pose. Build: `Tools/char_shell.py`. Shots:
+  `Tools/char_capture.py`. Menu, backlit and fog shots render; awaiting Tema's verdict.
+
 **Open**
+- Play-test at the new scale: steps, dash distance, Stride Warping, the menu hand-back.
 - PS pad: L2 run and L1 dash are mapped. Not yet verified on a real controller end to end.
 - The figure itself (§1), idle, foot IK, landings, poses, outfits.
 - Uncommitted change to `ABP_Unarmed.uasset` on main (this machine). It needs an owner
