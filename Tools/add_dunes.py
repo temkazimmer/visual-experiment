@@ -12,11 +12,12 @@ import os
 import unreal
 
 # --- shape
-X0, X1, Y0, Y1 = 1500, 42000, -18000, 3200   # cm, the area the sand can cover
+X0, X1, Y0, Y1 = -5000, 42000, -18000, 3200  # cm, the area the sand can cover
+DUNES_X0 = 1500                              # dunes fade out west of here (the ramp runs on)
 CELL = 75                                    # cm between vertices
 HEIGHT = 1100                                # cm, tallest crests
 WAVELENGTH = 6500                            # cm between main ridges
-CLEAN_CENTRE = (1000, -2000)                 # the steps: no sand here
+CLEAN_CENTRE = (1000, -2800)                 # the steps: no sand here
 CLEAN_RADIUS, FULL_RADIUS = 3500, 17000      # sand fades in between these
 SINK = 8                                     # cm below the floor where there's no sand
 
@@ -29,13 +30,24 @@ def smooth(a, b, x):
     return t * t * (3 - 2 * t)
 
 
+# the step flight, from build_dust.py: 20 steps x 20 cm rise x 220 cm tread
+STEPS_TOP, STEPS_END, STEPS_DROP = -1500, -1500 - 20 * 220, 20 * 20
+RAMP_END = STEPS_END - 2100                  # sand ramp: last tread (-400) down to -1000
+
+
+def in_steps(y):
+    return STEPS_END < y < STEPS_TOP
+
+
 def ground(y):
-    """Height of the architecture under the sand: plaza, steps, lower ground."""
-    if y >= -1500:
+    """Height of the surface under the sand: plaza, steps, sand ramp, lower ground."""
+    if y >= STEPS_TOP:
         return 0.0
-    if y <= -4250:
-        return -1000.0
-    return -1000.0 * (-1500 - y) / 2750
+    if in_steps(y):
+        return -STEPS_DROP * (STEPS_TOP - y) / (STEPS_TOP - STEPS_END)
+    if y > RAMP_END:
+        return -STEPS_DROP - (1000 - STEPS_DROP) * smooth(STEPS_END, RAMP_END, y)
+    return -1000.0
 
 
 def _hash(ix, iy):
@@ -80,14 +92,16 @@ def sand(x, y):
     amp = 0.25 + 1.0 * fbm(x / 11000 - 4, y / 9000 + 2, 3)            # crest height varies
     breaks = smooth(0.28, 0.55, fbm(x / 7000 + 5, y / 3800 - 1, 3))   # crests fade in and out
     sheet = 220 * fbm(x / 2600 + 11, y / 2600, 3)                     # low sand sheets between
+    env *= smooth(DUNES_X0 - 3000, DUNES_X0, x)
     dunes = env * (HEIGHT * (main * amp * (0.35 + 0.65 * breaks) + 0.16 * small) + sheet)
     # sand banked against the colonnade wall, even close by
-    bank = 260 * smooth(400, 2600, y) * smooth(1500, 7000, x)
+    bank = 260 * smooth(400, 2600, y) * smooth(DUNES_X0, 7000, x)
     h = dunes + bank
     if h > 4:
         return ground(y) + h
     # no sand: tuck the surface under the architecture (well under, on the steps)
-    return ground(y) - (250 if -4250 < y < -1500 else SINK)
+    # (the tuck stops short of the last tread, so the ramp meets it without a groove)
+    return ground(y) - (250 if STEPS_END + 100 < y < STEPS_TOP else SINK)
 
 
 def write_obj(path):

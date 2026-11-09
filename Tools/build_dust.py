@@ -64,8 +64,10 @@ def block(center, size, mesh=CUBE, label=None, yaw=0.0, pitch=0.0, roll=0.0):
 block((15000, 15000, -500), (40000, 33000, 1000), label="Plaza")
 block((15000, -12000, -1100), (40000, 21000, 200), label="LowerGround")
 
-# --- steps descending from the plaza's left edge (y=-1500) to the lower ground
-STEPS, RISE, RUN = 25, 40, 110  # 40 cm risers: the character climbs up to ~45 cm
+# --- steps descending from the plaza's left edge (y=-1500), comfortable for the
+# mannequin: 20 cm risers, 220 cm treads. The flight drops 4 m and ends at y=-5900;
+# add_dunes.py's sand ramp carries the last 6 m down to the lower ground.
+STEPS, RISE, RUN = 20, 20, 220
 for i in range(STEPS):
     top = -RISE * (i + 1)
     y = -1500 - RUN * i - RUN / 2
