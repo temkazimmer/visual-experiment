@@ -278,8 +278,49 @@ one, a side's work is lost.
 
 1. ~~Hands and feet~~: done, grafted from the MakeHuman base mesh (Tools/blender_extremities.py).
    Still to do: the small dent on the index knuckle; a relaxed hand resting on the thigh.
-2. Navel.
+2. ~~Navel~~: done (Tools/blender_torso.py).
 3. ~~Skin tone choice~~: done, the first BODY row (East Asian, European, Mediterranean, South Asian, African, and in between).
-4. Thigh gap: a BODY slider for the distance between the legs (inner-thigh volume, from
+4. ~~Thigh gap~~ (done): a BODY slider for the distance between the legs (inner-thigh volume, from
    touching to a clear gap), sculpted as a morph so the stance stays the same.
-5. Abs: a BODY slider with named stops (soft, flat, toned, defined, six-pack), sculpted morphs.
+5. ~~Abs~~ (done): a BODY slider with named stops (soft, flat, toned, defined, six-pack), sculpted morphs.
+
+## Middle body (research and what's built, 2026-11-09)
+
+Built by `Tools/blender_torso.py`, the stage after the hands and feet
+(blender_skin → blender_extremities → blender_torso → char_skin).
+
+What a woman's torso shows, front:
+- **Navel:** a scar, not anatomy, so its place varies. Roughly level with the top of the
+  hip bones, a little below the narrowest waist; the stretch from breastbone tip to navel
+  is 1.1–1.6× the stretch from navel to pubis. The shape read as attractive is small, a
+  vertical oval or T, with a hood over the top, sitting in a shallow dish.
+- **Midline (linea alba):** a soft groove from breastbone to navel, fading below it. On a
+  lean woman this one line does most of the work; the six-pack rarely shows.
+- **Side lines (linea semilunaris):** the outer edges of the rectus, two soft vertical
+  grooves. With the midline they make the "toned" look.
+- **Cross lines:** three, the lowest at the navel, all above it. Below the navel the rectus
+  is one panel that narrows to the pubis (it doesn't flare to the hip bones).
+- **Low belly:** women keep a soft pad below the navel even when lean: a gentle curve out.
+- **Hip bones and the V:** the front points of the pelvis, and a soft line from each to the pubis.
+
+Back:
+- **Spinal furrow:** deepest in the lumbar curve, between the two erector columns, fading
+  between the shoulder blades and ending in a flat triangle over the sacrum.
+- **Dimples of Venus:** over the sacroiliac joints at the triangle's top corners, more
+  common and stronger in women.
+- Women's lumbar curve is stronger and the waist sits higher, so the back reads as one long
+  S from shoulder blades to glutes.
+
+In the skin: navel, faint midline, low-belly curve, furrow, columns, dimples, a soft groin
+crease and the pubic mound (mannequin-level, so briefs and bodysuits sit on a correct shape)
+are always there. Sliders: **Abs** (flat · toned · defined · six-pack = morphs AbsLines,
+AbsPack), **Body fat** (morph Fat: a soft layer that also hides 70% of the abs at full, so
+"slight abs under slight fat" is Abs 0.5 + Fat 0.4) and **Thigh gap** (morph ThighGap).
+All depths are in the script's LOOK table.
+
+Hips: the same script drops the mannequin's stale stored normals (they showed as crinkled
+seams at groin, hips and thighs), relaxes the sliver seams, and diffuses pelvis/thigh weights
+over about 3 cm, so the leg meets the body in a curve. Checked: no left/right or stray bone
+weights at the hip. A leg raised past ~60 degrees still pushes into the belly; that needs a
+corrective morph if a pose ever asks for it. In the dust light the abs read as soft lines,
+stronger in side light.

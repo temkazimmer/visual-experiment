@@ -19,6 +19,8 @@ struct FVisexBodySlider
 	UPROPERTY(BlueprintReadOnly, Category = "Body") bool bCentimetres = false;
 	/** The skin tone: shown by name, the track filled with the colour. */
 	UPROPERTY(BlueprintReadOnly, Category = "Body") bool bSkinTone = false;
+	/** The abs: shown by name (flat .. six-pack). */
+	UPROPERTY(BlueprintReadOnly, Category = "Body") bool bAbs = false;
 };
 
 /** One outfit she can wear: a skeletal mesh fitted to the skin (Tools/blender_outfits.py). */
@@ -60,6 +62,11 @@ struct FVisexBodyProfile
 	/** Skin tone 0..1 across the named stops: the skin's base colour (linear) and its name. */
 	static VISEX_API FLinearColor SkinColor(float Tone);
 	static VISEX_API FText SkinToneName(float Tone);
+
+	/** Abs 0..1 across flat, toned, defined, six-pack: its name, and the weights of the two
+	 *  morphs that make it (Tools/blender_torso.py). Fat lies on top and blurs them. */
+	static VISEX_API FText AbsName(float Abs);
+	static VISEX_API void AbsWeights(float Abs, float Fat, float& Lines, float& Pack);
 
 	/** The wardrobe, in menu order; the first entry is "none". */
 	static VISEX_API const TArray<FVisexOutfit>& Outfits();

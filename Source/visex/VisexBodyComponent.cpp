@@ -96,6 +96,13 @@ void UVisexBodyComponent::Apply()
 	// shape morphs: 0 = the base body, 1 = the full sculpt (Tools/blender_skin.py)
 	Mesh->SetMorphTarget(TEXT("BustUp"), Profile.Get("Bust"), false);
 	Mesh->SetMorphTarget(TEXT("GlutesUp"), Profile.Get("Glutes"), false);
+	// the middle (Tools/blender_torso.py)
+	float Lines, Pack;
+	FVisexBodyProfile::AbsWeights(Profile.Get("Abs"), Profile.Get("Fat"), Lines, Pack);
+	Mesh->SetMorphTarget(TEXT("Fat"), Profile.Get("Fat"), false);
+	Mesh->SetMorphTarget(TEXT("AbsLines"), Lines, false);
+	Mesh->SetMorphTarget(TEXT("AbsPack"), Pack, false);
+	Mesh->SetMorphTarget(TEXT("ThighGap"), Profile.Get("ThighGap"), false);
 
 	ApplySkin();
 	ApplyOutfit();
