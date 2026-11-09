@@ -103,5 +103,5 @@ hips. No skin showed through in those frames.
 - Fishnet and lace cells stretch with girth: wider on the thigh, tighter at the ankle.
 - The old flat-build materials (`Content/Character/Android/M_Fabric*`,
   `Content/Character/Outfits/MI_*`) are no longer used by any outfit.
-- The outfit component is created by the body component and casts no shadow at all.
+- The FBX also carries her hair; the builder drops the "Hair" material before fitting.
 - Shots: `Tools/char_play_shot.py` (in Play: `START`, `OUTFIT`, `WALK`, `SHOT`).

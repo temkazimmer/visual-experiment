@@ -53,7 +53,18 @@ for m in skin.modifiers:
     if m.type == "ARMATURE":
         m.show_viewport = False
 me = skin.data
+# the FBX also carries her hair (material "Hair"): cloth is fitted to skin only
+_hair = [i for i, m in enumerate(me.materials) if m and m.name.lower().startswith("hair")]
+if _hair:
+    hb = bmesh.new()
+    hb.from_mesh(me)
+    bmesh.ops.delete(hb, geom=[f for f in hb.faces if f.material_index in _hair], context="FACES")
+    bmesh.ops.delete(hb, geom=[v for v in hb.verts if not v.link_faces], context="VERTS")
+    hb.to_mesh(me)
+    hb.free()
+    me.update()
 nv = len(me.vertices)
+print("skin verts", nv, "(hair removed)" if _hair else "")
 M4 = np.array(skin.matrix_world)
 R3 = M4[:3, :3]
 
