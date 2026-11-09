@@ -28,17 +28,18 @@ SHELL = dict(
     inflate=1.6,                     # cm the skin floats above the machine
     thick_scale=10.0,                 # cm of gap that reads fully milky
     fresnel_exponent=3.0,
-    opacity_min=0.08,                # face-on over thin skin: the machine shows
-    opacity_max=0.85,                # edges and thick areas: milky
-    skin=(0.60, 0.68, 0.80),         # milky white with a cool cast
-    scatter=(0.30, 0.55, 1.00),      # aerogel blue, strongest at the rim
-    scatter_strength=2.6,
+    opacity_min=0.80,                # face-on: the machine is barely there
+    opacity_max=0.98,                # edges and thick areas: solid white
+    skin=(0.86, 0.86, 0.84),         # mannequin white, a hair warm
+    scatter=(0.70, 0.80, 1.00),      # faint cool haze at the rim
+    scatter_strength=0.35,
     glow=(0.35, 0.70, 1.00),         # inner pulse, seen through thin skin
-    glow_strength=0.8,
+    glow_strength=0.25,
     glow_speed=0.9,                  # rad/s: a slow cooling cycle (~7 s)
-    roughness=0.28,
+    roughness=0.75,                  # matte, like a display mannequin
+    specular=0.25,
 )
-CORE_TINT = (0.035, 0.038, 0.045)    # graphite machine
+CORE_TINT = (0.20, 0.21, 0.23)       # mid-grey machine: low contrast under the skin
 
 if unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).is_in_play_in_editor():
     raise RuntimeError("Play mode is running: stop PIE before saving assets")
@@ -120,6 +121,7 @@ mel.connect_material_property(opac, "", MP.MP_OPACITY)
 # color
 mel.connect_material_property(vector("SkinColor", S["skin"], -450, -200), "", MP.MP_BASE_COLOR)
 mel.connect_material_property(scalar("Roughness", S["roughness"], -450, -80), "", MP.MP_ROUGHNESS)
+mel.connect_material_property(scalar("Specular", S["specular"], -450, -40), "", MP.MP_SPECULAR)
 # emissive: blue scatter at the rim + inner pulse where the skin is thin
 sc = op(unreal.MaterialExpressionMultiply, vector("ScatterColor", S["scatter"], -700, 480),
         scalar("ScatterStrength", S["scatter_strength"], -700, 600), -500, 500)
