@@ -30,7 +30,7 @@ SKIN = dict(
     faces=80000,         # decimate target
     max_influences=4,
     # at slider 1 (morph weight 1): projection beyond the base body, cm
-    bust_proj=9.0, bust_height=0.40, bust_spread=0.50, bust_bounce=1.4, bust_apart=2.4, bust_cleft=1.0,
+    bust_proj=9.0, bust_height=0.40, bust_spread=0.50, bust_bounce=2.4, bust_sway=2.0, bust_surge=1.5, bust_apart=2.4, bust_cleft=1.0,
     glute_proj=7.0, glute_height=1.0, glute_spread=0.60, glute_bounce=1.1,
 )
 
@@ -341,8 +341,15 @@ key_from_offsets("GlutesUp", shaped(glute_push, 30))
 # bounce: the soft tissue moves as a block, most where it is thickest
 for part, proj, amp in (("Bust", SKIN["bust_proj"], SKIN["bust_bounce"]), ("Glute", SKIN["glute_proj"], SKIN["glute_bounce"])):
     for side_name in ("L", "R"):
-        m = np.clip(pushes[part + side_name] / (proj * M), 0, 1) ** 0.7
+        # the bust swings from its base: the tip travels, the root stays on the chest
+        m = np.clip(pushes[part + side_name] / (proj * M), 0, 1) ** (1.3 if part == "Bust" else 0.7)
         m = diffuse(m, 3)
+        if part == "Bust":
+            out = SIDE * (LEFT if side_name == "L" else -LEFT)
+            # sway out/in and surge forward/back, each with a little drop as it swings (an arc)
+            for nm, d, a in (("Out", out, SKIN["bust_sway"]), ("In", -out, SKIN["bust_sway"]),
+                             ("Fwd", FWD, SKIN["bust_surge"]), ("Back", -FWD, SKIN["bust_surge"])):
+                key_from_offsets("BustSway%s_%s" % (side_name, nm), (d - UP * 0.25)[None, :] * (a * M) * m[:, None])
         key_from_offsets("%sBounce%s_Up" % (part, side_name), UP[None, :] * (amp * M) * m[:, None])
         key_from_offsets("%sBounce%s_Down" % (part, side_name), -UP[None, :] * (amp * M) * m[:, None])
 # spacing: each breast slides outward as a block (turned a little outward too), opening

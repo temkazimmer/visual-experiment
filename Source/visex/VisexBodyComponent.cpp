@@ -259,29 +259,14 @@ void UVisexBodyComponent::TickJiggle(float DeltaTime)
 			J.bStarted = true;
 			continue;
 		}
-		// the tissue is left behind by the bone's move, then pulled back by a damped spring
-		const float BoneVelocity = (Z - J.LastZ) / DeltaTime;
-		J.LastZ = Z;
 		const float Spread = bBust ? BustDetune : GluteDetune;
 		const float Detune = (i % 2 == 0) ? 1.f - Spread : 1.f + Spread;
-		const float W = 2.f * PI * (bBust ? BustFrequency : GluteFrequency) * Detune;
-		const float Zeta = bBust ? BustDamping : GluteDamping;
-		const int32 Steps = FMath::Clamp(FMath::CeilToInt(DeltaTime * W * 2.f), 1, 8);
-		const float H = DeltaTime / Steps;
-		for (int32 s = 0; s < Steps; ++s)
-		{
-			// Offset = tissue - bone; its acceleration = spring + damping - the bone's acceleration,
-			// which we feed as the change in relative velocity
-			const float Rel = J.Velocity - BoneVelocity;
-			const float Acc = -W * W * J.Offset - 2.f * Zeta * W * Rel;
-			J.Velocity += Acc * H;
-			J.Offset += (J.Velocity - BoneVelocity) * H;
-		}
 		const float Travel = bBust ? BustTravel : GluteTravel;
-		J.Offset = FMath::Clamp(J.Offset, -2.5f * Travel, 2.5f * Travel);
+		StepSpring(J, Z, DeltaTime, (bBust ? BustFrequency : GluteFrequency) * Detune, bBust ? BustDamping : GluteDamping,
+			SoftLimit * Travel);
 		// bigger is heavier: a small bust barely moves
 		const float Size = Profile.Get(bBust ? FName("Bust") : FName("Glutes"));
-		const float Raw = J.Offset / Travel * JiggleStrength * (0.25f + Size);
+		const float Raw = J.Offset / Travel * (bBust ? BustStrength : JiggleStrength) * (0.25f + Size);
 		// soft tissue eases into its limit instead of hitting a stop, so each side rolls on
 		// its own rather than both slamming the end together
 		float Weight = FMath::Tanh(Raw * (bBust ? 1.f : 0.8f));
@@ -292,6 +277,81 @@ void UVisexBodyComponent::TickJiggle(float DeltaTime)
 		Mesh->SetMorphTarget(Up[i], FMath::Max(0.f, Weight), false);
 		Mesh->SetMorphTarget(Down[i], FMath::Max(0.f, -Weight), false);
 	}
+
+	// the bust also swings on the chest: sideways (the gait's weight shift, a turn) and
+	// forward/back (each shoulder's twist with the stride, starting and stopping), each
+	// breast on its own spring, measured in her own frame
+	const AActor* Owner = GetOwner();
+	if (!Owner)
+	{
+		return;
+	}
+	const FVector Left = -Owner->GetActorRightVector();
+	const FVector Fwd = Owner->GetActorForwardVector();
+	static const FName SwayOut[2] = {TEXT("BustSwayL_Out"), TEXT("BustSwayR_Out")};
+	static const FName SwayIn[2] = {TEXT("BustSwayL_In"), TEXT("BustSwayR_In")};
+	static const FName SwayFwd[2] = {TEXT("BustSwayL_Fwd"), TEXT("BustSwayR_Fwd")};
+	static const FName SwayBack[2] = {TEXT("BustSwayL_Back"), TEXT("BustSwayR_Back")};
+	const float Gain = BustSwayStrength * (0.25f + Profile.Get("Bust")) / FMath::Max(BustSwayTravel, 0.01f);
+	for (int32 i = 0; i < 2; ++i)
+	{
+		const FVector P = FMath::Lerp(Mesh->GetBoneLocation(Chest), Mesh->GetBoneLocation(Hangers[i]), BustSideFollow)
+			/ FMath::Max(Scale, 0.01f);
+		const float Detune = (i == 0) ? 1.f - BustDetune : 1.f + BustDetune;
+		FVisexJiggleState& S = Sway[i];
+		FVisexJiggleState& F = Sway[i + 2];
+		if (bTeleport)
+		{
+			S.bStarted = F.bStarted = false;
+		}
+		// her frame turns under the tissue: track the axis position by integrating the bone's
+		// velocity along the current axes, not by projecting the world position
+		const float PrevS = S.LastZ, PrevF = F.LastZ;
+		const FVector Last = S.bStarted ? SwayLast[i] : P;
+		SwayLast[i] = P;
+		const FVector Move = P - Last;
+		StepSpring(S, PrevS + FVector::DotProduct(Move, Left), DeltaTime, BustSwayFrequency * Detune, BustSwayDamping,
+			SoftLimit * BustSwayTravel);
+		StepSpring(F, PrevF + FVector::DotProduct(Move, Fwd), DeltaTime, BustSwayFrequency * Detune * 1.15f, BustSwayDamping,
+			SoftLimit * BustSwayTravel);
+		// her left breast swings out to her left; the right one out to her right
+		const float Out = FMath::Tanh(S.Offset * Gain) * (i == 0 ? 1.f : -1.f);
+		const float Surge = FMath::Tanh(F.Offset * Gain);
+		Mesh->SetMorphTarget(SwayOut[i], FMath::Max(0.f, Out), false);
+		Mesh->SetMorphTarget(SwayIn[i], FMath::Max(0.f, -Out), false);
+		Mesh->SetMorphTarget(SwayFwd[i], FMath::Max(0.f, Surge), false);
+		Mesh->SetMorphTarget(SwayBack[i], FMath::Max(0.f, -Surge), false);
+	}
+}
+
+void UVisexBodyComponent::StepSpring(FVisexJiggleState& J, float X, float DeltaTime, float Hz, float Zeta, float Limit)
+{
+	if (!J.bStarted)
+	{
+		J = FVisexJiggleState();
+		J.LastZ = X;
+		J.bStarted = true;
+		return;
+	}
+	// the tissue is left behind by the bone's move, then pulled back by a damped spring
+	const float BoneVelocity = (X - J.LastZ) / DeltaTime;
+	J.LastZ = X;
+	const float W = 2.f * PI * Hz;
+	const int32 Steps = FMath::Clamp(FMath::CeilToInt(DeltaTime * W * 2.f), 1, 8);
+	const float H = DeltaTime / Steps;
+	for (int32 s = 0; s < Steps; ++s)
+	{
+		// Offset = tissue - bone; its acceleration = spring + damping - the bone's acceleration,
+		// which we feed as the change in relative velocity
+		const float Rel = J.Velocity - BoneVelocity;
+		// tissue stiffens as it stretches: the spring hardens past Limit instead of hitting a
+		// stop, so a hard step eases into the end of its travel and swings back, never flat-tops
+		const float Stretch = J.Offset / FMath::Max(Limit, 0.01f);
+		const float Acc = -W * W * J.Offset * (1.f + Stretch * Stretch) - 2.f * Zeta * W * Rel;
+		J.Velocity += Acc * H;
+		J.Offset += (J.Velocity - BoneVelocity) * H;
+	}
+	J.Offset = FMath::Clamp(J.Offset, -4.f * Limit, 4.f * Limit);   // only a safety net
 }
 
 bool UVisexBodyComponent::Save() const

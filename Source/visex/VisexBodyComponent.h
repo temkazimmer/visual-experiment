@@ -13,7 +13,7 @@ struct FVisexJiggleState
 
 	float Offset = 0.f;      // cm, tissue relative to its bone (vertical)
 	float Velocity = 0.f;    // cm/s, tissue's own vertical speed
-	float LastZ = 0.f;
+	float LastZ = 0.f;       // the bone's last position along the spring's axis
 	bool bStarted = false;
 };
 
@@ -25,7 +25,8 @@ struct FVisexJiggleState
  * - Bust and Glutes are morph weights on BustUp / GlutesUp.
  * - Jiggle: four damped springs (each breast, each glute) follow the bones they hang on
  *   and drive the Bust/GluteBounce{L,R}_{Up,Down} morphs, so they bounce when she runs,
- *   lands or stops.
+ *   lands or stops. Each breast also swings sideways and forward/back on two more springs
+ *   (BustSway{L,R}_{Out,In,Fwd,Back}).
  * - Outfit: a skin-fitted mesh on the same skeleton, following the body's pose and morphs.
  * Morphs are set on the body mesh; the skin and the outfit follow it (Leader Pose).
  */
@@ -58,9 +59,19 @@ public:
 	/** Soft-tissue bounce. Frequency in Hz, damping ratio (0 = rings forever, 1 = no
 	 *  overshoot), and the travel (cm) one full bounce morph stands for. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") bool bJiggle = true;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float BustFrequency = 2.4f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float BustDamping = 0.14f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float BustTravel = 1.4f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float BustFrequency = 1.9f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float BustDamping = 0.1f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float BustTravel = 2.4f;
+	/** Bust bounce strength on its own (the shared JiggleStrength is the glutes'). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float BustStrength = 0.65f;
+	/** The bust also swings side to side and forward/back on the chest (BustSway morphs):
+	 *  its own springs, looser than the bounce, fed by the chest's sideways and forward moves. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float BustSwayFrequency = 1.6f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float BustSwayDamping = 0.12f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float BustSwayTravel = 2.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float BustSwayStrength = 0.8f;
+	/** Where the springs start to stiffen, in travels: past it the tissue hardens (no hard stop). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float SoftLimit = 1.5f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float GluteFrequency = 2.6f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float GluteDamping = 0.24f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float GluteTravel = 1.1f;
@@ -79,8 +90,8 @@ public:
 	 *  torso's frame) when they start to fade in, and where they are full (the sculpt pose). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body") float ArmUpStart = 80.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body") float ArmUpFull = 176.6f;
-	/** Bust height at the slider's ends, in bounce-morph weights (1 = 1.4 cm at the fullest point). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body") float BustLiftRange = 2.2f;
+	/** Bust height at the slider's ends, in bounce-morph weights (1 = 2.4 cm at the tip). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body") float BustLiftRange = 1.3f;
 
 	UFUNCTION(BlueprintCallable, Category = "Body")
 	void Apply();
@@ -117,6 +128,8 @@ private:
 	void PushToAnim() const;
 	void ApplyOutfit();
 	void TickJiggle(float DeltaTime);
+	/** Moves one spring on: X is its bone's position along the spring's axis (cm). */
+	static void StepSpring(FVisexJiggleState& J, float X, float DeltaTime, float Hz, float Zeta, float Limit);
 	/** Fades in the arm-raise correctives (ArmUp_l/_r, Tools/blender_correctives.py). */
 	void TickCorrectives();
 
@@ -126,4 +139,6 @@ private:
 	void ApplySkin();
 	FName WornOutfit = NAME_None;
 	FVisexJiggleState Jiggle[4];   // bust L, bust R, glute L, glute R
+	FVisexJiggleState Sway[4];     // bust L, bust R sideways (her left +); bust L, bust R forward
+	FVector SwayLast[2] = {FVector::ZeroVector, FVector::ZeroVector};
 };
