@@ -6,8 +6,8 @@ Headless, after Tools/blender_face.py:
 
 The hair is solid locks, not strands: each one a flat blade that tapers to a point. They
 grow from a cap on the scalp, start out along the head away from the crown, are lifted a
-little, then fall; they never go inside the head, so they drape over the skull and part
-around the ears. Three layers: a long under layer, a middle one with the fringe, and
+little, then fall; they never go inside the head, so they drape over the skull. The hair is
+tucked behind the ears: locks above an ear sweep back and fall behind it, so the ears show. Three layers: a long under layer, a middle one with the fringe, and
 short lifted ones at the crown.
 The hair is joined to the skin as a second material slot ("Hair") and follows the head
 bone, so nothing changes in the game code. Outfits should start from the blend that
@@ -46,6 +46,12 @@ LOOK = dict(
     fringe=0.22,          # the fringe's length against the rest (it stops at the eyes)
     flick=0.11,           # how much the tips turn outward
     wander=16.0,          # degrees a lock strays from straight down the head
+    # tucked behind the ears: locks above an ear sweep back over it and fall behind it; the
+    # few in front of it stay in front, framing the face. Either way none crosses the ear.
+    tuck_sweep=1.1,       # how hard a lock above the ear is turned back
+    tuck_reach=8.0,       # cm above the ear's top where the sweep fades out
+    tuck_gap=0.6,         # cm between the ear's edge and a lock's side
+    ear_arch=5.0,         # degrees the hairline clears an ear's top by, arching over it
 )
 
 rng = np.random.default_rng(LOOK["seed"])
@@ -60,12 +66,54 @@ hw = np.array([next((g.weight for g in v.groups if g.group == gi), 0.0) for v in
 skull = co[(hw > 0.9) & (np.abs(co[:, 0]) < 7.5)]
 top = skull[:, 2].max()
 C = Vector((0.0, (skull[:, 1].min() + skull[:, 1].max()) / 2 + 1.0, top - 9.5))
-# the ears are left out: locks pass over their roots and the points come through the hair
+# the ears are left out of the head the locks drape over; tuck() keeps the locks off them
 ear = np.zeros(len(me.vertices))
 me.attributes["ear"].data.foreach_get("value", ear)
 polys = [tuple(p.vertices) for p in me.polygons]
 full = BVHTree.FromPolygons([tuple(c) for c in co], polys)
 bvh = BVHTree.FromPolygons([tuple(c) for c in co], [p for p in polys if not any(ear[i] > 0.5 for i in p)])
+# each ear's outline in side view: its front and back edge by height (1 cm rows)
+EARS = {}
+for sd in (1, -1):
+    E = co[(ear > 0.5) & (co[:, 0] * sd > 0)]
+    z0, z1 = E[:, 2].min(), E[:, 2].max()
+    rows = np.arange(z0, z1 + 1.0, 1.0)
+    fr, bk = [], []
+    for z in rows:
+        b = E[np.abs(E[:, 2] - z) < 1.0]
+        fr.append(b[:, 1].min() if len(b) else np.nan)
+        bk.append(b[:, 1].max() if len(b) else np.nan)
+    fr, bk = np.array(fr), np.array(bk)
+    ok = ~np.isnan(fr)
+    EARS[sd] = dict(z0=z0, z1=z1, rows=rows[ok], front=fr[ok], back=bk[ok],
+                    yf=E[:, 1].min(), yb=E[:, 1].max(), x=np.abs(E[:, 0]).min())
+    print("ear %+d: z %.1f..%.1f, y %.1f..%.1f" % (sd, z0, z1, E[:, 1].min(), E[:, 1].max()))
+
+
+def ear_side(p):
+    """Which ear a point is beside (or 0), and that ear."""
+    sd = 1 if p.x > 0 else -1
+    e = EARS[sd]
+    return (sd, e) if abs(p.x) > e["x"] - 2.0 else (0, None)
+
+
+def tuck(p, v, mode, margin):
+    """Keep a lock off its ear: behind the back edge, or in front of the front edge."""
+    sd, e = ear_side(p)
+    if not sd or mode is None or not (e["z0"] - 1.5 < p.z < e["z1"] + 1.5):
+        return p, v
+    z = min(max(p.z, e["z0"]), e["z1"])
+    if mode == "back":
+        lim = float(np.interp(z, e["rows"], e["back"])) + margin
+        if p.y < lim:
+            p = Vector((p.x, lim, p.z))
+            v = Vector((v.x, max(v.y, 0.0), v.z)).normalized()
+    else:
+        lim = float(np.interp(z, e["rows"], e["front"])) - margin
+        if p.y > lim:
+            p = Vector((p.x, lim, p.z))
+            v = Vector((v.x, min(v.y, 0.0), v.z)).normalized()
+    return p, v
 
 
 def direction(az, el):
@@ -87,15 +135,31 @@ def scalp(az, el):
     return hit, nrm
 
 
+# the arch over each ear: the ear's top, as elevation by direction (1-degree steps, smoothed)
+E = co[ear > 0.5] - np.array(C)
+e_az = np.degrees(np.arctan2(np.abs(E[:, 0]), -E[:, 1])).round().astype(int)
+e_el = np.degrees(np.arcsin(E[:, 2] / np.linalg.norm(E, axis=1)))
+ARCH = np.full(181, -90.0)
+np.maximum.at(ARCH, e_az, e_el + LOOK["ear_arch"])
+for _ in range(6):                                     # round its shoulders
+    ARCH[1:-1] = np.maximum(ARCH[1:-1], (ARCH[:-2] + ARCH[1:-1] * 2 + ARCH[2:]) / 4 - 1.5)
+print("hairline arches over the ears: az %d..%d, up to %.0f deg" % (
+    np.nonzero(ARCH > -90)[0].min(), np.nonzero(ARCH > -90)[0].max(), ARCH.max()))
+
+
 def hairline(az):
     a = abs(((az + 180) % 360) - 180)                  # 0 front .. 180 back
     if a < 90:
         t = a / 90
         t = t * t * (3 - 2 * t)
-        return LOOK["line_front"] + (LOOK["line_side"] - LOOK["line_front"]) * t
-    t = (a - 90) / 90
-    t = t * t * (3 - 2 * t)
-    return LOOK["line_side"] + (LOOK["line_back"] - LOOK["line_side"]) * t
+        base = LOOK["line_front"] + (LOOK["line_side"] - LOOK["line_front"]) * t
+    else:
+        t = (a - 90) / 90
+        t = t * t * (3 - 2 * t)
+        base = LOOK["line_side"] + (LOOK["line_back"] - LOOK["line_side"]) * t
+    i = int(min(a, 179.0))
+    arch = ARCH[i] + (ARCH[i + 1] - ARCH[i]) * (a - i)
+    return max(base, arch)
 
 
 V, F, UV = [], [], []
@@ -119,8 +183,10 @@ F.append(tuple(grid[i, NE - 1] for i in range(NA))[::-1])
 
 
 # ---- locks --------------------------------------------------------------------------------
-def lock(root, nrm, heading, length, width, lift, fall, clear):
-    """A blade from root: along heading, lifted off the head, then falling. Returns the path."""
+def lock(root, nrm, heading, length, width, lift, fall, clear, mode=None):
+    """A blade from root: along heading, lifted off the head, then falling. Returns the path.
+    mode: "back" or "front" of the ear it passes (None: no ear on its way)."""
+    margin = LOOK["tuck_gap"] + 0.6 * width
     v = (heading * cos(radians(lift)) + nrm * sin(radians(lift))).normalized()
     step = length / LOOK["steps"]
     p = root.copy()
@@ -138,11 +204,13 @@ def lock(root, nrm, heading, length, width, lift, fall, clear):
             v = (v - n2 * min(v.dot(n2), 0.0)).normalized()
         if t > 0.6:
             v = (v + n2 * LOOK["flick"]).normalized()
+        p, v = tuck(p, v, mode, margin)
         path.append((p.copy(), n2.copy()))
     for _ in range(3):                                    # no kinks where it met the head
         pts = [q for q, _ in path]
         for k in range(1, len(path) - 1):
-            path[k] = ((pts[k - 1] + pts[k] * 2 + pts[k + 1]) / 4, path[k][1])
+            q, _ = tuck((pts[k - 1] + pts[k] * 2 + pts[k + 1]) / 4, Vector((0, 0, -1)), mode, margin)
+            path[k] = (q, path[k][1])
     return path
 
 
@@ -193,15 +261,27 @@ for L in LOOK["layers"]:
         heading = (lower - root)
         heading = (heading - nrm * heading.dot(nrm)).normalized()
         length = rng.uniform(*L["length"])
+        width = LOOK["side_width"] * rng.uniform(0.8, 1.25)
+        # by an ear: in front of it if the root is well ahead of it, else tucked behind it
+        mode = None
+        if abs(sin(radians(az))) > 0.35:                  # a lock down the side of the head
+            e = EARS[1 if sin(radians(az)) > 0 else -1]
+            if root.y < e["yf"] - LOOK["tuck_gap"] - 0.6 * width:
+                mode = "front"
+            else:
+                mode = "back"
+                w = np.clip(1 - (root.z - e["z1"]) / LOOK["tuck_reach"], 0, 1)
+                w *= np.clip((e["yb"] + 3.0 - root.y) / 3.0, 0, 1)          # not the ones already behind
+                heading = heading + Vector((0, 1, -0.6)) * LOOK["tuck_sweep"] * w
+                heading = (heading - nrm * heading.dot(nrm)).normalized()
         a = abs(((az + 180) % 360) - 180)
         if a < 55 and L["name"] != "under":
             length *= LOOK["fringe"] + (1 - LOOK["fringe"]) * (a / 55) ** 2
         if a < 62 and L["name"] == "under":
             # no under layer over the forehead; at the temples it frames the face
             length *= 0.5 if a < 40 else 1.15
-        width = LOOK["side_width"] * rng.uniform(0.8, 1.25)
         path = lock(root + nrm * LOOK["cap"], nrm, heading, length, width,
-                    L["lift"] * rng.uniform(0.7, 1.3), L["fall"], L["clear"])
+                    L["lift"] * rng.uniform(0.7, 1.3), L["fall"], L["clear"], mode)
         blade(path, width)
         count += 1
 
