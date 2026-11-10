@@ -22,7 +22,7 @@ def _tile(rng, w, h, nstrands=26):
         ph = rng.uniform(0, 6.28)
         pinch = rng.uniform(0.15, 0.55)                      # strands converge toward the tip
         xc = 0.5 + (x0 - 0.5) * (1 - pinch * v) + amp * np.sin(freq * 6.28 * v + ph)
-        wid = rng.uniform(2.2, 4.0) / w
+        wid = rng.uniform(3.0, 5.2) / w                      # wider strands: cards read solid (QA 0278)
         taper = np.clip((length - v) / 0.18, 0, 1) ** 0.8    # sharp tip
         root = np.clip(v / 0.02, 0, 1)                       # opens at the very root
         half = wid * taper * (0.55 + 0.45 * root)
@@ -44,7 +44,7 @@ def make_atlas(path, tiles=8, w=256, h=1024, seed=3):
     vv = np.linspace(0, 1, h)[:, None] * np.ones((1, w))
     for t in range(tiles):
         dense = t < tiles // 2                      # first half: coverage tiles, packed
-        a, var, sid = _tile(rng, w, h, nstrands=int(rng.integers(38, 52) if dense else rng.integers(16, 26)))
+        a, var, sid = _tile(rng, w, h, nstrands=int(rng.integers(64, 80) if dense else rng.integers(34, 44)))
         sl = slice(t * w, (t + 1) * w)
         out[:, sl, 0] = var
         out[:, sl, 1] = sid
