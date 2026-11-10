@@ -7,9 +7,9 @@ import unreal
 PATH, NAME = "/Game/VisEx/UI", "M_MenuCornerShade"
 full = f"{PATH}/{NAME}"
 mel = unreal.MaterialEditingLibrary
-RADIUS = globals().get("RADIUS", 1.15)      # reach, in screen heights from the corner
-STRENGTH = globals().get("STRENGTH", 0.8)   # darkening at the corner itself
-POWER = globals().get("POWER", 1.6)         # falloff shape: lower = softer, wider
+RADIUS = globals().get("RADIUS", 1.5)      # reach, in screen heights from the corner
+STRENGTH = globals().get("STRENGTH", 0.93)   # darkening at the corner itself
+POWER = globals().get("POWER", 1.25)         # falloff shape: lower = softer, wider
 
 m = unreal.load_asset(full) or unreal.AssetToolsHelpers.get_asset_tools().create_asset(
     NAME, PATH, unreal.Material, unreal.MaterialFactoryNew())

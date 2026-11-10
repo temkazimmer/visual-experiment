@@ -7,6 +7,20 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-10 19:02 · VIS-EX-0259 Shipping (80fb80e) · FAIL on one item: the Start orbit's brightness pops on landing
+
+- **Menu:** she's lit and sharp. Idle items are white and dimmed. The text shadow is subtle but present.
+  The tour at 3840×2160 windowed got clamped to 1600×900, because the displays max out at 3456 wide.
+- **Start orbit (window captures every ~0.15 s):** the key light fades smoothly. When the camera lands
+  at 13.5 → 13.7 s, the whole frame jumps from mean luma 0.24 to 0.38, and the sky from 0.14 to 0.47.
+  That happens within one capture interval while the framing stays identical, which looks like the
+  menu's grade or vignette cutting off. There's no earlier capture to compare with.
+  Frames are in `Saved/QA_0259ship/orbit/`.
+- **Settings:** readable. The Visuals values are small and low-contrast on the bright orange.
+- **Photo mode:** on ground, with the dunes visible and poses applied. No crash. A plain launch reaches the menu.
+- **P in photo mode** (Shipping, sent as System Events keypresses): `HighResShot 2` works. It wrote a
+  3840×2160 frame with no HUD, now moved to `QA_0259ship/P_key_HighResShot_3840x2160.png`.
+
 ## 2026-11-10 18:50 · VIS-EX-0253 Shipping (145ec09) · PASS, release candidate
 
 - **No crash:** the tour reached `done`, there's no new `.ips`, and a plain launch reaches the menu.

@@ -54,6 +54,11 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Footprints")
 	FVector2D HalfSize = FVector2D(18.f, 10.f);
 
+	/** cm above and below the sand the decal reaches: enough for a sloped dune under an 18 cm
+	 *  half-foot, short of her ankles and the menu's stone drum (25 put dark blotches on both). */
+	UPROPERTY(EditAnywhere, Category = "Footprints")
+	float HalfDepth = 8.f;
+
 	/** cm in front of the ankle bone where the sole's middle is (heel ~6 cm behind it, toes ~20 in front). */
 	UPROPERTY(EditAnywhere, Category = "Footprints")
 	float SoleOffset = 6.5f;
