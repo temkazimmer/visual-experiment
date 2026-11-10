@@ -197,7 +197,7 @@ FRotator AVisexFootprints::PrintRotation(const FVector& Forward) const
 
 UDecalComponent* AVisexFootprints::Stamp(const FVector& Where, const FVector& Forward, bool bLeft)
 {
-	UDecalComponent* D = UGameplayStatics::SpawnDecalAtLocation(this, Material, FVector(25.f, HalfSize.Y, HalfSize.X), Where, PrintRotation(Forward), 0.f);
+	UDecalComponent* D = UGameplayStatics::SpawnDecalAtLocation(this, Material, FVector(HalfDepth, HalfSize.Y, HalfSize.X), Where, PrintRotation(Forward), 0.f);
 	if (!D)
 	{
 		return nullptr;
