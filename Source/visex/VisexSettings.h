@@ -10,7 +10,7 @@ class UWorld;
  * GameUserSettings.ini so the next launch starts where the player left it.
  *
  * Levels are Unreal's scalability levels: 0 Low, 1 Medium, 2 High, 3 Epic, 4 Ultra (Cinematic).
- * Until the player saves a choice, the game runs at Ultra (see InitialApply).
+ * Until the player saves a choice, the game runs at Epic; Play in the editor at Ultra (InitialApply).
  */
 struct VISEX_API FVisexSettings
 {
@@ -43,7 +43,12 @@ struct VISEX_API FVisexSettings
 	/** The style post-process volume's tag; the menu director's studio look skips it. */
 	static const FName StyleTag;
 
-	/** On start: the saved settings if the player has chosen some, else Ultra. In the editor
+	/** On start: the saved settings if the player has chosen some, else Epic. In the editor
 	 * (Play) always Ultra, so playtests show the look at full quality. */
 	static void InitialApply();
+
+	/** Apply the current GameUserSettings between frames, never inside a world tick: changing
+	 * scalability re-registers every component, and doing that mid-tick trips the engine's
+	 * end-of-frame update check (LevelTick.cpp, ComponentsToUpdate) and crashes. */
+	static void ApplyBetweenFrames(bool bResolution = false);
 };

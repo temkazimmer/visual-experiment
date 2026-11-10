@@ -7,6 +7,7 @@
 #include "Engine/PostProcessVolume.h"
 #include "Materials/MaterialInterface.h"
 #include "EngineUtils.h"
+#include "Containers/Ticker.h"
 
 #define LOCTEXT_NAMESPACE "VisexSettings"
 
@@ -148,7 +149,7 @@ void FVisexSettings::Adjust(int32 Row, int32 Dir)
 		// Custom (mixed rows) steps to the nearest preset in that direction
 		Level = Level < 0 ? (Dir > 0 ? 4 : 0) : FMath::Clamp(Level + Dir, 0, 4);
 		SetLevel(S, R, Level);
-		S->ApplyNonResolutionSettings();
+		ApplyBetweenFrames();
 		return;
 	}
 	switch (R)
@@ -158,20 +159,34 @@ void FVisexSettings::Adjust(int32 Row, int32 Dir)
 		// 50..100 % in tens; the scale is what the GPU draws before upscaling to the window
 		const float Now = FMath::RoundToFloat(S->GetResolutionScaleNormalized() * 10.f) / 10.f;
 		S->SetResolutionScaleNormalized(FMath::Clamp(Now + 0.1f * Dir, 0.5f, 1.f));
-		S->ApplyResolutionSettings(false);
+		ApplyBetweenFrames(true);
 		break;
 	}
 	case ERow::VSync:
 		S->SetVSyncEnabled(!S->IsVSyncEnabled());
-		S->ApplyNonResolutionSettings();
+		ApplyBetweenFrames();
 		break;
 	case ERow::FrameRate:
 		S->SetFrameRateLimit(float(FrameRates[(FrameRateIndex(S) + Dir + NumFrameRates) % NumFrameRates]));
-		S->ApplyNonResolutionSettings();
+		ApplyBetweenFrames();
 		break;
 	default:
 		break;
 	}
+}
+
+void FVisexSettings::ApplyBetweenFrames(bool bResolution)
+{
+	// the core ticker runs in the engine loop before the world ticks: one shot, next frame
+	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([bResolution](float)
+	{
+		if (UGameUserSettings* S = Settings())
+		{
+			S->ApplyNonResolutionSettings();
+			if (bResolution) { S->ApplyResolutionSettings(false); }
+		}
+		return false;
+	}));
 }
 
 void FVisexSettings::Save()
@@ -192,10 +207,17 @@ void FVisexSettings::InitialApply()
 	}
 	bool bChosen = false;
 	GConfig->GetBool(Section, ChosenKey, bChosen, GGameUserSettingsIni);
-	if (GIsEditor || !bChosen)
+	if (GIsEditor)
 	{
-		// applied, not saved: a first launch shows the look at its best until the player picks
+		// Play in the editor always shows the look at full quality
 		S->SetOverallScalabilityLevel(4);
+		S->SetResolutionScaleNormalized(1.f);
+	}
+	else if (!bChosen)
+	{
+		// a first launch starts at Epic: Ultra (Cinematic) costs about three times its GPU time
+		// here (QA tour, 1080p); the player can raise it on the Settings page
+		S->SetOverallScalabilityLevel(3);
 		S->SetResolutionScaleNormalized(1.f);
 	}
 	S->ApplyNonResolutionSettings();

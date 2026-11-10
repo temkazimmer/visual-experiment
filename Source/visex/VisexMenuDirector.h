@@ -315,6 +315,9 @@ private:
 
 	// the Settings page: same panel, other rows. Page 0 is the main menu, 1 Graphics, 2 Visuals.
 	int32 Page = 0;
+	/** The panel redraws its (large) render target only when it changes: frames left to redraw. */
+	int32 PanelDirty = 0;
+	void MarkPanel(int32 Frames = 2) { PanelDirty = FMath::Max(PanelDirty, Frames); }
 	bool bStickXHeld = false;
 	void ShowSettingsPage(int32 Select);
 	void Left() { SettingsStep(-1); }

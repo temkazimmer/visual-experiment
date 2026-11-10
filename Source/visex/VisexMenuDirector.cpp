@@ -53,6 +53,8 @@ AVisexMenuDirector::AVisexMenuDirector()
 	Panel->SetBlendMode(EWidgetBlendMode::Transparent);
 	Panel->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Panel->SetCastShadow(false);
+	// the text only changes on input: no need to redraw a ~4600 px render target every frame
+	Panel->SetManuallyRedraw(true);
 }
 
 void AVisexMenuDirector::BeginPlay()
@@ -237,6 +239,7 @@ void AVisexMenuDirector::ShowMenu()
 		W->SetSelected(0);
 	}
 	FadeOut = -1.f;
+	MarkPanel(10);   // first layout, fonts
 
 	if (!bInputBound)
 	{
@@ -296,6 +299,7 @@ void AVisexMenuDirector::MoveSelection(int32 Delta)
 	if (UVisexMenuWidget* W = GetMenuWidget())
 	{
 		W->SetSelected(W->GetSelected() + Delta);
+		MarkPanel();
 	}
 }
 
@@ -325,6 +329,7 @@ void AVisexMenuDirector::OpenSettings()
 
 void AVisexMenuDirector::ShowSettingsPage(int32 Select)
 {
+	MarkPanel();
 	if (UVisexMenuWidget* W = GetMenuWidget())
 	{
 		const TArray<FText> Tabs = {FText::FromString(TEXT("GRAPHICS")), FText::FromString(TEXT("VISUALS"))};
@@ -336,6 +341,7 @@ void AVisexMenuDirector::ShowSettingsPage(int32 Select)
 
 void AVisexMenuDirector::CloseSettings()
 {
+	MarkPanel();
 	FVisexSettings::Save();
 	Page = 0;
 	if (UVisexMenuWidget* W = GetMenuWidget())
@@ -357,11 +363,13 @@ void AVisexMenuDirector::SettingsStep(int32 Dir)
 	{
 		FVisexSettings::Adjust(W->GetSelected(), Dir);
 		W->SetValues(FVisexSettings::Values());   // the preset row follows the others (Custom)
+		MarkPanel();
 	}
 	else
 	{
 		FVisexSettings::AdjustVisual(GetWorld(), W->GetSelected(), Dir);
 		W->SetValues(FVisexSettings::VisualValues());
+		MarkPanel();
 	}
 }
 
@@ -861,6 +869,12 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 	Clock += DeltaSeconds;
 
+	if (PanelDirty > 0 && Panel && Panel->IsVisible())
+	{
+		Panel->RequestRenderUpdate();
+		--PanelDirty;
+	}
+
 	// left stick steps the selection: one step per push, past 0.5, re-armed under 0.3
 	if (bOpen && InputComponent)
 	{
@@ -921,6 +935,7 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 
 	if (FadeOut >= 0.f)
 	{
+		MarkPanel();
 		FadeOut += DeltaSeconds;
 		const float A = FMath::Clamp(1.f - FadeOut / 0.6f, 0.f, 1.f);
 		if (UVisexMenuWidget* W = GetMenuWidget())
