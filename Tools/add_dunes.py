@@ -6,7 +6,7 @@ itself. Replaces the old Drift_ mounds. Idempotent.
 
 Endless: past the set the grid cells grow (75 cm -> 20 m) and the same dunes run
 on for a kilometre in every direction, into fog that is opaque long before the
-mesh ends. Invisible walls (DuneBound_*) 600 m out keep the player inside.
+mesh ends. Invisible walls (Dunes_Bound_*) 600 m out keep the player inside.
 
 Run live: python3 Tools/ue.py Tools/add_dunes.py
 """
@@ -240,14 +240,14 @@ actor.set_actor_label("Dunes")
 # invisible walls BOUND outside the set: block the player only, deep in opaque fog
 CR = unreal.CollisionResponseType
 for a in eas.get_all_level_actors():
-    if a.get_actor_label().startswith("DuneBound_"):
+    if a.get_actor_label().startswith("Dunes_Bound_"):
         eas.destroy_actor(a)
 cube = unreal.load_asset("/Engine/BasicShapes/Cube")
 x0, x1, y0, y1 = CORE[0] - BOUND, CORE[1] + BOUND, CORE[2] - BOUND, CORE[3] + BOUND
 for name, centre, size in (("W", (x0, (y0 + y1) / 2), (100, y1 - y0)), ("E", (x1, (y0 + y1) / 2), (100, y1 - y0)),
                            ("S", ((x0 + x1) / 2, y0), (x1 - x0, 100)), ("N", ((x0 + x1) / 2, y1), (x1 - x0, 100))):
     w = eas.spawn_actor_from_class(unreal.StaticMeshActor, unreal.Vector(centre[0], centre[1], 5000))
-    w.set_actor_label("DuneBound_" + name)
+    w.set_actor_label("Dunes_Bound_" + name)
     w.static_mesh_component.set_static_mesh(cube)
     w.set_actor_scale3d(unreal.Vector(size[0] / 100, size[1] / 100, 200))   # 200 m tall
     w.static_mesh_component.set_visibility(False)
