@@ -28,27 +28,30 @@ os.makedirs(OUT, exist_ok=True)
 
 LOOK = dict(
     seed=11,
-    guides=800,            # strands that become cards
+    guides=1200,           # strands that become cards (dense: no gaps between cards)
     part_x=1.6,            # the part, cm to her left of centre
     steps=22,              # points along a card
-    length=dict(front=(44, 52), side=(48, 56), back=(52, 60), side_lock=(40, 48)),
-    fringe=150,            # guides in the fringe
+    length=dict(front=(48, 56), side=(60, 68), back=(66, 76), side_lock=(54, 62)),   # mid-back; locks to the chest
+    fringe=140,            # guides in the fringe: wispy, see-through
     fringe_az=34.0,        # degrees either side of the face the fringe spans
     fringe_el=72.0,        # how far back on the head the fringe grows from
-    brow=0.8,             # cm below the head centre where the fringe is cut
+    brow=1.8,              # cm ABOVE the head centre where the fringe is cut: on the brows, eyes clear
+    brow_jag=1.2,          # cm of unevenness in that cut
+    wisps=0.16,            # share of fringe strands that run long, down between and past the eyes
+    wisp_cut=-3.0,         # ...to here (cm from the head centre; the eyes sit at about -2)
     side_locks=40,         # guides per face-framing lock
     side_az=(40.0, 66.0),  # where the locks grow, degrees round from the face
-    stiff=(0.90, 0.76),    # how much a strand keeps its heading, root -> tip
-    wave_amp=0.35,         # cm
+    stiff=(0.80, 0.50),    # how much a strand keeps its heading, root -> tip (low: falls straight)
+    wave_amp=0.06,         # cm: straight, a hint of life
     wave_len=13.0,         # cm
     card_w_back=(3.6, 5.4),  # cm, card widths by zone
-    card_w_fringe=(1.4, 2.4),
+    card_w_fringe=(1.3, 2.1),
     card_w_side=(1.8, 2.8),
-    arch=0.20,             # how much a card bows out of flat, against its width
-    margin=0.30,           # cm a card keeps off the head
+    arch=0.05,             # how much a card bows out of flat, against its width
+    margin=0.15,           # cm a card keeps off the head
     body_clear=1.0,        # cm off the shoulders and back (clothes agent: straps, binding)
-    layer_margin=0.30,     # cm per layer outward
-    face_halfw=9.2,        # cm: hair below the brow stays outside this, so the face shows
+    layer_margin=0.12,     # cm per layer outward: sleek, not a helmet
+    face_halfw=8.6,        # cm: hair below the brow stays outside this, so the face shows
     ear_open=0.09,         # radians around each ear (seen from the head centre) hair goes round
     line_front=36.0, line_side=-14.0, line_back=-34.0,   # hairline elevation (deg)
 )
@@ -158,23 +161,28 @@ def grow(az, el, layer, zone, flyaway=False):
         want = Vector((p.x * 0.04, -0.75, -1.0))
     elif zone == "side":
         L = rng.uniform(*LOOK["length"]["side_lock"])
-        want = Vector((0.0, -0.2, -1.0))          # hangs straight, close to the face
+        want = Vector((0.0, 0.12, -1.0))          # hangs straight beside the face, not over the eye
     else:
         L = region_length(az)
         over_ear = EAR_AZ_FRONT - 25 <= fa <= EAR_AZ_BACK + 10 and EAR_EL_TOP - 25 < el < EAR_EL_TOP + 40
         behind = 0.25 if fa > 70 else 0.0               # falls behind the shoulders
-        want = Vector((side * (0.5 if fa < 60 else 0.0), (0.7 if over_ear else 0.0) + behind, -1.0))
+        want = Vector((side * (0.15 if fa < 60 else 0.0), (0.7 if over_ear else 0.0) + behind, -1.0))
     if flyaway:
         L *= rng.uniform(0.55, 0.85)
     tang = want - n0 * want.dot(n0)                     # laid along the scalp
     if tang.length < 1e-3:
         tang = Vector((0, 0.3, -1)) - n0 * Vector((0, 0.3, -1)).dot(n0)
-    lift = 0.18 + 0.25 * max(0.0, (el - 45.0) / 45.0)   # a little volume at the crown
+    lift = 0.02 + 0.04 * max(0.0, (el - 45.0) / 45.0)   # flat on the crown (Frieren: sleek)
     if zone == "fringe":
         lift = 0.04                                    # the fringe lies on the head
     d = (tang.normalized() + n0 * lift).normalized()
     front_of_ear = zone != "back"
-    z_cut = C.z + LOOK["brow"] + rng.uniform(-0.8, 0.8)
+    z_cut = C.z + LOOK["brow"] + rng.uniform(-LOOK["brow_jag"], LOOK["brow_jag"])
+    wisp = zone == "fringe" and rng.uniform() < LOOK["wisps"]
+    if wisp:
+        z_cut = C.z + LOOK["wisp_cut"] + rng.uniform(-1.0, 1.0)
+    if zone == "fringe":
+        z_cut = min(z_cut, p.z - rng.uniform(2.5, 4.0))   # rooted low at the sides: no stubs, a bit longer there
     pts = [p.copy()]
     step = 0.6
     travelled = 0.0
@@ -196,7 +204,7 @@ def grow(az, el, layer, zone, flyaway=False):
         if zone != "fringe" and p.y < C.y - 1 and C.z - 26 < p.z < C.z + 3 and abs(p.x) < hw:
             sx = 1.0 if p.x >= 0 else -1.0
             p.x = sx * hw
-            d = (d + Vector((sx * 0.6, 0.2, 0))).normalized()
+            d = (d + Vector((sx * 0.12, 0.3, -0.4))).normalized()   # on down past the face, not sideways
         # the ears show: side locks pass in front of them, everything else behind
         for _ in range(30):
             rel = p - C
@@ -241,7 +249,7 @@ for k in range(LOOK["guides"]):                       # the main mass, combed be
     fa = abs(((az + 180) % 360) - 180)
     if fa < LOOK["fringe_az"] and el < LOOK["fringe_el"]:
         continue                                      # the fringe has its own guides
-    if LOOK["side_az"][1] <= fa < EAR_AZ_FRONT - 2 and el < EAR_EL_TOP + 8:
+    if LOOK["fringe_az"] <= fa < EAR_AZ_FRONT - 2 and el < EAR_EL_TOP + 8:   # temples: they frame the face, never sweep back over the ear
         if rng.uniform() < 0.5:
             guides.append((grow(az, el, 1, "side"), 1, False, az, "side"))
         continue
@@ -268,6 +276,8 @@ for pts, layer, fly, az, zone in guides:
     P = [np.array(x) for x in pts]
     CARDS.append((len(V), zone, az, np.array(P)))
     w0 = rng.uniform(*LOOK["card_w_" + zone]) * (0.45 if fly else 1.0)
+    if zone == "fringe" and P[-1][2] < C.z - 0.5:
+        w0 *= 0.5                                     # the long wisps are a few strands each
     base = len(V)
     prev_n = None
     tile = int(rng.integers(0, TILES // 2)) if layer == 0 else int(rng.integers(TILES // 2, TILES))
