@@ -30,6 +30,17 @@ These are licensed through Fab and can't be redistributed, so they're gitignored
 Then, with the editor open: `python3 Tools/ue.py Tools/import_sand_tex.py` and
 `python3 Tools/ue.py Tools/add_sand.py`. Without them the sand material won't compile.
 
+### Study animation packs (Fab, bought by Tema; licensed, gitignored)
+
+Raw files sit in `SourceArt/Fab/` for study and retargeting:
+
+| Pack | Folder | Format |
+|---|---|---|
+| Park Life (MoCap Online) | `SourceArt/Fab/ParkLife/` | FBX on the MotusMan/MotusWoman skeleton |
+| Girl Walk&Run (Inu Games) | `SourceArt/Fab/GirlWalkRun/` | FBX on Quinn, plus Cascadeur `.casc` sources |
+| Lie Down (Ailive) | `SourceArt/Fab/LieDown/` | FBX |
+| Movement Animation (Gamma Studio), Female Everyday Actions Vol. 1 (Digital Kinetics) | `Content/` via Launcher "Add to Project" | Unreal Engine format only |
+
 ## Pipeline
 
 All live in the open editor via the bridge (`python3 Tools/ue.py <script>`), unless noted.
