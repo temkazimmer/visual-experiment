@@ -26,6 +26,7 @@ struct FVisexAnimProxy : public FAnimInstanceProxy
 private:
 	void Reshape(FCompactPose& Pose) const;
 	void Catwalk(FCompactPose& Pose);
+	void Alive(FCompactPose& Pose);
 
 	FVisexBodyProfile Profile;
 	bool bHasProfile = false;
@@ -44,6 +45,15 @@ private:
 	float ChestStep = 0.f, ChestLift = 0.f; // Step and Lift as the chest feels them, a few frames late
 	float HeadSide = 0.f;   // the head's slow average sideways position, its line
 	float Dt = 0.f;
+
+	// moving hold: a held pose breathes and drifts instead of freezing (visex.Hold.*)
+	struct FHoldTune
+	{
+		float Breath = 0.f, BreathPeriod = 4.f, Collar = 0.f, Sway = 0.f, SwayPeriod = 8.f, Head = 0.f, Pin = 30.f;
+	} HoldTune;
+	float HoldTarget = 0.f; // copied from the instance: 1 while a pose is held
+	float Hold = 0.f;       // HoldTarget, eased
+	float HoldClock = 0.f;  // seconds of hold time; the breath and drift run on it
 };
 
 UCLASS(Transient, Blueprintable)
@@ -64,6 +74,11 @@ public:
 	 *  0.35 for MF_Unarmed_Jog_Fwd. -1 hands it back to her speed. */
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Catwalk")
 	float PhotoGait = -1.f;
+
+	/** 1 while a still pose is held (set by the pose wheel): the moving-hold layer breathes
+	 *  and drifts it, so a photo pose reads as a held pose, not a frozen frame. */
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Hold")
+	float HoldAlpha = 0.f;
 
 protected:
 	virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override { return new FVisexAnimProxy(this); }

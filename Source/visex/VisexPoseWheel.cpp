@@ -1,4 +1,5 @@
 #include "VisexPoseWheel.h"
+#include "VisexAnimInstance.h"
 
 #include "Animation/AnimClassInterface.h"
 #include "Animation/AnimInstance.h"
@@ -507,6 +508,10 @@ void UVisexPoseWheelComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 
 	const ACharacter* Character = Cast<ACharacter>(GetOwner());
 	APlayerController* PC = Character ? Cast<APlayerController>(Character->GetController()) : nullptr;
+	if (UVisexAnimInstance* Visex = Cast<UVisexAnimInstance>(GetAnim()))
+	{
+		Visex->HoldAlpha = Phase == EPhase::Hold ? 1.f : 0.f; // the held pose breathes (moving hold)
+	}
 
 	if (Phase != EPhase::None && Character)
 	{
