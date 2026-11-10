@@ -52,7 +52,8 @@ LATEX = dict(
 )
 REAL = dict(
     skin=(0.58, 0.36, 0.25),         # warm tan albedo (linear); real skin is far less saturated than latex
-    scatter=(0.85, 0.34, 0.20),      # blood-red bleed in shadows, ears, fingers, at the terminator
+    scatter=(0.80, 0.50, 0.40),      # warm bleed at the terminator; redder read as red-brown patches in shadow
+    scatter_distance=0.15,           # short: at 0.9 the red spread cm into shadow under the chin, collarbone, hair
     roughness=0.52,                  # broad soft highlight, no mirror streaks
     roughness_var=0.035,             # pore-scale break-up, so the sheen isn't plastic (more reads as a cracked web)
     pore_scale=2.5,                  # noise cells per cm on the body at rest: pore-sized
@@ -146,7 +147,7 @@ def build_real():
     st = prof.get_editor_property("settings")
     st.set_editor_property("surface_albedo", unreal.LinearColor(*K["skin"], 1.0))
     st.set_editor_property("mean_free_path_color", unreal.LinearColor(*K["scatter"], 1.0))
-    st.set_editor_property("mean_free_path_distance", 0.9)
+    st.set_editor_property("mean_free_path_distance", K["scatter_distance"])
     prof.set_editor_property("settings", st)
     eal.save_loaded_asset(prof)
     m.set_editor_property("use_material_attributes", False)
