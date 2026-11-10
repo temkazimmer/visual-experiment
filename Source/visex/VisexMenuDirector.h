@@ -40,6 +40,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu")
 	TObjectPtr<AActor> StandIn;
 
+	/** Every scalability group at Cinematic (4) when Play starts: max shadows, lighting, GI, reflections. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu")
+	bool bMaxQualityOnPlay = true;
+
 	/** Untick to skip straight to play while testing. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu")
 	bool bShowMenuOnPlay = true;
