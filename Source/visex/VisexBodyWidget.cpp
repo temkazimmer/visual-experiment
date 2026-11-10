@@ -17,7 +17,7 @@ UVisexBodyWidget::UVisexBodyWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
 	Title = LOCTEXT("Title", "CHARACTER");
-	Hint = LOCTEXT("Hint", "L1 R1  tab      UP DOWN  choose      LEFT RIGHT  shape      RIGHT STICK  turn\nTRIANGLE  reset      R3  face me      CIRCLE  done, keeps her");
+	Hint = LOCTEXT("Hint", "L1 R1  tab      UP DOWN  choose      LEFT RIGHT  shape      RIGHT STICK  turn\nTRIANGLE  reset      CIRCLE  done, keeps her");
 }
 
 int32 UVisexBodyWidget::RowCount(int32 Tab)
