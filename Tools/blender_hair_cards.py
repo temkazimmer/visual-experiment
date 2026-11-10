@@ -28,7 +28,7 @@ os.makedirs(OUT, exist_ok=True)
 
 LOOK = dict(
     seed=11,
-    guides=1200,           # strands that become cards (dense: no gaps between cards)
+    guides=1700,           # strands that become cards (dense: a full head of hair, no gaps)
     part_x=1.6,            # the part, cm to her left of centre
     steps=22,              # points along a card
     length=dict(front=(48, 56), side=(60, 68), back=(66, 76), side_lock=(54, 62)),   # mid-back; locks to the chest
@@ -39,18 +39,18 @@ LOOK = dict(
     brow_jag=1.2,          # cm of unevenness in that cut
     wisps=0.16,            # share of fringe strands that run long, down between and past the eyes
     wisp_cut=-3.0,         # ...to here (cm from the head centre; the eyes sit at about -2)
-    side_locks=40,         # guides per face-framing lock
+    side_locks=55,         # guides per face-framing lock
     side_az=(40.0, 66.0),  # where the locks grow, degrees round from the face
     stiff=(0.80, 0.50),    # how much a strand keeps its heading, root -> tip (low: falls straight)
     wave_amp=0.06,         # cm: straight, a hint of life
     wave_len=13.0,         # cm
-    card_w_back=(3.6, 5.4),  # cm, card widths by zone
+    card_w_back=(4.0, 6.0),  # cm, card widths by zone
     card_w_fringe=(1.3, 2.1),
     card_w_side=(1.8, 2.8),
     arch=0.05,             # how much a card bows out of flat, against its width
     margin=0.15,           # cm a card keeps off the head
     body_clear=1.0,        # cm off the shoulders and back (clothes agent: straps, binding)
-    layer_margin=0.12,     # cm per layer outward: sleek, not a helmet
+    layer_margin=0.20,     # cm per layer outward: some body, still not a helmet
     face_halfw=8.6,        # cm: hair below the brow stays outside this, so the face shows
     ear_open=0.09,         # radians around each ear (seen from the head centre) hair goes round
     line_front=36.0, line_side=-14.0, line_back=-34.0,   # hairline elevation (deg)
@@ -172,7 +172,7 @@ def grow(az, el, layer, zone, flyaway=False):
     tang = want - n0 * want.dot(n0)                     # laid along the scalp
     if tang.length < 1e-3:
         tang = Vector((0, 0.3, -1)) - n0 * Vector((0, 0.3, -1)).dot(n0)
-    lift = 0.02 + 0.04 * max(0.0, (el - 45.0) / 45.0)   # flat on the crown (Frieren: sleek)
+    lift = 0.05 + 0.07 * max(0.0, (el - 45.0) / 45.0)   # a little body at the crown, still sleek
     if zone == "fringe":
         lift = 0.04                                    # the fringe lies on the head
     d = (tang.normalized() + n0 * lift).normalized()
