@@ -373,39 +373,47 @@ void AVisexMenuDirector::SetSceneStripped(bool bStrip)
 
 void AVisexMenuDirector::HandlePhotoClosed()
 {
-	// the photo camera blends back to the menu shot; the scene returns; she sits back on the column
+	// the scene returns; she walks back onto the column behind a quick dip to black
 	SetSceneStripped(false);
 	bStudio = false;
-	const float Wait = PhotoMode ? FMath::Max(0.05f, PhotoMode->BlendTime) : 0.05f;
-	GetWorldTimerManager().SetTimer(BodyTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
-	{
-		if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
-		{
-			EnableInput(PC);
-		}
-		ShowMenu();
-		if (UVisexMenuWidget* W = GetMenuWidget())
-		{
-			W->SetSelected(2);
-		}
-	}), Wait, false);
+	BackToMenu(PhotoMode ? PhotoMode->BlendTime : 0.f, 2);
 }
 
 void AVisexMenuDirector::HandleBodyClosed()
 {
-	// the body page blends back to the menu shot; bring the menu up once it has landed
 	bStudio = false;
-	const float Wait = BodyEditor ? FMath::Max(0.05f, BodyEditor->BlendTime) : 0.05f;
-	GetWorldTimerManager().SetTimer(BodyTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
+	BackToMenu(BodyEditor ? BodyEditor->BlendTime : 0.f, 1);
+}
+
+void AVisexMenuDirector::BackToMenu(float BlendTime, int32 Select)
+{
+	// standing up walks her a few metres off the column, and the menu puts her straight back
+	// on it: hide that jump under a short fade while the camera blends home
+	const float Wait = FMath::Max(0.05f, BlendTime);
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	APlayerCameraManager* Cam = PC ? PC->PlayerCameraManager.Get() : nullptr;
+	const bool bMoved = bLeanOnColumn && PC && PC->GetPawn() && StandIn
+		&& FVector::Dist2D(PC->GetPawn()->GetActorLocation(), StandIn->GetActorLocation()) > 30.f;
+	const float Dip = bMoved ? FMath::Min(ReturnFadeTime, Wait) : 0.f;
+	if (Cam && Dip > 0.f)
 	{
-		if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
+		Cam->StartCameraFade(0.f, 1.f, Dip, FLinearColor::Black, false, true);
+	}
+	GetWorldTimerManager().SetTimer(BodyTimer, FTimerDelegate::CreateWeakLambda(this, [this, Select, Dip]()
+	{
+		APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+		if (PC)
 		{
 			EnableInput(PC);
 		}
 		ShowMenu();
 		if (UVisexMenuWidget* W = GetMenuWidget())
 		{
-			W->SetSelected(1);
+			W->SetSelected(Select);
+		}
+		if (PC && PC->PlayerCameraManager && Dip > 0.f)
+		{
+			PC->PlayerCameraManager->StartCameraFade(1.f, 0.f, ReturnFadeTime * 1.6f, FLinearColor::Black);
 		}
 	}), Wait, false);
 }

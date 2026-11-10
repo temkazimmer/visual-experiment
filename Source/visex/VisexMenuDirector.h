@@ -82,6 +82,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Start")
 	float BlendToPlayTime = 3.5f;
 
+	/** Back from Character or Photo mode: a dip to black while she returns to the column (s). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
+	float ReturnFadeTime = 0.3f;
+
 	/** Which way round her the camera circles: 1 or -1. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Start")
 	int32 OrbitDirection = 1;
@@ -273,6 +277,8 @@ private:
 	void OpenPhotoNow();
 	UFUNCTION()
 	void HandlePhotoClosed();
+
+	void BackToMenu(float BlendTime, int32 Select);
 	UPROPERTY(Transient)
 	TObjectPtr<class AVisexPhotoMode> PhotoMode;
 	void SetSceneStripped(bool bStrip);
