@@ -107,7 +107,7 @@ return normalize(N + float3(dir * s * Mask * Strength * lee * patchy, 0));
 # alias: dense micro grains at the feet (<5 m), grains (<15 m), sparse mica flakes (10-45 m).
 # emissive the hazed stone fades to; calibrated so fully hazed stone matches the fog
 # behind it (Tools/.bridge calibration: HAZE_O Start=0 End=1, compare stone vs sky)
-HAZE_COLOR = (1.5, 0.55, 0.12)       # = DustFog inscattering in cinematic_pass.py: keep them equal
+HAZE_COLOR = (1.7, 1.45, 0.4)        # calibrated against the fog (HAZE_O run); not the raw DustFog inscatter
 
 HAZE = """
 // 0..1: how far this point has dissolved into the high dust. Rises with height, wobbles

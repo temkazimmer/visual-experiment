@@ -184,6 +184,10 @@ actor = eas.spawn_actor_from_object(mesh, unreal.Vector(0, 0, 0))
 actor.set_actor_label("Dunes_Blow")
 smc = actor.static_mesh_component
 smc.set_material(0, mat)
+# it spans the whole map: any collision blocks the pawn spawn, cameras and floor traces.
+# The profile must be set after the mesh (spawning from the mesh gives BlockAll).
+smc.set_collision_profile_name("NoCollision")
 smc.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
+actor.set_actor_enable_collision(False)
 smc.set_editor_property("cast_shadow", False)
 print("blowing sand: %d verts" % verts)
