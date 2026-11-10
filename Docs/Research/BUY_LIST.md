@@ -4,6 +4,10 @@ For Tema to buy himself. Nothing here has been purchased. Prices were read from 
 
 Our skeleton is the UE5 Manny/Quinn mannequin, which Quinn at 159 cm shares. "Native" means authored on it, so no retarget.
 
+## How these packs are used (Tema, 2026-11-10)
+
+The aim is to **learn from the clips and build the knowledge into our own model**, not to drop assets in. Every pack here is a study reference. The movement agent extracts timing, weight, arcs and foot placement, writes them down as rules, and implements them in our own clips and layers (see `ANIMATION.md` and `GUIDELINES.md`). Shipping a bought clip unchanged is the exception, and needs a reason.
+
 ## Direction (from Tema, 2026-11-10)
 
 Proper anatomy. A calm but playful character with a **proud** bearing. So rank by:
