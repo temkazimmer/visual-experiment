@@ -64,6 +64,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float GluteFrequency = 2.6f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float GluteDamping = 0.24f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float GluteTravel = 1.1f;
+	/** Each glute half rides its own leg: how far down the thigh its spring hangs (0 = the hip
+	 *  joint, which both sides share; 1 = the knee). The leg swing then drives each half alone. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float GluteLegFollow = 0.6f;
+	/** Left and right glute springs ring at slightly different rates, so they drift apart. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float GluteDetune = 0.15f;
 	/** Overall bounce strength (1 = the sculpted travel at full size). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float JiggleStrength = 0.5f;
 	/** Bust height at the slider's ends, in bounce-morph weights (1 = 1.4 cm at the fullest point). */

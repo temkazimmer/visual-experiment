@@ -103,6 +103,9 @@ void UVisexBodyComponent::Apply()
 	Mesh->SetMorphTarget(TEXT("AbsLines"), Lines, false);
 	Mesh->SetMorphTarget(TEXT("AbsPack"), Pack, false);
 	Mesh->SetMorphTarget(TEXT("ThighGap"), Profile.Get("ThighGap"), false);
+	// spacing is sculpted against the full bust: scale it by how much bust she has, so the
+	// cleavage it carves never digs into a flat chest
+	Mesh->SetMorphTarget(TEXT("BustApart"), Profile.Get("BustApart") * 1.2f * FMath::Min(Profile.Get("Bust") / 0.7f, 1.2f), false);
 	// bust height rides the bounce morphs: a standing offset the jiggle adds to
 	for (const TCHAR* Side : {TEXT("L"), TEXT("R")})
 	{
@@ -204,6 +207,7 @@ void UVisexBodyComponent::TickJiggle(float DeltaTime)
 	// that side (arm swing alternates them), the hip joint on that side (stride alternates)
 	static const FName Chest(TEXT("spine_05"));
 	static const FName Hangers[4] = {TEXT("clavicle_l"), TEXT("clavicle_r"), TEXT("thigh_l"), TEXT("thigh_r")};
+	static const FName Knees[2] = {TEXT("calf_l"), TEXT("calf_r")};
 	static const FName Up[4] = {TEXT("BustBounceL_Up"), TEXT("BustBounceR_Up"), TEXT("GluteBounceL_Up"), TEXT("GluteBounceR_Up")};
 	static const FName Down[4] = {TEXT("BustBounceL_Down"), TEXT("BustBounceR_Down"), TEXT("GluteBounceL_Down"), TEXT("GluteBounceR_Down")};
 
@@ -217,6 +221,11 @@ void UVisexBodyComponent::TickJiggle(float DeltaTime)
 		{
 			Z = 0.5f * (Z + Mesh->GetBoneLocation(Chest).Z);
 		}
+		else
+		{
+			// a point down that side's thigh: its own leg's swing moves it, not the shared pelvis
+			Z = FMath::Lerp(Z, Mesh->GetBoneLocation(Knees[i - 2]).Z, GluteLegFollow);
+		}
 		Z /= FMath::Max(Scale, 0.01f);
 		FVisexJiggleState& J = Jiggle[i];
 		if (!J.bStarted || bTeleport)
@@ -229,7 +238,8 @@ void UVisexBodyComponent::TickJiggle(float DeltaTime)
 		// the tissue is left behind by the bone's move, then pulled back by a damped spring
 		const float BoneVelocity = (Z - J.LastZ) / DeltaTime;
 		J.LastZ = Z;
-		const float W = 2.f * PI * (bBust ? BustFrequency : GluteFrequency);
+		const float Detune = bBust ? 1.f : (i == 2 ? 1.f - GluteDetune : 1.f + GluteDetune);
+		const float W = 2.f * PI * (bBust ? BustFrequency : GluteFrequency) * Detune;
 		const float Zeta = bBust ? BustDamping : GluteDamping;
 		const int32 Steps = FMath::Clamp(FMath::CeilToInt(DeltaTime * W * 2.f), 1, 8);
 		const float H = DeltaTime / Steps;
@@ -246,7 +256,10 @@ void UVisexBodyComponent::TickJiggle(float DeltaTime)
 		J.Offset = FMath::Clamp(J.Offset, -2.5f * Travel, 2.5f * Travel);
 		// bigger is heavier: a small bust barely moves
 		const float Size = Profile.Get(bBust ? FName("Bust") : FName("Glutes"));
-		float Weight = FMath::Clamp(J.Offset / Travel * JiggleStrength * (0.25f + Size), -1.f, 1.f);
+		const float Raw = J.Offset / Travel * JiggleStrength * (0.25f + Size);
+		// glutes ease into their limit (each half rolls on its own instead of both slamming
+		// the stop together); the bust keeps the hard stop
+		float Weight = bBust ? FMath::Clamp(Raw, -1.f, 1.f) : FMath::Tanh(Raw * 0.8f);
 		if (bBust)
 		{
 			Weight += Profile.Get("BustLift") * BustLiftRange;   // the standing bust height
