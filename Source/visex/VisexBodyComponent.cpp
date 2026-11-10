@@ -41,6 +41,10 @@ void UVisexBodyComponent::OnRegister()
 void UVisexBodyComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	if (USkeletalMeshComponent* Mesh = Body())
+	{
+		Mesh->SetReceivesDecals(false);    // no sand footprints on her (shells, outfit, hair, cloth too)
+	}
 	if (bLoadOnBeginPlay)
 	{
 		Load();
@@ -192,6 +196,7 @@ void UVisexBodyComponent::ApplyHair()
 	HairMesh->SetSkeletalMeshAsset(Asset);
 	HairMesh->SetAnimInstanceClass(Anim);
 	HairMesh->SetCastShadow(true);
+	HairMesh->SetReceivesDecals(false);
 	const FLightingChannels& Ch = Mesh->LightingChannels;
 	HairMesh->SetLightingChannels(Ch.bChannel0, Ch.bChannel1, Ch.bChannel2);
 	HairMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
@@ -292,6 +297,7 @@ void UVisexBodyComponent::ApplyOutfit()
 		ClothMesh->SetAsset(Cloth);
 		ClothMesh->SetLeaderPoseComponent(Mesh, true);
 		ClothMesh->SetCastShadow(true);
+		ClothMesh->SetReceivesDecals(false);
 		const FLightingChannels& Ch = Mesh->LightingChannels;
 		ClothMesh->SetLightingChannels(Ch.bChannel0, Ch.bChannel1, Ch.bChannel2);
 		ClothMesh->ForceNextUpdateTeleportAndReset();
