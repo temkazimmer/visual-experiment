@@ -11,9 +11,12 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Kismet/GameplayStatics.h"
+#include "Camera/PlayerCameraManager.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "UnrealClient.h"
 #include "Misc/Paths.h"
+#include "Misc/FileHelper.h"
+#include "HAL/FileManager.h"
 #include "Misc/ConfigCacheIni.h"
 #include "RHI.h"
 #include "RenderCore.h"
@@ -21,6 +24,15 @@
 #include "VisexSettings.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogVisexQA, Log, All);
+
+// Shipping writes no log, so every QA line also goes to Saved/QA/report.txt
+static void QAWrite(const FString& Line)
+{
+	UE_LOG(LogVisexQA, Display, TEXT("%s"), *Line);
+	FFileHelper::SaveStringToFile(Line + LINE_TERMINATOR, *(FPaths::ProjectSavedDir() / TEXT("QA/report.txt")),
+		FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM, &IFileManager::Get(), FILEWRITE_Append);
+}
+#define QA_LOG(Fmt, ...) QAWrite(FString::Printf(Fmt, ##__VA_ARGS__))
 
 AVisexQATour::AVisexQATour()
 {
@@ -43,7 +55,7 @@ void AVisexQATour::Shot(const FString& Name)
 {
 	const FString File = FPaths::ProjectSavedDir() / TEXT("QA") / FString::Printf(TEXT("%02d_%s.png"), ++ShotCount, *Name);
 	FScreenshotRequest::RequestScreenshot(File, true, false);
-	UE_LOG(LogVisexQA, Display, TEXT("VisexQA: shot %s"), *File);
+	QA_LOG(TEXT("VisexQA: shot %s"), *File);
 }
 
 void AVisexQATour::Report(const FString& Where) const
@@ -55,7 +67,12 @@ void AVisexQATour::Report(const FString& Where) const
 		const FVector L = C->GetActorLocation();
 		const UCharacterMovementComponent* Move = C->GetCharacterMovement();
 		Body = FString::Printf(TEXT("at %.0f %.0f %.0f, %s"), L.X, L.Y, L.Z,
-			Move ? (Move->IsFalling() ? TEXT("FALLING") : Move->IsMovingOnGround() ? TEXT("on ground") : TEXT("other")) : TEXT("no movement"));
+			Move ? (Move->IsFalling() ? TEXT("FALLING") : Move->IsMovingOnGround() ? TEXT("on ground") : *FString::Printf(TEXT("mode %d"), int32(Move->MovementMode.GetValue()))) : TEXT("no movement"));
+		if (const APlayerCameraManager* Cam = UGameplayStatics::GetPlayerCameraManager(this, 0))
+		{
+			const FVector V = Cam->GetCameraLocation();
+			Body += FString::Printf(TEXT(", view at %.0f %.0f %.0f"), V.X, V.Y, V.Z);
+		}
 		// every skinned part, the cloth skirt (UChaosClothComponent, "OutfitCloth") included
 		TArray<USkinnedMeshComponent*> Meshes;
 		C->GetComponents<USkinnedMeshComponent>(Meshes);
@@ -76,7 +93,7 @@ void AVisexQATour::Report(const FString& Where) const
 	}
 	FrameSum = FrameMax = GpuSum = GameSum = DrawSum = RhiSum = 0.0;
 	FrameN = 0;
-	UE_LOG(LogVisexQA, Display, TEXT("VisexQA: %s: %s"), *Where, *Body);
+	QA_LOG(TEXT("VisexQA: %s: %s"), *Where, *Body);
 }
 
 void AVisexQATour::Build()
@@ -174,12 +191,12 @@ void AVisexQATour::Build()
 	Add(6.f, [this]
 	{
 		AVisexPhotoMode* P = Photo();
-		UE_LOG(LogVisexQA, Display, TEXT("VisexQA: photo mode %s"), P && P->IsOpen() ? TEXT("open") : TEXT("DID NOT OPEN"));
+		QA_LOG(TEXT("VisexQA: photo mode %s"), P && P->IsOpen() ? TEXT("open") : TEXT("DID NOT OPEN"));
 		if (!P || !P->IsOpen()) { return; }
 		for (int32 I = 0; I < 60; ++I)
 		{
 			P->SetMotion(I);
-			if (P->GetMotion() != I) { UE_LOG(LogVisexQA, Display, TEXT("VisexQA: %d motions"), I); break; }
+			if (P->GetMotion() != I) { QA_LOG(TEXT("VisexQA: %d motions"), I); break; }
 		}
 		P->SetMotion(0);
 	});
@@ -197,7 +214,7 @@ void AVisexQATour::Build()
 	}
 	AfterPoses = Steps.Num();
 	// a full GC, then walk and run again: Shipping 0240 crashed here once GC freed the loop clips
-	Add(1.f, [] { CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS, true); UE_LOG(LogVisexQA, Display, TEXT("VisexQA: forced GC")); });
+	Add(1.f, [] { CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS, true); QA_LOG(TEXT("VisexQA: forced GC")); });
 	Add(1.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetMotion(1); } });
 	Add(2.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetMotion(2); } Report(TEXT("photo after GC")); });
 	Add(1.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->Close(); } });
@@ -207,7 +224,7 @@ void AVisexQATour::Build()
 		// the tour's Settings pass saved; leave this Mac as a first launch (Epic until chosen)
 		GConfig->RemoveKeyFromSection(TEXT("VisEx"), TEXT("bQualityChosen"), GGameUserSettingsIni);
 		GConfig->Flush(false, GGameUserSettingsIni);
-		UE_LOG(LogVisexQA, Display, TEXT("VisexQA: done"));
+		QA_LOG(TEXT("VisexQA: done"));
 		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
 	});
 }
