@@ -1,5 +1,6 @@
 #include "VisexPoseWheel.h"
 
+#include "Animation/AnimClassInterface.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimSequence.h"
@@ -355,10 +356,36 @@ void UVisexPoseWheelComponent::StopPose()
 	}
 }
 
+void UVisexPoseWheelComponent::UpdateFootIK(float DeltaTime)
+{
+	// The Anim Blueprint's foot IK (a Control Rig node after the pose slot) plants both feet on
+	// the ground. On the floor poses that drags a raised leg down, so it fades out while she
+	// is down there and back in once she is up. Standing poses keep it.
+	const bool bOnFloor = Phase != EPhase::None && PoseIns.IsValidIndex(Current) && PoseIns[Current];
+	FootIKAlpha = FMath::FInterpConstantTo(FootIKAlpha, bOnFloor ? 0.f : 1.f, DeltaTime, 4.f);
+	UAnimInstance* Anim = GetAnim();
+	IAnimClassInterface* AnimClass = Anim ? IAnimClassInterface::GetFromClass(Anim->GetClass()) : nullptr;
+	if (!AnimClass)
+	{
+		return;
+	}
+	for (const FStructProperty* Node : AnimClass->GetAnimNodeProperties())
+	{
+		if (Node->Struct->GetFName() == TEXT("AnimNode_ControlRig"))
+		{
+			if (const FFloatProperty* Alpha = FindFProperty<FFloatProperty>(Node->Struct, TEXT("Alpha")))
+			{
+				Alpha->SetPropertyValue_InContainer(Node->ContainerPtrToValuePtr<void>(Anim), FootIKAlpha);
+			}
+		}
+	}
+}
+
 void UVisexPoseWheelComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	BindInput();
+	UpdateFootIK(DeltaTime);
 
 	const ACharacter* Character = Cast<ACharacter>(GetOwner());
 	APlayerController* PC = Character ? Cast<APlayerController>(Character->GetController()) : nullptr;

@@ -31,7 +31,7 @@ SKIN = dict(
     max_influences=4,
     # at slider 1 (morph weight 1): projection beyond the base body, cm
     bust_proj=9.0, bust_height=0.40, bust_spread=0.50, bust_bounce=2.4, bust_sway=2.0, bust_surge=1.5, bust_apart=2.4, bust_cleft=1.0,
-    glute_proj=7.0, glute_height=1.0, glute_spread=0.60, glute_bounce=1.1,
+    glute_proj=7.0, glute_height=1.0, glute_spread=0.60, glute_bounce=1.9,
 )
 
 args = sys.argv[sys.argv.index("--") + 1:]

@@ -60,6 +60,7 @@ private:
 	void StartPose(int32 Index);
 	void BeginExit();
 	void FinishPose();
+	void UpdateFootIK(float DeltaTime);
 	class UAnimInstance* GetAnim() const;
 
 	UPROPERTY()
@@ -81,6 +82,7 @@ private:
 	enum class EPhase : uint8 { None, Enter, Hold, Exit };
 	EPhase Phase = EPhase::None;
 	float PhaseTime = 0.f;        // seconds since she began to sit down
+	float FootIKAlpha = 1.f;      // the Anim Blueprint's foot IK, off while she is on the floor
 	int32 Current = INDEX_NONE;
 	int32 Pending = INDEX_NONE;   // the pose picked while she was still getting up
 	bool bExitQueued = false;     // asked to get up before she had finished sitting down

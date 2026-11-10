@@ -72,9 +72,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float BustSwayStrength = 0.8f;
 	/** Where the springs start to stiffen, in travels: past it the tissue hardens (no hard stop). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float SoftLimit = 1.5f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float GluteFrequency = 2.6f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float GluteDamping = 0.24f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float GluteTravel = 1.1f;
+	/** Damping added while she stands still (fades out as she walks), so idle tissue settles. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float StandingDamping = 0.35f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float GluteFrequency = 2.2f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float GluteDamping = 0.16f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float GluteTravel = 1.9f;
 	/** Each glute half rides its own leg: how far down the thigh its spring hangs (0 = the hip
 	 *  joint, which both sides share; 1 = the knee). The leg swing then drives each half alone. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float GluteLegFollow = 0.6f;
@@ -84,8 +86,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float BustDetune = 0.1f;
 	/** Left and right glute springs ring at slightly different rates, so they drift apart. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float GluteDetune = 0.15f;
-	/** Overall bounce strength (1 = the sculpted travel at full size). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float JiggleStrength = 0.5f;
+	/** Glute bounce strength (the bust has its own, BustStrength). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float JiggleStrength = 1.4f;
 	/** Arm-raise correctives: how far the upper arm has risen from hanging (degrees, in the
 	 *  torso's frame) when they start to fade in, and where they are full (the sculpt pose). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body") float ArmUpStart = 80.f;
@@ -141,4 +143,5 @@ private:
 	FVisexJiggleState Jiggle[4];   // bust L, bust R, glute L, glute R
 	FVisexJiggleState Sway[4];     // bust L, bust R sideways (her left +); bust L, bust R forward
 	FVector SwayLast[2] = {FVector::ZeroVector, FVector::ZeroVector};
+	float Stillness = 1.f;
 };
