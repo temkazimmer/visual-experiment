@@ -34,12 +34,15 @@ private:
 	struct FCatwalkTune
 	{
 		float HipRoll = 0.f, HipYaw = 0.f, HipShift = 0.f, Line = 0.f, Shoulders = 0.f, Head = 0.f;
+		float Posture = 0.f, ChestLag = 0.f, ArmSwing = 1.f, HeadLine = 0.f;
 	} Tune;
 	float GaitTarget = 0.f; // 0 standing or airborne, 1 walking, less when sprinting
 	float PhotoGait = -1.f; // copied from the instance: the gait forced by photo mode, or -1
 	float Gait = 0.f;       // GaitTarget, eased
 	float Step = 0.f;       // -1..1: which foot is ahead (+ left)
 	float Lift = 0.f;       // -1..1: which foot is in the air (+ left)
+	float ChestStep = 0.f, ChestLift = 0.f; // Step and Lift as the chest feels them, a few frames late
+	float HeadSide = 0.f;   // the head's slow average sideways position, its line
 	float Dt = 0.f;
 };
 
