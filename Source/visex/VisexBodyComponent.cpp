@@ -2,13 +2,23 @@
 
 #include "VisexAnimInstance.h"
 #include "VisexShellComponent.h"
+#include "ChaosClothAsset/ClothAsset.h"
+#include "ChaosClothAsset/ClothComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Engine/SkeletalMesh.h"
 #include "GameFramework/Character.h"
 #include "Kismet/GameplayStatics.h"
+#include "HAL/IConsoleManager.h"
 #include "Materials/MaterialInstanceDynamic.h"
+
+// The skirt's cloth sim is off by default: skinned by her pose it reads cleanest (a free hem
+// springs back to its reference-pose shape and leaves a ridge, Docs/CLOTHES.md) and it costs
+// nothing, where the sim cost 50-70 ms of game thread in a packaged build.
+static TAutoConsoleVariable<bool> CVarVisexClothSim(
+	TEXT("visex.ClothSim"), false,
+	TEXT("Simulate outfit cloth (the skirt). Off: the cloth piece is skinned to her pose. Takes effect on the next outfit change."));
 
 UVisexBodyComponent::UVisexBodyComponent()
 {
@@ -48,6 +58,7 @@ void UVisexBodyComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		TickJiggle(DeltaTime);
 	}
 	TickCorrectives();
+	TickCloth(DeltaTime);
 }
 
 void UVisexBodyComponent::TickCorrectives()
@@ -261,7 +272,57 @@ void UVisexBodyComponent::ApplyOutfit()
 		const FLightingChannels& Ch = Mesh->LightingChannels;
 		OutfitMesh->SetLightingChannels(Ch.bChannel0, Ch.bChannel1, Ch.bChannel2);
 	}
+	// the cloth piece: made for a row that names one, destroyed on any other outfit or None
+	UChaosClothAsset* Cloth = O.Cloth.IsEmpty() ? nullptr : LoadObject<UChaosClothAsset>(nullptr, *O.Cloth);
+	if (!Cloth && ClothMesh)
+	{
+		ClothMesh->DestroyComponent();
+		ClothMesh = nullptr;
+	}
+	if (Cloth && GetOwner())
+	{
+		if (!ClothMesh)
+		{
+			ClothMesh = NewObject<UChaosClothComponent>(GetOwner(), TEXT("OutfitCloth"), RF_Transient);
+			ClothMesh->SetupAttachment(Mesh);
+			ClothMesh->SetEnableSimulation(CVarVisexClothSim.GetValueOnGameThread());   // off: no tick, skinned only
+			ClothMesh->RegisterComponent();
+		}
+		ClothMesh->SetEnableSimulation(CVarVisexClothSim.GetValueOnGameThread());
+		ClothMesh->SetAsset(Cloth);
+		ClothMesh->SetLeaderPoseComponent(Mesh, true);
+		ClothMesh->SetCastShadow(true);
+		const FLightingChannels& Ch = Mesh->LightingChannels;
+		ClothMesh->SetLightingChannels(Ch.bChannel0, Ch.bChannel1, Ch.bChannel2);
+		ClothMesh->ForceNextUpdateTeleportAndReset();
+	}
 	WornOutfit = Profile.Outfit;
+}
+
+void UVisexBodyComponent::TickCloth(float DeltaTime)
+{
+	USkeletalMeshComponent* Mesh = Body();
+	if (!ClothMesh || !ClothMesh->IsSimulationEnabled() || !Mesh || Mesh->GetBoneIndex(TEXT("thigh_l")) == INDEX_NONE)
+	{
+		return;
+	}
+	// a pose snap moves the legs further in one frame than walking or posing can: start the
+	// sim over from the skinned pose (actor teleports are caught by the component's own thresholds).
+	// Not on a slow frame: a restart puts the hem where the skinned pose has it, which can be
+	// inside a thigh, and the collider may then push a panel out on the wrong side of the leg.
+	static const FName Bones[3] = {TEXT("pelvis"), TEXT("calf_l"), TEXT("calf_r")};
+	const float Scale = FMath::Max(Mesh->GetComponentScale().Z, KINDA_SMALL_NUMBER);
+	bool bSnap = false;
+	for (int32 i = 0; i < 3; ++i)
+	{
+		const FVector P = Mesh->GetBoneLocation(Bones[i], EBoneSpaces::ComponentSpace);
+		bSnap |= FVector::Dist(P, ClothLast[i]) / Scale > 25.f;   // body cm in one frame
+		ClothLast[i] = P;
+	}
+	if (bSnap)
+	{
+		ClothMesh->ForceNextUpdateTeleportAndReset();
+	}
 }
 
 void UVisexBodyComponent::TickJiggle(float DeltaTime)

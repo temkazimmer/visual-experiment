@@ -26,9 +26,16 @@ globals().update(_keep)
 
 MENU_DIR = "/Game/Characters/Menu"
 # the drum she leans on in Lvl_Dust (SM_Drum_0, measured in Play 2026-11-10, in her mesh space,
-# i.e. divided by her body scale 0.935): radius 50.6, top 94.1, nearest point 23.2 cm behind her
-GAP = globals().get("GAP", 23.2)            # her root to the column's nearest point, cm
-RADIUS, TOP = globals().get("RADIUS", 50.6), globals().get("TOP", 94.1)
+# i.e. divided by her body scale 0.935). The column is main's: a tagged "LeanColumn" actor
+# whose dimensions are written down in Docs/Research/LEAN_COLUMN.md (world cm). Those numbers
+# are the source here; if main changes them, change COLUMN and rerun this script.
+BODY_SCALE = 0.935
+COLUMN = {"surface_radius": 47.2, "top_z": 155.4, "axis_z": 108.3, "nominal_radius": 45.0, "gap": 21.8}
+FEET_Z = COLUMN["axis_z"] - COLUMN["nominal_radius"] + 3.0          # her feet: axis = feet + 45 - 3 (LEAN_COLUMN.md)
+GAP = globals().get("GAP", COLUMN["gap"] / BODY_SCALE)              # her root to the column's nearest point, cm
+RADIUS = globals().get("RADIUS", COLUMN["surface_radius"] / BODY_SCALE)
+TOP = globals().get("TOP", (COLUMN["top_z"] - FEET_Z) / BODY_SCALE)
+print("column in her space: gap %.1f radius %.1f top %.1f" % (GAP, RADIUS, TOP))
 CY, CZ = -(GAP + RADIUS), TOP - RADIUS      # the column's axis, in mesh space (Y forward)
 PROPS = [("/Engine/BasicShapes/Cylinder", (0.0, CY, CZ), (1.0, 0.0, 0.0), (RADIUS / 50.0, RADIUS / 50.0, 3.0))]
 

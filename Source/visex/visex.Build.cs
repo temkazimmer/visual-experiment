@@ -10,9 +10,12 @@ public class visex : ModuleRules
 		PublicDefinitions.Add("VISEX_BUILD=" + CountCommits());
 
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+		// each .cpp compiles on its own: in unity batches, file-local names (anonymous namespaces)
+		// from different files met whenever a new file reshuffled the batches, and broke the build
+		bUseUnity = false;
 		PublicDependencyModuleNames.AddRange(new string[] {
 			"Core", "CoreUObject", "Engine", "InputCore", "UMG", "Slate", "SlateCore", "CinematicCamera",
-			"EnhancedInput", "AssetRegistry"
+			"EnhancedInput", "AssetRegistry", "ChaosClothAssetEngine", "RHI", "RenderCore"
 		});
 	}
 

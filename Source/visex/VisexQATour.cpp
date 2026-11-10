@@ -14,6 +14,11 @@
 #include "Kismet/KismetSystemLibrary.h"
 #include "UnrealClient.h"
 #include "Misc/Paths.h"
+#include "Misc/ConfigCacheIni.h"
+#include "RHI.h"
+#include "RenderCore.h"
+#include "GameFramework/GameUserSettings.h"
+#include "VisexSettings.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogVisexQA, Log, All);
 
@@ -51,17 +56,26 @@ void AVisexQATour::Report(const FString& Where) const
 		const UCharacterMovementComponent* Move = C->GetCharacterMovement();
 		Body = FString::Printf(TEXT("at %.0f %.0f %.0f, %s"), L.X, L.Y, L.Z,
 			Move ? (Move->IsFalling() ? TEXT("FALLING") : Move->IsMovingOnGround() ? TEXT("on ground") : TEXT("other")) : TEXT("no movement"));
-		TArray<USkeletalMeshComponent*> Meshes;
-		C->GetComponents<USkeletalMeshComponent>(Meshes);
-		for (const USkeletalMeshComponent* M : Meshes)
+		// every skinned part, the cloth skirt (UChaosClothComponent, "OutfitCloth") included
+		TArray<USkinnedMeshComponent*> Meshes;
+		C->GetComponents<USkinnedMeshComponent>(Meshes);
+		for (const USkinnedMeshComponent* Part : Meshes)
 		{
-			const UAnimInstance* A = M->GetAnimInstance();
-			Body += FString::Printf(TEXT(" | %s: %s%s%s"), *M->GetName(),
-				M->GetSkeletalMeshAsset() ? *M->GetSkeletalMeshAsset()->GetName() : TEXT("NO MESH"),
-				M->IsVisible() ? TEXT("") : TEXT(" (hidden)"),
+			const USkeletalMeshComponent* M = Cast<USkeletalMeshComponent>(Part);
+			const UAnimInstance* A = M ? M->GetAnimInstance() : nullptr;
+			Body += FString::Printf(TEXT(" | %s: %s%s%s"), *Part->GetName(),
+				Part->GetSkinnedAsset() ? *Part->GetSkinnedAsset()->GetName() : TEXT("NO MESH"),
+				Part->IsVisible() ? TEXT("") : TEXT(" (hidden)"),
 				A && A->GetCurrentActiveMontage() ? *FString::Printf(TEXT(", montage %s"), *A->GetCurrentActiveMontage()->GetName()) : TEXT(""));
 		}
 	}
+	if (FrameN > 0)
+	{
+		Body += FString::Printf(TEXT(" || frame %.1f ms avg, %.1f worst | game %.1f, render %.1f, rhi %.1f, gpu %.1f ms (%d frames)"),
+			FrameSum / FrameN, FrameMax, GameSum / FrameN, DrawSum / FrameN, RhiSum / FrameN, GpuSum / FrameN, FrameN);
+	}
+	FrameSum = FrameMax = GpuSum = GameSum = DrawSum = RhiSum = 0.0;
+	FrameN = 0;
 	UE_LOG(LogVisexQA, Display, TEXT("VisexQA: %s: %s"), *Where, *Body);
 }
 
@@ -74,8 +88,65 @@ void AVisexQATour::Build()
 	Add(0.5f, [D] { D->StartGame(); });
 	Add(4.f, [this] { Report(TEXT("play")); Shot(TEXT("play")); WalkFor = 3.f; });
 	Add(3.5f, [this] { Report(TEXT("walked")); Shot(TEXT("walked")); });
+
+	// what each quality level costs here, standing in play (applied, not saved)
+	for (int32 Level = 0; Level <= 4; ++Level)
+	{
+		Add(0.5f, [this, Level]
+		{
+			if (UGameUserSettings* S = UGameUserSettings::GetGameUserSettings())
+			{
+				S->SetOverallScalabilityLevel(Level);
+				FVisexSettings::ApplyBetweenFrames();
+			}
+			FrameSum = FrameMax = GpuSum = 0.0;
+			FrameN = 0;
+		});
+		Add(1.f, [this] { FrameSum = FrameMax = GpuSum = GameSum = DrawSum = RhiSum = 0.0; FrameN = 0; });   // let it settle
+		Add(3.f, [this, Level] { Report(FString::Printf(TEXT("quality %d"), Level)); });
+	}
+	// from Epic, each category alone at Ultra: what every Cinematic feature costs
+	struct FCat { const TCHAR* Name; void (UGameUserSettings::*Set)(int32); };
+	static const FCat Cats[] = {
+		{TEXT("shadows"), &UGameUserSettings::SetShadowQuality},
+		{TEXT("lighting"), &UGameUserSettings::SetGlobalIlluminationQuality},
+		{TEXT("reflections"), &UGameUserSettings::SetReflectionQuality},
+		{TEXT("effects"), &UGameUserSettings::SetVisualEffectQuality},
+		{TEXT("post"), &UGameUserSettings::SetPostProcessingQuality},
+		{TEXT("antialiasing"), &UGameUserSettings::SetAntiAliasingQuality},
+		{TEXT("shading"), &UGameUserSettings::SetShadingQuality},
+		{TEXT("viewdistance"), &UGameUserSettings::SetViewDistanceQuality},
+		{TEXT("foliage"), &UGameUserSettings::SetFoliageQuality},
+		{TEXT("textures"), &UGameUserSettings::SetTextureQuality},
+	};
+	for (const FCat& Cat : Cats)
+	{
+		Add(0.5f, [this, Cat]
+		{
+			if (UGameUserSettings* S = UGameUserSettings::GetGameUserSettings())
+			{
+				S->SetOverallScalabilityLevel(3);
+				(S->*Cat.Set)(4);
+			}
+			FVisexSettings::ApplyBetweenFrames();
+		});
+		Add(1.f, [this] { FrameSum = FrameMax = GpuSum = GameSum = DrawSum = RhiSum = 0.0; FrameN = 0; });
+		Add(2.5f, [this, Cat] { Report(FString::Printf(TEXT("epic + ultra %s"), Cat.Name)); });
+	}
+	Add(0.5f, []
+	{
+		if (UGameUserSettings* S = UGameUserSettings::GetGameUserSettings()) { S->SetOverallScalabilityLevel(4); }
+		FVisexSettings::ApplyBetweenFrames();
+	});
 	Add(0.5f, [D] { D->ToggleMenu(); });
 	Add(5.f, [this] { Report(TEXT("menu again")); Shot(TEXT("menu_again")); });
+
+	// the Settings page: open, both tabs, step a value there and back, close
+	Add(0.5f, [D] { D->OpenSettings(); });
+	Add(1.5f, [this] { Report(TEXT("settings")); Shot(TEXT("settings")); });
+	Add(0.5f, [D] { D->SettingsTab(1); D->SettingsStep(1); });
+	Add(1.5f, [this] { Report(TEXT("settings visuals")); Shot(TEXT("settings_visuals")); });
+	Add(0.5f, [D] { D->SettingsStep(-1); D->SettingsTab(1); D->CloseSettings(); });
 
 	// each outfit on her, seen from the menu camera
 	for (const FVisexOutfit& O : FVisexBodyProfile::Outfits())
@@ -119,15 +190,19 @@ void AVisexQATour::Build()
 			AVisexPhotoMode* P = Photo();
 			if (!P || !P->IsOpen()) { return; }
 			P->SetMotion(I);
-			if (P->GetMotion() != I) { return; }
+			if (P->GetMotion() != I) { Next = AfterPoses; return; }   // past the last motion
 			Report(FString::Printf(TEXT("photo motion %d"), I));
 			Shot(FString::Printf(TEXT("photo_%02d"), I));
 		});
 	}
+	AfterPoses = Steps.Num();
 	Add(1.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->Close(); } });
 	Add(5.f, [this] { Report(TEXT("after photo")); Shot(TEXT("after_photo")); });
 	Add(1.f, [this]
 	{
+		// the tour's Settings pass saved; leave this Mac as a first launch (Epic until chosen)
+		GConfig->RemoveKeyFromSection(TEXT("VisEx"), TEXT("bQualityChosen"), GGameUserSettingsIni);
+		GConfig->Flush(false, GGameUserSettingsIni);
 		UE_LOG(LogVisexQA, Display, TEXT("VisexQA: done"));
 		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
 	});
@@ -138,6 +213,13 @@ void AVisexQATour::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 	if (!Director) { return; }
 	if (!bBuilt) { Build(); bBuilt = true; }
+	FrameSum += DeltaSeconds * 1000.0;
+	FrameMax = FMath::Max(FrameMax, double(DeltaSeconds) * 1000.0);
+	GpuSum += FPlatformTime::ToMilliseconds(RHIGetGPUFrameCycles(0));
+	GameSum += FPlatformTime::ToMilliseconds(GGameThreadTime);
+	DrawSum += FPlatformTime::ToMilliseconds(GRenderThreadTime);
+	RhiSum += FPlatformTime::ToMilliseconds(GRHIThreadTime);
+	++FrameN;
 	if (WalkFor > 0.f)
 	{
 		WalkFor -= DeltaSeconds;
@@ -148,11 +230,9 @@ void AVisexQATour::Tick(float DeltaSeconds)
 		}
 	}
 	Clock += DeltaSeconds;
-	// a photo-mode pose that never finishes loading must not stall the tour
-	while (Steps.IsValidIndex(Next) && Clock >= Steps[Next].Wait)
+	if (Steps.IsValidIndex(Next) && Clock >= Steps[Next].Wait)
 	{
 		Clock = 0.f;
 		Steps[Next++].Run();
-		break;
 	}
 }

@@ -37,6 +37,7 @@ private:
 	{
 		float HipRoll = 0.f, HipYaw = 0.f, HipShift = 0.f, Line = 0.f, Shoulders = 0.f, Head = 0.f;
 		float Posture = 0.f, ChestLag = 0.f, ArmSwing = 1.f, HeadLine = 0.f;
+		float Clear = 0.f; // cm the thigh axes keep apart at the crossing (the swing knee turns out)
 	} Tune;
 	float GaitTarget = 0.f; // 0 standing or airborne, 1 walking, less when sprinting
 	float PhotoGait = -1.f; // copied from the instance: the gait forced by photo mode, or -1
@@ -45,6 +46,7 @@ private:
 	float Lift = 0.f;       // -1..1: which foot is in the air (+ left)
 	float ChestStep = 0.f, ChestLift = 0.f; // Step and Lift as the chest feels them, a few frames late
 	float HeadSide = 0.f;   // the head's slow average sideways position, its line
+	float KneeOut[2] = {0.f, 0.f}; // degrees each thigh (L, R) is turned out to clear the other, eased
 	float Dt = 0.f;
 
 	// moving hold: a held pose breathes and drifts instead of freezing (visex.Hold.*)
