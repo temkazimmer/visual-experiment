@@ -51,7 +51,8 @@ void AVisexPhotoMode::BuildMotions()
 	for (const FAssetData& Asset : Found)
 	{
 		FString Name = Asset.AssetName.ToString();
-		if (Name.EndsWith(TEXT("_In")) || Name.EndsWith(TEXT("_Out")) || !Asset.IsInstanceOf(UAnimSequence::StaticClass()))
+		// the same list as the pose wheel (VisexPoseWheel.cpp), so the indices match: flows between poses are not poses
+		if (Name.EndsWith(TEXT("_In")) || Name.EndsWith(TEXT("_Out")) || Name.Contains(TEXT("_To_")) || !Asset.IsInstanceOf(UAnimSequence::StaticClass()))
 		{
 			continue;
 		}

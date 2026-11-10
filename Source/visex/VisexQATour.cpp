@@ -119,11 +119,12 @@ void AVisexQATour::Build()
 			AVisexPhotoMode* P = Photo();
 			if (!P || !P->IsOpen()) { return; }
 			P->SetMotion(I);
-			if (P->GetMotion() != I) { return; }
+			if (P->GetMotion() != I) { Next = AfterPoses; return; }   // past the last motion
 			Report(FString::Printf(TEXT("photo motion %d"), I));
 			Shot(FString::Printf(TEXT("photo_%02d"), I));
 		});
 	}
+	AfterPoses = Steps.Num();
 	Add(1.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->Close(); } });
 	Add(5.f, [this] { Report(TEXT("after photo")); Shot(TEXT("after_photo")); });
 	Add(1.f, [this]
@@ -148,11 +149,9 @@ void AVisexQATour::Tick(float DeltaSeconds)
 		}
 	}
 	Clock += DeltaSeconds;
-	// a photo-mode pose that never finishes loading must not stall the tour
-	while (Steps.IsValidIndex(Next) && Clock >= Steps[Next].Wait)
+	if (Steps.IsValidIndex(Next) && Clock >= Steps[Next].Wait)
 	{
 		Clock = 0.f;
 		Steps[Next++].Run();
-		break;
 	}
 }

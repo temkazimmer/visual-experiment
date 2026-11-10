@@ -30,6 +30,7 @@ private:
 	float Clock = 0.f;
 	float WalkFor = 0.f;
 	int32 ShotCount = 0;
+	int32 AfterPoses = INDEX_NONE;
 	bool bBuilt = false;
 
 	void Build();

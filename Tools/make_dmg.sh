@@ -16,7 +16,7 @@ NAME="VIS-EX-$BUILD"
 rm -rf Saved/Cooked/Mac Saved/StagedBuilds/Mac
 "$UE/Engine/Build/BatchFiles/RunUAT.sh" BuildCookRun -project="$PROJECT" -platform=Mac \
   -clientconfig="$CONFIG" -build -cook -map=/Game/VisEx/Lvl_Dust -stage -pak \
-  -nop4 -utf8output -unattended -nocompileeditor
+  -nop4 -utf8output -unattended -nocompileeditor -ubtargs="-WaitMutex"
 
 # the archive step copies a content-less app on Mac: take the staged one
 SRC=$(ls -d Saved/StagedBuilds/Mac/*.app | head -1)
