@@ -22,6 +22,16 @@ static TAutoConsoleVariable<float> CVarCatwalkArmSwing(TEXT("visex.Catwalk.ArmSw
 static TAutoConsoleVariable<float> CVarCatwalkHeadLine(TEXT("visex.Catwalk.HeadLine"), 0.9f, TEXT("How much the head's side-to-side sway is taken out (0..1)"));
 static TAutoConsoleVariable<float> CVarCatwalkSprint(TEXT("visex.Catwalk.Sprint"), 0.35f, TEXT("Share of the layer kept when sprinting (0..1)"));
 
+// Moving hold, from the Female Everyday idles (learning log 2026-11-10). Live: `visex.Hold.Breath 2`.
+static TAutoConsoleVariable<float> CVarHold(TEXT("visex.Hold"), 1.f, TEXT("Moving-hold layer on held poses: 0 off, 1 full"));
+static TAutoConsoleVariable<float> CVarHoldBreath(TEXT("visex.Hold.Breath"), 2.4f, TEXT("Degrees the chest opens back on each breath in"));
+static TAutoConsoleVariable<float> CVarHoldBreathPeriod(TEXT("visex.Hold.BreathPeriod"), 4.f, TEXT("Seconds per breath"));
+static TAutoConsoleVariable<float> CVarHoldCollar(TEXT("visex.Hold.Collar"), 4.f, TEXT("Degrees the collarbones lift on each breath in"));
+static TAutoConsoleVariable<float> CVarHoldSway(TEXT("visex.Hold.Sway"), 1.2f, TEXT("Degrees the upper body drifts side to side and turns, slowly"));
+static TAutoConsoleVariable<float> CVarHoldSwayPeriod(TEXT("visex.Hold.SwayPeriod"), 7.5f, TEXT("Seconds per drift"));
+static TAutoConsoleVariable<float> CVarHoldPin(TEXT("visex.Hold.Pin"), 30.f, TEXT("A hand lower than this (cm above her feet) is resting on something: it stays put while the body breathes"));
+static TAutoConsoleVariable<float> CVarHoldHead(TEXT("visex.Hold.Head"), 1.5f, TEXT("Degrees the head drifts on its own (turn and tilt)"));
+
 void FVisexAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeconds)
 {
 	FAnimInstanceProxy::PreUpdate(InAnimInstance, DeltaSeconds);
@@ -30,6 +40,7 @@ void FVisexAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSecond
 		Profile = Inst->BodyProfile;
 		bHasProfile = Inst->bReshapeBody;
 		PhotoGait = Inst->PhotoGait;
+		HoldTarget = FMath::Clamp(Inst->HoldAlpha, 0.f, 1.f) * CVarHold.GetValueOnGameThread();
 	}
 
 	Dt = DeltaSeconds;
@@ -59,6 +70,13 @@ void FVisexAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSecond
 	Tune.ChestLag = CVarCatwalkChestLag.GetValueOnGameThread();
 	Tune.ArmSwing = CVarCatwalkArmSwing.GetValueOnGameThread();
 	Tune.HeadLine = CVarCatwalkHeadLine.GetValueOnGameThread();
+	HoldTune.Breath = CVarHoldBreath.GetValueOnGameThread();
+	HoldTune.BreathPeriod = FMath::Max(CVarHoldBreathPeriod.GetValueOnGameThread(), 0.5f);
+	HoldTune.Collar = CVarHoldCollar.GetValueOnGameThread();
+	HoldTune.Sway = CVarHoldSway.GetValueOnGameThread();
+	HoldTune.SwayPeriod = FMath::Max(CVarHoldSwayPeriod.GetValueOnGameThread(), 0.5f);
+	HoldTune.Head = CVarHoldHead.GetValueOnGameThread();
+	HoldTune.Pin = CVarHoldPin.GetValueOnGameThread();
 }
 
 bool FVisexAnimProxy::Evaluate_WithRoot(FPoseContext& Output, FAnimNode_Base* InRootNode)
@@ -67,6 +85,7 @@ bool FVisexAnimProxy::Evaluate_WithRoot(FPoseContext& Output, FAnimNode_Base* In
 	if (InRootNode == GetRootNode())
 	{
 		Catwalk(Output.Pose);
+		Alive(Output.Pose);
 		if (bHasProfile)
 		{
 			Reshape(Output.Pose);
@@ -338,4 +357,116 @@ void FVisexAnimProxy::Catwalk(FCompactPose& Pose)
 	S.RotateCS(FootL, InL.Inverse());
 	S.RotateCS(ThighR, InR);
 	S.RotateCS(FootR, InR.Inverse());
+}
+
+/**
+ * The moving hold. A held pose is one frame; this keeps her alive in it without moving
+ * anything that touches the ground: only the chest (breath), the collarbones, a slow
+ * drift of the upper spine and a small drift of the head. The pelvis and legs are left
+ * alone, so floor contacts and foot IK hold. Two drift sines at unrelated periods, so
+ * it never reads as a loop.
+ */
+void FVisexAnimProxy::Alive(FCompactPose& Pose)
+{
+	// fades in over about a second once the pose is struck, out quickly when she moves
+	Hold = FMath::FInterpTo(Hold, HoldTarget, Dt, HoldTarget > Hold ? 1.5f : 6.f);
+	if (Hold < 0.005f)
+	{
+		HoldClock = 0.f;
+		return;
+	}
+	HoldClock += Dt;
+
+	FShaper S{Pose, Pose.GetBoneContainer()};
+	const FCompactPoseBoneIndex Spine1 = S.Find(TEXT("spine_01")), Spine3 = S.Find(TEXT("spine_03")), Spine4 = S.Find(TEXT("spine_04")),
+		Neck = S.Find(TEXT("neck_01")), Head = S.Find(TEXT("head")), ThighL = S.Find(TEXT("thigh_l")), ThighR = S.Find(TEXT("thigh_r")),
+		ClavL = S.Find(TEXT("clavicle_l")), ClavR = S.Find(TEXT("clavicle_r"));
+	for (const FCompactPoseBoneIndex Index : {Spine1, Spine3, Spine4, Neck, Head, ThighL, ThighR})
+	{
+		if (!Index.IsValid())
+		{
+			return;
+		}
+	}
+	auto Turn = [](const FVector& From, const FVector& Toward, float Degrees)
+	{
+		const float A = FMath::DegreesToRadians(Degrees);
+		return FQuat::FindBetweenNormals(From, From * FMath::Cos(A) + Toward * FMath::Sin(A));
+	};
+	// her own frame, read from the pose, so it works lying down too: Up along the spine, Left across the hips
+	const FVector Left = (S.Component(ThighL).GetLocation() - S.Component(ThighR).GetLocation()).GetSafeNormal();
+	const FVector Along = (S.Component(Neck).GetLocation() - S.Component(Spine1).GetLocation()).GetSafeNormal();
+	if (Left.IsNearlyZero() || Along.IsNearlyZero())
+	{
+		return;
+	}
+	const FVector Up = (Along - Left * (Along | Left)).GetSafeNormal(), Front = (Left ^ Up).GetSafeNormal();
+
+	// hands resting on the floor or the body are pinned: remember where they are now
+	struct FPin { FCompactPoseBoneIndex Arm{INDEX_NONE}, Fore{INDEX_NONE}, Hand{INDEX_NONE}; FTransform Was; float W = 0.f; };
+	FPin Pins[2];
+	const TCHAR* Sides[2] = {TEXT("l"), TEXT("r")};
+	for (int32 i = 0; i < 2; ++i)
+	{
+		FPin& P = Pins[i];
+		P.Arm = S.Find(*FString::Printf(TEXT("upperarm_%s"), Sides[i]));
+		P.Fore = S.Find(*FString::Printf(TEXT("lowerarm_%s"), Sides[i]));
+		P.Hand = S.Find(*FString::Printf(TEXT("hand_%s"), Sides[i]));
+		if (P.Arm.IsValid() && P.Fore.IsValid() && P.Hand.IsValid())
+		{
+			P.Was = S.Component(P.Hand);
+			P.W = 1.f - FMath::SmoothStep(HoldTune.Pin * 0.5f, HoldTune.Pin, (float)P.Was.GetLocation().Z);
+		}
+	}
+
+	const float T = HoldClock, Tau = 2.f * PI;
+	// breath: in is quicker than out, so the curve leans early (a little second harmonic)
+	const float Ph = Tau * T / HoldTune.BreathPeriod;
+	const float In = (0.5f - 0.5f * FMath::Cos(Ph) + 0.12f * FMath::Sin(2.f * Ph)) * Hold;
+	const FQuat Open = Turn(Up, -Front, HoldTune.Breath * In);
+	S.RotateCS(Spine3, FQuat::Slerp(FQuat::Identity, Open, 0.5f));
+	S.RotateCS(Spine4, FQuat::Slerp(FQuat::Identity, Open, 0.5f));
+	S.RotateCS(Neck, Open.Inverse());
+	if (ClavL.IsValid() && ClavR.IsValid())
+	{
+		S.RotateCS(ClavL, Turn(Left, Up, HoldTune.Collar * In));
+		S.RotateCS(ClavR, Turn(-Left, Up, HoldTune.Collar * In));
+	}
+
+	// drift: the upper body leans and turns a little, slowly, the head mostly keeps its aim
+	const float W = Tau * T / HoldTune.SwayPeriod;
+	const float Side = (0.7f * FMath::Sin(W) + 0.3f * FMath::Sin(W * 2.37f + 1.1f)) * HoldTune.Sway * Hold;
+	const float Twist = (0.6f * FMath::Sin(W * 0.71f + 2.0f) + 0.4f * FMath::Sin(W * 1.63f + 0.4f)) * HoldTune.Sway * Hold;
+	const FQuat Drift = Turn(Up, Left, Side) * Turn(Front, Left, Twist * 0.7f);
+	S.RotateCS(Spine1, Drift);
+	S.RotateCS(Neck, FQuat::Slerp(FQuat::Identity, Drift.Inverse(), 0.7f));
+
+	// the head's own small life: a slow turn and tilt, unrelated to the drift
+	const float HeadTurn = (0.6f * FMath::Sin(Tau * T / 9.3f + 0.7f) + 0.4f * FMath::Sin(Tau * T / 4.1f + 2.3f)) * HoldTune.Head * Hold;
+	const float HeadTilt = (0.7f * FMath::Sin(Tau * T / 6.7f + 1.9f) + 0.3f * FMath::Sin(Tau * T / 3.3f)) * HoldTune.Head * 0.6f * Hold;
+	S.RotateCS(Head, Turn(Front, Left, HeadTurn) * Turn(Up, Left, HeadTilt));
+
+	// put pinned hands back: bend the elbow to the right reach, aim the arm, restore the wrist
+	for (const FPin& P : Pins)
+	{
+		if (P.W <= 0.f)
+		{
+			continue;
+		}
+		const FVector A = S.Component(P.Arm).GetLocation(), B = S.Component(P.Fore).GetLocation(), C = S.Component(P.Hand).GetLocation();
+		const FVector Target = FMath::Lerp(C, P.Was.GetLocation(), P.W);
+		const float La = (B - A).Size(), Lb = (C - B).Size(), Want = FMath::Clamp((Target - A).Size(), FMath::Abs(La - Lb) + 0.1f, La + Lb - 0.1f);
+		const FVector N = ((B - A) ^ (C - B)).GetSafeNormal();
+		if (!N.IsNearlyZero())
+		{
+			// the inner elbow angle now and the one that gives the wanted reach (law of cosines)
+			const float Now = FMath::Acos(FMath::Clamp(((A - B).GetSafeNormal() | (C - B).GetSafeNormal()), -1.f, 1.f));
+			const float Need = FMath::Acos(FMath::Clamp((La * La + Lb * Lb - Want * Want) / (2.f * La * Lb), -1.f, 1.f));
+			S.RotateCS(P.Fore, FQuat(N, Now - Need));
+		}
+		const FVector C2 = S.Component(P.Hand).GetLocation();
+		S.RotateCS(P.Arm, FQuat::FindBetweenNormals((C2 - A).GetSafeNormal(), (Target - A).GetSafeNormal()));
+		const FQuat Now = S.Component(P.Hand).GetRotation();
+		S.RotateCS(P.Hand, FQuat::Slerp(FQuat::Identity, P.Was.GetRotation() * Now.Inverse(), P.W));
+	}
 }
