@@ -12,8 +12,14 @@ static TAutoConsoleVariable<float> CVarCatwalkHipRoll(TEXT("visex.Catwalk.HipRol
 static TAutoConsoleVariable<float> CVarCatwalkHipYaw(TEXT("visex.Catwalk.HipYaw"), 7.f, TEXT("Degrees the hip turns forward with the leading leg"));
 static TAutoConsoleVariable<float> CVarCatwalkHipShift(TEXT("visex.Catwalk.HipShift"), 2.f, TEXT("Centimetres the pelvis moves over the standing leg"));
 static TAutoConsoleVariable<float> CVarCatwalkLine(TEXT("visex.Catwalk.Line"), 4.5f, TEXT("Degrees each leg angles inward, so the feet land near one line"));
-static TAutoConsoleVariable<float> CVarCatwalkShoulders(TEXT("visex.Catwalk.Shoulders"), 0.7f, TEXT("How much the chest counters the hips (0..1)"));
+static TAutoConsoleVariable<float> CVarCatwalkShoulders(TEXT("visex.Catwalk.Shoulders"), 1.7f, TEXT("How much the chest counters the hips (1 = equal and opposite)"));
 static TAutoConsoleVariable<float> CVarCatwalkHead(TEXT("visex.Catwalk.Head"), 0.85f, TEXT("How steady the head stays against the chest's motion (0..1)"));
+// from the Girl Walk&Run struts (Docs/Research, learning log 2026-11-10): spine 4 deg back, chest
+// 4-5 frames behind the hips, arms ~40 cm of swing, head within ~1 cm of its line
+static TAutoConsoleVariable<float> CVarCatwalkPosture(TEXT("visex.Catwalk.Posture"), 11.f, TEXT("Degrees the spine leans back while walking, head kept level (proud)"));
+static TAutoConsoleVariable<float> CVarCatwalkChestLag(TEXT("visex.Catwalk.ChestLag"), 7.f, TEXT("How quickly the chest's counter-turn follows the hips (lower = later; 0 = no lag)"));
+static TAutoConsoleVariable<float> CVarCatwalkArmSwing(TEXT("visex.Catwalk.ArmSwing"), 0.6f, TEXT("Share of the clip's fore-aft arm swing kept (0..1)"));
+static TAutoConsoleVariable<float> CVarCatwalkHeadLine(TEXT("visex.Catwalk.HeadLine"), 0.9f, TEXT("How much the head's side-to-side sway is taken out (0..1)"));
 static TAutoConsoleVariable<float> CVarCatwalkSprint(TEXT("visex.Catwalk.Sprint"), 0.35f, TEXT("Share of the layer kept when sprinting (0..1)"));
 
 void FVisexAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeconds)
@@ -49,6 +55,10 @@ void FVisexAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSecond
 	Tune.Line = CVarCatwalkLine.GetValueOnGameThread();
 	Tune.Shoulders = CVarCatwalkShoulders.GetValueOnGameThread();
 	Tune.Head = CVarCatwalkHead.GetValueOnGameThread();
+	Tune.Posture = CVarCatwalkPosture.GetValueOnGameThread();
+	Tune.ChestLag = CVarCatwalkChestLag.GetValueOnGameThread();
+	Tune.ArmSwing = CVarCatwalkArmSwing.GetValueOnGameThread();
+	Tune.HeadLine = CVarCatwalkHeadLine.GetValueOnGameThread();
 }
 
 bool FVisexAnimProxy::Evaluate_WithRoot(FPoseContext& Output, FAnimNode_Base* InRootNode)
@@ -280,10 +290,47 @@ void FVisexAnimProxy::Catwalk(FCompactPose& Pose)
 	S.RotateCS(Spine1, Half);
 	S.RotateCS(Spine2, Half);
 
-	// chest counters the hips; the head stays level and forward
-	const FQuat Counter = Turn(Left, -Fwd, Yaw * Tune.Shoulders) * Turn(Left, Up, Roll * Tune.Shoulders * 0.5f);
+	// chest counters the hips a few frames late (overlap); the head stays level and forward
+	ChestStep = Tune.ChestLag > 0.f ? FMath::FInterpTo(ChestStep, Step, Dt, Tune.ChestLag) : Step;
+	ChestLift = Tune.ChestLag > 0.f ? FMath::FInterpTo(ChestLift, Lift, Dt, Tune.ChestLag) : Lift;
+	const float ChestYaw = Tune.HipYaw * ChestStep * Gait, ChestRoll = Tune.HipRoll * ChestLift * Gait;
+	const FQuat Counter = Turn(Left, -Fwd, ChestYaw * Tune.Shoulders) * Turn(Left, Up, ChestRoll * Tune.Shoulders * 0.5f);
 	S.RotateCS(Chest, Counter);
 	S.RotateCS(Neck, FQuat::Slerp(FQuat::Identity, Counter.Inverse(), Tune.Head));
+
+	// proud: the spine carries the chest a little back, the neck brings the gaze level again
+	const FQuat Back = Turn(Up, -Fwd, Tune.Posture * 0.5f * Gait);
+	S.RotateCS(Spine2, Back);
+	S.RotateCS(Chest, Back);
+	S.RotateCS(Neck, (Back * Back).Inverse());
+
+	// the head on a steady line: its sideways drift from its own slow average is leaned out
+	const FCompactPoseBoneIndex Head = S.Find(TEXT("head"));
+	if (Head.IsValid() && Tune.HeadLine > 0.f)
+	{
+		const FVector HeadAt = S.Component(Head).GetLocation(), From = S.Component(Spine1).GetLocation();
+		HeadSide = FMath::FInterpTo(HeadSide, HeadAt | Left, Dt, 1.5f);
+		const float Off = (HeadAt | Left) - HeadSide, Height = FMath::Max((HeadAt - From) | Up, 30.f);
+		S.RotateCS(Spine1, Turn(Up, -Left, FMath::RadiansToDegrees(FMath::Atan2(Off, Height)) * Tune.HeadLine * Gait));
+	}
+
+	// smaller, looser arms: the fore-aft angle of each upper arm moves toward hanging
+	for (const TCHAR* Side : {TEXT("l"), TEXT("r")})
+	{
+		const FCompactPoseBoneIndex Arm = S.Find(*FString::Printf(TEXT("upperarm_%s"), Side));
+		const FCompactPoseBoneIndex Hand = S.Find(*FString::Printf(TEXT("hand_%s"), Side));
+		if (!Arm.IsValid() || !Hand.IsValid() || Tune.ArmSwing >= 1.f)
+		{
+			continue;
+		}
+		const FVector Dir = (S.Component(Hand).GetLocation() - S.Component(Arm).GetLocation()).GetSafeNormal();
+		const float Along = FMath::Atan2(Dir | Fwd, -(Dir | Up));
+		const float Keep = FMath::Lerp(1.f, Tune.ArmSwing, Gait);
+		const float Ang = Along * Keep, Side2 = Dir | Left;
+		const float Planar = FMath::Sqrt(FMath::Max(1.f - Side2 * Side2, 0.f));
+		const FVector Want = (Fwd * FMath::Sin(Ang) - Up * FMath::Cos(Ang)) * Planar + Left * Side2;
+		S.RotateCS(Arm, FQuat::FindBetweenNormals(Dir, Want.GetSafeNormal()));
+	}
 
 	// feet toward one line: each leg angles inward from the hip, the foot stays flat
 	const FQuat InL = Turn(-Up, -Left, Tune.Line * Gait), InR = Turn(-Up, Left, Tune.Line * Gait);

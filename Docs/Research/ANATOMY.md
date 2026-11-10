@@ -50,7 +50,7 @@ Stylised bodies can cheat: a small constant volume offset (0.5 to 1 cm) along th
 
 ## Bust, hip and shoulder pitfalls (skinning and cloth)
 
-- **Bust:** weights should come from the chest (spine_04, spine_05, clavicle), not the arm. A heavy arm weight drags the bust sideways whenever the arm swings. Our jiggle is spring-driven morphs (BustUp, BustSway) fed by the bone velocity, so the base weights must be quiet. Standing damping is higher (`StandingDamping`) so idle stays calm. Keep the sway small: **calm and proud** wants a barely-moving chest.
+- **Bust:** weights should come from the chest (spine_04, spine_05, clavicle), not the arm. A heavy arm weight drags the bust sideways whenever the arm swings. Our jiggle is spring-driven morphs (BustBounce, BustSway) fed by the bone velocity, so the base weights must be quiet. **Tema wants a free, natural bounce** (2026-11-10): each breast bounces and swings on its own, alternating with the steps, easing into soft limits rather than stopping. Standing damping is higher (`StandingDamping`) so idle stays calm.
 - **Bust and outfit:** the outfit takes all the skin's weights (up to 8 per vertex) and **every shape key** from the vertices it was cut from, or cloth sinks into the body at a joint (`Docs/CLOTHES.md`). Any new morph on the skin must also go on the outfit.
 - **Hip:** the hip carries up to 7 weights. Cutting to 4 let skin show in slivers. Keep the limit at 8 on cloth.
 - **Glute:** each glute half rides its own thigh. A deep hip bend can drag it into the opposite side, so check the crotch.
