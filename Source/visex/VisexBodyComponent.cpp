@@ -70,6 +70,18 @@ void UVisexBodyComponent::TickCorrectives()
 		const float T = FMath::Clamp((Rise - ArmUpStart) / FMath::Max(ArmUpFull - ArmUpStart, 1.f), 0.f, 1.f);
 		Mesh->SetMorphTarget(Morph[i], FMath::SmoothStep(0.f, 1.f, T), false);
 	}
+	// hip flexion (sitting, kneeling, lying): the thigh against the same axis, 0 = standing
+	static const FName Thigh[2] = {TEXT("thigh_l"), TEXT("thigh_r")};
+	static const FName Calf[2] = {TEXT("calf_l"), TEXT("calf_r")};
+	static const FName ThighMorph[2] = {TEXT("ThighUp_l"), TEXT("ThighUp_r")};
+	for (int32 i = 0; i < 2; ++i)
+	{
+		const FVector Leg = (Mesh->GetBoneLocation(Calf[i], EBoneSpaces::ComponentSpace)
+			- Mesh->GetBoneLocation(Thigh[i], EBoneSpaces::ComponentSpace)).GetSafeNormal();
+		const float Flex = 180.f - FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct(Leg, TorsoUp), -1.f, 1.f)));
+		const float T = FMath::Clamp((Flex - ThighUpStart) / FMath::Max(ThighUpFull - ThighUpStart, 1.f), 0.f, 1.f);
+		Mesh->SetMorphTarget(ThighMorph[i], FMath::SmoothStep(0.f, 1.f, T), false);
+	}
 }
 
 void UVisexBodyComponent::PushToAnim() const
