@@ -7,6 +7,20 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-10 19:56 · VIS-EX-0276 Shipping (a3988b1) · PASS, hair much improved
+
+- **First run invalid:** Tema was playing. The capture now binds to the game's PID, and keypresses
+  only go out once no other VIS-EX is running.
+- **Orbit landing:** smooth. Luma eases 0.716 → 0.598 → 0.462 → 0.429 → 0.418 → 0.412, with no step.
+- **Hair turnaround** (8 P shots, D-turned), `QA_0276ship/turn/` with head crops in `crops/`:
+  - fixed versus 0269: the back is fuller and solid black, the front strands are dark, the arms are
+    clean with no smudges, and there's no ear spike in the 3/4 or side views;
+  - left over: a few thin pale strands at the edge against the bright haze (front, by her face on the
+    left, in turn_7; on her side in turn_8/9), and a red-tinted strand on her shoulder in turn_7.
+- **Photo mode:** on ground. No crash in the tour or the plain launch.
+- **Lesson:** the game's `Saved/Screenshots` is shared with Tema's own installed copy. Only move
+  shots newer than the test's start (two of his 19:48 photos were swept up, then restored).
+
 ## 2026-11-10 19:35 · VIS-EX-0273 Shipping (0ee4182) · PASS, release
 
 - **Orbit landing is smooth now.** The corner shade fades its own Strength (7a92c5a). Luma eases
