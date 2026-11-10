@@ -3,6 +3,7 @@
 #include "VisexMenuWidget.h"
 #include "VisexBodyEditor.h"
 #include "VisexPhotoMode.h"
+#include "VisexQATour.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
 #include "CineCameraActor.h"
@@ -72,6 +73,14 @@ void AVisexMenuDirector::BeginPlay()
 		StandIn->SetActorHiddenInGame(true);
 		// it stands exactly where the player goes: it must not block the camera boom
 		StandIn->SetActorEnableCollision(false);
+	}
+	if (FParse::Param(FCommandLine::Get(), TEXT("visexqa")))
+	{
+		// scripted walk through every screen for checking a packaged build (VisexQATour.h)
+		if (AVisexQATour* Tour = GetWorld()->SpawnActor<AVisexQATour>())
+		{
+			Tour->Director = this;
+		}
 	}
 	if (bShowMenuOnPlay)
 	{
