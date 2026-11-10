@@ -9,7 +9,7 @@ shows (see Docs/CHARACTER_DIRECTION.md, "Middle body"):
 - first, the hips: the remesh seams are relaxed and pelvis/thigh weights blended over a
   wide band, so the leg meets the body in a curve and not a hinge.
 - always there: a navel (vertical oval under a small hood, in a shallow dish), a faint
-  midline above it, the soft low-belly curve, the spinal furrow (deepest in the lumbar
+  midline above it, the rounded low belly below it, the spinal furrow (deepest in the lumbar
   curve) between two soft columns, and the two dimples over the pelvis.
 - shape keys, driven by sliders: Fat (a soft layer over belly, flanks and low back), AbsLines (midline, the rectus' side lines, the
   lines from hip bone to pubis), AbsPack (the three cross lines above the navel and the
@@ -37,7 +37,8 @@ LOOK = dict(
     hood=0.14,           # the lip over its top
     dish=0.22,           # the shallow hollow around it
     midline=0.12,        # midline groove that is always there, above the navel
-    low_belly=0.2,       # soft curve below the navel
+    low_belly=2.0,       # the low belly: a soft rounded pad below the navel (subumbilical fat;
+                         # Motus Woman and real anatomy carry it, abs never segment below the navel)
     furrow=1.3,         # spinal furrow at its deepest (lumbar)
     furrow_upper=0.2,    # and between the shoulder blades
     columns=0.45,        # the two muscle columns beside it
@@ -238,7 +239,7 @@ base += IN * (pit * LOOK["navel_depth"])[:, None]
 base += IN * (g(np.hypot(x / 3.0, (z - ZN) / 3.5), 1.0) * front * LOOK["dish"])[:, None]
 base += along(g(np.hypot(x / 0.9, (z - ZN - 1.15) / 0.45), 1.0) * front * LOOK["hood"])
 base -= along(g(x, 1.3) * band(z, ZN + 1.5, 127, 2) * front * LOOK["midline"])
-base += along(g(np.hypot(x / 6.5, (z - 97.5) / 5.0), 1.0) * front * (1 - pit) * LOOK["low_belly"])
+base += along(g(np.hypot(x / 9.5, (z - 99.5) / 7.0), 1.0) * front * (1 - pit) * LOOK["low_belly"])
 furrow = LOOK["furrow_upper"] * band(z, 104, 141, 3) + (LOOK["furrow"] - LOOK["furrow_upper"]) * band(z, 104, 122, 4)
 base -= along(g(x, 1.8) * furrow * back)
 base += along(g(ax - 3.6, 2.0) * band(z, 104, 124, 4) * back * LOOK["columns"])
@@ -314,16 +315,14 @@ low = ramp(-Nn[:, 1], -0.35, 0.3) * torso * band(z, 82.5, 100, 1.5)
 base += along(g(np.hypot(x / 3.4, (z - 89.5) / 4.2), 1.0) * low * LOOK["mons"])
 base -= along(g(x, 0.5) * band(z, 83.5, 88.5, 1.2) * low * LOOK["cleft"])
 base -= along(g(vee_d, 2.2) * band(z, 91, 100, 3) * front * LOOK["groin"])
-mid = g(x, 1.0) * (band(z, ZN + 1.2, 127, 2) + 0.4 * band(z, 95, ZN - 1.5, 2)) * (1 - pit)
+mid = g(x, 1.0) * (band(z, ZN + 1.2, 127, 2) + 0.12 * band(z, 97, ZN - 1.5, 2)) * (1 - pit)   # linea alba fades below the navel
 lines = -along((mid * LOOK["lines"] + side * LOOK["lines"] * 0.75 + vee * 0.22) * front)
 lines += along(g(ax - xs / 2, xs / 2.6) * band(z, 97, 125, 3) * front * 0.18)
-lines -= along(g(np.hypot(x / 6.5, (z - 97.5) / 5.0), 1.0) * front * (1 - pit) * 0.25)
 
 # AbsPack: three cross lines above the navel, blocks between them
 inside = (1 - ramp(ax, xs - 1.6, xs + 0.6)) * ramp(ax, 0.2, 1.6)
 cross = sum(g(z - zi - 0.5 * ax / xs, 1.3) for zi in (ZN + 1.0, ZN + 6.5, ZN + 12.5))
-block = g(ax - xs / 2, xs / 2.4) * inside * (band(z, ZN + 1, 126, 1.5) * (1 - np.clip(cross, 0, 1))
-                                             + 0.5 * band(z, 96, ZN - 1.5, 2))
+block = g(ax - xs / 2, xs / 2.4) * inside * band(z, ZN + 1, 126, 1.5) * (1 - np.clip(cross, 0, 1))   # no blocks below the navel
 pack = -along((cross * inside * LOOK["pack"] + mid * 0.2 + side * 0.15) * front)
 pack += along(block * front * LOOK["pack"])
 
