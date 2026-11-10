@@ -148,8 +148,11 @@ void AVisexMenuDirector::ShowMenu()
 	if (!bInputBound)
 	{
 		EnableInput(PC);
-		const FKey UpKeys[] = {EKeys::Gamepad_DPad_Up, EKeys::Gamepad_LeftStick_Up, EKeys::Up, EKeys::W};
-		const FKey DownKeys[] = {EKeys::Gamepad_DPad_Down, EKeys::Gamepad_LeftStick_Down, EKeys::Down, EKeys::S};
+		// No Gamepad_LeftStick_* keys: UE 5.7's Mac controller layer reports every stick axis,
+		// right stick included, as LeftStick_Up/Down. The left stick is read from LeftY in Tick.
+		const FKey UpKeys[] = {EKeys::Gamepad_DPad_Up, EKeys::Up, EKeys::W};
+		const FKey DownKeys[] = {EKeys::Gamepad_DPad_Down, EKeys::Down, EKeys::S};
+		InputComponent->BindAxisKey(EKeys::Gamepad_LeftY);
 		const FKey OkKeys[] = {EKeys::Gamepad_FaceButton_Bottom, EKeys::Gamepad_Special_Right, EKeys::Enter, EKeys::SpaceBar};
 		for (const FKey& K : UpKeys) { InputComponent->BindKey(K, IE_Pressed, this, &AVisexMenuDirector::Up); }
 		for (const FKey& K : DownKeys) { InputComponent->BindKey(K, IE_Pressed, this, &AVisexMenuDirector::Down); }
@@ -294,6 +297,21 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	Clock += DeltaSeconds;
+
+	// left stick steps the selection: one step per push, past 0.5, re-armed under 0.3
+	if (bOpen && InputComponent)
+	{
+		const float Y = InputComponent->GetAxisKeyValue(EKeys::Gamepad_LeftY);
+		if (!bStickHeld && FMath::Abs(Y) > 0.5f)
+		{
+			bStickHeld = true;
+			MoveSelection(Y > 0.f ? -1 : 1);
+		}
+		else if (bStickHeld && FMath::Abs(Y) < 0.3f)
+		{
+			bStickHeld = false;
+		}
+	}
 
 	if (bOpen && MenuCamera && DriftPeriod > 0.f)
 	{

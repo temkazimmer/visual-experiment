@@ -209,6 +209,7 @@ private:
 	bool bHaveLens = false;
 	bool bOpen = false;
 	bool bInputBound = false;
+	bool bStickHeld = false;
 	float Clock = 0.f;
 	float FadeOut = -1.f;
 	FTimerHandle SetupTimer;
