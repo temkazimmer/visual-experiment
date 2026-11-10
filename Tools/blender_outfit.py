@@ -102,7 +102,7 @@ keys = me.shape_keys.key_blocks if me.shape_keys else []
 DELTAS = {k.name: (vget(k.data, "co", nv) - CO) @ R3.T for k in keys[1:]}
 # The rest shape is flat: bust and glutes come from the slider morphs. Design on her
 # default body (the Character page's starting values) and derive the rest shape at the end.
-DESIGN = {k: w for k, w in (("BustUp", 0.55), ("GlutesUp", 0.38), ("Fat", 0.20), ("ThighGap", 0.12)) if k in DELTAS}
+DESIGN = {k: w for k, w in (("BustUp", 0.55), ("GlutesUp", 0.30), ("Fat", 0.20), ("ThighGap", 0.22)) if k in DELTAS}
 for k, w in DESIGN.items():
     X = X + DELTAS[k] * w
 _dm = bpy.data.meshes.new("design")
@@ -809,7 +809,7 @@ def bodystocking():
         line = [q + nearest_normal(q) * float(fit[nearest(q)]) for q in torso_line(th, zn - 6, cs, 0.19) if q]
         seam(line, 0.085, "Binding", g)
 
-    # jewellery: a fine chain resting on the collarbones, bangles loose on the wrists
+    # jewellery: a fine chain resting on the collarbones, oval bangles close round the wrists
     axis = V3(Bn["neck_01"])
     chain = []
     for k in range(72):
@@ -830,14 +830,16 @@ def bodystocking():
         for k_, t_ in enumerate(offs):
             c = a + (b - a) * t_
             cv = V3(c)
-            rad = 0.0
-            for q in range(24):
-                dv = V3(e1 * math.cos(2 * math.pi * q / 24) + e2 * math.sin(2 * math.pi * q / 24))
-                hit = BODY_BVH.ray_cast(cv, dv, 8)
-                rad = max(rad, hit[3] if hit[0] else 0.0)
-            tilt = u * (0.18 if k_ else -0.12)                    # loose: not square to the arm
-            ring = [V3(c + (e1 * math.cos(2 * math.pi * q / 48) + (e2 + tilt) * math.sin(2 * math.pi * q / 48)) * (rad + 0.3))
-                    for q in range(48)]
+            # an oval cuff fitted round the wrist, not a circle sized to its widest point
+            tilt = u * (0.07 if k_ else -0.05)                    # a touch off square to the arm
+            dirs = [e1 * math.cos(2 * math.pi * q / 48) + (e2 + tilt) * math.sin(2 * math.pi * q / 48) for q in range(48)]
+            rads = []
+            for dv in dirs:
+                hit = BODY_BVH.ray_cast(cv, V3(dv / np.linalg.norm(dv)), 8)
+                rads.append(hit[3] if hit[0] else 3.0)
+            rads = np.array(rads)
+            rads = np.maximum(rads, np.convolve(np.r_[rads[-4:], rads, rads[:4]], np.ones(9) / 9, "valid"))
+            ring = [V3(c + dv / np.linalg.norm(dv) * (r_ + 0.22)) for dv, r_ in zip(dirs, rads)]
             tube(ring, 0.1, "Trim", closed=True, sides=8, step=0.35, rigid=nearest(cv))
 
 
