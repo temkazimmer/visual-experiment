@@ -27,6 +27,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "EngineUtils.h"
 #include "Materials/MaterialInterface.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/CollisionProfile.h"
 #include "Components/InputComponent.h"
 #include "Components/WidgetComponent.h"
@@ -948,6 +949,7 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 		TickStudio(DeltaSeconds);
 	}
 	TickMenuKey(DeltaSeconds);
+	TickMenuWind(DeltaSeconds);
 
 	if (FadeOut >= 0.f)
 	{
@@ -1221,4 +1223,40 @@ void AVisexMenuDirector::SpawnStudioLights()
 			StudioRim = L;
 		}
 	}
+}
+
+void AVisexMenuDirector::TickMenuWind(float DeltaSeconds)
+{
+	if (!bWindSearched)
+	{
+		bWindSearched = true;
+		for (TActorIterator<AStaticMeshActor> It(GetWorld()); It; ++It)
+		{
+			UStaticMeshComponent* C = It->GetStaticMeshComponent();
+			if (C && C->GetStaticMesh() && C->GetStaticMesh()->GetName() == TEXT("SM_BlowingSand"))
+			{
+				WindMID = C->CreateDynamicMaterialInstance(0);
+				break;
+			}
+		}
+	}
+	if (!WindMID)
+	{
+		return;
+	}
+	const UWorld* W = GetWorld();
+	const float Now = W->GetTimeSeconds();
+	if (WindCalm < 0.f)
+	{
+		WindCalm = bOpen ? 1.f : 0.f;   // start calm on the menu, no fade-in
+		WindClock = Now;
+	}
+	const float Step = DeltaSeconds / FMath::Max(0.05f, MenuWindBlendTime);
+	WindCalm = FMath::Clamp(WindCalm + (bOpen ? Step : -Step), 0.f, 1.f);
+	const float A = FMath::SmoothStep(0.f, 1.f, WindCalm);
+	// the material scrolls its gusts by time * speed: slowing the clock (not the speed)
+	// keeps the pattern in place while the wind changes, with no jump
+	WindClock += DeltaSeconds * FMath::Lerp(1.f, MenuWindSpeed, A);
+	WindMID->SetScalarParameterValue(TEXT("WindOffset"), WindClock - Now);
+	WindMID->SetScalarParameterValue(TEXT("Opacity"), FMath::Lerp(0.45f, MenuWindOpacity, A));
 }
