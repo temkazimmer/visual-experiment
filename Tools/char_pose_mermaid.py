@@ -68,6 +68,36 @@ I_SOLE = {s: norm(perp(neg(Z), I_TOE[s])) for s in "lr"}
 
 def ball_from(side, ankle, toe): return add(ankle, mul(norm(toe), FOOT[side]))
 
+# ---- the ankle's range ----
+# The ankle hinges about an axis fixed in the shin. Taken from the rest pose, it lets a foot
+# be measured as real joints are: flex (0 = the rest angle, + = pointed), side (toes turned
+# in or out of the hinge's plane) and twist (sole rolled about the toes).
+def _shin(s): return norm(sub(pos("foot_" + s), pos("calf_" + s)))
+HINGE = {s: rot(qinv(world("calf_" + s)[1]), norm(cross(_shin(s), toe_dir(s)))) for s in "lr"}
+def ankle(s, toe=None, sole=None):
+    H = rot(world("calf_" + s)[1], HINGE[s]); sh = _shin(s); F = cross(H, sh)
+    toe = norm(toe or toe_dir(s)); sole = norm(sole or rot(world("foot_" + s)[1], SOLE[s]))
+    tp = norm(perp(toe, H))
+    flex = math.degrees(math.atan2(dot(tp, sh), dot(tp, F)))
+    side = math.degrees(math.asin(max(-1.0, min(1.0, dot(toe, H)))))
+    n0 = norm(cross(toe, H)); sp = norm(perp(sole, toe))
+    twist = math.degrees(math.atan2(dot(cross(n0, sp), toe), dot(n0, sp)))
+    return flex, side, twist
+ANKLE0 = {s: ankle(s) for s in "lr"}
+# how far past rest a foot may go: past this the skin folds at the back of the ankle
+ANKLE_RANGE = globals().get("ANKLE_RANGE", dict(point=25.0, flex=65.0, side=18.0, twist=22.0))
+def ankle_limit(s, toe, sole):
+    """The nearest foot direction (toe, sole) the ankle can really reach, for the shin as solved."""
+    H = rot(world("calf_" + s)[1], HINGE[s]); sh = _shin(s); F = cross(H, sh)
+    flex, side, twist = ankle(s, toe, sole)
+    f0, _, t0 = ANKLE0[s]; R = ANKLE_RANGE
+    flex = math.radians(min(max(flex, f0 - R["flex"]), f0 + R["point"]))
+    side = math.radians(min(max(side, -R["side"]), R["side"]))
+    twist = math.radians(min(max(twist, t0 - R["twist"]), t0 + R["twist"]))
+    toe = norm(add(mul(add(mul(F, math.cos(flex)), mul(sh, math.sin(flex))), math.cos(side)), mul(H, math.sin(side))))
+    n0 = norm(cross(toe, H))
+    return toe, add(mul(n0, math.cos(twist)), mul(cross(toe, n0), math.sin(twist)))
+
 # ---- one frame from its numbers ----
 def legs(P, lift):
     reset()
@@ -78,7 +108,8 @@ def legs(P, lift):
         toe = norm(P["toe_" + s])
         limb("thigh_" + s, "calf_" + s, "foot_" + s, sub(P["ball_" + s], mul(toe, FOOT[s])), P["knee_" + s])
         f = "foot_" + s
-        rotate(f, align2(toe_dir(s), rot(world(f)[1], SOLE[s]), toe, P["sole_" + s]))
+        toe, sole = ankle_limit(s, toe, norm(P["sole_" + s]))
+        rotate(f, align2(toe_dir(s), rot(world(f)[1], SOLE[s]), toe, sole))
     return min(pos("calf_l")[2], pos("calf_r")[2])
 
 def peace_arms(P):
@@ -220,10 +251,14 @@ def shoot(prefix, frames, shots, views=("front", "side")):
             f, r, up = char.get_actor_forward_vector(), char.get_actor_right_vector(), unreal.Vector(0, 0, 1)
             ground = body.get_world_transform().transform_location(unreal.Vector(0, 0, 0))
             tgt = ground + up * 75 + f * 15
+            zoom = 1.0
+            if globals().get("FOCUS"):                      # a close-up on a point in mesh space
+                tgt = body.get_world_transform().transform_location(unreal.Vector(*FOCUS))
+                zoom = globals().get("ZOOM", 0.2)
             at = {"front": f * 640, "side": f * 450 - r * 450, "back": f * -640, "back3q": f * -450 - r * 450,
                   "left": r * -640, "right": r * 640, "front3qr": f * 450 + r * 450, "back3qr": f * -450 + r * 450,
                   "top": up * 520 + f * 160}
-            views = {v: tgt + at[v] - up * 10 for v in views}
+            views = {v: tgt + at[v] * zoom - up * (10 * zoom) for v in views}
             for name, cam in views.items():
                 g = {"__name__": "__bridge__", "VIEW": ((cam.x, cam.y, cam.z), (tgt.x, tgt.y, tgt.z), 30.0)}
                 exec(compile(capture_src, "capture.py", "exec"), g)
