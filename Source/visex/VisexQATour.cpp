@@ -196,6 +196,10 @@ void AVisexQATour::Build()
 		});
 	}
 	AfterPoses = Steps.Num();
+	// a full GC, then walk and run again: Shipping 0240 crashed here once GC freed the loop clips
+	Add(1.f, [] { CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS, true); UE_LOG(LogVisexQA, Display, TEXT("VisexQA: forced GC")); });
+	Add(1.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetMotion(1); } });
+	Add(2.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetMotion(2); } Report(TEXT("photo after GC")); });
 	Add(1.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->Close(); } });
 	Add(5.f, [this] { Report(TEXT("after photo")); Shot(TEXT("after_photo")); });
 	Add(1.f, [this]

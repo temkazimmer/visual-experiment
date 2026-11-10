@@ -40,9 +40,10 @@ AVisexPhotoMode::AVisexPhotoMode()
 void AVisexPhotoMode::BuildMotions()
 {
 	Motions.Reset();
+	LoadedLoops.Reset();
 	Motions.Add({TEXT("Idle"), nullptr, INDEX_NONE});
-	if (UAnimSequence* Walk = WalkLoop.LoadSynchronous()) { Motions.Add({TEXT("Walk"), Walk, INDEX_NONE, 1.f}); }
-	if (UAnimSequence* Run = RunLoop.LoadSynchronous()) { Motions.Add({TEXT("Run"), Run, INDEX_NONE, 0.35f}); }
+	if (UAnimSequence* Walk = WalkLoop.LoadSynchronous()) { LoadedLoops.Add(Walk); Motions.Add({TEXT("Walk"), Walk, INDEX_NONE, 1.f}); }
+	if (UAnimSequence* Run = RunLoop.LoadSynchronous()) { LoadedLoops.Add(Run); Motions.Add({TEXT("Run"), Run, INDEX_NONE, 0.35f}); }
 
 	TArray<FAssetData> Found;
 	FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get().GetAssetsByPath(PoseFolder, Found, true);

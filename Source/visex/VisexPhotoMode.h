@@ -184,6 +184,10 @@ private:
 	void ClearMotion();
 
 	TArray<FMotion> Motions;
+	/** Keeps the walk/run clips alive: FMotion's raw pointers are invisible to GC, and a
+	 * collected clip crashed SetMotion a few minutes into a session (Shipping 0240). */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UAnimSequence>> LoadedLoops;
 	int32 Motion = 0;
 	int32 PlayingPose = INDEX_NONE;
 	float Yaw = 0.f;
