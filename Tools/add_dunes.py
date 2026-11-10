@@ -8,6 +8,9 @@ Endless: past the set the grid cells grow (75 cm -> 20 m) and the same dunes run
 on for a kilometre in every direction, into fog that is opaque long before the
 mesh ends. Invisible walls (Dunes_Bound_*) 600 m out keep the player inside.
 
+Settled: no face stands steeper than the angle of repose (REPOSE, 34 deg), so
+every slope is walkable and there are no sheer slip-face cliffs.
+
 Run live: python3 Tools/ue.py Tools/add_dunes.py
 """
 import math
@@ -22,6 +25,7 @@ BOUND = 60000                                # invisible walls this far outside 
 FAR = 100000                                 # sand runs this far outside the set
 GROW, MAX_CELL = 1.08, 2000                  # cell growth per step outside, and its cap
 LOW = -1000                                  # the open desert sits at the lower ground's level
+REPOSE = 34.0                                # deg: sand never stands steeper (slip faces settle here)
 DUNES_X0 = 1500                              # dunes fade out west of here (the ramp runs on)
 CELL = 75                                    # cm between vertices
 HEIGHT = 1100                                # cm, tallest crests
@@ -143,11 +147,43 @@ def axis(a0, a1, lo, hi):
     return out(a0, lo, -1)[::-1] + inner + out(inner[-1], hi, 1)
 
 
+def heights(xs, ys):
+    """sand() on the grid, then settled to the angle of repose: wherever a face is
+    steeper than REPOSE, sand slides down and fills its foot (each point rises to at
+    least neighbour - tan(REPOSE) * distance), the way a real slip face avalanches.
+    It only adds sand, so nothing opens up under the architecture. Chamfer sweeps
+    over the 8 neighbours, repeated until settled."""
+    zs = [[sand(x, y) for x in xs] for y in ys]
+    k = math.tan(math.radians(REPOSE))
+    nx, ny = len(xs), len(ys)
+    fwd = ((0, -1), (-1, -1), (-1, 0), (-1, 1))
+    for _ in range(6):
+        moved = 0.0
+        for order, offs in ((range(ny), fwd), (range(ny - 1, -1, -1), [(-a, -b) for a, b in fwd])):
+            for j in order:
+                row = zs[j]
+                cols = range(nx) if offs is fwd else range(nx - 1, -1, -1)
+                for i in cols:
+                    best = row[i]
+                    for dj, di in offs:
+                        jj, ii = j + dj, i + di
+                        if 0 <= jj < ny and 0 <= ii < nx:
+                            v = zs[jj][ii] - k * math.hypot(xs[ii] - xs[i], ys[jj] - ys[j])
+                            if v > best:
+                                best = v
+                    if best > row[i]:
+                        moved = max(moved, best - row[i])
+                        row[i] = best
+        if moved < 1.0:
+            break
+    return zs
+
+
 def write_obj(path):
     xs = axis(X0, X1, CORE[0] - FAR, CORE[1] + FAR)
     ys = axis(Y0, Y1, CORE[2] - FAR, CORE[3] + FAR)
     nx, ny = len(xs), len(ys)
-    zs = [[sand(x, y) for x in xs] for y in ys]
+    zs = heights(xs, ys)
     lines = []
     for j in range(ny):
         for i in range(nx):

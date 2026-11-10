@@ -1,13 +1,11 @@
 """Blowing sand: a thin translucent sheet draped 15 cm over the dunes, with gusty
-streaks of sand racing downwind (+X) across it, and streamers trailing off the dune
-crests. The sheet follows the dune mesh's own vertex grid, so it never dips into
-the sand. Downwind of each crest it stays aloft and descends at ~19 degrees, so
-sand pours off the crest as a plume and thins as it lifts away from the slip face.
+streaks of sand racing downwind (+X) across it. The sheet uses the dune mesh's own
+vertex grid and settled heights, so it never dips into the sand. (Crest plumes
+were tried and removed: hovering sheet edges read as torn geometry.)
 
-UV.x carries the plume's height above the sand (m), which the material uses to
-fade the plume. Lit translucency, depth fade where it touches anything, gone by
-~120 m from the camera. Labelled Dunes_Blow so photo mode keeps it. No collision.
-Idempotent; re-run after add_dunes.py.
+Lit translucency, depth fade where it touches anything, gone by ~50 m from the
+camera. Labelled Dunes_Blow so photo mode keeps it. No collision. Idempotent;
+re-run after add_dunes.py.
 
 Run live: python3 Tools/ue.py Tools/add_blowing_sand.py
 """
@@ -17,9 +15,6 @@ import unreal
 
 HERE = os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir()), "Tools")
 LIFT = 15.0                  # cm over the sand
-PLUME_SLOPE = 0.35           # how fast a crest plume sinks downwind (rise / run)
-PLUME_MAX = 120.0            # cm, highest a plume rides over the slip face
-PLUME_CELL = 100.0           # plumes only on the fine grid (coarse cells would make slabs)
 SPEED = 650.0                # cm/s, gusts downwind
 OPACITY = 0.45
 FADE_NEAR, FADE_FAR = 2000.0, 5000.0    # cm from the camera: full until, gone by (grazing sheets smear further out)
@@ -133,17 +128,11 @@ def write_obj(path):
     ys = [y for y in D["axis"](D["Y0"], D["Y1"], D["CORE"][2] - D["FAR"], D["CORE"][3] + D["FAR"]) if y0 <= y <= y1]
     nx, ny = len(xs), len(ys)
     v, vt = [], []
-    for y in ys:
-        row = [D["sand"](x, y) + LIFT for x in xs]
-        top, prev = row[0], xs[0]
+    zs = D["heights"](xs, ys)                                  # the dunes exactly, settled slopes included
+    for j, y in enumerate(ys):
         for i, x in enumerate(xs):
-            top = max(row[i], top - PLUME_SLOPE * (x - prev))     # plume sinking downwind
-            if x - prev > PLUME_CELL:
-                top = row[i]
-            top = min(top, row[i] + PLUME_MAX)
-            prev = x
-            v.append("v %.1f %.1f %.1f" % (x, -y, top))           # importer mirrors Y
-            vt.append("vt %.4f 0" % ((top - row[i]) / 100.0))
+            v.append("v %.1f %.1f %.1f" % (x, -y, zs[j][i] + LIFT))   # importer mirrors Y
+            vt.append("vt 0 0")
     f = []
     for j in range(ny - 1):
         for i in range(nx - 1):
