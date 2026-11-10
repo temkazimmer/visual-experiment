@@ -7,6 +7,23 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-10 19:30 · VIS-EX-0269 Shipping (b317694) · FAIL on one item: the orbit landing still pops
+
+- **Orbit landing:** same pop as 0259, despite the 0.6 s blend (7c31bac). At 14.7 → 15.0 s, with
+  identical framing, mean luma goes 0.240 → 0.381 and the sky 0.144 → 0.465. There's no intermediate
+  frame at a ~0.3 s capture interval, and the values are flat afterwards. Frames are in `QA_0269ship/orbit/`.
+- **Menu wind:** calm, with no visible grains. Frame-to-frame change is 0.006, including her idle. Whether
+  full wind comes back after Start can't be told from stills; it needs someone watching.
+- **Hair:** long and straight, reading fine from the back.
+  - From the front (photo mode, turned with D, P → HighResShot): the strands on her left go pale and
+    see-through against the haze, and there are dark hair smudges on her upper arm.
+  - It doesn't read as clearly fuller from the back.
+- **Skin:** no WorldGridMaterial grid anywhere (menu, play, photo, 4K front crop). There's a strong
+  red-brown patch under her chin and at the collarbone.
+- **Regressions:** none. She's lit and sharp on the menu, idle text is white and dimmed with its shadow,
+  and photo mode stays on the ground (z 145). A footprint shows by her foot. No crash in 2 tours and
+  2 plain launches.
+
 ## 2026-11-10 19:02 · VIS-EX-0259 Shipping (80fb80e) · FAIL on one item: the Start orbit's brightness pops on landing
 
 - **Menu:** she's lit and sharp. Idle items are white and dimmed. The text shadow is subtle but present.
