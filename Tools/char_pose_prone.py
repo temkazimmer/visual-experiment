@@ -54,8 +54,8 @@ ALLFOURS = dict(KNEEL, pelvis=(1.0, -6.0, 52.0), roll=0.0, pitch=-78.0, yaw=-22.
 # 2. down on the front, legs long behind, toes pointed, propped on the forearms
 TOE_FLAT, SOLE_FLAT = norm((0.0, -0.95, -0.3)), norm((0.0, -0.3, 0.95))
 BELLY = dict(ALLFOURS, pelvis=(1.0, 4.0, 14.0), pitch=-88.0,
-             ball_l=ball_from("l", (8.0, -80.0, 6.0), TOE_FLAT), toe_l=TOE_FLAT, sole_l=SOLE_FLAT, knee_l=(9.0, -40.0, -20.0),
-             ball_r=ball_from("r", (-8.0, -80.0, 6.0), TOE_FLAT), toe_r=TOE_FLAT, sole_r=SOLE_FLAT, knee_r=(-9.0, -40.0, -20.0),
+             ball_l=ball_from("l", (8.0, -80.0, 11.5), TOE_FLAT), toe_l=TOE_FLAT, sole_l=SOLE_FLAT, knee_l=(9.0, -40.0, -20.0),
+             ball_r=ball_from("r", (-8.0, -80.0, 13.0), TOE_FLAT), toe_r=TOE_FLAT, sole_r=SOLE_FLAT, knee_r=(-9.0, -40.0, -20.0),
              lean_fwd=-42.0, head_down=-30.0, fore=1.0, floor=0.0)
 # 3. knees bent, feet up behind her, ankles crossed, head turned a little to her left
 TOE_UP, SOLE_UP = norm((0.0, -0.15, 0.99)), norm((0.0, 0.99, 0.15))

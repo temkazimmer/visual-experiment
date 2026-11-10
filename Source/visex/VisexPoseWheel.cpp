@@ -5,6 +5,7 @@
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimSequence.h"
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
@@ -381,11 +382,78 @@ void UVisexPoseWheelComponent::UpdateFootIK(float DeltaTime)
 	}
 }
 
+void UVisexPoseWheelComponent::UpdateGround(float DeltaTime)
+{
+	// The floor poses are made on flat ground, but the dunes slope: a body lying across a 10
+	// degree slope floats 30 cm off it at one end. While she is down there, the ground under
+	// her is sampled, and the body is tilted onto it and lowered to touch it.
+	ACharacter* Character = Cast<ACharacter>(GetOwner());
+	USkeletalMeshComponent* Mesh = Character ? Character->GetMesh() : nullptr;
+	const UCapsuleComponent* Capsule = Character ? Character->GetCapsuleComponent() : nullptr;
+	if (!Mesh || !Capsule)
+	{
+		return;
+	}
+	const bool bOnFloor = PoseIns.IsValidIndex(Current) && PoseIns[Current]
+		&& ((Phase == EPhase::Enter && PhaseTime > 0.9f) || Phase == EPhase::Hold);
+	if (!bOnFloor && GroundAlpha <= 0.f)
+	{
+		return;
+	}
+	if (GroundAlpha <= 0.f)
+	{
+		MeshBaseLocation = Mesh->GetRelativeLocation();
+		MeshBaseRotation = Mesh->GetRelativeRotation().Quaternion();
+	}
+	// eased in while she kneels and sits, eased out while she gets up
+	GroundAlpha = FMath::FInterpConstantTo(GroundAlpha, bOnFloor ? 1.f : 0.f, DeltaTime, bOnFloor ? 0.9f : 0.7f);
+	if (GroundAlpha <= 0.f)
+	{
+		Mesh->SetRelativeLocationAndRotation(MeshBaseLocation, MeshBaseRotation);
+		return;
+	}
+
+	const FTransform Actor = Character->GetActorTransform();
+	const float Bottom = Capsule->GetComponentLocation().Z - Capsule->GetScaledCapsuleHalfHeight();
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(VisexPoseGround), false, Character);
+	const auto GroundAt = [&](float Fwd, float Right, float& OutZ)
+	{
+		const FVector P = Actor.TransformPosition(FVector(Fwd, Right, 0.f));
+		FHitResult Hit;
+		if (GetWorld()->LineTraceSingleByChannel(Hit, FVector(P.X, P.Y, Bottom + 80.f), FVector(P.X, P.Y, Bottom - 120.f), ECC_Visibility, Params))
+		{
+			OutZ = Hit.ImpactPoint.Z;
+			return true;
+		}
+		return false;
+	};
+	constexpr float Reach = 70.f; // about half of her length lying down
+	float Z0 = Bottom, ZF = 0.f, ZB = 0.f, ZR = 0.f, ZL = 0.f;
+	GroundAt(0.f, 0.f, Z0);
+	const bool bF = GroundAt(Reach, 0.f, ZF), bB = GroundAt(-Reach, 0.f, ZB);
+	const bool bR = GroundAt(0.f, Reach, ZR), bL = GroundAt(0.f, -Reach, ZL);
+	const float SlopeF = (bF && bB) ? (ZF - ZB) / (2.f * Reach) : bF ? (ZF - Z0) / Reach : bB ? (Z0 - ZB) / Reach : 0.f;
+	const float SlopeR = (bR && bL) ? (ZR - ZL) / (2.f * Reach) : bR ? (ZR - Z0) / Reach : bL ? (Z0 - ZL) / Reach : 0.f;
+	const float MaxSlope = FMath::Tan(FMath::DegreesToRadians(28.f));
+	FVector Normal = FVector(-FMath::Clamp(SlopeF, -MaxSlope, MaxSlope), -FMath::Clamp(SlopeR, -MaxSlope, MaxSlope), 1.f).GetSafeNormal();
+	if (Normal.IsNearlyZero())
+	{
+		Normal = FVector::UpVector;
+	}
+	// in the actor's frame: the tilt turns up onto the ground's normal, about the body's root,
+	// which sits at the capsule's bottom; the drop takes that root down to the sand under it
+	const float Ease = FMath::SmoothStep(0.f, 1.f, GroundAlpha);
+	const FQuat Tilt = FQuat::Slerp(FQuat::Identity, FQuat::FindBetweenNormals(FVector::UpVector, Normal), Ease);
+	const float Drop = FMath::Clamp(Z0 - Bottom, -40.f, 5.f) * Ease;
+	Mesh->SetRelativeLocationAndRotation(MeshBaseLocation + FVector(0.f, 0.f, Drop), Tilt * MeshBaseRotation);
+}
+
 void UVisexPoseWheelComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	BindInput();
 	UpdateFootIK(DeltaTime);
+	UpdateGround(DeltaTime);
 
 	const ACharacter* Character = Cast<ACharacter>(GetOwner());
 	APlayerController* PC = Character ? Cast<APlayerController>(Character->GetController()) : nullptr;
