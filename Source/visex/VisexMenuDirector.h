@@ -153,6 +153,25 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Studio")
 	float RimIntensity = 35.f;
 
+	/** Main menu: a warm, soft sun-coloured key on her (lighting channel 1, so only she
+	 *  gets it), so she isn't a black silhouette against the low sun behind her. It fades
+	 *  in with the menu and out during Start's camera move. Placement as SpotPlacement:
+	 *  yaw from the camera's side of her (deg), distance, height (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Key")
+	FVector MenuKeyPlacement = FVector(-65.f, 260.f, 260.f);
+
+	/** cd */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Key")
+	float MenuKeyIntensity = 50.f;
+
+	/** K: low-sun warm */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Key")
+	float MenuKeyTemperature = 3400.f;
+
+	/** s to fade in or out */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Key")
+	float MenuKeyBlendTime = 1.2f;
+
 	/** Share of the studio look photo mode uses (the Character page uses all of it). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Studio", meta = (ClampMin = "0", ClampMax = "1"))
 	float PhotoStudioStrength = 0.5f;
@@ -347,6 +366,11 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<AActor> StudioRim;
 	void SpawnStudioLights();
+	void TickMenuKey(float DeltaSeconds);
+	static void JoinChannel1(APawn* Pawn);
+	float MenuKeyAlpha = 0.f;
+	UPROPERTY(Transient)
+	TObjectPtr<AActor> MenuKey;
 
 	FTransform CameraBase;
 	FTransform LevelCamera;
