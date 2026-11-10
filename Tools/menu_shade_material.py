@@ -6,8 +6,8 @@ import unreal
 PATH, NAME = "/Game/VisEx/UI", "M_MenuShade"
 full = f"{PATH}/{NAME}"
 mel = unreal.MaterialEditingLibrary
-CENTER = globals().get("CENTER", (0.40, 0.32))   # UV of the text block's middle in the padded panel
-RADIUS = globals().get("RADIUS", (0.38, 0.30))   # where the shade reaches zero
+CENTER = globals().get("CENTER", (0.43, 0.37))   # UV of the text block's middle in the padded panel
+RADIUS = globals().get("RADIUS", (0.41, 0.35))   # where the shade reaches zero
 STRENGTH = globals().get("STRENGTH", 0.5)
 PLATEAU = globals().get("PLATEAU", 0.15)        # flat middle; the feather runs from here to the edge
 
