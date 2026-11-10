@@ -49,6 +49,7 @@ if eal.does_asset_exist(sk_path):
 smd = ui.get_editor_property("skeletal_mesh_import_data")
 smd.set_editor_property("import_morph_targets", False)
 smd.set_editor_property("convert_scene", True)
+smd.set_editor_property("import_uniform_scale", 0.01)     # as Tools/char_skin.py: Blender writes metres
 smd.set_editor_property("normal_import_method", unreal.FBXNormalImportMethod.FBXNIM_IMPORT_NORMALS)
 task = unreal.AssetImportTask()
 task.set_editor_property("filename", os.path.join(SRC, "hair_cards.fbx"))
@@ -130,7 +131,7 @@ mel.connect_material_property(ts, "A", MP.MP_OPACITY_MASK)
 mel.connect_material_property(num("Roughness", HAIR["roughness"], -450, 200), "", MP.MP_ROUGHNESS)
 mel.connect_material_property(num("Specular", HAIR["specular"], -450, 280), "", MP.MP_SPECULAR)
 mel.connect_material_property(num("Scatter", HAIR["scatter"], -450, 360), "", MP.MP_METALLIC)  # Hair: Metallic pin = Scatter
-mel.connect_material_property(num("Backlit", HAIR["backlit"], -450, 440), "", MP.MP_CUSTOM_DATA0)  # Hair: Backlit
+# Backlit (CustomData0) has no MaterialProperty in 5.7 Python: the Hair model's default is used
 tan = mel.create_material_expression(m, unreal.MaterialExpressionConstant3Vector, -450, 520)
 tan.set_editor_property("constant", unreal.LinearColor(0, 1, 0, 1))        # strands run along V
 mel.connect_material_property(tan, "", MP.MP_TANGENT)

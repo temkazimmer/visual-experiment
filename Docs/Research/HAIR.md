@@ -86,6 +86,15 @@ Tema chose the long, Frieren-style cut built by `Tools/blender_hair_cards.py` (f
 
 Open points: Kawaii Physics is a C++ plugin, so the Mac build has to compile it (the project already builds C++). Adding a plugin is Tema's call.
 
+**Status (2026-11-10):** Kawaii Physics 1.21.0 is in `Plugins/` and builds on Mac. `Tools/char_hair_cards.py` imports `SKM_HairCards` (own skeleton `SK_HairCards`, 11 chains, 0.01 scale like the skin) with `M_HairCards`. First UE captures: it sits on the head, ears clear. It reads darker than the Blender renders; the highlight needs tuning.
+
+**AnimBP by hand** (Python can't add AnimGraph nodes in 5.7):
+1. Right-click `SK_HairCards` → Create → Anim Blueprint → `ABP_HairCards`.
+2. AnimGraph: **Copy Pose From Mesh** (tick *Use Attached Parent*) → **Kawaii Physics** → Output Pose.
+3. Kawaii Physics node: Root Bone `hair_b0_01`, then add the other 10 roots as extra chains (`hair_b1..b5_01`, `hair_s0_01`, `hair_s1_01`, `hair_f0..f2_01`). Damping 0.8, Stiffness 0.05, World Damping Location 0.8, Gravity -980.
+4. Colliders: sphere on `head` (radius ~11), capsules on `neck_01`, both shoulders and `spine_05`, each 1 cm larger than the body.
+5. On the character: add a Skeletal Mesh component `Hair` under the body mesh, mesh `SKM_HairCards`, anim class `ABP_HairCards`, and hide the `Hair` section of `SKM_AndroidSkin`. This touches the character branch (`UVisexBodyComponent` or the skin chain), so it is that agent's change.
+
 ## What I could not verify
 
 - **No named AA studio's hair method.** I searched for Black Myth: Wukong, Hellblade 2 and Stellar Blade. I found no source describing their hair, so none is claimed here. The studio-level information above is Epic's docs, 80.lv and blog posts.
