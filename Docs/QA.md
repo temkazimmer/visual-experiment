@@ -7,6 +7,19 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-10 20:10 · VIS-EX-0278 Shipping (ab3ac2e) · regression PASS, hair backlog not fixed
+
+- **Orbit landing:** smooth. Luma eases 0.608 → 0.467 → 0.411 → 0.393 → 0.387.
+- **Photo mode:** on ground. No crash.
+- **Pale lock by her face on the left (front view):** still beige and see-through, slightly wider than
+  in 0276, and now showing hard horizontal lines like a flat card. Compare
+  `QA_0278ship/turn/crops/face_lock_0276.png` with `face_lock_0278.png`.
+- **Thin pale strands on her side** (turn_06/07 ≈ 0276 turn_8/9): unchanged.
+- **Red tint on the strands over her right shoulder:** unchanged.
+- **Back:** not duller; still solid black.
+- **Process:** Tema's game was closed before any keypress. Only screenshots newer than the test were
+  moved; his two 19:48 photos stayed in place.
+
 ## 2026-11-10 19:56 · VIS-EX-0276 Shipping (a3988b1) · PASS, hair much improved
 
 - **First run invalid:** Tema was playing. The capture now binds to the game's PID, and keypresses
