@@ -59,7 +59,7 @@ public:
 	/** Room round the text (layout px) for the shade to fade out in; the director grows the
 	 * panel by twice this, so the text stays where it was. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
-	float ShadePadding = 260.f;
+	float ShadePadding = 600.f;
 
 	/** How much larger the selected item is drawn. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")

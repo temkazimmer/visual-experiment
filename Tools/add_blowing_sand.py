@@ -124,8 +124,9 @@ def material():
 def write_obj(path):
     x0, x1 = D["CORE"][0] - D["BOUND"] - 5000, D["CORE"][1] + D["BOUND"] + 5000
     y0, y1 = D["CORE"][2] - D["BOUND"] - 5000, D["CORE"][3] + D["BOUND"] + 5000
-    xs = [x for x in D["axis"](D["X0"], D["X1"], D["CORE"][0] - D["FAR"], D["CORE"][1] + D["FAR"]) if x0 <= x <= x1]
-    ys = [y for y in D["axis"](D["Y0"], D["Y1"], D["CORE"][2] - D["FAR"], D["CORE"][3] + D["FAR"]) if y0 <= y <= y1]
+    gx, gy = D["grid"]()                                     # the dunes' own vertices
+    xs = [x for x in gx if x0 <= x <= x1]
+    ys = [y for y in gy if y0 <= y <= y1]
     nx, ny = len(xs), len(ys)
     v, vt = [], []
     zs = D["heights"](xs, ys)                                  # the dunes exactly, settled slopes included

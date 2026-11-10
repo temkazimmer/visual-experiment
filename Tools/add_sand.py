@@ -100,7 +100,8 @@ float crisp1 = -0.16 * (f1 < 0.7 ? 1.0 / 0.7 : -1.0 / 0.3);
 float crisp2 = -0.09 * (f2 < 0.75 ? 1.0 / 0.75 : -1.0 / 0.25);
 float k1 = saturate(1 - fwidth(u1) * 4) * 0.75, k2 = saturate(1 - fwidth(u2) * 4) * 0.6;
 float s = lerp(-0.45 * (r1 - 0.5), crisp1, k1) * near * scan + lerp(-0.25 * cos(6.2832 * u2), crisp2, k2) * far;
-return normalize(N + float3(dir * s * Mask * Strength * lee * patchy, 0));
+float graze = lerp(0.2, 1, smoothstep(0.04, 0.35, abs(dot(normalize(Cam - WP), N))));   // calmer at grazing view
+return normalize(N + float3(dir * s * Mask * Strength * lee * patchy * graze, 0));
 """
 
 # Glints at three sizes, each twinkling with the view angle and fading before it can
@@ -138,6 +139,7 @@ if (f2 > 0) {
     float3 cell = floor(WP / 4.0);
     g += smoothstep(0.9993, 1.0, S.hash(cell * 0.77 + floor(v * 25) * 0.29 + 5.3)) * 1.4 * f2;
 }
+g *= smoothstep(0.08, 0.4, abs(dot(-v, N)));               // cells stretch into blocks at grazing view
 return Sand * g * 6 * Mask * Strength * saturate(N.z);
 """
 
@@ -203,6 +205,7 @@ float2 td = 0;
 }
 t = lerp(t, td, flat);
 t.y *= FlipY;
+t *= lerp(0.3, 1, smoothstep(0.04, 0.35, abs(dot(normalize(Cam - WP), N))));   // no smeared bands at grazing view
 return normalize(RN + float3(t * Strength * Mask, 0));
 """
 
