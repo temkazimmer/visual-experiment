@@ -7,6 +7,11 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Materials/MaterialInterface.h"
 #include "Components/InputComponent.h"
+#include "Containers/Ticker.h"
+#include "Engine/LocalPlayer.h"
+#include "Engine/GameViewportClient.h"
+#include "InputKeyEventArgs.h"
+#include "HAL/IConsoleManager.h"
 #include "Components/WidgetComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/PlayerController.h"
@@ -153,10 +158,13 @@ void AVisexBodyEditor::BindKeys()
 	{
 		return;
 	}
-	const FKey UpKeys[] = {EKeys::Gamepad_DPad_Up, EKeys::Gamepad_LeftStick_Up, EKeys::Up, EKeys::W};
-	const FKey DownKeys[] = {EKeys::Gamepad_DPad_Down, EKeys::Gamepad_LeftStick_Down, EKeys::Down, EKeys::S};
-	const FKey LeftKeys[] = {EKeys::Gamepad_DPad_Left, EKeys::Gamepad_LeftStick_Left, EKeys::Left, EKeys::A};
-	const FKey RightKeys[] = {EKeys::Gamepad_DPad_Right, EKeys::Gamepad_LeftStick_Right, EKeys::Right, EKeys::D};
+	// no Gamepad_LeftStick_* keys: on Mac, UE 5.7's Apple controller code reports every stick
+	// axis (the right stick too) as LeftStick_Up/Down, so the right stick jumped rows. The
+	// left stick is read from its axes in Tick instead (StickNavigate).
+	const FKey UpKeys[] = {EKeys::Gamepad_DPad_Up, EKeys::Up, EKeys::W};
+	const FKey DownKeys[] = {EKeys::Gamepad_DPad_Down, EKeys::Down, EKeys::S};
+	const FKey LeftKeys[] = {EKeys::Gamepad_DPad_Left, EKeys::Left, EKeys::A};
+	const FKey RightKeys[] = {EKeys::Gamepad_DPad_Right, EKeys::Right, EKeys::D};
 	for (const FKey& K : UpKeys) { InputComponent->BindKey(K, IE_Pressed, this, &AVisexBodyEditor::Up); }
 	for (const FKey& K : DownKeys) { InputComponent->BindKey(K, IE_Pressed, this, &AVisexBodyEditor::Down); }
 	for (const FKey& K : LeftKeys)
@@ -180,6 +188,8 @@ void AVisexBodyEditor::BindKeys()
 	const FKey BackKeys[] = {EKeys::Gamepad_FaceButton_Right, EKeys::Escape, EKeys::BackSpace};
 	for (const FKey& K : BackKeys) { InputComponent->BindKey(K, IE_Pressed, this, &AVisexBodyEditor::Close); }
 	InputComponent->BindAxisKey(EKeys::Gamepad_RightX);
+	InputComponent->BindAxisKey(EKeys::Gamepad_LeftX);
+	InputComponent->BindAxisKey(EKeys::Gamepad_LeftY);
 	InputComponent->BindAxisKey(EKeys::MouseX);
 	// the right stick only turns her: no R3 (F on the keyboard still faces her to the camera)
 	InputComponent->BindKey(EKeys::F, IE_Pressed, this, &AVisexBodyEditor::FaceCamera);
@@ -428,6 +438,56 @@ void AVisexBodyEditor::PlaceCamera(const FShot& Shot)
 	Panel->SetRelativeScale3D(FVector(PanelScale));
 }
 
+void AVisexBodyEditor::StickNavigate(float DeltaSeconds)
+{
+	// the left stick as four buttons, from its axes: past 0.5 it presses (the larger axis
+	// wins), under 0.3 it lets go; held, a slider keeps stepping and the rows step slower
+	const float X = InputComponent ? InputComponent->GetAxisKeyValue(EKeys::Gamepad_LeftX) : 0.f;
+	const float Y = InputComponent ? InputComponent->GetAxisKeyValue(EKeys::Gamepad_LeftY) : 0.f;
+	int32 Dir = StickDir;
+	if (FMath::Max(FMath::Abs(X), FMath::Abs(Y)) < 0.3f)
+	{
+		Dir = 0;
+	}
+	else if (FMath::Max(FMath::Abs(X), FMath::Abs(Y)) > 0.5f)
+	{
+		Dir = FMath::Abs(X) > FMath::Abs(Y) ? (X > 0.f ? 2 : 4) : (Y > 0.f ? 1 : 3);   // up right down left
+	}
+	if (Dir != StickDir)
+	{
+		StickDir = Dir;
+		StickHeld = 0.f;
+		StickNext = 0.4f;
+		if (Dir != 0)
+		{
+			StickPress(Dir);
+		}
+		return;
+	}
+	if (Dir == 0)
+	{
+		return;
+	}
+	StickHeld += DeltaSeconds;
+	if (StickHeld >= StickNext)
+	{
+		StickNext += (Dir == 1 || Dir == 3) ? 0.18f : 0.06f;
+		StickPress(Dir);
+	}
+}
+
+void AVisexBodyEditor::StickPress(int32 Dir)
+{
+	switch (Dir)
+	{
+	case 1: Up(); break;
+	case 2: Right(); break;
+	case 3: Down(); break;
+	case 4: Left(); break;
+	default: break;
+	}
+}
+
 void AVisexBodyEditor::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
@@ -441,6 +501,8 @@ void AVisexBodyEditor::Tick(float DeltaSeconds)
 	{
 		return;
 	}
+
+	StickNavigate(DeltaSeconds);
 
 	// turn: right stick, or a drag with the left mouse button; it coasts to a stop
 	float Stick = InputComponent ? InputComponent->GetAxisKeyValue(EKeys::Gamepad_RightX) : 0.f;
@@ -485,3 +547,69 @@ void AVisexBodyEditor::Tick(float DeltaSeconds)
 	Current.Aperture = FMath::Lerp(From.Aperture, Target.Aperture, A);
 	PlaceCamera(Current);
 }
+
+#if !UE_BUILD_SHIPPING
+namespace
+{
+	/** visex.Pad <Left|Right> <x> <y> [seconds]: holds a stick the way the Mac controller layer
+	 *  reports it (UE 5.7, AppleControllerInterface): the stick's analog axes every frame, plus
+	 *  its quirk of pressing LeftStick_Up/Down for any axis past 0.24. Fed to the player
+	 *  controller as real key input (Slate would route it to whatever has focus). For testing. */
+	void PadCommand(const TArray<FString>& Args, UWorld* World)
+	{
+		APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+		if (Args.Num() < 3 || !PC)
+		{
+			return;
+		}
+		const bool bRight = Args[0].Equals(TEXT("Right"), ESearchCase::IgnoreCase);
+		const float X = FCString::Atof(*Args[1]);
+		const float Y = FCString::Atof(*Args[2]);
+		const float Seconds = Args.Num() > 3 ? FCString::Atof(*Args[3]) : 0.5f;
+		const FKey AxisX = bRight ? EKeys::Gamepad_RightX : EKeys::Gamepad_LeftX;
+		const FKey AxisY = bRight ? EKeys::Gamepad_RightY : EKeys::Gamepad_LeftY;
+		TArray<FKey> Quirk;
+		for (const float V : {X, Y})
+		{
+			if (FMath::Abs(V) >= 0.24f)
+			{
+				Quirk.AddUnique(V > 0.f ? EKeys::Gamepad_LeftStick_Up : EKeys::Gamepad_LeftStick_Down);
+			}
+		}
+		const FInputDeviceId Device = FInputDeviceId::CreateFromInternalId(0);   // the first gamepad
+		TWeakObjectPtr<APlayerController> Weak(PC);
+		auto Send = [Device](APlayerController* P, const FKey& Key, EInputEvent Event, float Amount) {
+			FViewport* Viewport = P->GetLocalPlayer() && P->GetLocalPlayer()->ViewportClient
+				? P->GetLocalPlayer()->ViewportClient->Viewport : nullptr;
+			FInputKeyEventArgs Args(Viewport, Device, Key, Event, Amount, false, FPlatformTime::Cycles64());
+			P->InputKey(Args);
+		};
+		for (const FKey& Key : Quirk)
+		{
+			Send(PC, Key, IE_Pressed, 1.f);
+		}
+		const double End = FPlatformTime::Seconds() + Seconds;
+		FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([=](float) {
+			APlayerController* P = Weak.Get();
+			if (!P)
+			{
+				return false;
+			}
+			const bool bDone = FPlatformTime::Seconds() >= End;
+			Send(P, AxisX, IE_Axis, bDone ? 0.f : X);
+			Send(P, AxisY, IE_Axis, bDone ? 0.f : Y);
+			if (bDone)
+			{
+				for (const FKey& Key : Quirk)
+				{
+					Send(P, Key, IE_Released, 0.f);
+				}
+			}
+			return !bDone;
+		}));
+	}
+	FAutoConsoleCommandWithWorldAndArgs GPadCommand(TEXT("visex.Pad"),
+		TEXT("visex.Pad <Left|Right> <x> <y> [seconds]: hold a gamepad stick as the Mac controller layer reports it"),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&PadCommand));
+}
+#endif
