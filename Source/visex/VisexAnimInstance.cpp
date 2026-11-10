@@ -29,6 +29,7 @@ static TAutoConsoleVariable<float> CVarHoldBreathPeriod(TEXT("visex.Hold.BreathP
 static TAutoConsoleVariable<float> CVarHoldCollar(TEXT("visex.Hold.Collar"), 4.f, TEXT("Degrees the collarbones lift on each breath in"));
 static TAutoConsoleVariable<float> CVarHoldSway(TEXT("visex.Hold.Sway"), 1.2f, TEXT("Degrees the upper body drifts side to side and turns, slowly"));
 static TAutoConsoleVariable<float> CVarHoldSwayPeriod(TEXT("visex.Hold.SwayPeriod"), 7.5f, TEXT("Seconds per drift"));
+static TAutoConsoleVariable<float> CVarHoldLyingBreath(TEXT("visex.Hold.LyingBreath"), 1.6f, TEXT("Breath depth lying down, relative to upright (Lie Down Dozing: chest 3.7 cm vs 1-2 cm standing)"));
 static TAutoConsoleVariable<float> CVarHoldPin(TEXT("visex.Hold.Pin"), 30.f, TEXT("A hand lower than this (cm above her feet) is resting on something: it stays put while the body breathes"));
 static TAutoConsoleVariable<float> CVarHoldHead(TEXT("visex.Hold.Head"), 1.5f, TEXT("Degrees the head drifts on its own (turn and tilt)"));
 
@@ -77,6 +78,7 @@ void FVisexAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSecond
 	HoldTune.SwayPeriod = FMath::Max(CVarHoldSwayPeriod.GetValueOnGameThread(), 0.5f);
 	HoldTune.Head = CVarHoldHead.GetValueOnGameThread();
 	HoldTune.Pin = CVarHoldPin.GetValueOnGameThread();
+	HoldTune.LyingBreath = CVarHoldLyingBreath.GetValueOnGameThread();
 }
 
 bool FVisexAnimProxy::Evaluate_WithRoot(FPoseContext& Output, FAnimNode_Base* InRootNode)
@@ -423,7 +425,9 @@ void FVisexAnimProxy::Alive(FCompactPose& Pose)
 	// breath: in is quicker than out, so the curve leans early (a little second harmonic)
 	const float Ph = Tau * T / HoldTune.BreathPeriod;
 	const float In = (0.5f - 0.5f * FMath::Cos(Ph) + 0.12f * FMath::Sin(2.f * Ph)) * Hold;
-	const FQuat Open = Turn(Up, -Front, HoldTune.Breath * In);
+	// lying down, the body lets go and the breath shows more (the trunk's Up is then horizontal)
+	const float Depth = FMath::Lerp(HoldTune.LyingBreath, 1.f, FMath::Abs(Up.Z));
+	const FQuat Open = Turn(Up, -Front, HoldTune.Breath * Depth * In);
 	S.RotateCS(Spine3, FQuat::Slerp(FQuat::Identity, Open, 0.5f));
 	S.RotateCS(Spine4, FQuat::Slerp(FQuat::Identity, Open, 0.5f));
 	S.RotateCS(Neck, Open.Inverse());

@@ -13,7 +13,9 @@ import unreal
 ROOT = unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir())
 PACKS = {
     "GirlWalkRun": ("SourceArt/Fab/GirlWalkRun/fbx/SKM_Quinn_Simple.FBX", "SourceArt/Fab/GirlWalkRun/fbx/animations/*.fbx"),
-    "LieDown": (None, "SourceArt/Fab/LieDown/*.FBX"),
+    "LieDown": (None, "SourceArt/Fab/LieDown/*.FBX"),     # UE names, no mesh: onto the study Quinn (SKEL below)
+    # the clips are on the MotusMan rig (plain names; MotusWoman prefixes hers), not UE bone names: measured through char_study's MOTUS name map
+    "ParkLife": ("SourceArt/Fab/ParkLife/MotusMan_v55/MotusMan_v55.fbx", "SourceArt/Fab/ParkLife/Animation/*.fbx"),
 }
 PACK = globals().get("PACK", "GirlWalkRun")
 ONLY = globals().get("ONLY")                 # e.g. ["AS_Walk_Strut_1"]
@@ -33,6 +35,10 @@ def task(src, dest, opts):
 
 skeleton = None
 skel_path = DEST + "/" + os.path.splitext(os.path.basename(mesh_src or "x"))[0] + "_Skeleton"
+SKEL = {"LieDown": "/Game/Study/GirlWalkRun/SKM_Quinn_Simple_Skeleton"}   # packs without a mesh of their own
+if PACK in SKEL:
+    skeleton = unreal.load_asset(SKEL[PACK])
+    print("skeleton", SKEL[PACK], bool(skeleton))
 if mesh_src:
     if not unreal.EditorAssetLibrary.does_asset_exist(skel_path):
         ui = unreal.FbxImportUI()
