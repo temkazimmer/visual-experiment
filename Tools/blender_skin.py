@@ -323,14 +323,27 @@ bust_push = np.maximum(pushes["BustL"], pushes["BustR"])
 glute_push = np.maximum(pushes["GluteL"], pushes["GluteR"])
 
 
+# the dense mesh's normals carry fine noise; pushing along them printed that noise into the
+# bust's fringe (under the bust, at its sides). Big shapes push along broadly smoothed normals.
+NB = diffuse(NRM, 40)
+NB /= np.linalg.norm(NB, axis=1, keepdims=True)
+
+
 def shaped(push, iters):
     """Offsets for a push, with the pushed surface relaxed so large moves stay smooth."""
-    off = diffuse(NS * push[:, None], 6)
+    off = diffuse(NB * push[:, None], 6)
     mask = np.clip(diffuse(push, 6) / (0.4 * M), 0, 1)
     return taubin(P + off, mask, iters) - P
 
 
-key_from_offsets("BustUp", shaped(bust_push, 25))
+def clean_fringe(off, push, proj):
+    """The thin edge of a big push came out scratchy (fine noise under and beside the bust):
+    smooth the offsets there heavily, keep the core's shape."""
+    core = np.clip(diffuse(push, 6) / (0.5 * proj * M), 0, 1)[:, None]
+    return off * core + diffuse(off, 40) * (1 - core)
+
+
+key_from_offsets("BustUp", clean_fringe(shaped(bust_push, 25), bust_push, SKIN["bust_proj"]))
 # the two reliefs meet at the top of the cleft in small domes (the clothes builder found
 # them through the nylon's sheen): melt the push there into its surroundings
 lat_g = (P - B["pelvis"]) @ SIDE
@@ -362,9 +375,9 @@ for side_name, lat in (("L", LEFT), ("R", -LEFT)):
 # ...and the fill the smooth union left between them sinks back, so a real cleavage opens
 lat_c = (P - B["pelvis"]) @ SIDE
 cleft = np.exp(-(lat_c / (3.0 * M)) ** 2) * SKIN["bust_cleft"]
-apart += -NS * (bust_push * cleft)[:, None]
+apart += -NB * (bust_push * cleft)[:, None]
 apart = diffuse(apart, 3)
-key_from_offsets("BustApart", apart)
+key_from_offsets("BustApart", clean_fringe(apart, bust_push, SKIN["bust_proj"]))
 print("keys", [k.name for k in me.shape_keys.key_blocks])
 
 # one material slot is enough for the skin

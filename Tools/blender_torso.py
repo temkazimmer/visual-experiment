@@ -50,6 +50,7 @@ LOOK = dict(
     gap=1.6,             # ThighGap: how far each inner thigh moves
     weld=0.16,           # seam slivers shorter than this are welded away
     seam_passes=14,      # smoothing passes that relax the remesh seams, knees to ribs
+    key_smooth=12,       # passes smoothing the earlier keys' offsets after the sliver weld
     joint_passes=90,     # weight-diffusion passes across the hip (about 3 cm of blend)
     mons=0.55,           # the pubic mound: how far it stands out
     cleft=0.22,          # the shallow line at its lower end
@@ -272,6 +273,34 @@ gap[:, 0] = sgn * amount
 
 # ---- write: the base into every key, then the new keys -------------------------------------
 keys = mesh.shape_keys.key_blocks
+# welding the remesh slivers merged vertices whose offsets in the earlier keys differed (the
+# bust's), leaving a scratchy step pattern where those shapes change fast (under and beside
+# the bust): smooth each earlier key's offsets over the welded band
+deg = np.zeros(n)
+np.add.at(deg, E[:, 0], 1.0)
+np.add.at(deg, E[:, 1], 1.0)
+deg = np.maximum(deg, 1.0)
+welded = ((P[:, 2] > 40) & (P[:, 2] < 131)).astype(float)
+
+
+def smooth_offsets(d, passes):
+    for _ in range(passes):
+        acc = np.zeros_like(d)
+        np.add.at(acc, E[:, 0], d[E[:, 1]])
+        np.add.at(acc, E[:, 1], d[E[:, 0]])
+        d = d + welded[:, None] * 0.5 * (acc / deg[:, None] - d)
+    return d
+
+
+rest = np.empty(n * 3)
+keys[0].data.foreach_get("co", rest)
+rest = rest.reshape(-1, 3)
+for k in keys[1:]:
+    co = np.empty(n * 3)
+    k.data.foreach_get("co", co)
+    d = co.reshape(-1, 3) - rest
+    if np.abs(d).max() > 1e-4:
+        k.data.foreach_set("co", (rest + smooth_offsets(d, LOOK["key_smooth"])).ravel())
 for k in keys:
     co = np.empty(n * 3)
     k.data.foreach_get("co", co)

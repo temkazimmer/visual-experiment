@@ -143,13 +143,19 @@ def mix(fa, fb, t):
 
 def ease(x): x = min(max(x, 0.0), 1.0); return x * x * (3 - 2 * x)
 
+# the stop settle (Gamma Walk_F_End): hips 3 cm low and 2 cm back as the feet stop, chest braked
+# ~3 deg back; the hips settle in 0.4 s, the head about half a second after them
+DIP, CREEP, BRAKE = globals().get("DIP", 3.0), globals().get("CREEP", 2.0), globals().get("BRAKE", 3.0)
+SETTLE_HIPS, SETTLE_HEAD = 0.4, 0.85
+BRAKE_AT, STOP_PAST = 0.25, 0.07     # s of walk clock: braking starts this long before T_STOP, ends this long after
+
 def up_and_walk():
     W = unreal.load_asset(WALK)
     opt = unreal.AnimPoseEvaluationOptions(); opt.set_editor_property("extract_root_motion", False)
     global WALK_CYCLE
     WALK_CYCLE = 0.0
     WALK_CYCLE = APE.get_bone_pose(APE.get_anim_pose_at_time(W, W.get_play_length(), opt), "root", unreal.AnimPoseSpaces.LOCAL).translation.y
-    T0, T_STOP, PUSH_T, IN_T, CLOSE_T, HOLD_T = 1.0, 2.1, 0.40, 0.35, 0.45, 0.15
+    T0, T_STOP, PUSH_T, IN_T, CLOSE_T, HOLD_T = 1.0, 2.1, 0.40, 0.35, 0.45, 0.85
     # the walk is placed so its planted right foot lands where her right foot rests in the lean
     build(LEAN); lean_r = pos("foot_r")[1]
     w0, tr0 = walk_pose(T0, W, opt); base_tr = tr0
@@ -163,18 +169,39 @@ def up_and_walk():
     stop_pose, stop_root = WP(T_STOP); walk_pose(T_STOP % W.get_play_length(), W, opt)
     left_rel = pos("foot_l")[1]
     build(STAND); stand_pose = snap(); stand_left = pos("foot_l")[1]
+    def settled(sec):
+        """The stop settle, measured on Gamma's Walk_F_End (learning log 2026-11-10): the feet are
+        planted, the hips are still low and a little behind, then rise and come over the feet
+        within 0.4 s; the chest braked back and comes forward later, so the head arrives last."""
+        hips, chest = ease(sec / SETTLE_HIPS), ease(sec / SETTLE_HEAD)
+        P = dict(STAND, pelvis=add(STAND["pelvis"], (0.0, -CREEP * (1 - chest), -DIP * (1 - hips))),
+                 lean_fwd=-BRAKE * (1 - chest), head_down=0.5 * BRAKE * (1 - chest))
+        build(P); return snap()
     RF = stop_root + left_rel - stand_left
     frames = []
     fps = float(FPS)
     push_keys = [(0.0, LEAN), (PUSH_T, PUSH)]
     total = PUSH_T + (T_STOP - T0) + CLOSE_T + HOLD_T
-    v_end = WALK_CYCLE / W.get_play_length()
+    # the walk's own clock slows to a stop over the last step (Gamma: from walking speed to still in
+    # ~0.3 s, never past the stop): from BRAKE_AT before T_STOP it runs on a monotone ease that ends
+    # STOP_PAST after T_STOP, where her hips sit over the idle's, so nothing has to slide back
+    brake_tau = PUSH_T + (T_STOP - T0) - BRAKE_AT
+    span, budget = BRAKE_AT + CLOSE_T, BRAKE_AT + STOP_PAST
+    m0 = min(span / budget, 3.0)
+    def walk_t(tau):
+        if tau <= brake_tau:
+            return T0 + (tau - PUSH_T)
+        x = min((tau - brake_tau) / span, 1.0)
+        return T_STOP - BRAKE_AT + budget * ((x ** 3 - 2 * x ** 2 + x) * m0 + (-2 * x ** 3 + 3 * x ** 2))
+    close_tau = PUSH_T + (T_STOP - T0)
+    _, r_a = WP(walk_t(close_tau)); _, r_b = WP(walk_t(close_tau + 1.0 / fps))
+    root_a, v_close = r_a, (r_b - r_a) * fps
     for f in range(int(round(total * fps)) + 1):
         tau = f / fps
         if tau <= PUSH_T:
             build(sample(push_keys, tau)); frames.append(placed(snap(), 0.0, 0.0)); continue
-        T = T0 + (tau - PUSH_T)
-        if tau <= PUSH_T + (T_STOP - T0):
+        T = walk_t(tau)
+        if tau <= close_tau:
             wp, wr = WP(T)
             x = (tau - PUSH_T) / IN_T
             if x < 1.0:                              # out of the push into the walk
@@ -184,16 +211,16 @@ def up_and_walk():
             else:
                 frames.append(placed(wp, wr, wr))
             continue
-        x = (tau - PUSH_T - (T_STOP - T0)) / CLOSE_T
+        x = (tau - close_tau) / CLOSE_T
         if x <= 1.0:                                 # the closing step, settling into the idle
-            wp, wr = WP(min(T, T_STOP + 0.15))
-            d = RF - stop_root
-            m0 = min(v_end * CLOSE_T, 3.0 * d)
+            wp, wr = WP(T)
+            d = RF - root_a
+            m1 = min(max(v_close * CLOSE_T, 0.0), 3.0 * d)
             xx = min(x, 1.0)
-            root = (2 * xx ** 3 - 3 * xx ** 2 + 1) * stop_root + (xx ** 3 - 2 * xx ** 2 + xx) * m0 + (-2 * xx ** 3 + 3 * xx ** 2) * RF
-            frames.append(mix(placed(wp, wr, root), placed(stand_pose, RF, root), ease(x)))
+            root = (2 * xx ** 3 - 3 * xx ** 2 + 1) * root_a + (xx ** 3 - 2 * xx ** 2 + xx) * m1 + (-2 * xx ** 3 + 3 * xx ** 2) * RF
+            frames.append(mix(placed(wp, wr, root), placed(settled(0.0), RF, root), ease(x)))
         else:
-            frames.append(placed(stand_pose, RF, RF))
+            frames.append(placed(settled(tau - close_tau - CLOSE_T), RF, RF))
     print("lean up: %.2f s, walks %.0f cm" % (total, RF))
     return frames
 
