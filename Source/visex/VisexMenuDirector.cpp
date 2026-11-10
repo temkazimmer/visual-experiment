@@ -686,21 +686,32 @@ void AVisexMenuDirector::ToggleMenu()
 
 void AVisexMenuDirector::SetCornerShade(float Weight)
 {
+	// a post-process material's blendable weight doesn't fade it: any weight above 0 draws it at
+	// full strength, so the old fade held the darkening to the last frame and popped it off at
+	// the hand-over (QA 0259/0269: luma 0.24 -> 0.38). Fade the material's own Strength instead.
 	UCineCameraComponent* Lens = GetLens();
 	UMaterialInterface* Mat = CornerShade.LoadSynchronous();
 	if (!Lens || !Mat)
 	{
 		return;
 	}
+	if (!CornerShadeMID)
+	{
+		CornerShadeMID = UMaterialInstanceDynamic::Create(Mat, this);
+		float Base = 0.f;
+		CornerShadeBase = Mat->GetScalarParameterValue(FName(TEXT("Strength")), Base) ? Base : 0.93f;
+	}
+	CornerShadeMID->SetScalarParameterValue(TEXT("Strength"), CornerShadeBase * FMath::Clamp(Weight, 0.f, 1.f));
+	const float BlendWeight = Weight > KINDA_SMALL_NUMBER ? 1.f : 0.f;
 	for (FWeightedBlendable& B : Lens->PostProcessSettings.WeightedBlendables.Array)
 	{
-		if (B.Object == Mat)
+		if (B.Object == CornerShadeMID)
 		{
-			B.Weight = Weight;
+			B.Weight = BlendWeight;
 			return;
 		}
 	}
-	Lens->PostProcessSettings.WeightedBlendables.Array.Add(FWeightedBlendable(Weight, Mat));
+	Lens->PostProcessSettings.WeightedBlendables.Array.Add(FWeightedBlendable(BlendWeight, CornerShadeMID));
 }
 
 void AVisexMenuDirector::ReframeMenu()

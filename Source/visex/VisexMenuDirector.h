@@ -400,6 +400,9 @@ private:
 	FTransform CameraBase;
 	FTransform LevelCamera;
 	void SetCornerShade(float Weight);
+	UPROPERTY(Transient)
+	TObjectPtr<class UMaterialInstanceDynamic> CornerShadeMID;
+	float CornerShadeBase = 0.93f;
 	bool bHaveLevelCamera = false;
 	bool bHaveBase = false;
 	bool bOrbiting = false;
