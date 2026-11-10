@@ -20,6 +20,14 @@ Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.t
   code works; D by key code doesn't turn her. Arrow keys only orbit a few degrees.
 - **Fix for next time:** have the layout set to ABC/US before the turnaround, or add a turnaround stop
   to the QA tour (in C++, no keys needed).
+- **Rerun with the layout switched to British (21:25):** hair PASS.
+  - The face lock at the 0276/0278 angle is solid dark strands, with no beige, no see-through and no
+    card lines (`turn/crops/face_lock_0281.png`).
+  - 3/4 and side views: clean, no ear spike, and the strands no longer look pale.
+  - The red under the strands at her right shoulder is the skin's dark-red shadow under her chin,
+    not a hair tint.
+  - Still left: one thin pale strand at the far edge in the side views (`head_turn_06/07`), and a
+    clump-cut lock in front of her left breast in 3/4 (`head_turn_03`).
 
 ## 2026-11-10 20:10 · VIS-EX-0278 Shipping (ab3ac2e) · regression PASS, hair backlog not fixed
 
