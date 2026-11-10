@@ -92,6 +92,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
 	float ReturnFadeTime = 0.3f;
 
+	/** Share of the stand-up after which the player can walk; the camera keeps circling meanwhile. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Start", meta = (ClampMin = "0", ClampMax = "1"))
+	float StandUpHandOver = 0.6f;
+
 	/** Which way round her the camera circles: 1 or -1. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Start")
 	int32 OrbitDirection = 1;
@@ -329,6 +333,7 @@ private:
 	bool bInputBound = false;
 	bool bStickHeld = false;
 	bool bPlaying = false;   // handed back to the player after Start
+	bool bWalkOffArmed = false;   // player has her mid stand-up: first stick push ends the clip
 	FVector MenuAim = FVector::ZeroVector;
 
 	// leaning on the column

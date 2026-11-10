@@ -495,8 +495,18 @@ void AVisexMenuDirector::StartGame()
 	}
 	bOpen = false;
 	FadeOut = 0.f;
-	// she pushes off the column while the camera circles round to her back
-	StandUp();
+	// she pushes off the column while the camera circles round to her back; the player gets
+	// her as soon as she's mostly on her feet, so walking and the camera move overlap
+	const float Up = StandUp();
+	GetWorldTimerManager().SetTimer(HandBackTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
+	{
+		APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+		if (PC && PC->GetPawn() && !bOpen)
+		{
+			PC->GetPawn()->EnableInput(PC);
+			bWalkOffArmed = true;
+		}
+	}), FMath::Max(0.05f, Up * StandUpHandOver), false);
 	// start of the orbit, in polar terms around her
 	const FVector Pivot = PC->GetPawn()->GetActorLocation();
 	const FVector S = MenuCamera->GetActorLocation() - Pivot;
@@ -515,6 +525,7 @@ void AVisexMenuDirector::HandBack()
 		PC->GetPawn()->EnableInput(PC);
 	}
 	SetColumnBlocksPawn(true);
+	bWalkOffArmed = false;   // the stand-up is over by now; don't cut whatever plays next
 	bPlaying = true;
 	OnGameStarted();
 }
@@ -753,6 +764,25 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 			+ Right * DriftDistance * FMath::Sin(Clock * W * 1.21f + 0.4f)
 			+ FVector::UpVector * 0.5f * DriftDistance * FMath::Sin(Clock * W * 0.91f + 2.1f);
 		MenuCamera->SetActorLocationAndRotation(Loc, Rot);
+	}
+
+	// the first push of the stick after the hand-over cuts the rest of the stand-up: its root
+	// motion would otherwise hold her in place while the player is already asking her to walk
+	if (bWalkOffArmed)
+	{
+		const APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0);
+		if (!Pawn || bOpen)
+		{
+			bWalkOffArmed = false;
+		}
+		else if (Pawn->GetLastMovementInputVector().SizeSquared() > 0.01f)
+		{
+			bWalkOffArmed = false;
+			if (UAnimInstance* Anim = GetPawnAnim())
+			{
+				Anim->StopSlotAnimation(0.3f, FName(TEXT("DefaultSlot")));
+			}
+		}
 	}
 
 	if (bOrbiting)
