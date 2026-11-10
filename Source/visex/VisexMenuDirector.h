@@ -131,6 +131,44 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Studio")
 	float RimIntensity = 35.f;
 
+	/** How much of the menu camera's distance to her is kept: 0.5 frames her twice as large.
+	 * The camera moves along the line to CameraAimHeight on her, so she stays where she is in frame. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera", meta = (ClampMin = "0.1", ClampMax = "1"))
+	float CameraPullIn = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
+	float CameraAimHeight = 115.f;
+
+	/** On the menu she leans on a fallen column, spawned behind her at Play (no level edit). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
+	bool bLeanOnColumn = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
+	TSoftObjectPtr<class UStaticMesh> LeanColumnMesh = TSoftObjectPtr<class UStaticMesh>(FSoftObjectPath(TEXT("/Game/VisEx/Geo/SM_Drum_0.SM_Drum_0")));
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
+	float LeanColumnRadius = 45.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
+	float LeanColumnLength = 320.f;
+
+	/** From her feet back to the column's near surface (cm); set to match the lean clip. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
+	float LeanColumnGap = 30.f;
+
+	/** How far along the column she sits, from its middle toward its left end (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
+	float LeanColumnShift = 60.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
+	TSoftObjectPtr<class UAnimSequence> LeanIdle = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Lean.A_Menu_Lean")));
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
+	TSoftObjectPtr<class UAnimSequence> LeanUp = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Lean_Up.A_Menu_Lean_Up")));
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
+	TSoftObjectPtr<class UAnimSequence> LeanDown = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Lean_Down.A_Menu_Lean_Down")));
+
 	/** Hides the menu and opens the body page; the menu comes back when it closes. */
 	UFUNCTION(BlueprintCallable, Category = "Menu")
 	void OpenBody();
@@ -210,6 +248,20 @@ private:
 	bool bOpen = false;
 	bool bInputBound = false;
 	bool bStickHeld = false;
+
+	// leaning on the column
+	void SpawnLeanColumn();
+	void Lean(bool bFromStanding);
+	/** Plays the push-off; returns its length in seconds (0 if she wasn't leaning). */
+	float StandUp();
+	void SetColumnBlocksPawn(bool bBlock);
+	class UAnimInstance* GetPawnAnim() const;
+	bool bLeaning = false;
+	bool bHaveLeaned = false;
+	void OpenBodyNow();
+	UPROPERTY(Transient)
+	TObjectPtr<AActor> LeanColumn;
+	FTimerHandle StandTimer;
 	float Clock = 0.f;
 	float FadeOut = -1.f;
 	FTimerHandle SetupTimer;

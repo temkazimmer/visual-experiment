@@ -16,6 +16,12 @@
 #include "Engine/SpotLight.h"
 #include "Engine/PostProcessVolume.h"
 #include "Engine/SkyLight.h"
+#include "Engine/StaticMesh.h"
+#include "Engine/StaticMeshActor.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimSequence.h"
+#include "Components/StaticMeshComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "EngineUtils.h"
 #include "Components/InputComponent.h"
 #include "Components/WidgetComponent.h"
@@ -103,9 +109,12 @@ void AVisexMenuDirector::ShowMenu()
 		Pawn->DisableInput(PC);
 	}
 	// the Start move flies MenuCamera away: remember where the shot lives
+	const FVector Aim = (StandIn ? StandIn->GetActorLocation() : PC->GetPawn()->GetActorLocation()) + FVector(0.f, 0.f, CameraAimHeight);
 	if (!bHaveBase)
 	{
 		CameraBase = MenuCamera->GetActorTransform();
+		// closer along the line to her, so she grows in place in the frame
+		CameraBase.SetLocation(Aim + (CameraBase.GetLocation() - Aim) * FMath::Clamp(CameraPullIn, 0.1f, 1.f));
 		bHaveBase = true;
 	}
 	MenuCamera->SetActorTransform(CameraBase);
@@ -120,7 +129,13 @@ void AVisexMenuDirector::ShowMenu()
 		}
 		Lens->SetCurrentFocalLength(MenuFocal);
 		Lens->SetCurrentAperture(MenuFStop);
+		FCameraFocusSettings Focus = Lens->FocusSettings;
+		Focus.ManualFocusDistance = FVector::Dist(CameraBase.GetLocation(), Aim);
+		Lens->FocusSettings = Focus;
 	}
+	SpawnLeanColumn();
+	Lean(bHaveLeaned);
+	bHaveLeaned = true;
 	bOrbiting = false;
 	PC->SetViewTarget(MenuCamera);
 	Clock = 0.f;
@@ -223,20 +238,45 @@ void AVisexMenuDirector::OpenBody()
 	{
 		return;
 	}
+	// she pushes off the column first; the page opens as she finds her feet
+	const float Up = StandUp();
+	if (Up > 0.f)
+	{
+		bOpen = false;
+		FadeOut = 0.f;
+		DisableInput(PC);
+		GetWorldTimerManager().SetTimer(StandTimer, this, &AVisexMenuDirector::OpenBodyNow, Up * 0.8f, false);
+		return;
+	}
+	OpenBodyNow();
+}
+
+void AVisexMenuDirector::OpenBodyNow()
+{
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	if (!PC)
+	{
+		return;
+	}
 	if (!BodyEditor)
 	{
 		UClass* Cls = BodyEditorClass ? BodyEditorClass.Get() : AVisexBodyEditor::StaticClass();
 		BodyEditor = GetWorld()->SpawnActor<AVisexBodyEditor>(Cls, GetActorTransform());
-		if (!BodyEditor)
+		if (BodyEditor)
 		{
-			return;
+			BodyEditor->OnClosed.AddDynamic(this, &AVisexMenuDirector::HandleBodyClosed);
 		}
-		BodyEditor->OnClosed.AddDynamic(this, &AVisexMenuDirector::HandleBodyClosed);
 	}
-	BodyEditor->Open();
-	if (!BodyEditor->IsOpen())
+	if (BodyEditor)
 	{
-		return;   // no body to edit on this pawn: stay on the menu
+		BodyEditor->Open();
+	}
+	if (!BodyEditor || !BodyEditor->IsOpen())
+	{
+		// no body to edit on this pawn: back to the menu
+		EnableInput(PC);
+		ShowMenu();
+		return;
 	}
 	bStudio = true;
 	// the menu steps aside while the body page has the screen
@@ -273,6 +313,8 @@ void AVisexMenuDirector::StartGame()
 	}
 	bOpen = false;
 	FadeOut = 0.f;
+	// she pushes off the column while the camera circles round to her back
+	StandUp();
 	// start of the orbit, in polar terms around her
 	const FVector Pivot = PC->GetPawn()->GetActorLocation();
 	const FVector S = MenuCamera->GetActorLocation() - Pivot;
@@ -290,7 +332,116 @@ void AVisexMenuDirector::HandBack()
 	{
 		PC->GetPawn()->EnableInput(PC);
 	}
+	SetColumnBlocksPawn(true);
 	OnGameStarted();
+}
+
+UAnimInstance* AVisexMenuDirector::GetPawnAnim() const
+{
+	const ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	return Char && Char->GetMesh() ? Char->GetMesh()->GetAnimInstance() : nullptr;
+}
+
+void AVisexMenuDirector::SpawnLeanColumn()
+{
+	const ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	if (LeanColumn || !bLeanOnColumn || !Char)
+	{
+		return;
+	}
+	UStaticMesh* Mesh = LeanColumnMesh.LoadSynchronous();
+	if (!Mesh)
+	{
+		return;
+	}
+	// a drum lying across behind her, its top at her hip
+	const FVector Feet = Char->GetActorLocation() - FVector(0.f, 0.f, Char->GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+	const FVector Fwd = Char->GetActorForwardVector().GetSafeNormal2D();
+	const FVector Right = FVector::CrossProduct(FVector::UpVector, Fwd);
+	const FVector Centre = Feet - Fwd * (LeanColumnGap + LeanColumnRadius) + Right * LeanColumnShift
+		+ FVector(0.f, 0.f, LeanColumnRadius - 3.f);   // settled a little into the sand
+
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AStaticMeshActor* Column = GetWorld()->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), FTransform(Centre), Params);
+	if (!Column)
+	{
+		return;
+	}
+	UStaticMeshComponent* Comp = Column->GetStaticMeshComponent();
+	Comp->SetMobility(EComponentMobility::Movable);
+	Comp->SetStaticMesh(Mesh);
+	// the drum's length runs along her left-right; the stone's own size is 50 cm radius, 100 cm long
+	Column->SetActorRotation(FRotationMatrix::MakeFromZX(Right, Fwd).Rotator());
+	Column->SetActorScale3D(FVector(LeanColumnRadius / 50.f, LeanColumnRadius / 50.f, LeanColumnLength / 100.f));
+	FVector Origin, Extent;
+	Column->GetActorBounds(false, Origin, Extent);
+	Column->AddActorWorldOffset(Centre - Origin);
+	LeanColumn = Column;
+	SetColumnBlocksPawn(false);
+}
+
+void AVisexMenuDirector::SetColumnBlocksPawn(bool bBlock)
+{
+	if (const AStaticMeshActor* Column = Cast<AStaticMeshActor>(LeanColumn))
+	{
+		// while she leans her capsule sits partly inside it
+		Column->GetStaticMeshComponent()->SetCollisionResponseToChannel(ECC_Pawn, bBlock ? ECR_Block : ECR_Ignore);
+	}
+}
+
+void AVisexMenuDirector::Lean(bool bFromStanding)
+{
+	GetWorldTimerManager().ClearTimer(StandTimer);
+	UAnimInstance* Anim = GetPawnAnim();
+	UAnimSequence* Idle = bLeanOnColumn ? LeanIdle.LoadSynchronous() : nullptr;
+	if (!Anim || !Idle)
+	{
+		bLeaning = false;
+		return;
+	}
+	SetColumnBlocksPawn(false);
+	bLeaning = true;
+	static const FName Slot(TEXT("DefaultSlot"));
+	UAnimSequence* Down = bFromStanding ? LeanDown.LoadSynchronous() : nullptr;
+	if (Down)
+	{
+		Anim->PlaySlotAnimationAsDynamicMontage(Down, Slot, 0.25f, 0.f, 1.f, 1);
+		GetWorldTimerManager().SetTimer(StandTimer, FTimerDelegate::CreateWeakLambda(this, [this, Idle]()
+		{
+			if (UAnimInstance* A = GetPawnAnim())
+			{
+				A->PlaySlotAnimationAsDynamicMontage(Idle, Slot, 0.f, 0.3f, 1.f, 1000000);
+			}
+		}), Down->GetPlayLength(), false);
+	}
+	else
+	{
+		Anim->PlaySlotAnimationAsDynamicMontage(Idle, Slot, 0.3f, 0.3f, 1.f, 1000000);
+	}
+}
+
+float AVisexMenuDirector::StandUp()
+{
+	if (!bLeaning)
+	{
+		return 0.f;
+	}
+	bLeaning = false;
+	GetWorldTimerManager().ClearTimer(StandTimer);
+	UAnimInstance* Anim = GetPawnAnim();
+	if (!Anim)
+	{
+		return 0.f;
+	}
+	static const FName Slot(TEXT("DefaultSlot"));
+	if (UAnimSequence* Up = LeanUp.LoadSynchronous())
+	{
+		Anim->PlaySlotAnimationAsDynamicMontage(Up, Slot, 0.15f, 0.35f, 1.f, 1);
+		return Up->GetPlayLength();
+	}
+	Anim->StopSlotAnimation(0.4f, Slot);
+	return 0.4f;
 }
 
 void AVisexMenuDirector::Tick(float DeltaSeconds)
