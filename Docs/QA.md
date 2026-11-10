@@ -7,6 +7,16 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-10 19:35 · VIS-EX-0273 Shipping (0ee4182) · PASS, release
+
+- **Orbit landing is smooth now.** The corner shade fades its own Strength (7a92c5a). Luma eases
+  0.597 → 0.448 → 0.401 → 0.387 → 0.383 → 0.379 over about 1 s and settles where 0269 jumped to,
+  with no step. Frames are in `QA_0273ship/orbit/`.
+- **Photo mode:** on ground at z 145. Walk, Run and Feetup play, and P writes a 3840×2160 HighResShot.
+- **Escape** returns to the lit menu.
+- **No crash** in the tour or the plain launch.
+- **Not rechecked in this fast pass:** hair front view, skin, and wind.
+
 ## 2026-11-10 19:30 · VIS-EX-0269 Shipping (b317694) · FAIL on one item: the orbit landing still pops
 
 - **Orbit landing:** same pop as 0259, despite the 0.6 s blend (7c31bac). At 14.7 → 15.0 s, with
