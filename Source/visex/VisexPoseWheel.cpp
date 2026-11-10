@@ -579,6 +579,89 @@ void UVisexPoseWheelComponent::UpdateContacts(float DeltaTime)
 	Anim->HandFixL = Up * HandFixZL;
 	Anim->HandFixR = Up * HandFixZR;
 
+	// Arms through nothing. The forearm and hand are swept through the world as a thin ball, and
+	// the palm is held outside her own thighs, calves and head (capsules with the skin's own
+	// radius). Whatever is inside is pushed out along the surface, eased, through the same
+	// two-bone reach as the contact fix; a hand resting on a thigh stays resting on it.
+	{
+		static const FName ArmBones[2][4] = {{TEXT("upperarm_l"), TEXT("lowerarm_l"), TEXT("hand_l"), TEXT("middle_01_l")},
+		                                     {TEXT("upperarm_r"), TEXT("lowerarm_r"), TEXT("hand_r"), TEXT("middle_01_r")}};
+		static const FName Limbs[5][2] = {{TEXT("thigh_l"), TEXT("calf_l")}, {TEXT("thigh_r"), TEXT("calf_r")}, {TEXT("calf_l"), TEXT("foot_l")}, {TEXT("calf_r"), TEXT("foot_r")}, {TEXT("head"), NAME_None}};
+		// the clothes over her skin, cm (from the clothes session, reference pose): the bodystocking
+		// is 0.6 proud everywhere; a skirt is 1.6 at the hip and eases out to 4 at its hem, which
+		// hangs about a third of the way down the thigh; below the hem the thigh is bare stocking
+		// the skirt is its own cloth component, "OutfitCloth", added by the body component for the
+		// skirt outfit and destroyed for any other (skinned, not simulated, while visex.ClothSim is 0)
+		bool bSkirt = false;
+		for (const UActorComponent* Piece : Character->GetComponents())
+		{
+			if (Piece && Piece->GetFName() == TEXT("OutfitCloth"))
+			{
+				const UPrimitiveComponent* Prim = Cast<UPrimitiveComponent>(Piece);
+				bSkirt = !Prim || (Prim->IsVisible() && !Prim->bHiddenInGame);   // only a skirt she's wearing is thickness
+			}
+		}
+		const auto Clothes = [bSkirt](const FName& Bone, float Along)
+		{
+			const bool bThigh = Bone == TEXT("thigh_l") || Bone == TEXT("thigh_r");
+			if (!bThigh || !bSkirt)
+			{
+				return 0.6f;
+			}
+			constexpr float Hem = 0.32f;
+			if (Along <= Hem) { return FMath::Lerp(1.6f, 4.0f, Along / Hem); }
+			return FMath::Lerp(4.0f, 0.6f, FMath::Clamp((Along - Hem) / 0.1f, 0.f, 1.f));
+		};
+		FCollisionQueryParams ArmParams(SCENE_QUERY_STAT(VisexArm), false, Character);
+		const FCollisionShape Ball = FCollisionShape::MakeSphere(4.f);
+		for (int32 i = 0; i < 2; ++i)
+		{
+			FVector Push = FVector::ZeroVector;
+			const FVector Elbow = Mesh->GetSocketLocation(ArmBones[i][1]), Wrist = Mesh->GetSocketLocation(ArmBones[i][2]);
+			const FVector Palm = Mesh->DoesSocketExist(ArmBones[i][3]) ? Mesh->GetSocketLocation(ArmBones[i][3]) : Wrist;
+			for (const TPair<FVector, FVector>& Seg : {TPair<FVector, FVector>(Mesh->GetSocketLocation(ArmBones[i][0]), Elbow), TPair<FVector, FVector>(Elbow, Palm)})
+			{
+				FHitResult Hit;
+				if (!GetWorld()->SweepSingleByChannel(Hit, Seg.Key, Seg.Value, FQuat::Identity, ECC_Visibility, Ball, ArmParams))
+				{
+					continue;
+				}
+				if (Hit.ImpactNormal.Z > 0.7f || Hit.Normal.Z > 0.7f)
+				{
+					continue;   // the ground: arms rest on it in the floor poses, and the contact pass owns that
+				}
+				if (Hit.bStartPenetrating)
+				{
+					Push += Hit.Normal * (Hit.PenetrationDepth + 1.f);
+				}
+				else
+				{
+					const float Beyond = float((Seg.Value - Hit.Location) | -Hit.ImpactNormal); // how deep the rest of the segment goes
+					if (Beyond > 0.f) { Push += Hit.ImpactNormal * (Beyond + 1.f); }
+				}
+			}
+			for (const auto& Limb : Limbs)
+			{
+				const FVector A = Mesh->GetSocketLocation(Limb[0]);
+				const FVector B = Limb[1].IsNone() ? A + Mesh->GetSocketRotation(Limb[0]).RotateVector(FVector::XAxisVector) * 14.f : Mesh->GetSocketLocation(Limb[1]);
+				const FVector C = FMath::ClosestPointOnSegment(Palm, A, B);
+				const float Along = float(((C - A) | (B - A)) / FMath::Max((B - A).SizeSquared(), 1.0));
+				const float R = Probe.Radius(Mesh, Limb[0], Along, Palm - C);
+				if (R <= 0.f) { continue; }
+				const FVector D = Palm - C;
+				const float Dist = float(D.Size()), Want = R + Clothes(Limb[0], Along) + 1.5f; // skin, clothes, the palm's own half thickness
+				if (Dist > 0.1f && Dist < Want)
+				{
+					Push += D / Dist * (Want - Dist);
+				}
+			}
+			ArmPush[i] = FMath::VInterpTo(ArmPush[i], Push.GetClampedToMaxSize(25.f), DeltaTime, Push.IsNearlyZero() ? 4.f : 10.f);
+			(i == 0 ? ArmPushL : ArmPushR) = float(ArmPush[i].Size());
+		}
+		Anim->HandFixL += Mesh->GetComponentTransform().InverseTransformVector(ArmPush[0]);
+		Anim->HandFixR += Mesh->GetComponentTransform().InverseTransformVector(ArmPush[1]);
+	}
+
 	// hips, and the rest of the lower body as a floor guard
 	FVector Seat, Body;
 	double SZ = 0.0, BZ = 0.0;

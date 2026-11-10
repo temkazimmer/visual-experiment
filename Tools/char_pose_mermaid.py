@@ -52,7 +52,7 @@ def limb(up, lo, end, target, pole_pt):
     a = (l1 * l1 - l2 * l2 + d * d) / (2 * d)
     hgt = math.sqrt(max(l1 * l1 - a * a, 0.0))
     joint = add(add(s, mul(u, a)), mul(norm(perp(sub(pole_pt, s), u)), hgt))
-    n0 = cross(sub(pos(lo), s), sub(pos(end), pos(lo)))
+    n0 = hinge(up)                                          # the knee's own axis (char_pose_peace.py)
     n1 = cross(sub(joint, s), sub(add(s, mul(u, d)), joint))
     rotate(up, align2(sub(pos(lo), s), n0, sub(joint, s), n1))
     aim_at(lo, end, add(s, mul(u, d)))
@@ -163,19 +163,30 @@ def build(P):
         _cache.clear()
     return lift
 
+# Lead and follow. Between two keys every number used to move on the same clock, which reads
+# as a figure being posed. In a real move the hands and the gaze go first, the trunk next, and
+# the hips settle last, so each part of a key is read a little ahead of (+) or behind (-) the
+# clock. Clips are padded by PAD at both ends so the offsets stay inside the rest keys.
+LEAD = {"plant": 0.30, "hip": 0.30, "prop": 0.30, "arms": 0.30,
+        "head_tilt": 0.20, "head_down": 0.20, "head_left": 0.20,
+        "lean_left": 0.10, "lean_fwd": 0.10, "twist_left": 0.10,
+        "pelvis": -0.20, "roll": -0.20, "pitch": -0.20, "yaw": -0.20}
+PAD = 0.30
+
 def sample(keys, t):
-    """Cubic Hermite through the keys, at rest at both ends."""
+    """Cubic Hermite through the keys, at rest at both ends, each part on its own clock."""
     ts = [k[0] for k in keys]
-    i = max(j for j in range(len(ts) - 1) if ts[j] <= t + 1e-9)
-    t0, t1 = ts[i], ts[i + 1]
-    x = min(max((t - t0) / (t1 - t0), 0.0), 1.0)
-    h00, h10, h01, h11 = 2 * x ** 3 - 3 * x ** 2 + 1, x ** 3 - 2 * x ** 2 + x, -2 * x ** 3 + 3 * x ** 2, x ** 3 - x ** 2
     def slope(name, c, j):
         if j == 0 or j == len(keys) - 1:
             return 0.0
         get = lambda k: keys[k][1][name] if c is None else keys[k][1][name][c]
         return (get(j + 1) - get(j - 1)) / (ts[j + 1] - ts[j - 1])
     def one(name, c):
+        tn = min(max(t + LEAD.get(name, 0.0), 0.0), ts[-1])
+        i = max(j for j in range(len(ts) - 1) if ts[j] <= tn + 1e-9)
+        t0, t1 = ts[i], ts[i + 1]
+        x = min(max((tn - t0) / (t1 - t0), 0.0), 1.0)
+        h00, h10, h01, h11 = 2 * x ** 3 - 3 * x ** 2 + 1, x ** 3 - 2 * x ** 2 + x, -2 * x ** 3 + 3 * x ** 2, x ** 3 - x ** 2
         a = keys[i][1][name] if c is None else keys[i][1][name][c]
         b = keys[i + 1][1][name] if c is None else keys[i + 1][1][name][c]
         return h00 * a + h10 * (t1 - t0) * slope(name, c, i) + h01 * b + h11 * (t1 - t0) * slope(name, c, i + 1)
@@ -187,8 +198,8 @@ def sample(keys, t):
 
 def clip(keys):
     frames = []
-    for f in range(int(round(keys[-1][0] * FPS)) + 1):
-        build(sample(keys, f / FPS))
+    for f in range(int(round((keys[-1][0] + 2 * PAD) * FPS)) + 1):
+        build(sample(keys, f / FPS - PAD))
         frames.append({b: (local[b][0], local[b][1], local[b][2]) for b in bones})
     return frames
 

@@ -149,13 +149,67 @@ def reach(side, wrist, pole):
     a = (l1 * l1 - l2 * l2 + d * d) / (2 * d)
     hgt = math.sqrt(max(l1 * l1 - a * a, 0.0))
     elbow = add(add(s, mul(u, a)), mul(norm(perp(pole, u)), hgt))
-    n0 = cross(sub(pos(lo), s), sub(pos(h), pos(lo)))
+    n0 = hinge(up)                                          # the elbow's own axis, not the current bend plane
     n1 = cross(sub(elbow, s), sub(add(s, mul(u, d)), elbow))
     rotate(up, align2(sub(pos(lo), s), n0, sub(elbow, s), n1))
     aim_at(lo, h, add(s, mul(u, d)))
+def aim_hinged(up, lo, end, lo_dir):
+    """Point `lo` along lo_dir by bending about the joint's own hinge: `up` first turns about its
+    axis so the hinge is normal to the bend plane, then `lo` aims. A knee turned in this way is hip
+    rotation, not a sideways knee (Peace's free leg read 36 deg of knee valgus in the limits audit)."""
+    u = norm(sub(pos(lo), pos(up)))
+    n1 = norm(cross(u, norm(lo_dir)))
+    h = norm(perp(hinge(up), u))
+    ang = math.degrees(math.atan2(dot(cross(h, n1), u), dot(h, n1)))
+    rotate(up, axis_angle(u, ang))
+    aim(lo, end, lo_dir)
+def hinge(up):
+    """The joint axis below `up` (elbow, knee), in world space, as the idle pose has it. Two-bone IK
+    turns the upper bone so this axis is normal to the new bend plane: the lower bone then bends
+    about the real hinge instead of sideways (a knee bent 36 deg sideways showed in the limits audit)."""
+    return rot(world(up)[1], HINGE_LOCAL[up])
+HINGE_LOCAL = {}
+for _up, _lo, _end in (("upperarm_l", "lowerarm_l", "hand_l"), ("upperarm_r", "lowerarm_r", "hand_r"),
+                       ("thigh_l", "calf_l", "foot_l"), ("thigh_r", "calf_r", "foot_r")):
+    HINGE_LOCAL[_up] = rot(qinv(world(_up)[1]), norm(cross(sub(pos(_lo), pos(_up)), sub(pos(_end), pos(_lo)))))
 def share_twist(side):
-    """Spread the wrist's twist along the forearm so the skin doesn't candy-wrap."""
-    h = "hand_" + side
+    """Spread the wrist's twist along the forearm so the skin doesn't candy-wrap. First, what the
+    wrist can't carry goes to the forearm bone: the hand turns 35 deg one way and 135 the other off
+    the reference (the forearm's 160 of pronation/supination, VisexAnimInstance's limits), and the
+    mocap turns the lowerarm bone itself up to 60. The forearm turns about its own axis and the hand
+    is put back where it was, so nothing moves but the forearm's skin (menu lean: 174 -> 125)."""
+    h, lo = "hand_" + side, "lowerarm_" + side
+    for b in (h, lo):
+        if b not in REF_LOCAL:
+            r = unreal.VisexAnimInstanceLibrary.ref_pose_local_rotation(idle.get_editor_property("skeleton"), b)
+            REF_LOCAL[b] = (r.x, r.y, r.z, r.w)
+    up = "upperarm_" + side
+    hand_twist = lambda: twist_x(qmul(qinv(REF_LOCAL[h]), local[h][1]))
+    flip = 1.0
+    for _ in range(4):
+        t = hand_twist()
+        e = t - min(max(t, HAND_TWIST[0] + 10.0), HAND_TWIST[1] - 10.0)
+        if abs(e) < 0.5:
+            break
+        keep = world(h)[1]
+        lt = twist_x(qmul(qinv(REF_LOCAL[lo]), local[lo][1]))
+        give = min(max(lt + e, -LOWERARM_TWIST), LOWERARM_TWIST) - lt     # what the forearm can take
+        if abs(give) > 0.01:
+            rotate(lo, axis_angle(rot(world(lo)[1], X), give))
+            set_world_rot(h, keep)
+        rest = e - give
+        if abs(rest) < 0.5:
+            break
+        # what's left turns the whole arm about the shoulder-to-wrist line (the elbow swings, the
+        # wrist and the hand stay), which is what a shoulder does when a wrist runs out of turn
+        axis = norm(sub(pos(h), pos(up)))
+        before = abs(hand_twist())
+        rotate(up, axis_angle(axis, -flip * rest))
+        set_world_rot(h, keep)
+        if abs(hand_twist()) > before:                      # wrong way round: undo and go the other way
+            rotate(up, axis_angle(axis, 2.0 * flip * rest))
+            set_world_rot(h, keep)
+            flip = -flip
     delta = qmul(local[h][1], qinv(IDLE_LOCAL[h]))          # in the forearm's frame
     axis = norm(local[h][0])                                # forearm's long axis
     p = dot((delta[0], delta[1], delta[2]), axis)
@@ -169,6 +223,20 @@ def share_twist(side):
     _cache.clear()
 
 IDLE_LOCAL = {b: local[b][1] for b in bones}
+def toe_dir0(s): return norm(sub(pos("ball_" + s), pos("foot_" + s)))
+SOLE0 = {s: rot(qinv(world("foot_" + s)[1]), norm(perp(neg(Z), toe_dir0(s)))) for s in "lr"}   # the sole's normal, in the foot
+def set_foot(s, toe, sole):
+    """Point the foot's toes along `toe` with the sole facing `sole`: the ankle's roll is set, not
+    left to a minimal rotation (Peace's kicked-back foot came out rolled 71 deg)."""
+    f = "foot_" + s
+    rotate(f, align2(toe_dir0(s), rot(world(f)[1], SOLE0[s]), norm(toe), norm(perp(sole, norm(toe)))))
+REF_LOCAL = {}                                              # the skeleton's reference pose, read on demand
+HAND_TWIST, LOWERARM_TWIST = (-35.0, 135.0), 75.0
+def twist_x(q):
+    """Turn about the bone's own X axis, as the C++ limits read it (swing-twist, degrees)."""
+    if q[3] < 0:
+        q = tuple(-c for c in q)
+    return 2.0 * math.degrees(math.atan2(q[0], q[3]))
 foot_l_at, foot_l_rot = pos("foot_l"), world("foot_l")[1]
 head_rot0 = world("head")[1]
 
@@ -182,8 +250,8 @@ aim_at("thigh_l", "foot_l", foot_l_at)
 set_world_rot("foot_l", foot_l_rot)
 # free leg: knee in beside the other, heel kicked back
 aim("thigh_r", "calf_r", (0.20, 0.30, -1.0))
-aim("calf_r", "foot_r", (-0.35, -1.0, 0.20))
-aim("foot_r", "ball_r", (0.0, -0.55, -0.85))
+aim_hinged("thigh_r", "calf_r", "foot_r", (-0.35, -1.0, 0.20))
+set_foot("r", (0.0, -0.55, -0.85), (0.0, -0.85, 0.55))        # toes down and back, the sole facing back and up
 
 # spine: counter the hips, lean in a touch, bring the right shoulder forward
 for b in ("spine_01", "spine_02", "spine_03", "spine_04", "spine_05"):

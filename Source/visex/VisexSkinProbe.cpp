@@ -63,6 +63,48 @@ bool FVisexSkinProbe::Build(const USkeletalMeshComponent* Component)
 	const FVector PelvisAt = RefCS[Pelvis].GetLocation(), KneeAt = RefCS[CalfL].GetLocation();
 	const auto Named = [&](int32 b, const TCHAR* Prefix) { return RefSkel.GetBoneName(b).ToString().StartsWith(Prefix); };
 
+	// limb radii: the furthest skin from the bone's axis, sampled along it
+	constexpr int32 RadiusBins = 6;
+	Radii.Reset();
+	Frames.Reset();
+	RefRots.Reset();
+	constexpr int32 RadiusSectors = 8;
+	struct FLimb { int32 Bone; FVector A, Dir, U, V; float Len; TArray<float> R; };
+	TArray<FLimb> Limbs;
+	for (const TCHAR* Name : {TEXT("thigh_l"), TEXT("thigh_r"), TEXT("calf_l"), TEXT("calf_r"), TEXT("upperarm_l"), TEXT("upperarm_r"), TEXT("lowerarm_l"), TEXT("lowerarm_r"), TEXT("head")})
+	{
+		const int32 B = RefSkel.FindBoneIndex(Name);
+		if (B == INDEX_NONE) { continue; }
+		int32 Child = INDEX_NONE;
+		for (int32 b = 0; b < NumBones && Child == INDEX_NONE; ++b)
+		{
+			if (RefSkel.GetParentIndex(b) == B && !RefSkel.GetBoneName(b).ToString().Contains(TEXT("twist"))) { Child = b; }
+		}
+		FLimb L; L.Bone = B; L.A = RefCS[B].GetLocation();
+		const FVector End = Child != INDEX_NONE && FCString::Strcmp(Name, TEXT("head")) != 0 ? RefCS[Child].GetLocation() : L.A + FVector(0, 0, 14.0);
+		L.Dir = (End - L.A).GetSafeNormal(); L.Len = FMath::Max(float((End - L.A).Size()), 1.f);
+		// sectors are counted in the bone's own frame, so they mean the same at runtime
+		L.U = (RefCS[B].GetRotation().GetAxisY() - L.Dir * (RefCS[B].GetRotation().GetAxisY() | L.Dir)).GetSafeNormal();
+		L.V = FVector::CrossProduct(L.Dir, L.U);
+		L.R.Init(0.f, RadiusBins * RadiusSectors);
+		Limbs.Add(L);
+	}
+	const auto Measure = [&](const FVert& V, int32 B)
+	{
+		for (FLimb& L : Limbs)
+		{
+			if (!Under(B, L.Bone)) { continue; }
+			const FVector P(V.Ref);
+			const float Along = float((P - L.A) | L.Dir);
+			if (Along < 0.f || Along > L.Len) { continue; }
+			const FVector Out = P - L.A - L.Dir * Along;
+			const float R = float(Out.Size());
+			const int32 Sector = (int32(FMath::Floor((FMath::Atan2(float(Out | L.V), float(Out | L.U)) + PI) / (2.f * PI) * RadiusSectors)) % RadiusSectors + RadiusSectors) % RadiusSectors;
+			float& Bin = L.R[FMath::Clamp(int32(Along / L.Len * RadiusBins), 0, RadiusBins - 1) * RadiusSectors + Sector];
+			Bin = FMath::Max(Bin, R);
+		}
+	};
+
 	TArray<FVert> All[Num];
 	const auto Take = [&](const FVert& V)
 	{
@@ -73,6 +115,7 @@ bool FVisexSkinProbe::Build(const USkeletalMeshComponent* Component)
 		}
 		const int32 B = V.Bone[Dom];
 		const FVector P(V.Ref);
+		Measure(V, B);
 		// the palm: the hand bone and the metacarpals, not the fingers (they curl over edges)
 		const bool bPalm = Named(B, TEXT("hand_")) || RefSkel.GetBoneName(B).ToString().Contains(TEXT("metacarpal"));
 		if (Under(B, BoneHandL)) { if (bPalm) { All[FVisexSkinProbe::HandL].Add(V); } return; }
@@ -151,6 +194,22 @@ bool FVisexSkinProbe::Build(const USkeletalMeshComponent* Component)
 		}
 	}
 
+	for (FLimb& L : Limbs)
+	{
+		// an empty sector (no skin there in the reference mesh) borrows its neighbours
+		for (int32 b = 0; b < RadiusBins; ++b)
+		{
+			for (int32 k = 0; k < RadiusSectors; ++k)
+			{
+				float& R = L.R[b * RadiusSectors + k];
+				if (R <= 0.f) { R = FMath::Max(L.R[b * RadiusSectors + (k + 1) % RadiusSectors], L.R[b * RadiusSectors + (k + RadiusSectors - 1) % RadiusSectors]); }
+			}
+		}
+		Radii.Add(RefSkel.GetBoneName(L.Bone), L.R);
+		Frames.Add(RefSkel.GetBoneName(L.Bone), FMatrix(L.Dir, L.U, L.V, FVector::ZeroVector)); // rows: along, U, V in the ref component frame
+		RefRots.Add(RefSkel.GetBoneName(L.Bone), RefCS[L.Bone].GetRotation());
+	}
+
 	// an even spread of each region, capped
 	for (int32 r = 0; r < Num; ++r)
 	{
@@ -196,4 +255,28 @@ bool FVisexSkinProbe::Lowest(const USkeletalMeshComponent* Component, ERegion Re
 		}
 	}
 	return true;
+}
+
+float FVisexSkinProbe::Radius(const USkeletalMeshComponent* Component, FName Bone, float Along01, const FVector& OutWorld) const
+{
+	const TArray<float>* R = Radii.Find(Bone);
+	const FMatrix* F = Frames.Find(Bone);
+	const int32 BoneIndex = Component && Component->GetSkeletalMeshAsset() ? Component->GetSkeletalMeshAsset()->GetRefSkeleton().FindBoneIndex(Bone) : INDEX_NONE;
+	if (!R || !F || R->Num() == 0 || BoneIndex == INDEX_NONE)
+	{
+		return 0.f;
+	}
+	constexpr int32 Sectors = 8;
+	const int32 Bins = R->Num() / Sectors;
+	// the outward direction in the bone's current frame, matched to the sectors of its reference frame
+	const FQuat BoneNow = Component->GetBoneQuaternion(Bone, EBoneSpaces::ComponentSpace);
+	const FQuat* BoneRef = RefRots.Find(Bone);
+	if (!BoneRef) { return 0.f; }
+	const FVector OutLocal = BoneNow.UnrotateVector(Component->GetComponentTransform().InverseTransformVectorNoScale(OutWorld));
+	const FVector OutRef = BoneRef->RotateVector(OutLocal);
+	const float A = FMath::Atan2(float(OutRef | F->GetScaledAxis(EAxis::Z)), float(OutRef | F->GetScaledAxis(EAxis::Y)));
+	const int32 Sector = (int32(FMath::Floor((A + PI) / (2.f * PI) * Sectors)) % Sectors + Sectors) % Sectors;
+	const float X = FMath::Clamp(Along01, 0.f, 1.f) * (Bins - 1);
+	const int32 I = FMath::Clamp(int32(X), 0, Bins - 2);
+	return FMath::Lerp((*R)[I * Sectors + Sector], (*R)[(I + 1) * Sectors + Sector], X - I);
 }

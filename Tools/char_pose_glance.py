@@ -44,7 +44,7 @@ ARMS = glance_arms
 ANKLE_L, TOE_L = (-25.8, 11.0, 5.5), (-0.95, -0.30, 0.0)
 ANKLE_R, TOE_R = (-33.3, -9.8, 5.6), (-0.70, -0.70, -0.05)
 for k in (STAND, STEP, HALF, KNEEL):
-    k.update(plant=(-20.0, 30.0, 6.0), hip=(13.0, -9.0, 7.0))
+    k.update(plant=(-20.0, 30.0, 6.0), hip=(16.0, -9.0, 7.0))     # 3 cm further out: the palm sat inside the thigh
 GLANCE = dict(KNEEL, pelvis=(14.0, -13.0, 16.0), roll=6.0, pitch=-8.0, yaw=-35.0,
               ball_l=ball_from("l", ANKLE_L, TOE_L), toe_l=TOE_L, sole_l=(0.3, -0.9, 0.3), knee_l=(13.0, 27.0, 5.5),
               ball_r=ball_from("r", ANKLE_R, TOE_R), toe_r=TOE_R, sole_r=(0.5, -0.6, 0.6), knee_r=(-8.0, 24.0, 9.0),

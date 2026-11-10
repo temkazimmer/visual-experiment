@@ -59,7 +59,7 @@ def lean_arms(P):
         pt, n = on_stone(side * P["hand_x"], P["hand_deg"])
         wrist = add(pt, mul(n, PALM_OFF))       # the wrist bone sits this far off the stone: palm thickness
         fingers = norm(lerp(cross((1.0, 0.0, 0.0), n), (0.0, 0.0, -1.0), FINGER_DIP))  # along the stone
-        fingers = norm(add(fingers, (side * -0.15, 0.0, 0.0)))
+        fingers = norm(add(fingers, (side * 0.8, 0.0, 0.0)))     # fingers forward-outward: straight ahead needed 96 deg at the wrist
         reach(s, wrist, (side * 0.6, -1.0, 0.2))
         set_hand(s, fingers, neg(n))
         share_twist(s)

@@ -28,6 +28,12 @@ private:
 	void Catwalk(FCompactPose& Pose);
 	void Alive(FCompactPose& Pose);
 	void Contact(FCompactPose& Pose);
+	void Limits(FCompactPose& Pose);
+
+public:
+	virtual void PostUpdate(UAnimInstance* InAnimInstance) const override;
+
+private:
 
 	FVisexBodyProfile Profile;
 	bool bHasProfile = false;
@@ -59,6 +65,12 @@ private:
 	float HoldClock = 0.f;  // seconds of hold time; the breath and drift run on it
 
 	FVector HandFix[2] = {FVector::ZeroVector, FVector::ZeroVector}; // copied from the instance
+
+	// joint limits (visex.Limits): the worst excess this frame, reported to the instance
+	bool bLimits = true;
+	float LimitWorst = 0.f;
+	FName LimitWorstBone;
+	FString LimitReportBuf;
 };
 
 UCLASS(Transient, Blueprintable)
@@ -92,6 +104,18 @@ public:
 
 	UPROPERTY(BlueprintReadWrite, Category = "Contact")
 	FVector HandFixR = FVector::ZeroVector;
+
+	/** Joint limits: how many degrees the worst joint asked to go past human range of motion
+	 *  this frame (before it was held back), and which joint. For auditing poses. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Limits")
+	float LimitExcess = 0.f;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Limits")
+	FName LimitBone;
+
+	/** Every limited joint this frame: "bone bend/side/twist" in degrees, for the audit scripts. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Limits")
+	FString LimitReport;
 
 protected:
 	virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override { return new FVisexAnimProxy(this); }
