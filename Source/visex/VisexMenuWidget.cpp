@@ -9,6 +9,7 @@
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/ScaleBox.h"
 #include "Components/ScaleBoxSlot.h"
+#include "Components/SizeBox.h"
 #include "Components/Spacer.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
@@ -27,6 +28,7 @@ UVisexMenuWidget::UVisexMenuWidget(const FObjectInitializer& ObjectInitializer)
 		FText::FromString(TEXT("Start")),
 		FText::FromString(TEXT("Body")),
 		FText::FromString(TEXT("Photo mode")),
+		FText::FromString(TEXT("Settings")),
 		FText::FromString(TEXT("Quit")),
 	};
 }
@@ -75,13 +77,38 @@ void UVisexMenuWidget::Build()
 			ShadeSlot->SetVerticalAlignment(VAlign_Fill);
 		}
 	}
-	UVerticalBox* Root = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("Root"));
+	Root = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("Root"));
 	if (UOverlaySlot* TextSlot = Layers->AddChildToOverlay(Root))
 	{
 		TextSlot->SetHorizontalAlignment(HAlign_Left);
 		TextSlot->SetVerticalAlignment(VAlign_Top);
 		TextSlot->SetPadding(FMargin(ShadePadding));
 	}
+	BuildContent();
+}
+
+bool UVisexMenuWidget::HasValues() const
+{
+	return Values.ContainsByPredicate([](const FText& V) { return !V.IsEmpty(); });
+}
+
+FText UVisexMenuWidget::ValueText(int32 Index, bool bSelected) const
+{
+	if (!Values.IsValidIndex(Index) || Values[Index].IsEmpty())
+	{
+		return FText::GetEmpty();
+	}
+	// the selected row shows it can be stepped
+	return bSelected ? FText::Format(FText::FromString(TEXT("\u2039  {0}  \u203A")), Values[Index]) : Values[Index];
+}
+
+void UVisexMenuWidget::BuildContent()
+{
+	if (!Root)
+	{
+		return;
+	}
+	Root->ClearChildren();
 
 	// logo, then (if set) a tagline in wide-spaced small caps under it
 	Root->AddChildToVerticalBox(MakeText(Title, TitleSize, TEXT("Light"), TitleLetterSpacing, TextColor));
@@ -92,21 +119,73 @@ void UVisexMenuWidget::Build()
 		TagSlot->SetPadding(FMargin(8.f, 0.f, 0.f, 0.f));
 	}
 
+	const bool bValues = HasValues();
 	USpacer* Gap = WidgetTree->ConstructWidget<USpacer>(USpacer::StaticClass());
-	Gap->SetSize(FVector2D(1.f, 110.f));
+	Gap->SetSize(FVector2D(1.f, Tabs.Num() > 0 ? 50.f : 110.f));
 	Root->AddChildToVerticalBox(Gap);
 
+	if (Tabs.Num() > 0)
+	{
+		// tabs in a row, the open one full white; L1/R1 (Q/E) switch
+		UHorizontalBox* TabRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+		for (int32 T = 0; T < Tabs.Num(); ++T)
+		{
+			UTextBlock* Tab = MakeText(Tabs[T], ValueItemSize, T == ActiveTab ? TEXT("Regular") : TEXT("Light"), 400, TextColor);
+			if (T != ActiveTab) { Tab->SetColorAndOpacity(FSlateColor(FLinearColor(TextColor * IdleBrightness).CopyWithNewOpacity(1.f))); }
+			if (UHorizontalBoxSlot* TabSlot = TabRow->AddChildToHorizontalBox(Tab))
+			{
+				TabSlot->SetPadding(FMargin(0.f, 0.f, 70.f, 0.f));
+			}
+		}
+		UVerticalBoxSlot* TabsSlot = Root->AddChildToVerticalBox(TabRow);
+		TabsSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 46.f));
+	}
+
 	Labels.Reset();
-	Markers.Reset();
-	for (const FText& Item : Items)
+	ValueLabels.Reset();
+	const int32 Size = bValues ? ValueItemSize : ItemSize;
+	for (int32 i = 0; i < Items.Num(); ++i)
 	{
 		// no marker: the selected item is simply larger and full white (SetSelected)
-		UTextBlock* Label = MakeText(Item, ItemSize, TEXT("Light"), 160, TextColor);
-		UVerticalBoxSlot* RowSlot = Root->AddChildToVerticalBox(Label);
-		RowSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 18.f));
+		UTextBlock* Label = MakeText(Items[i], Size, TEXT("Light"), 160, TextColor);
 		Labels.Add(Label);
+		UTextBlock* Value = MakeText(ValueText(i, false), Size, TEXT("Light"), 160, TextColor);
+		ValueLabels.Add(Value);
+		UWidget* Row = Label;
+		if (bValues)
+		{
+			USizeBox* Column = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+			Column->SetWidthOverride(ValueColumn);
+			Column->AddChild(Label);
+			UHorizontalBox* Line = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+			if (UHorizontalBoxSlot* L = Line->AddChildToHorizontalBox(Column)) { L->SetVerticalAlignment(VAlign_Center); }
+			if (UHorizontalBoxSlot* V = Line->AddChildToHorizontalBox(Value)) { V->SetVerticalAlignment(VAlign_Center); }
+			Row = Line;
+		}
+		UVerticalBoxSlot* RowSlot = Root->AddChildToVerticalBox(Row);
+		RowSlot->SetPadding(FMargin(0.f, 0.f, 0.f, bValues ? 10.f : 18.f));
 	}
 	SetSelected(Selected);
+}
+
+void UVisexMenuWidget::SetPage(const FText& InTitle, const TArray<FText>& InTabs, int32 InActiveTab, const TArray<FText>& InItems, const TArray<FText>& InValues, int32 Select)
+{
+	Title = InTitle;
+	Tabs = InTabs;
+	ActiveTab = InActiveTab;
+	Items = InItems;
+	Values = InValues;
+	Selected = Select;
+	BuildContent();
+}
+
+void UVisexMenuWidget::SetValues(const TArray<FText>& InValues)
+{
+	Values = InValues;
+	for (int32 i = 0; i < ValueLabels.Num(); ++i)
+	{
+		ValueLabels[i]->SetText(ValueText(i, i == Selected));
+	}
 }
 
 void UVisexMenuWidget::SetSelected(int32 Index)
@@ -117,14 +196,24 @@ void UVisexMenuWidget::SetSelected(int32 Index)
 	}
 	const int32 Previous = Selected;
 	Selected = (Index % Items.Num() + Items.Num()) % Items.Num();
+	const bool bValues = HasValues();
+	const int32 Size = bValues ? ValueItemSize : ItemSize;
+	const float Scale = bValues ? ValueSelectedScale : SelectedScale;
 	for (int32 i = 0; i < Labels.Num(); ++i)
 	{
 		const bool bOn = i == Selected;
-		Labels[i]->SetRenderOpacity(bOn ? 1.f : IdleOpacity);
-		FSlateFontInfo Font = Labels[i]->GetFont();
-		Font.Size = bOn ? FMath::RoundToInt(ItemSize * SelectedScale) : ItemSize;
-		Font.TypefaceFontName = bOn ? FName(TEXT("Regular")) : FName(TEXT("Light"));
-		Labels[i]->SetFont(Font);
+		for (UTextBlock* Block : {Labels[i].Get(), ValueLabels.IsValidIndex(i) ? ValueLabels[i].Get() : nullptr})
+		{
+			if (!Block) { continue; }
+			// dimmed by colour, not transparency: solid text is what the panel material masks out
+			// of screen filters (stencil, opacity over 0.9), and over the shade it reads the same
+			Block->SetColorAndOpacity(FSlateColor(bOn ? TextColor : FLinearColor(TextColor * IdleBrightness).CopyWithNewOpacity(1.f)));
+			FSlateFontInfo Font = Block->GetFont();
+			Font.Size = bOn ? FMath::RoundToInt(Size * Scale) : Size;
+			Font.TypefaceFontName = bOn ? FName(TEXT("Regular")) : FName(TEXT("Light"));
+			Block->SetFont(Font);
+		}
+		if (ValueLabels.IsValidIndex(i)) { ValueLabels[i]->SetText(ValueText(i, bOn)); }
 	}
 	if (Previous != Selected)
 	{
