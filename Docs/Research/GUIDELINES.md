@@ -61,4 +61,6 @@ Upright, unhurried, head level. Calm base with small playful accents. Weighty an
 
 | Date | Pack / source | Question | Finding (numbers) | Where we used it |
 |---|---|---|---|---|
+| 2026-11-10 | Girl Walk&Run (Strut 1–4, Walk_Cool) | What does a strut add beyond our catwalk layer? | Struts: spine 4° back (ours was 6° forward); head sway 0.5–1 cm (ours 7.4); arm swing 10–41 cm (ours 64); chest yaw 26–34° with the chest 4–5 frames behind the hips (ours 17°, no lag); pelvis bob 4–6 cm (ours 9). | `visex.Catwalk.*`: Posture 11, Shoulders 1.7, ChestLag 7, ArmSwing 0.6, HeadLine 0.9. Live result: lean −3°, head sway 2.5 cm, arms 41 cm, chest 15°. |
+| 2026-11-10 | same | Rule limits | The chest counter can't go past what the hips give it, and the layer runs after foot IK, so lowering the pelvis would sink the feet. | Bigger chest counter and less bob have to come from the base clip (our own strut, later), not the layer. |
 | 2026-11-10 | Jels Studio OoMH-05 Skirt and Corset (Fab) | Where does a pro garment get its depth and detail? | Single-sided panels stacked 0.3–0.8 cm for depth; seams/piping 2.5–5.5 mm in the normal, weave in albedo, roughness flat 0.8; skirt hem flare 2.3× with sculpted folds (±5 cm, ~5 lobes). [STUDY_SKIRT_CORSET.md](STUDY_SKIRT_CORSET.md) | Clothes builder: trim 0.3 cm proud, seam-normal bake, skirt garment type (planned) |
