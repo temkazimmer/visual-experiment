@@ -1,4 +1,7 @@
-"""Hair for the android: short, dark, layered spikes (Tema's reference: 90s anime).
+"""RETIRED: no longer in the skin chain. Her hair is the card-hair mesh (Content/Character/Hair,
+Docs/Research/HAIR.md); blender_correctives.py now reads blender_face.py's blend.
+
+Hair for the android: short, dark, layered spikes (Tema's reference: 90s anime).
 Headless, after Tools/blender_face.py:
 
   /Applications/Blender.app/Contents/MacOS/Blender -b <android_skin.blend> \

@@ -1,7 +1,10 @@
-"""Arm-raise correctives for the android's skin (headless Blender, the sixth skin stage):
+"""Arm-raise correctives for the android's skin (headless Blender, the last skin stage):
 
-  blender -b <android_skin.blend from blender_hair.py> \
+  blender -b <android_skin.blend from blender_face.py> \
       --python Tools/blender_correctives.py -- <out.fbx> [<preview_dir>]
+
+It runs straight after blender_face.py: her hair is the separate card-hair mesh
+(SKM_HairCards, put on by UVisexBodyComponent), so blender_hair.py is no longer in the chain.
 
 Raising an arm with plain skin weights folds the armpit into a hard crease, stacks the
 shoulder into a shelf and leaves the chest flat and the breast where it hung. For each arm:
