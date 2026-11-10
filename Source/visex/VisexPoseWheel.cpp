@@ -445,8 +445,7 @@ void UVisexPoseWheelComponent::UpdateGround(float DeltaTime)
 	{
 		return;
 	}
-	const bool bOnFloor = PoseIns.IsValidIndex(Current) && PoseIns[Current]
-		&& ((Phase == EPhase::Enter && (PhaseTime > 0.9f || bFlowing)) || Phase == EPhase::Hold);
+	const bool bOnFloor = IsOnFloor();
 	if (!bOnFloor && GroundAlpha <= 0.f)
 	{
 		return;
@@ -496,7 +495,131 @@ void UVisexPoseWheelComponent::UpdateGround(float DeltaTime)
 	const float Ease = FMath::SmoothStep(0.f, 1.f, GroundAlpha);
 	const FQuat Tilt = FQuat::Slerp(FQuat::Identity, FQuat::FindBetweenNormals(FVector::UpVector, Normal), Ease);
 	const float Drop = FMath::Clamp(Z0 - Bottom, -40.f, 5.f) * Ease;
-	Mesh->SetRelativeLocationAndRotation(MeshBaseLocation + FVector(0.f, 0.f, Drop), Tilt * MeshBaseRotation);
+	AppliedSeat = SeatFixZ * Ease; // her lowest skin onto the ground, from the contact probe
+	// and tipped along her length so the head end and the feet end both touch (dunes curve)
+	const FQuat Tip = PitchAxis.IsNearlyZero() ? FQuat::Identity : FQuat(PitchAxis, FMath::DegreesToRadians(PitchFix * Ease));
+	Mesh->SetRelativeLocationAndRotation(MeshBaseLocation + FVector(0.f, 0.f, Drop + AppliedSeat), Tip * Tilt * MeshBaseRotation);
+}
+
+bool UVisexPoseWheelComponent::IsOnFloor() const
+{
+	return PoseIns.IsValidIndex(Current) && PoseIns[Current]
+		&& ((Phase == EPhase::Enter && (PhaseTime > 0.9f || bFlowing)) || Phase == EPhase::Hold);
+}
+
+static TAutoConsoleVariable<float> CVarContact(TEXT("visex.Contact"), 1.f, TEXT("Hands and hips meet the surface under them: 0 off, 1 on"));
+static TAutoConsoleVariable<float> CVarContactSnap(TEXT("visex.Contact.Snap"), 6.f, TEXT("A hand or the hips this close above a surface (cm) are meant to rest on it"));
+
+void UVisexPoseWheelComponent::UpdateContacts(float DeltaTime)
+{
+	// Measured on her skin, not her bones (VisexSkinProbe): the lowest point of each hand, of
+	// her buttocks and of the rest of the lower body, and the surface straight under each.
+	// A hand within Snap of a surface, or inside it, is moved onto it by the Anim Blueprint's
+	// last step; on a floor pose the whole body is moved so her hips touch without pushing a
+	// knee or a foot through. Gaps are read before the fix (what was drawn, minus the fix).
+	ACharacter* Character = Cast<ACharacter>(GetOwner());
+	USkeletalMeshComponent* Mesh = Character ? Character->GetMesh() : nullptr;
+	UVisexAnimInstance* Anim = Cast<UVisexAnimInstance>(GetAnim());
+	if (!Mesh || !Anim || !Mesh->GetSkeletalMeshAsset())
+	{
+		return;
+	}
+	if (!Probe.IsBuiltFor(Mesh))
+	{
+		if (ProbeFailedFor.Get() == Mesh->GetSkeletalMeshAsset() || !Probe.Build(Mesh))
+		{
+			ProbeFailedFor = Mesh->GetSkeletalMeshAsset();
+			return;
+		}
+	}
+	const UCharacterMovementComponent* Move = Character->GetCharacterMovement();
+	const bool bOn = CVarContact.GetValueOnGameThread() > 0.f && !(Move && Move->IsFalling());
+	const float Snap = CVarContactSnap.GetValueOnGameThread();
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(VisexContact), false, Character);
+	const auto SurfaceUnder = [&](const FVector& P, double From, double& OutZ)
+	{
+		FHitResult Hit;
+		if (GetWorld()->LineTraceSingleByChannel(Hit, FVector(P.X, P.Y, From), FVector(P.X, P.Y, P.Z - 40.0), ECC_Visibility, Params))
+		{
+			OutZ = Hit.ImpactPoint.Z;
+			return true;
+		}
+		return false;
+	};
+	const auto ByHeight = [](const FVector& V) { return V.Z; };
+
+	// hands
+	static const FName HandBones[2] = {TEXT("hand_l"), TEXT("hand_r")};
+	float* Gaps[2] = {&HandGapL, &HandGapR};
+	float* Fixes[2] = {&HandFixZL, &HandFixZR};
+	for (int32 i = 0; i < 2; ++i)
+	{
+		// The skin is read from the last drawn pose, which already carries the fix, so the fix
+		// steps toward zero drawn gap (an integrator) instead of being set from it: setting it
+		// directly chases a frame-old pose and runs away.
+		FVector Low;
+		double Z = 0.0;
+		float Step = -(*Fixes[i]);               // nothing to rest on: let go
+		*Gaps[i] = 999.f;
+		if (Probe.Lowest(Mesh, i == 0 ? FVisexSkinProbe::HandL : FVisexSkinProbe::HandR, ByHeight, Low)
+			&& SurfaceUnder(Low, FMath::Max(Low.Z, Mesh->GetSocketLocation(HandBones[i]).Z) + 30.0, Z))
+		{
+			(i == 0 ? ProbeLowL : ProbeLowR) = Low;
+			(i == 0 ? ProbeHitL : ProbeHitR) = FVector(Low.X, Low.Y, Z);
+			const float Drawn = float(Low.Z - Z);
+			const float Raw = Drawn - *Fixes[i];    // about where the pose itself puts it
+			*Gaps[i] = Raw;
+			// resting (close above, or inside but not buried under an overhang): onto it
+			const float K = Raw < -15.f ? 0.f : 1.f - FMath::SmoothStep(Snap, Snap + 4.f, Raw);
+			Step = bOn && K > 0.f ? -Drawn * K - *Fixes[i] * (1.f - K) : -(*Fixes[i]);
+		}
+		*Fixes[i] = FMath::Clamp(*Fixes[i] + Step * FMath::Min(1.f, DeltaTime * 6.f), -12.f, 15.f);
+	}
+	const FVector Up = Mesh->GetComponentTransform().InverseTransformVector(FVector::UpVector);
+	Anim->HandFixL = Up * HandFixZL;
+	Anim->HandFixR = Up * HandFixZR;
+
+	// hips, and the rest of the lower body as a floor guard
+	FVector Seat, Body;
+	double SZ = 0.0, BZ = 0.0;
+	const bool bSeat = Probe.Lowest(Mesh, FVisexSkinProbe::Seat, ByHeight, Seat) && SurfaceUnder(Seat, Seat.Z + 30.0, SZ);
+	const bool bBody = Probe.Lowest(Mesh, FVisexSkinProbe::Body, ByHeight, Body) && SurfaceUnder(Body, Body.Z + 30.0, BZ);
+	SeatGap = bSeat ? float(Seat.Z - SZ) - AppliedSeat : 999.f;
+	BodyGap = bBody ? float(Body.Z - BZ) - AppliedSeat : 999.f;
+	// The body on a floor pose: its lowest skin is brought onto the ground (no part through it,
+	// none of it hovering), and a lying body is tipped along its length until its head end and
+	// its feet end touch alike. Integrators again: the drawn gaps carry the fix already.
+	float SeatStep = -SeatFixZ, PitchStep = -PitchFix;
+	HeadEndGap = FeetEndGap = 999.f;
+	if (bOn && IsOnFloor() && bBody)
+	{
+		SeatStep = -float(Body.Z - BZ);
+		const FVector Head = Mesh->GetSocketLocation(TEXT("head"));
+		const FVector Feet = 0.5f * (Mesh->GetSocketLocation(TEXT("foot_l")) + Mesh->GetSocketLocation(TEXT("foot_r")));
+		const FVector Along = FVector(Head.X - Feet.X, Head.Y - Feet.Y, 0.f);
+		if (Along.Size() > 60.f)               // lying, not sitting up
+		{
+			const FVector Axis = Along.GetSafeNormal(), Mid = 0.5f * (Head + Feet);
+			FVector HeadLow, FeetLow;
+			double HZ = 0.0, FZ = 0.0;
+			const bool bH = Probe.Lowest(Mesh, FVisexSkinProbe::Body, [&](const FVector& V) { return ((V - Mid) | Axis) > 0.0 ? V.Z : 1e9; }, HeadLow)
+				&& SurfaceUnder(HeadLow, HeadLow.Z + 40.0, HZ);
+			const bool bF = Probe.Lowest(Mesh, FVisexSkinProbe::Body, [&](const FVector& V) { return ((V - Mid) | Axis) < 0.0 ? V.Z : 1e9; }, FeetLow)
+				&& SurfaceUnder(FeetLow, FeetLow.Z + 40.0, FZ);
+			if (bH && bF)
+			{
+				HeadEndGap = float(HeadLow.Z - HZ);
+				FeetEndGap = float(FeetLow.Z - FZ);
+				const float Span = FMath::Max(float((HeadLow - FeetLow) | Axis), 40.f);
+				// a positive turn about Axis x Up lifts the head end, so a high head end turns negative
+				PitchAxis = Character->GetActorTransform().InverseTransformVectorNoScale(FVector::CrossProduct(Axis, FVector::UpVector)).GetSafeNormal();
+				PitchStep = -FMath::RadiansToDegrees(FMath::Atan2(HeadEndGap - FeetEndGap, Span));
+			}
+		}
+	}
+	SeatFixZ = FMath::Clamp(SeatFixZ + SeatStep * FMath::Min(1.f, DeltaTime * 3.f), -15.f, 30.f);
+	PitchFix = FMath::Clamp(PitchFix + PitchStep * FMath::Min(1.f, DeltaTime * 2.f), -20.f, 20.f);
+	PitchFixDeg = PitchFix;
 }
 
 void UVisexPoseWheelComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -505,6 +628,7 @@ void UVisexPoseWheelComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 	BindInput();
 	UpdateFootIK(DeltaTime);
 	UpdateGround(DeltaTime);
+	UpdateContacts(DeltaTime);
 
 	const ACharacter* Character = Cast<ACharacter>(GetOwner());
 	APlayerController* PC = Character ? Cast<APlayerController>(Character->GetController()) : nullptr;

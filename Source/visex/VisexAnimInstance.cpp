@@ -42,6 +42,8 @@ void FVisexAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSecond
 		bHasProfile = Inst->bReshapeBody;
 		PhotoGait = Inst->PhotoGait;
 		HoldTarget = FMath::Clamp(Inst->HoldAlpha, 0.f, 1.f) * CVarHold.GetValueOnGameThread();
+		HandFix[0] = Inst->HandFixL;
+		HandFix[1] = Inst->HandFixR;
 	}
 
 	Dt = DeltaSeconds;
@@ -92,6 +94,7 @@ bool FVisexAnimProxy::Evaluate_WithRoot(FPoseContext& Output, FAnimNode_Base* In
 		{
 			Reshape(Output.Pose);
 		}
+		Contact(Output.Pose); // last: hands onto the surface, measured on the reshaped body
 	}
 	return true;
 }
@@ -203,6 +206,27 @@ namespace
 		void TranslateCS(FCompactPoseBoneIndex Index, const FVector& Delta)
 		{
 			Pose[Index].AddToTranslation(ParentRotation(Index).UnrotateVector(Delta));
+		}
+
+		/** Two-bone reach: bend the elbow for the distance, aim the upper arm, then give the
+		 *  hand back its component-space rotation. Weight blends toward the target. */
+		void Reach(FCompactPoseBoneIndex Arm, FCompactPoseBoneIndex Fore, FCompactPoseBoneIndex Hand, const FVector& Want, const FQuat& KeepRotation, float Weight)
+		{
+			const FVector A = Component(Arm).GetLocation(), B = Component(Fore).GetLocation(), C = Component(Hand).GetLocation();
+			const FVector Target = FMath::Lerp(C, Want, Weight);
+			const float La = (B - A).Size(), Lb = (C - B).Size();
+			const float Dist = FMath::Clamp((Target - A).Size(), FMath::Abs(La - Lb) + 0.1f, La + Lb - 0.1f);
+			const FVector N = ((B - A) ^ (C - B)).GetSafeNormal();
+			if (!N.IsNearlyZero() && La > 1.f && Lb > 1.f)
+			{
+				const float Now = FMath::Acos(FMath::Clamp(((A - B).GetSafeNormal() | (C - B).GetSafeNormal()), -1.f, 1.f));
+				const float Need = FMath::Acos(FMath::Clamp((La * La + Lb * Lb - Dist * Dist) / (2.f * La * Lb), -1.f, 1.f));
+				RotateCS(Fore, FQuat(N, Now - Need));
+			}
+			const FVector C2 = Component(Hand).GetLocation();
+			RotateCS(Arm, FQuat::FindBetweenNormals((C2 - A).GetSafeNormal(), (Target - A).GetSafeNormal()));
+			const FQuat Now = Component(Hand).GetRotation();
+			RotateCS(Hand, FQuat::Slerp(FQuat::Identity, KeepRotation * Now.Inverse(), Weight));
 		}
 
 		void Offset(const TCHAR* Name, float K)
@@ -450,27 +474,43 @@ void FVisexAnimProxy::Alive(FCompactPose& Pose)
 	const float HeadTilt = (0.7f * FMath::Sin(Tau * T / 6.7f + 1.9f) + 0.3f * FMath::Sin(Tau * T / 3.3f)) * HoldTune.Head * 0.6f * Hold;
 	S.RotateCS(Head, Turn(Front, Left, HeadTurn) * Turn(Up, Left, HeadTilt));
 
-	// put pinned hands back: bend the elbow to the right reach, aim the arm, restore the wrist
+	// put pinned hands back where they were
 	for (const FPin& P : Pins)
 	{
-		if (P.W <= 0.f)
+		if (P.W > 0.f)
+		{
+			S.Reach(P.Arm, P.Fore, P.Hand, P.Was.GetLocation(), P.Was.GetRotation(), P.W);
+		}
+	}
+}
+
+/**
+ * Hands on surfaces. The pose wheel's probe measures, on her skinned mesh, how far each
+ * hand's skin is above (or inside) whatever is under it, and asks for this move when the
+ * hand is meant to rest there: into the floor or the column becomes on it, a hair above
+ * becomes on it. The arm reaches, the wrist keeps its angle. Runs after the reshape.
+ */
+void FVisexAnimProxy::Contact(FCompactPose& Pose)
+{
+	if (HandFix[0].IsNearlyZero(0.05) && HandFix[1].IsNearlyZero(0.05))
+	{
+		return;
+	}
+	FShaper S{Pose, Pose.GetBoneContainer()};
+	const TCHAR* Sides[2] = {TEXT("l"), TEXT("r")};
+	for (int32 i = 0; i < 2; ++i)
+	{
+		if (HandFix[i].IsNearlyZero(0.05))
 		{
 			continue;
 		}
-		const FVector A = S.Component(P.Arm).GetLocation(), B = S.Component(P.Fore).GetLocation(), C = S.Component(P.Hand).GetLocation();
-		const FVector Target = FMath::Lerp(C, P.Was.GetLocation(), P.W);
-		const float La = (B - A).Size(), Lb = (C - B).Size(), Want = FMath::Clamp((Target - A).Size(), FMath::Abs(La - Lb) + 0.1f, La + Lb - 0.1f);
-		const FVector N = ((B - A) ^ (C - B)).GetSafeNormal();
-		if (!N.IsNearlyZero())
+		const FCompactPoseBoneIndex Arm = S.Find(*FString::Printf(TEXT("upperarm_%s"), Sides[i]));
+		const FCompactPoseBoneIndex Fore = S.Find(*FString::Printf(TEXT("lowerarm_%s"), Sides[i]));
+		const FCompactPoseBoneIndex Hand = S.Find(*FString::Printf(TEXT("hand_%s"), Sides[i]));
+		if (Arm.IsValid() && Fore.IsValid() && Hand.IsValid())
 		{
-			// the inner elbow angle now and the one that gives the wanted reach (law of cosines)
-			const float Now = FMath::Acos(FMath::Clamp(((A - B).GetSafeNormal() | (C - B).GetSafeNormal()), -1.f, 1.f));
-			const float Need = FMath::Acos(FMath::Clamp((La * La + Lb * Lb - Want * Want) / (2.f * La * Lb), -1.f, 1.f));
-			S.RotateCS(P.Fore, FQuat(N, Now - Need));
+			const FTransform Was = S.Component(Hand);
+			S.Reach(Arm, Fore, Hand, Was.GetLocation() + HandFix[i], Was.GetRotation(), 1.f);
 		}
-		const FVector C2 = S.Component(P.Hand).GetLocation();
-		S.RotateCS(P.Arm, FQuat::FindBetweenNormals((C2 - A).GetSafeNormal(), (Target - A).GetSafeNormal()));
-		const FQuat Now = S.Component(P.Hand).GetRotation();
-		S.RotateCS(P.Hand, FQuat::Slerp(FQuat::Identity, P.Was.GetRotation() * Now.Inverse(), P.W));
 	}
 }
