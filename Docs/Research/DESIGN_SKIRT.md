@@ -71,6 +71,7 @@ the skirt. **Since 2026-11-10 the skirt is Chaos cloth** ([CLOTHES.md](../CLOTHE
 drapes over the thighs instead; these weights are its skinned anchor.
 
 **Body-hugging cloth version (Tema, 2026-11-10).** The flared cloth skirt read as stiff, so
-the `Skirt` build (the cloth's source mesh) has no flare or folds, sits 1.5 cm off the body,
-keeps at least the raw hull under the smoothing, and takes the skin's own weights down to
-2 cm above the crotch. The skinned "BodystockingSkirt" keeps the flared shape above.
+the `Skirt` build (the cloth's source mesh) has no flare or folds, sits 1 cm off at the top
+easing to about 4 cm at the hem, keeps at least the raw hull under the smoothing, and takes the
+skin's own weights down to 2 cm above the crotch (no thigh pull below). The sim is off by
+default, so this skinned shape is what ships ([CLOTHES.md](../CLOTHES.md)). The skinned "BodystockingSkirt" keeps the flared shape above.
