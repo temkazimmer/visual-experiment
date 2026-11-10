@@ -947,6 +947,7 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 	{
 		TickStudio(DeltaSeconds);
 	}
+	TickMenuKey(DeltaSeconds);
 
 	if (FadeOut >= 0.f)
 	{
@@ -1077,16 +1078,7 @@ void AVisexMenuDirector::TickStudio(float DeltaSeconds)
 		return;
 	}
 
-	// she joins channel 1 (and keeps 0), clothes included, which can change while the page is open
-	TArray<UPrimitiveComponent*> Parts;
-	Pawn->GetComponents(Parts);
-	for (UPrimitiveComponent* P : Parts)
-	{
-		if (!P->LightingChannels.bChannel1)
-		{
-			P->SetLightingChannels(true, true, P->LightingChannels.bChannel2);
-		}
-	}
+	JoinChannel1(Pawn);
 
 	float Half = 90.f;
 	if (const ACharacter* C = Cast<ACharacter>(Pawn))
@@ -1100,6 +1092,77 @@ void AVisexMenuDirector::TickStudio(float DeltaSeconds)
 	PlaceStudioLight(Rim, RimPlacement, Feet, CamYaw, 110.f);
 	Spot->SetIntensity(SpotIntensity * S);
 	Rim->SetIntensity(RimIntensity * S);
+}
+
+void AVisexMenuDirector::JoinChannel1(APawn* Pawn)
+{
+	// she joins channel 1 (and keeps 0), clothes included, which can change while a page is open
+	TArray<UPrimitiveComponent*> Parts;
+	Pawn->GetComponents(Parts);
+	for (UPrimitiveComponent* P : Parts)
+	{
+		if (!P->LightingChannels.bChannel1)
+		{
+			P->SetLightingChannels(true, true, P->LightingChannels.bChannel2);
+		}
+	}
+}
+
+void AVisexMenuDirector::TickMenuKey(float DeltaSeconds)
+{
+	// on while the main menu page is open; the Character page has its own studio lights
+	const bool bWant = bOpen && !bStudio;
+	if (!bWant && MenuKeyAlpha <= 0.f)
+	{
+		return;
+	}
+	const float Step = DeltaSeconds / FMath::Max(0.05f, MenuKeyBlendTime);
+	MenuKeyAlpha = FMath::Clamp(MenuKeyAlpha + (bWant ? Step : -Step), 0.f, 1.f);
+
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	if (!MenuKey)
+	{
+		FActorSpawnParameters P;
+		P.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		if (ARectLight* L = GetWorld()->SpawnActor<ARectLight>(GetActorLocation() - FVector(0.f, 0.f, 5000.f), FRotator::ZeroRotator, P))
+		{
+			URectLightComponent* C = Cast<URectLightComponent>(L->GetLightComponent());
+			C->SetMobility(EComponentMobility::Movable);
+			C->SetIntensityUnits(ELightUnits::Candelas);   // spawned lights default to unitless
+			C->SetIntensity(0.f);
+			C->SetTemperature(MenuKeyTemperature);
+			C->bUseTemperature = true;
+			C->SetLightingChannels(false, true, false);   // her only: the sand and stone keep the scene's light
+			C->SetVolumetricScatteringIntensity(0.f);     // no glow in the haze
+			C->SetAttenuationRadius(1500.f);
+			C->SetSourceWidth(160.f);                     // big and soft: diffuse low sun through dust
+			C->SetSourceHeight(160.f);
+			C->SetBarnDoorAngle(88.f);
+			MenuKey = L;
+		}
+	}
+	ULocalLightComponent* Key = MenuKey ? MenuKey->FindComponentByClass<ULocalLightComponent>() : nullptr;
+	if (!Key)
+	{
+		return;
+	}
+	if (!Pawn || !PC->PlayerCameraManager || MenuKeyAlpha <= 0.f)
+	{
+		Key->SetIntensity(0.f);
+		return;
+	}
+	JoinChannel1(Pawn);
+	float Half = 90.f;
+	if (const ACharacter* C = Cast<ACharacter>(Pawn))
+	{
+		Half = C->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	}
+	const FVector Feet = Pawn->GetActorLocation() - FVector(0.f, 0.f, Half);
+	const FVector ToCam = PC->PlayerCameraManager->GetCameraLocation() - Feet;
+	const float CamYaw = FMath::RadiansToDegrees(FMath::Atan2(ToCam.Y, ToCam.X));
+	PlaceStudioLight(Key, MenuKeyPlacement, Feet, CamYaw, 120.f);
+	Key->SetIntensity(MenuKeyIntensity * FMath::SmoothStep(0.f, 1.f, MenuKeyAlpha));
 }
 
 void AVisexMenuDirector::PlaceStudioLight(ULocalLightComponent* Light, const FVector& Placement, const FVector& Feet, float CamYaw, float AimHeight) const
