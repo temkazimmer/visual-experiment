@@ -43,7 +43,7 @@ LOOK = dict(
         dict(name="upper",  band=(0.52, 0.68), count=22, length=(17.0, 22.0), lift=14, fall=0.28, clear=1.05),
         dict(name="crown",  band=(0.80, 0.93), count=12, length=(15.0, 20.0), lift=18, fall=0.26, clear=1.35),
     ),
-    fringe=0.96,          # the fringe's length against the rest (it stops at the eyes)
+    fringe=0.38,          # the fringe's length against the rest (it stops at the eyes)
     flick=0.11,           # how much the tips turn outward
     wander=16.0,          # degrees a lock strays from straight down the head
 )
