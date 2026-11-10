@@ -61,4 +61,4 @@ Upright, unhurried, head level. Calm base with small playful accents. Weighty an
 
 | Date | Pack / source | Question | Finding (numbers) | Where we used it |
 |---|---|---|---|---|
-| | | | | |
+| 2026-11-10 | Jels Studio OoMH-05 Skirt and Corset (Fab) | Where does a pro garment get its depth and detail? | Single-sided panels stacked 0.3–0.8 cm for depth; seams/piping 2.5–5.5 mm in the normal, weave in albedo, roughness flat 0.8; skirt hem flare 2.3× with sculpted folds (±5 cm, ~5 lobes). [STUDY_SKIRT_CORSET.md](STUDY_SKIRT_CORSET.md) | Clothes builder: trim 0.3 cm proud, seam-normal bake, skirt garment type (planned) |

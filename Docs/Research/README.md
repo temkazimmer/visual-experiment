@@ -9,6 +9,7 @@ Written 2026-11-10 by the research agent. No Unreal Editor was run to produce it
 | [ANATOMY.md](ANATOMY.md) | Proportions, landmarks, joint deformation, bust/hip/shoulder pitfalls | 5 min |
 | [RIG.md](RIG.md) | Our skeleton, layers, retargeting, pitfalls found in our code | 5 min |
 | [ANIMATION.md](ANIMATION.md) | Craft: weight, overlap, contrapposto, catwalk, poses, motion matching, how to study a pack | 6 min |
+| [STUDY_SKIRT_CORSET.md](STUDY_SKIRT_CORSET.md) | Clothes: what the Jels skirt/corset pack teaches (fit, construction, textures, measured) | 4 min |
 
 ## How to use this
 
