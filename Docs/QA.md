@@ -7,6 +7,21 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-10 18:50 · VIS-EX-0253 Shipping (145ec09) · PASS, release candidate
+
+- **No crash:** the tour reached `done`, there's no new `.ips`, and a plain launch reaches the menu.
+- **Photo mode is fixed:**
+  - She stays at z 145 with ground traced under her, and the dunes are visible in every photo shot.
+  - Poses 3–7 report `mode 0, floor none` with z fixed and ground still traced: that's the pose mode, not a fall.
+  - Poses now apply visibly.
+- **Footprints:** the mounds are gone. `03_walked` shows one print but no clear trail, because the camera
+  faced away from her path, so this check is inconclusive.
+- **Hair:** reads right in play and photo. The front lock over her eye in 3/4 view is unchecked (no such
+  shot, and the Body page was skipped). There's a possible stray dark card beside her head in `14_photo_04`.
+- **New:** during the quality steps she drifts with no input (9219/-1612 → 6354 → 10052/-1780), then goes
+  `mode 0, floor none` from "viewdistance" on.
+- **Tema:** wants more sun on her on the menu page. Passed to main.
+
 ## 2026-11-10 18:35 · VIS-EX-0244 Shipping (2e6efc4) · FAIL: falls through the world in photo mode
 
 - **Crash:** none. The tour ran to `done` (151 s), and there's no new `.ips`. A plain launch without
