@@ -22,9 +22,12 @@ FString UVisexClothLibrary::FitCapsules(UPhysicsAsset* PhysicsAsset, USkeletalMe
 		const int32 Parent = Ref.GetParentIndex(I);
 		Component[I] = Parent == INDEX_NONE ? Ref.GetRefBonePose()[I] : Ref.GetRefBonePose()[I] * Component[Parent];
 	}
-	// distances of each bone's mostly-owned vertices to its segment
-	TArray<TArray<float>> Dist;
-	Dist.SetNum(Bones.Num());
+	// distances of each bone's mostly-owned vertices to its segment, kept per end: a quarter of the
+	// segment at each end sets that end's radius, so a thigh tapers to the knee (one radius would
+	// be the top of the thigh all the way down, and pushed a tight skirt's hem out)
+	TArray<TArray<float>> DistA, DistE;
+	DistA.SetNum(Bones.Num());
+	DistE.SetNum(Bones.Num());
 	TArray<int32> BoneIdx, EndIdx;
 	for (int32 B = 0; B < Bones.Num(); ++B)
 	{
@@ -76,7 +79,12 @@ FString UVisexClothLibrary::FitCapsules(UPhysicsAsset* PhysicsAsset, USkeletalMe
 				if (bOwned)
 				{
 					const FVector A = Component[BoneIdx[B]].GetLocation(), E = Component[EndIdx[B]].GetLocation();
-					Dist[B].Add(FMath::Sqrt(FMath::PointDistToSegmentSquared(FVector(Positions.VertexPosition(V)), A, E)));
+					const FVector P(Positions.VertexPosition(V));
+					const FVector Seg = E - A;
+					const double T = Seg.SizeSquared() > KINDA_SMALL_NUMBER ? FVector::DotProduct(P - A, Seg) / Seg.SizeSquared() : 0.5;
+					const float D = FMath::Sqrt(FMath::PointDistToSegmentSquared(P, A, E));
+					if (T <= 0.25) { DistA[B].Add(D); }
+					if (T >= 0.75) { DistE[B].Add(D); }
 				}
 			}
 		}
@@ -87,17 +95,22 @@ FString UVisexClothLibrary::FitCapsules(UPhysicsAsset* PhysicsAsset, USkeletalMe
 	FString Out;
 	for (int32 B = 0; B < Bones.Num(); ++B)
 	{
-		if (Dist[B].Num() < 10)
+		if (DistA[B].Num() < 10 || DistE[B].Num() < 10)
 		{
-			Out += FString::Printf(TEXT("%s: only %d vertices, skipped\n"), *Bones[B].ToString(), Dist[B].Num());
+			Out += FString::Printf(TEXT("%s: only %d/%d vertices, skipped\n"), *Bones[B].ToString(), DistA[B].Num(), DistE[B].Num());
 			continue;
 		}
-		Dist[B].Sort();
-		const float Radius = Dist[B][FMath::Clamp(FMath::FloorToInt(Percentile * Dist[B].Num()), 0, Dist[B].Num() - 1)] * RadiusScale;
+		auto Pick = [Percentile, RadiusScale](TArray<float>& Ds)
+		{
+			Ds.Sort();
+			return Ds[FMath::Clamp(FMath::FloorToInt(Percentile * Ds.Num()), 0, Ds.Num() - 1)] * RadiusScale;
+		};
+		const float RadiusA = Pick(DistA[B]), RadiusE = Pick(DistE[B]);
 		const FTransform& BoneTM = Component[BoneIdx[B]];
 		const FVector A = BoneTM.GetLocation(), E = Component[EndIdx[B]].GetLocation();
-		FKSphylElem Capsule;
-		Capsule.Radius = Radius;
+		FKTaperedCapsuleElem Capsule;
+		Capsule.Radius0 = RadiusE;      // Radius0 sits at the +Z end, which points at the end bone
+		Capsule.Radius1 = RadiusA;
 		Capsule.Length = FVector::Dist(A, E);
 		// in bone space: centred on the segment, Z along it
 		Capsule.Center = BoneTM.InverseTransformPosition((A + E) * 0.5);
@@ -105,9 +118,9 @@ FString UVisexClothLibrary::FitCapsules(UPhysicsAsset* PhysicsAsset, USkeletalMe
 		Capsule.Rotation = FRotationMatrix::MakeFromZ(Axis).Rotator();
 		USkeletalBodySetup* Body = NewObject<USkeletalBodySetup>(PhysicsAsset, NAME_None, RF_Transactional);
 		Body->BoneName = Bones[B];
-		Body->AggGeom.SphylElems.Add(Capsule);
+		Body->AggGeom.TaperedCapsuleElems.Add(Capsule);
 		PhysicsAsset->SkeletalBodySetups.Add(Body);
-		Out += FString::Printf(TEXT("%s->%s: radius %.1f length %.1f (%d verts)\n"), *Bones[B].ToString(), *Ends[B].ToString(), Radius, Capsule.Length, Dist[B].Num());
+		Out += FString::Printf(TEXT("%s->%s: radius %.1f to %.1f length %.1f (%d/%d verts)\n"), *Bones[B].ToString(), *Ends[B].ToString(), RadiusA, RadiusE, Capsule.Length, DistA[B].Num(), DistE[B].Num());
 	}
 	PhysicsAsset->UpdateBodySetupIndexMap();
 	PhysicsAsset->UpdateBoundsBodiesArray();

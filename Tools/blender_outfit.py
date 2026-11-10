@@ -932,14 +932,14 @@ def bodystocking():
             tube(ring, 0.1, "Trim", closed=True, sides=8, step=0.35, rigid=nearest(cv))
 
 
-def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.5, slot="Satin"):
+def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.5, slot="Satin", skin_to=None):
     """A short satin A-line worn over the bodystocking (Docs/Research/DESIGN_SKIRT.md). Not cut
     from the skin: rings lofted from the waist down. Each ring follows her hull to the hip, then
     hangs straight from the widest point above it, flares out (A-line) and swings in broad
     sculpted folds, so the rest pose already reads as draped. Double waistband 0.3 cm apart
     with a bound top; side and back seams and a rolled hem live in the seam normal.
-    Weights: the skin's down to the hip, then a simple pelvis/thigh blend (a stand-in until the
-    reference skirt's weights and cloth setup can be read, study steps 4-5)."""
+    Weights: the skin's down to the hip (or to skin_to, cm: a tight skirt follows her hip and
+    thigh down to there), then a simple pelvis/thigh blend."""
     cr, hb = LM["crotch"], LM["hip_top"]
     top = LM["waist"] + 1.0 if top is None else top
     hem = cr - 6.0 if hem is None else hem
@@ -957,16 +957,20 @@ def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.
             R[i, k] = 80 - hit[3] if hit[0] else (R[i - 1, k] if i else 10.0)
             J[i, k] = nearest(hit[0]) if hit[0] else (J[i - 1, k] if i else 0)
     R = np.maximum.accumulate(R, axis=0)                           # hangs from the widest point above
+    hull = R.copy()
     for _ in range(3):                                             # soften round and down
         R[:, :-1] = (np.roll(R[:, :-1], 1, 1) + 2 * R[:, :-1] + np.roll(R[:, :-1], -1, 1)) / 4
         R[1:-1] = (R[:-2] + 2 * R[1:-1] + R[2:]) / 4
         R[:, -1] = R[:, 0]
+    R = np.maximum(R, hull)                                        # softening must not cut into her (the hip front showed through)
     u = np.clip((hb - zs) / (hb - hem), 0, 1)[:, None]             # 0 at the hip, 1 at the hem
     t = th[None, :] - math.pi
     fold = np.sin(lobes * t + 0.7 * np.sin(2 * t + 1.0) + 0.4)
     r = R + off + 1.5 * u + flare * u ** 1.4 + swing * u ** 1.6 * fold     # more room where the legs move
-    hip_row = int(np.argmin(np.abs(zs - hb)))
-    Jm = np.where(zs[:, None] >= hb, J, J[hip_row][None, :])          # below the hip: the hip ring's vertex
+    sk = hb if skin_to is None else skin_to
+    hip_row = int(np.argmin(np.abs(zs - sk)))
+    Jm = np.where(zs[:, None] >= sk, J, J[hip_row][None, :])          # below that: the last ring's vertex
+    uw = np.clip((sk - zs) / (sk - hem), 0, 1)                         # 0 where skin weights end, 1 at the hem
 
     nb = len(gnames)
     kl, kr = nt // 4, 3 * nt // 4                                  # columns straight out over her left and right leg
@@ -991,14 +995,14 @@ def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.
                 uvs.append((arc[k], zs[i]) if own_uv else (np.nan, np.nan))
                 # pelvis = the hip ring's skin weights; each thigh pulls the part of the skirt
                 # that hangs over it, more towards the hem (stand-in for cloth, see the doc)
-                uu = float(u[i, 0])
+                uu = float(uw[i])
                 grow = 0.9 * smooth01(0.0, 0.8, np.array(uu)).item()
                 tl = grow * max(0.0, math.sin(t[0, k])) ** 1.5
                 tr = grow * max(0.0, -math.sin(t[0, k])) ** 1.5
                 w = WM[j] * (1.0 - tl - tr) + WM[int(J[i, kl])] * tl + WM[int(J[i, kr])] * tr
                 b = smooth01(0.0, 0.25, np.array(uu)).item()           # skin weights above the hip
                 ws.append(w * b + WM[j] * (1.0 - b) if b > 0 else np.full(nb, np.nan))
-                ms.append(1.0 - uu)                                    # body morphs fade out down the skirt
+                ms.append(1.0 - float(u[i, 0]))                        # body morphs fade out down the skirt
         for r0, r1 in zip(grid, grid[1:]):
             for k in range(nt):
                 bm.faces.new((r0[k], r1[k], r1[k + 1], r0[k + 1]))      # facing out
@@ -1016,7 +1020,7 @@ def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.
 OUTFITS = {"Noir": noir, "Garter": garter_set, "Cocoa": cocoa, "Fishnet": fishnet,
            "Catsuit": catsuit_set, "Sheer": sheer, "Bodystocking": bodystocking,
            "BodystockingSkirt": lambda: (bodystocking(), skirt()),
-           "Skirt": lambda: skirt(off=1.1)}      # the skirt alone, source of the cloth asset; 1.1 cm off: the cloth gets no bounce morphs
+           "Skirt": lambda: skirt(off=1.5, flare=1.0, swing=0.0, skin_to=LM["crotch"] + 2.0)}   # the cloth skirt: follows her shape, only the hem moves (Tema 2026-11-10); 1.5 cm off (the cloth gets no bounce morphs); skin weights to just above the crotch, so the hip front cannot push through
 CLOTH = {"Skirt"}                                # simulated in UE: the default body's morphs baked into the rest shape
 
 

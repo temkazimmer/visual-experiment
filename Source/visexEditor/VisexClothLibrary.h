@@ -14,9 +14,9 @@ class UVisexClothLibrary : public UBlueprintFunctionLibrary
 
 public:
 	/**
-	 * Fills PhysicsAsset with one capsule per bone in Bones, fitted to Mesh's reference pose: each
-	 * runs from its bone to the paired bone in Ends (same index; a bone of the same name means a
-	 * sphere) and its radius is the Percentile distance of the vertices that bone mostly drives.
+	 * Fills PhysicsAsset with one tapered capsule per bone in Bones, fitted to Mesh's reference pose:
+	 * each runs from its bone to the paired bone in Ends (same index), and the radius at each end is
+	 * the Percentile distance of the vertices that bone mostly drives in the quarter nearest that end.
 	 * Replaces any bodies already there. Returns a line per capsule.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Visex|Cloth")

@@ -30,7 +30,7 @@ one back.
 | Catsuit | Navy latex suit with waist and chest cutouts, white piping, stripes, collar, cuffs, belt | Latex, Trim (white) |
 | Sheer | High-neck sheer bodysuit, latex yoke, bands and garter belt, six straps, opera gloves | Sheer, Latex, Trim |
 | **Bodystocking** | The hero outfit: one piece of sheer black nylon. Scoop tank, deep V back, open hips, open gusset with a sheer string tanga underneath, strap-held stocking legs, gold chain and bangles | Nylon, Sheer (tanga), Binding, Trim (gold) |
-| **BodystockingSkirt** | The bodystocking with a short black satin A-line skirt over it: lofted from the waist, flared, five sculpted folds, double waistband with a bound top. The skirt is **Chaos cloth** (see below) | + Satin (cloth) |
+| **BodystockingSkirt** | The bodystocking with a short black satin skirt over it that follows her hips and hangs straight, with a double waistband and a bound top. The skirt is **Chaos cloth** (see below): only the hem moves, a little | + Satin (cloth) |
 
 ## The hero outfit: Bodystocking (Tema, 2026-11-09)
 
@@ -54,21 +54,29 @@ black open-hip bodystocking. What it has that the others do not:
 
 ## The skirt is cloth (2026-11-10)
 
+**Reshaped the same day (Tema):** the first cloth skirt flared and read as stiff. It now follows
+her body form, and only the hem moves, slightly.
+
 The outfit row names a cloth asset beside its mesh: "BodystockingSkirt" wears
 `SKM_Outfit_Bodystocking` plus `CA_Skirt`, a `UChaosClothComponent` that follows the body's
 pose. Settings come from the reference skirt read in UE 5.8 ([STUDY_SKIRT_SIM.md](Research/STUDY_SKIRT_SIM.md)).
 
-- **Source mesh** `SKM_Outfit_Skirt`: `skirt()` alone, 1.1 cm off the body, the default
-  body's morphs baked into the rest shape (the cloth gets no morphs), no shape keys.
+- **Source mesh** `SKM_Outfit_Skirt`: `skirt()` alone with no flare or folds, 1.5 cm off the
+  body, the default body's morphs baked into the rest shape (the cloth gets no morphs), no
+  shape keys. It copies the skin's weights down to 2 cm above the crotch, so it moves with her
+  hip and thigh there; with the hip ring's weights her hip front showed through in idle.
 - **Graph** `DF_Skirt`, built by `Tools/char_skirt_cloth.py`: import, max-distance map,
-  stretch/bending (satin), mass, damping, tethers, collision (1 cm, friction 0.8), solver
-  (6 substeps, 2 iterations), physics asset.
+  stretch/bending (satin), mass, damping, tethers, backstop, collision (0.5 cm, friction
+  0.8), solver (6 substeps, 2 iterations), physics asset.
 - **Max distance** from height, by our own Dataflow node `VisexHeightWeightMap`
-  (`Source/visexEditor`, editor only): 0 down to 93 cm (pinned over the hip, where the thigh
-  capsules bulge out), 12 cm at the hem.
-- **Colliders** `PA_Skirt`: thigh and calf capsules fitted to the skin by
-  `UVisexClothLibrary::FitCapsules` (92nd percentile, 12% over: thinner ones let the thighs
-  show through the cloth); no arms, so her hands don't catch the hem.
+  (`Source/visexEditor`, editor only): 0 down to 93 cm, rising to 4 cm at the hem
+  (exponent 1.5).
+- **Backstop:** distance 0, radius 50, so the cloth never goes inside its skinned surface.
+- **Colliders** `PA_Skirt`: tapered thigh and calf capsules fitted to the skin by
+  `UVisexClothLibrary::FitCapsules`, at the median distance of the vertices in the quarter
+  nearest each end (thigh 10.3 to 5.7 cm). No arms, so her hands don't catch the hem. A higher
+  percentile picks up the glutes the thigh bone drives: a 12.6 cm thigh pushed the whole hem
+  out into a stiff cuff.
 - **Material:** the skirt's satin instance is two-sided, so folds show their inside.
 - **Snaps:** the body component resets the sim when the pelvis or a calf jumps more than
   25 cm in a frame, and on every outfit change. Not on slow frames: a reset puts the hem
@@ -140,8 +148,8 @@ hips. No skin showed through in those frames.
 - **Skirt at big slider values:** the cloth keeps its own length, so at Height 185, Legs 1.12,
   Hips 1.5 it rides up to the crotch (a real skirt would too). Body morphs (Glutes, Fat)
   beyond the default are not seen by the cloth; its colliders are legs only.
-- **Skirt sides:** the sculpted lobes plus satin bending keep the hem flared at the sides
-  when she stands; it reads as a stiff flare rather than a hang.
+- **Skirt hem:** it hangs straight from the widest point of her hips and glutes, so from the
+  side it reads as a slight A-line rather than tucking in under the glutes.
 - Clothes are skinned, not simulated, except the skirt (Chaos cloth).
 - Bone sliders scale hardware and piping with the body (a wider hip widens the belt).
 - Sheer and lace cast no shadow.
