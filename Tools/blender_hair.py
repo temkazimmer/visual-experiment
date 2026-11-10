@@ -135,31 +135,44 @@ def scalp(az, el):
     return hit, nrm
 
 
-# the arch over each ear: the ear's top, as elevation by direction (1-degree steps, smoothed)
+def bridged(az, el):
+    """True where the scalp has a hole (an ear's root) in that direction."""
+    hit, _, _, _ = bvh.ray_cast(C, direction(az, el), 30.0)
+    return not hit or (hit - C).length > 13.0
+
+
+def base_line(a):
+    """The hairline without the ears, by a = 0 front .. 180 back."""
+    if a < 90:
+        t = a / 90
+        t = t * t * (3 - 2 * t)
+        return LOOK["line_front"] + (LOOK["line_side"] - LOOK["line_front"]) * t
+    t = (a - 90) / 90
+    t = t * t * (3 - 2 * t)
+    return LOOK["line_side"] + (LOOK["line_back"] - LOOK["line_side"]) * t
+
+
+# the hairline by direction (1-degree steps), arching over each ear: it clears the ear's top
+# and the hole its root leaves in the scalp, then is rounded so the arch is one smooth curve
 E = co[ear > 0.5] - np.array(C)
 e_az = np.degrees(np.arctan2(np.abs(E[:, 0]), -E[:, 1])).round().astype(int)
 e_el = np.degrees(np.arcsin(E[:, 2] / np.linalg.norm(E, axis=1)))
-ARCH = np.full(181, -90.0)
-np.maximum.at(ARCH, e_az, e_el + LOOK["ear_arch"])
-for _ in range(6):                                     # round its shoulders
-    ARCH[1:-1] = np.maximum(ARCH[1:-1], (ARCH[:-2] + ARCH[1:-1] * 2 + ARCH[2:]) / 4 - 1.5)
-print("hairline arches over the ears: az %d..%d, up to %.0f deg" % (
-    np.nonzero(ARCH > -90)[0].min(), np.nonzero(ARCH > -90)[0].max(), ARCH.max()))
+need = np.array([base_line(a) for a in range(181)])
+np.maximum.at(need, e_az, e_el + LOOK["ear_arch"])
+for a in range(181):
+    while need[a] < 80 and (bridged(a, need[a]) or bridged(-a, need[a])):
+        need[a] += 1.0
+LINE = need.copy()
+for _ in range(40):                                    # round it: only ever raised, never below need
+    LINE[1:-1] = np.maximum(need[1:-1], (LINE[:-2] + LINE[1:-1] * 2 + LINE[2:]) / 4)
+arch = np.nonzero(LINE > np.array([base_line(a) for a in range(181)]) + 0.5)[0]
+print("hairline arches over the ears: az %d..%d, up to %.0f deg" % (arch.min(), arch.max(), LINE.max()))
 
 
 def hairline(az):
     a = abs(((az + 180) % 360) - 180)                  # 0 front .. 180 back
-    if a < 90:
-        t = a / 90
-        t = t * t * (3 - 2 * t)
-        base = LOOK["line_front"] + (LOOK["line_side"] - LOOK["line_front"]) * t
-    else:
-        t = (a - 90) / 90
-        t = t * t * (3 - 2 * t)
-        base = LOOK["line_side"] + (LOOK["line_back"] - LOOK["line_side"]) * t
     i = int(min(a, 179.0))
-    arch = ARCH[i] + (ARCH[i + 1] - ARCH[i]) * (a - i)
-    return max(base, arch)
+    return LINE[i] + (LINE[i + 1] - LINE[i]) * (a - i)
 
 
 V, F, UV = [], [], []
@@ -214,7 +227,7 @@ def lock(root, nrm, heading, length, width, lift, fall, clear, mode=None):
     return path
 
 
-def blade(path, width):
+def blade(path, width, start=0.55):
     base = len(V)
     ns = LOOK["sides"]
     n = len(path) - 1
@@ -228,7 +241,7 @@ def blade(path, width):
         up = side.cross(tan).normalized()
         fill = 1 + LOOK["tip_bulge"] * t * t * (3 - 2 * t)
         pt = max(0.0, (t - LOOK["tip_taper"]) / (1 - LOOK["tip_taper"]))
-        w = width * min(1.0, 0.55 + 2.2 * t) * fill * (1 - pt ** 1.6) / 2
+        w = width * min(1.0, start + 2.2 * t) * fill * (1 - pt ** 1.6) / 2
         if k == n:
             V.append(p)
             UV.append((0.5, 1.0))
@@ -263,7 +276,7 @@ for L in LOOK["layers"]:
         length = rng.uniform(*L["length"])
         width = LOOK["side_width"] * rng.uniform(0.8, 1.25)
         # by an ear: in front of it if the root is well ahead of it, else tucked behind it
-        mode = None
+        mode, w = None, 0.0
         if abs(sin(radians(az))) > 0.35:                  # a lock down the side of the head
             e = EARS[1 if sin(radians(az)) > 0 else -1]
             if root.y < e["yf"] - LOOK["tuck_gap"] - 0.6 * width:
@@ -280,9 +293,12 @@ for L in LOOK["layers"]:
         if a < 62 and L["name"] == "under":
             # no under layer over the forehead; at the temples it frames the face
             length *= 0.5 if a < 40 else 1.15
-        path = lock(root + nrm * LOOK["cap"], nrm, heading, length, width,
-                    L["lift"] * rng.uniform(0.7, 1.3), L["fall"], L["clear"], mode)
-        blade(path, width)
+        # a lock swept back over an ear lies flat along the head, starts under the scalp so its
+        # end doesn't show, and is full width from the start, so together they read as one band
+        lift = L["lift"] * rng.uniform(0.7, 1.3) * (1 - 0.8 * w)
+        path = lock(root + nrm * (LOOK["cap"] - 0.9 * w), nrm, heading, length, width,
+                    lift, L["fall"], L["clear"], mode)
+        blade(path, width, 0.55 + 0.35 * w)
         count += 1
 
 hm = bpy.data.meshes.new("Hair")
