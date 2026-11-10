@@ -172,6 +172,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Key")
 	float MenuKeyBlendTime = 1.2f;
 
+	/** Main menu: the blowing sand (Dunes_Blow) calms to a faint, slow drift, so only
+	 *  fine grains slide across the ground. Play gets the full wind back during Start.
+	 *  Share of the wind speed on the menu. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Wind", meta = (ClampMin = "0", ClampMax = "1"))
+	float MenuWindSpeed = 0.12f;
+
+	/** Blowing-sand opacity on the menu (Play uses the material's own, 0.45). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Wind", meta = (ClampMin = "0", ClampMax = "1"))
+	float MenuWindOpacity = 0.1f;
+
+	/** s from calm to full wind and back */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Wind")
+	float MenuWindBlendTime = 3.f;
+
 	/** Share of the studio look photo mode uses (the Character page uses all of it). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Studio", meta = (ClampMin = "0", ClampMax = "1"))
 	float PhotoStudioStrength = 0.5f;
@@ -371,6 +385,13 @@ private:
 	float MenuKeyAlpha = 0.f;
 	UPROPERTY(Transient)
 	TObjectPtr<AActor> MenuKey;
+
+	void TickMenuWind(float DeltaSeconds);
+	float WindCalm = -1.f;      // 1 = menu calm, 0 = full wind; <0 until first tick
+	float WindClock = 0.f;      // the wind's own time, slowed while calm
+	bool bWindSearched = false;
+	UPROPERTY(Transient)
+	TObjectPtr<class UMaterialInstanceDynamic> WindMID;
 
 	FTransform CameraBase;
 	FTransform LevelCamera;
