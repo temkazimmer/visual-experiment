@@ -218,9 +218,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera", meta = (ClampMin = "1"))
 	float MenuSensorScale = 3.f;
 
-	/** Menu aperture (f-stop) on that sensor; 0 keeps the camera's own. */
+	/** Menu aperture (f-stop) on that sensor; 0 keeps the camera's own. f/8 keeps all of her sharp
+	 * (about ±40 cm around the focus at menu distance) while the far haze still goes soft. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
-	float MenuAperture = 0.7f;
+	float MenuAperture = 8.f;
 
 	/** Panel material override (e.g. MI_MenuDifference, which draws the text as the difference
 	 * from the scene behind it). Unset = the stock widget material: plain white over a soft shade. */
