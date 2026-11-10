@@ -124,6 +124,11 @@ private:
 
 	bool bOpen = false;
 	bool bKeysBound = false;
+	void StickNavigate(float DeltaSeconds);
+	void StickPress(int32 Dir);
+	int32 StickDir = 0;       // left stick held: 0 none, 1 up, 2 right, 3 down, 4 left
+	float StickHeld = 0.f;
+	float StickNext = 0.f;
 	int32 Tab = 0;
 	int32 Selected = 0;
 	int32 TabRow[2] = {0, 0};
