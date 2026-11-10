@@ -80,7 +80,12 @@ def material():
 
     wp = node(unreal.MaterialExpressionWorldPosition, -900, 0)
     cam = node(unreal.MaterialExpressionCameraPositionWS, -900, 100)
-    t = node(unreal.MaterialExpressionTime, -900, 200)
+    t0 = node(unreal.MaterialExpressionTime, -1100, 200)
+    off = node(unreal.MaterialExpressionScalarParameter, -1100, 260)
+    off.set_editor_property("parameter_name", "WindOffset")    # the menu director slows the wind's clock
+    t = node(unreal.MaterialExpressionAdd, -900, 200)
+    mel.connect_material_expressions(t0, "", t, "A")
+    mel.connect_material_expressions(off, "", t, "B")
     uv = node(unreal.MaterialExpressionTextureCoordinate, -900, 300)
     gap = node(unreal.MaterialExpressionComponentMask, -750, 300)
     gap.set_editor_property("r", True)

@@ -6,10 +6,19 @@
 #include "ChaosClothAsset/ClothComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Animation/AnimInstance.h"
 #include "Engine/SkeletalMesh.h"
 #include "GameFramework/Character.h"
 #include "Kismet/GameplayStatics.h"
+#include "HAL/IConsoleManager.h"
 #include "Materials/MaterialInstanceDynamic.h"
+
+// The skirt's cloth sim is off by default: skinned by her pose it reads cleanest (a free hem
+// springs back to its reference-pose shape and leaves a ridge, Docs/CLOTHES.md) and it costs
+// nothing, where the sim cost 50-70 ms of game thread in a packaged build.
+static TAutoConsoleVariable<bool> CVarVisexClothSim(
+	TEXT("visex.ClothSim"), false,
+	TEXT("Simulate outfit cloth (the skirt). Off: the cloth piece is skinned to her pose. Takes effect on the next outfit change."));
 
 UVisexBodyComponent::UVisexBodyComponent()
 {
@@ -32,6 +41,10 @@ void UVisexBodyComponent::OnRegister()
 void UVisexBodyComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	if (USkeletalMeshComponent* Mesh = Body())
+	{
+		Mesh->SetReceivesDecals(false);    // no sand footprints on her (shells, outfit, hair, cloth too)
+	}
 	if (bLoadOnBeginPlay)
 	{
 		Load();
@@ -154,8 +167,40 @@ void UVisexBodyComponent::Apply()
 	}
 
 	ApplySkin();
+	ApplyHair();
 	ApplyOutfit();
 	PushToAnim();
+}
+
+void UVisexBodyComponent::ApplyHair()
+{
+	// game worlds only, like the outfit: a runtime component, never saved with the level
+	USkeletalMeshComponent* Mesh = Body();
+	const UWorld* World = GetWorld();
+	if (HairMesh || !Mesh || !World || !World->IsGameWorld() || !GetOwner())
+	{
+		return;
+	}
+	USkeletalMesh* Asset = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/Character/Hair/SKM_HairCards.SKM_HairCards"));
+	UClass* Anim = LoadClass<UAnimInstance>(nullptr, TEXT("/Game/Character/Hair/ABP_HairCards.ABP_HairCards_C"));
+	if (!Asset || !Anim)
+	{
+		return;
+	}
+	// on the body mesh: the hair's AnimBP copies the pose from its attached parent, then
+	// Kawaii Physics swings the locks. Its own anim class, so no leader pose.
+	HairMesh = NewObject<USkeletalMeshComponent>(GetOwner(), TEXT("Hair"), RF_Transient);
+	HairMesh->SetupAttachment(Mesh);
+	HairMesh->SetCollisionProfileName(TEXT("NoCollision"));
+	HairMesh->SetGenerateOverlapEvents(false);
+	HairMesh->SetSkeletalMeshAsset(Asset);
+	HairMesh->SetAnimInstanceClass(Anim);
+	HairMesh->SetCastShadow(true);
+	HairMesh->SetReceivesDecals(false);
+	const FLightingChannels& Ch = Mesh->LightingChannels;
+	HairMesh->SetLightingChannels(Ch.bChannel0, Ch.bChannel1, Ch.bChannel2);
+	HairMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	HairMesh->RegisterComponent();
 }
 
 void UVisexBodyComponent::ApplySkin()
@@ -245,11 +290,14 @@ void UVisexBodyComponent::ApplyOutfit()
 		{
 			ClothMesh = NewObject<UChaosClothComponent>(GetOwner(), TEXT("OutfitCloth"), RF_Transient);
 			ClothMesh->SetupAttachment(Mesh);
+			ClothMesh->SetEnableSimulation(CVarVisexClothSim.GetValueOnGameThread());   // off: no tick, skinned only
 			ClothMesh->RegisterComponent();
 		}
+		ClothMesh->SetEnableSimulation(CVarVisexClothSim.GetValueOnGameThread());
 		ClothMesh->SetAsset(Cloth);
 		ClothMesh->SetLeaderPoseComponent(Mesh, true);
 		ClothMesh->SetCastShadow(true);
+		ClothMesh->SetReceivesDecals(false);
 		const FLightingChannels& Ch = Mesh->LightingChannels;
 		ClothMesh->SetLightingChannels(Ch.bChannel0, Ch.bChannel1, Ch.bChannel2);
 		ClothMesh->ForceNextUpdateTeleportAndReset();
@@ -260,7 +308,7 @@ void UVisexBodyComponent::ApplyOutfit()
 void UVisexBodyComponent::TickCloth(float DeltaTime)
 {
 	USkeletalMeshComponent* Mesh = Body();
-	if (!ClothMesh || !Mesh || Mesh->GetBoneIndex(TEXT("thigh_l")) == INDEX_NONE)
+	if (!ClothMesh || !ClothMesh->IsSimulationEnabled() || !Mesh || Mesh->GetBoneIndex(TEXT("thigh_l")) == INDEX_NONE)
 	{
 		return;
 	}

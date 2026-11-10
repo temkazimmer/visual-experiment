@@ -92,9 +92,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
 	float IdleBrightness = 0.12f;
 
-	/** Opacity of the items that aren't selected (unused: they dim by IdleBrightness). */
+	/** Opacity of the items that aren't selected: white at 60 % (Tema). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
-	float IdleOpacity = 0.5f;
+	float IdleOpacity = 0.6f;
+
+	/** Drop shadow under the text, in layout units before Supersample. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
+	FVector2D ShadowOffset = FVector2D(3.f, 4.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
+	float ShadowOpacity = 0.9f;
 
 	UFUNCTION(BlueprintCallable, Category = "Menu")
 	void SetSelected(int32 Index);

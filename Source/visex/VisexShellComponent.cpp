@@ -7,6 +7,8 @@ UVisexShellComponent::UVisexShellComponent(const FObjectInitializer& ObjectIniti
 	SetCastShadow(false);
 	SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	SetGenerateOverlapEvents(false);
+	// her skin and clothes take no decals: the sand's footprint decal blotched her ankles
+	bReceivesDecals = false;
 	bUseBoundsFromLeaderPoseComponent = true;
 }
 

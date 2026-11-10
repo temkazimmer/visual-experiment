@@ -27,6 +27,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "EngineUtils.h"
 #include "Materials/MaterialInterface.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/CollisionProfile.h"
 #include "Components/InputComponent.h"
 #include "Components/WidgetComponent.h"
@@ -517,10 +518,25 @@ void AVisexMenuDirector::SetSceneStripped(bool bStrip)
 	if (bStrip)
 	{
 		Stripped.Reset();
+		// whatever she stands on stays, however it is named
+		const AActor* Under = nullptr;
+		if (const APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0))
+		{
+			FHitResult Hit;
+			FCollisionQueryParams Q(TEXT("StripFloor"), true, Pawn);
+			if (GetWorld()->LineTraceSingleByChannel(Hit, Pawn->GetActorLocation(), Pawn->GetActorLocation() - FVector(0, 0, 1000), ECC_Visibility, Q))
+			{
+				Under = Hit.GetActor();
+			}
+		}
 		for (TActorIterator<AStaticMeshActor> It(GetWorld()); It; ++It)
 		{
+			// labels exist only in editor and non-Shipping builds: Shipping sees "StaticMeshActor_12",
+			// stripped the dunes too and she fell through the world. The VisexGround tag
+			// (Tools/tag_ground.py) survives cooking; the label check stays for older levels.
 			const FString Label = It->GetActorNameOrLabel();
-			const bool bGround = Label.StartsWith(TEXT("Dunes")) || Label.StartsWith(TEXT("LowerGround")) || Label == TEXT("Plaza")
+			const bool bGround = *It == Under || It->ActorHasTag(TEXT("VisexGround"))
+				|| Label.StartsWith(TEXT("Dunes")) || Label.StartsWith(TEXT("LowerGround")) || Label == TEXT("Plaza")
 				|| Label.StartsWith(TEXT("StepRamp"));   // walkable ramp under the pawn-ignoring steps
 			if (!bGround && !It->IsHidden())
 			{
@@ -670,21 +686,32 @@ void AVisexMenuDirector::ToggleMenu()
 
 void AVisexMenuDirector::SetCornerShade(float Weight)
 {
+	// a post-process material's blendable weight doesn't fade it: any weight above 0 draws it at
+	// full strength, so the old fade held the darkening to the last frame and popped it off at
+	// the hand-over (QA 0259/0269: luma 0.24 -> 0.38). Fade the material's own Strength instead.
 	UCineCameraComponent* Lens = GetLens();
 	UMaterialInterface* Mat = CornerShade.LoadSynchronous();
 	if (!Lens || !Mat)
 	{
 		return;
 	}
+	if (!CornerShadeMID)
+	{
+		CornerShadeMID = UMaterialInstanceDynamic::Create(Mat, this);
+		float Base = 0.f;
+		CornerShadeBase = Mat->GetScalarParameterValue(FName(TEXT("Strength")), Base) ? Base : 0.93f;
+	}
+	CornerShadeMID->SetScalarParameterValue(TEXT("Strength"), CornerShadeBase * FMath::Clamp(Weight, 0.f, 1.f));
+	const float BlendWeight = Weight > KINDA_SMALL_NUMBER ? 1.f : 0.f;
 	for (FWeightedBlendable& B : Lens->PostProcessSettings.WeightedBlendables.Array)
 	{
-		if (B.Object == Mat)
+		if (B.Object == CornerShadeMID)
 		{
-			B.Weight = Weight;
+			B.Weight = BlendWeight;
 			return;
 		}
 	}
-	Lens->PostProcessSettings.WeightedBlendables.Array.Add(FWeightedBlendable(Weight, Mat));
+	Lens->PostProcessSettings.WeightedBlendables.Array.Add(FWeightedBlendable(BlendWeight, CornerShadeMID));
 }
 
 void AVisexMenuDirector::ReframeMenu()
@@ -932,6 +959,8 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 	{
 		TickStudio(DeltaSeconds);
 	}
+	TickMenuKey(DeltaSeconds);
+	TickMenuWind(DeltaSeconds);
 
 	if (FadeOut >= 0.f)
 	{
@@ -1010,7 +1039,10 @@ void AVisexMenuDirector::TickOrbit(float DeltaSeconds)
 	if (T >= 1.f)
 	{
 		bOrbiting = false;
-		PC->SetViewTarget(Pawn);      // same place, same angle: an invisible cut
+		// same place, same angle, but not quite the same picture: the menu cine camera rendered
+		// visibly darker than the play camera in motion (QA 0259: luma 0.24 -> 0.38 on the cut),
+		// so blend the hand-over instead of cutting
+		PC->SetViewTargetWithBlend(Pawn, LandingBlendTime, VTBlend_EaseInOut, 2.f);
 		HandBack();
 	}
 }
@@ -1062,16 +1094,7 @@ void AVisexMenuDirector::TickStudio(float DeltaSeconds)
 		return;
 	}
 
-	// she joins channel 1 (and keeps 0), clothes included, which can change while the page is open
-	TArray<UPrimitiveComponent*> Parts;
-	Pawn->GetComponents(Parts);
-	for (UPrimitiveComponent* P : Parts)
-	{
-		if (!P->LightingChannels.bChannel1)
-		{
-			P->SetLightingChannels(true, true, P->LightingChannels.bChannel2);
-		}
-	}
+	JoinChannel1(Pawn);
 
 	float Half = 90.f;
 	if (const ACharacter* C = Cast<ACharacter>(Pawn))
@@ -1085,6 +1108,77 @@ void AVisexMenuDirector::TickStudio(float DeltaSeconds)
 	PlaceStudioLight(Rim, RimPlacement, Feet, CamYaw, 110.f);
 	Spot->SetIntensity(SpotIntensity * S);
 	Rim->SetIntensity(RimIntensity * S);
+}
+
+void AVisexMenuDirector::JoinChannel1(APawn* Pawn)
+{
+	// she joins channel 1 (and keeps 0), clothes included, which can change while a page is open
+	TArray<UPrimitiveComponent*> Parts;
+	Pawn->GetComponents(Parts);
+	for (UPrimitiveComponent* P : Parts)
+	{
+		if (!P->LightingChannels.bChannel1)
+		{
+			P->SetLightingChannels(true, true, P->LightingChannels.bChannel2);
+		}
+	}
+}
+
+void AVisexMenuDirector::TickMenuKey(float DeltaSeconds)
+{
+	// on while the main menu page is open; the Character page has its own studio lights
+	const bool bWant = bOpen && !bStudio;
+	if (!bWant && MenuKeyAlpha <= 0.f)
+	{
+		return;
+	}
+	const float Step = DeltaSeconds / FMath::Max(0.05f, MenuKeyBlendTime);
+	MenuKeyAlpha = FMath::Clamp(MenuKeyAlpha + (bWant ? Step : -Step), 0.f, 1.f);
+
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	if (!MenuKey)
+	{
+		FActorSpawnParameters P;
+		P.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		if (ARectLight* L = GetWorld()->SpawnActor<ARectLight>(GetActorLocation() - FVector(0.f, 0.f, 5000.f), FRotator::ZeroRotator, P))
+		{
+			URectLightComponent* C = Cast<URectLightComponent>(L->GetLightComponent());
+			C->SetMobility(EComponentMobility::Movable);
+			C->SetIntensityUnits(ELightUnits::Candelas);   // spawned lights default to unitless
+			C->SetIntensity(0.f);
+			C->SetTemperature(MenuKeyTemperature);
+			C->bUseTemperature = true;
+			C->SetLightingChannels(false, true, false);   // her only: the sand and stone keep the scene's light
+			C->SetVolumetricScatteringIntensity(0.f);     // no glow in the haze
+			C->SetAttenuationRadius(1500.f);
+			C->SetSourceWidth(160.f);                     // big and soft: diffuse low sun through dust
+			C->SetSourceHeight(160.f);
+			C->SetBarnDoorAngle(88.f);
+			MenuKey = L;
+		}
+	}
+	ULocalLightComponent* Key = MenuKey ? MenuKey->FindComponentByClass<ULocalLightComponent>() : nullptr;
+	if (!Key)
+	{
+		return;
+	}
+	if (!Pawn || !PC->PlayerCameraManager || MenuKeyAlpha <= 0.f)
+	{
+		Key->SetIntensity(0.f);
+		return;
+	}
+	JoinChannel1(Pawn);
+	float Half = 90.f;
+	if (const ACharacter* C = Cast<ACharacter>(Pawn))
+	{
+		Half = C->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	}
+	const FVector Feet = Pawn->GetActorLocation() - FVector(0.f, 0.f, Half);
+	const FVector ToCam = PC->PlayerCameraManager->GetCameraLocation() - Feet;
+	const float CamYaw = FMath::RadiansToDegrees(FMath::Atan2(ToCam.Y, ToCam.X));
+	PlaceStudioLight(Key, MenuKeyPlacement, Feet, CamYaw, 120.f);
+	Key->SetIntensity(MenuKeyIntensity * FMath::SmoothStep(0.f, 1.f, MenuKeyAlpha));
 }
 
 void AVisexMenuDirector::PlaceStudioLight(ULocalLightComponent* Light, const FVector& Placement, const FVector& Feet, float CamYaw, float AimHeight) const
@@ -1140,4 +1234,40 @@ void AVisexMenuDirector::SpawnStudioLights()
 			StudioRim = L;
 		}
 	}
+}
+
+void AVisexMenuDirector::TickMenuWind(float DeltaSeconds)
+{
+	if (!bWindSearched)
+	{
+		bWindSearched = true;
+		for (TActorIterator<AStaticMeshActor> It(GetWorld()); It; ++It)
+		{
+			UStaticMeshComponent* C = It->GetStaticMeshComponent();
+			if (C && C->GetStaticMesh() && C->GetStaticMesh()->GetName() == TEXT("SM_BlowingSand"))
+			{
+				WindMID = C->CreateDynamicMaterialInstance(0);
+				break;
+			}
+		}
+	}
+	if (!WindMID)
+	{
+		return;
+	}
+	const UWorld* W = GetWorld();
+	const float Now = W->GetTimeSeconds();
+	if (WindCalm < 0.f)
+	{
+		WindCalm = bOpen ? 1.f : 0.f;   // start calm on the menu, no fade-in
+		WindClock = Now;
+	}
+	const float Step = DeltaSeconds / FMath::Max(0.05f, MenuWindBlendTime);
+	WindCalm = FMath::Clamp(WindCalm + (bOpen ? Step : -Step), 0.f, 1.f);
+	const float A = FMath::SmoothStep(0.f, 1.f, WindCalm);
+	// the material scrolls its gusts by time * speed: slowing the clock (not the speed)
+	// keeps the pattern in place while the wind changes, with no jump
+	WindClock += DeltaSeconds * FMath::Lerp(1.f, MenuWindSpeed, A);
+	WindMID->SetScalarParameterValue(TEXT("WindOffset"), WindClock - Now);
+	WindMID->SetScalarParameterValue(TEXT("Opacity"), FMath::Lerp(0.45f, MenuWindOpacity, A));
 }

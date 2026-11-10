@@ -153,6 +153,39 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Studio")
 	float RimIntensity = 35.f;
 
+	/** Main menu: a warm, soft sun-coloured key on her (lighting channel 1, so only she
+	 *  gets it), so she isn't a black silhouette against the low sun behind her. It fades
+	 *  in with the menu and out during Start's camera move. Placement as SpotPlacement:
+	 *  yaw from the camera's side of her (deg), distance, height (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Key")
+	FVector MenuKeyPlacement = FVector(-65.f, 260.f, 260.f);
+
+	/** cd */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Key")
+	float MenuKeyIntensity = 50.f;
+
+	/** K: low-sun warm */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Key")
+	float MenuKeyTemperature = 3400.f;
+
+	/** s to fade in or out */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Key")
+	float MenuKeyBlendTime = 1.2f;
+
+	/** Main menu: the blowing sand (Dunes_Blow) calms to a faint, slow drift, so only
+	 *  fine grains slide across the ground. Play gets the full wind back during Start.
+	 *  Share of the wind speed on the menu. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Wind", meta = (ClampMin = "0", ClampMax = "1"))
+	float MenuWindSpeed = 0.12f;
+
+	/** Blowing-sand opacity on the menu (Play uses the material's own, 0.45). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Wind", meta = (ClampMin = "0", ClampMax = "1"))
+	float MenuWindOpacity = 0.1f;
+
+	/** s from calm to full wind and back */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Wind")
+	float MenuWindBlendTime = 3.f;
+
 	/** Share of the studio look photo mode uses (the Character page uses all of it). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Studio", meta = (ClampMin = "0", ClampMax = "1"))
 	float PhotoStudioStrength = 0.5f;
@@ -199,9 +232,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera", meta = (ClampMin = "1"))
 	float MenuSensorScale = 3.f;
 
-	/** Menu aperture (f-stop) on that sensor; 0 keeps the camera's own. */
+	/** Menu aperture (f-stop) on that sensor; 0 keeps the camera's own. f/8 keeps all of her sharp
+	 * (about ±40 cm around the focus at menu distance) while the far haze still goes soft. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
-	float MenuAperture = 0.7f;
+	float MenuAperture = 8.f;
+
+	/** Seconds the Start move blends into the play camera when it lands (0 = a cut). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera", meta = (ClampMin = "0"))
+	float LandingBlendTime = 0.6f;
 
 	/** Panel material override (e.g. MI_MenuDifference, which draws the text as the difference
 	 * from the scene behind it). Unset = the stock widget material: plain white over a soft shade. */
@@ -346,10 +384,25 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<AActor> StudioRim;
 	void SpawnStudioLights();
+	void TickMenuKey(float DeltaSeconds);
+	static void JoinChannel1(APawn* Pawn);
+	float MenuKeyAlpha = 0.f;
+	UPROPERTY(Transient)
+	TObjectPtr<AActor> MenuKey;
+
+	void TickMenuWind(float DeltaSeconds);
+	float WindCalm = -1.f;      // 1 = menu calm, 0 = full wind; <0 until first tick
+	float WindClock = 0.f;      // the wind's own time, slowed while calm
+	bool bWindSearched = false;
+	UPROPERTY(Transient)
+	TObjectPtr<class UMaterialInstanceDynamic> WindMID;
 
 	FTransform CameraBase;
 	FTransform LevelCamera;
 	void SetCornerShade(float Weight);
+	UPROPERTY(Transient)
+	TObjectPtr<class UMaterialInstanceDynamic> CornerShadeMID;
+	float CornerShadeBase = 0.93f;
 	bool bHaveLevelCamera = false;
 	bool bHaveBase = false;
 	bool bOrbiting = false;
