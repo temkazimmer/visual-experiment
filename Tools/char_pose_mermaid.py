@@ -238,7 +238,7 @@ def shoot(prefix, frames, shots, views=("front", "side")):
     stand.set_actor_hidden_in_game(True)
     stand.set_is_temporarily_hidden_in_editor(True)
     SCRATCH = "/Game/Characters/Scratch"                    # never saved, removed below
-    char = None
+    char, props = None, []
     try:
         for i, t in enumerate(shots):
             # nothing ticks in the editor world: a mesh shows the clip it is given first and
@@ -248,6 +248,15 @@ def shoot(prefix, frames, shots, views=("front", "side")):
                                               unreal.Rotator(roll=0, pitch=0, yaw=stand.get_actor_rotation().yaw + 90.0))
             body = char.get_editor_property("mesh")
             body.override_animation_data(still)
+            props = []                                      # stand-ins (a column...), destroyed below
+            for mesh_path, centre, axis, scale in globals().get("PROPS", []):
+                xf = body.get_world_transform()
+                at_w = xf.transform_location(unreal.Vector(*centre))
+                ax_w = xf.transform_direction(unreal.Vector(*axis))
+                prop = eas.spawn_actor_from_class(unreal.StaticMeshActor, at_w, unreal.MathLibrary.make_rot_from_z(ax_w))
+                prop.static_mesh_component.set_static_mesh(unreal.load_asset(mesh_path))
+                prop.set_actor_scale3d(unreal.Vector(*scale))
+                props.append(prop)
             f, r, up = char.get_actor_forward_vector(), char.get_actor_right_vector(), unreal.Vector(0, 0, 1)
             ground = body.get_world_transform().transform_location(unreal.Vector(0, 0, 0))
             tgt = ground + up * 75 + f * 15
@@ -264,12 +273,17 @@ def shoot(prefix, frames, shots, views=("front", "side")):
                 exec(compile(capture_src, "capture.py", "exec"), g)
                 dst = os.path.join(TOOLS, ".bridge", "%s_%s_%d.png" % (prefix, name, i))
                 shutil.move(os.path.join(TOOLS, ".bridge", "capture.png"), dst)
+            for prop in props:
+                eas.destroy_actor(prop)
+            props = []
             eas.destroy_actor(char)
             char = None
         print("shots", len(views) * len(shots))
     finally:
         if char:
             eas.destroy_actor(char)
+        for prop in props:
+            eas.destroy_actor(prop)
         for i in range(len(shots)):
             if unreal.EditorAssetLibrary.does_asset_exist(SCRATCH + "/A_Shot_%d" % i):
                 unreal.EditorAssetLibrary.delete_asset(SCRATCH + "/A_Shot_%d" % i)
