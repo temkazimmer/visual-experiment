@@ -9,7 +9,15 @@
 #include "Engine/SkeletalMesh.h"
 #include "GameFramework/Character.h"
 #include "Kismet/GameplayStatics.h"
+#include "HAL/IConsoleManager.h"
 #include "Materials/MaterialInstanceDynamic.h"
+
+// The skirt's cloth sim is off by default: skinned by her pose it reads cleanest (a free hem
+// springs back to its reference-pose shape and leaves a ridge, Docs/CLOTHES.md) and it costs
+// nothing, where the sim cost 50-70 ms of game thread in a packaged build.
+static TAutoConsoleVariable<bool> CVarVisexClothSim(
+	TEXT("visex.ClothSim"), false,
+	TEXT("Simulate outfit cloth (the skirt). Off: the cloth piece is skinned to her pose. Takes effect on the next outfit change."));
 
 UVisexBodyComponent::UVisexBodyComponent()
 {
@@ -245,8 +253,10 @@ void UVisexBodyComponent::ApplyOutfit()
 		{
 			ClothMesh = NewObject<UChaosClothComponent>(GetOwner(), TEXT("OutfitCloth"), RF_Transient);
 			ClothMesh->SetupAttachment(Mesh);
+			ClothMesh->SetEnableSimulation(CVarVisexClothSim.GetValueOnGameThread());   // off: no tick, skinned only
 			ClothMesh->RegisterComponent();
 		}
+		ClothMesh->SetEnableSimulation(CVarVisexClothSim.GetValueOnGameThread());
 		ClothMesh->SetAsset(Cloth);
 		ClothMesh->SetLeaderPoseComponent(Mesh, true);
 		ClothMesh->SetCastShadow(true);
@@ -260,7 +270,7 @@ void UVisexBodyComponent::ApplyOutfit()
 void UVisexBodyComponent::TickCloth(float DeltaTime)
 {
 	USkeletalMeshComponent* Mesh = Body();
-	if (!ClothMesh || !Mesh || Mesh->GetBoneIndex(TEXT("thigh_l")) == INDEX_NONE)
+	if (!ClothMesh || !ClothMesh->IsSimulationEnabled() || !Mesh || Mesh->GetBoneIndex(TEXT("thigh_l")) == INDEX_NONE)
 	{
 		return;
 	}

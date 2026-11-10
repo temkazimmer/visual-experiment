@@ -57,12 +57,26 @@ black open-hip bodystocking. What it has that the others do not:
 **Reshaped the same day (Tema):** the first cloth skirt flared and read as stiff. It now follows
 her body form, and only the hem moves, slightly.
 
+**Sim off by default (2026-11-10).** `visex.ClothSim` (console variable, default 0) decides on
+each outfit change whether the cloth component simulates. Off, the component doesn't tick and
+the skirt is skinned to her pose by the leader pose. That is the shipping look, for two reasons:
+- **The ridge:** wherever the cloth is free, it springs back towards its reference-pose shape
+  (the idle pose bends the skinned skirt away from it at the sides) and leaves a horizontal
+  ridge at the edge of the free zone. Tema flagged it. Gravity, colliders, an anim drive and
+  the backstop made no difference, and even 1.2 cm of hem freedom showed a lip. Fully pinned it
+  is clean. Movement without the ridge needs the cloth's rest shape built in her standing pose.
+- **Cost:** in a packaged Development build the sim cost 50-70 ms of game thread
+  (PhysicsParallelFor, waits in `HandleExistingParallelSimulation`).
+
+The mesh for the skinned look: no flare or folds; 1 cm off at the top, easing out as u squared
+to about 4 cm at the hem; the skin's weights down to 2 cm above the crotch, then each column keeps
+the weights of that ring, with no thigh pull (`skirt(..., tight=True)`).
+
 The outfit row names a cloth asset beside its mesh: "BodystockingSkirt" wears
 `SKM_Outfit_Bodystocking` plus `CA_Skirt`, a `UChaosClothComponent` that follows the body's
 pose. Settings come from the reference skirt read in UE 5.8 ([STUDY_SKIRT_SIM.md](Research/STUDY_SKIRT_SIM.md)).
 
-- **Source mesh** `SKM_Outfit_Skirt`: `skirt()` alone with no flare or folds, 1.5 cm off the
-  body, the default body's morphs baked into the rest shape (the cloth gets no morphs), no
+- **Source mesh** `SKM_Outfit_Skirt`: `skirt()` alone with no flare or folds (see above), the default body's morphs baked into the rest shape (the cloth gets no morphs), no
   shape keys. It copies the skin's weights down to 2 cm above the crotch, so it moves with her
   hip and thigh there; with the hip ring's weights her hip front showed through in idle.
 - **Graph** `DF_Skirt`, built by `Tools/char_skirt_cloth.py`: import, max-distance map,
