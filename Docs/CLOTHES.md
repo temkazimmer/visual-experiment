@@ -30,6 +30,7 @@ one back.
 | Catsuit | Navy latex suit with waist and chest cutouts, white piping, stripes, collar, cuffs, belt | Latex, Trim (white) |
 | Sheer | High-neck sheer bodysuit, latex yoke, bands and garter belt, six straps, opera gloves | Sheer, Latex, Trim |
 | **Bodystocking** | The hero outfit: one piece of sheer black nylon. Scoop tank, deep V back, open hips, open gusset with a sheer string tanga underneath, strap-held stocking legs, gold chain and bangles | Nylon, Sheer (tanga), Binding, Trim (gold) |
+| **BodystockingSkirt** | The bodystocking with a short black satin A-line skirt over it: lofted from the waist, flared, five sculpted folds, double waistband with a bound top. Weights are a stand-in pelvis/thigh blend ([DESIGN_SKIRT.md](Research/DESIGN_SKIRT.md)) | + Satin |
 
 ## The hero outfit: Bodystocking (Tema, 2026-11-09)
 
@@ -56,7 +57,7 @@ black open-hip bodystocking. What it has that the others do not:
 1. `Tools/blender_outfit.py` (Blender, headless, about 20 s for all six) cuts every piece
    from `SourceArt/Character/android_skin.fbx`, so it fits her exactly.
    - A piece is a coverage field in cm; it is cut cleanly through the triangles.
-   - It designs on her **default body** (Bust 0.80, Bust spacing 0.8 = BustApart 1.10, Glutes 0.5, Fat 0.38, Thigh gap 0, six-pack abs = AbsLines/AbsPack 0.73):
+   - It designs on her **default body** (Bust 0.80, Bust spacing 0.8 = BustApart 1.10, Glutes 0.5, Fat 0.38, Thigh gap 0, six-pack abs = AbsLines/AbsPack 0.73, Bust height 0.5 = BustBounceL/R_Up 0.65):
      the skin's rest shape is flat and the bust only exists in the morph. The rest shape is
      derived at the end. If those slider defaults change, change `DESIGN` to match.
    - Fabric vertices take **all** the weights (up to 8 per vertex: the hips carry 7; cutting
