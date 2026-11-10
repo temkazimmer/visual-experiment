@@ -46,6 +46,30 @@ void UVisexBodyComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	{
 		TickJiggle(DeltaTime);
 	}
+	TickCorrectives();
+}
+
+void UVisexBodyComponent::TickCorrectives()
+{
+	USkeletalMeshComponent* Mesh = Body();
+	if (!Mesh || Mesh->GetBoneIndex(TEXT("upperarm_l")) == INDEX_NONE)
+	{
+		return;
+	}
+	// measured as in the sculpt: the upper arm against the torso's down axis (pelvis to neck)
+	const FVector TorsoUp = (Mesh->GetBoneLocation(TEXT("neck_01"), EBoneSpaces::ComponentSpace)
+		- Mesh->GetBoneLocation(TEXT("pelvis"), EBoneSpaces::ComponentSpace)).GetSafeNormal();
+	static const FName Upper[2] = {TEXT("upperarm_l"), TEXT("upperarm_r")};
+	static const FName Lower[2] = {TEXT("lowerarm_l"), TEXT("lowerarm_r")};
+	static const FName Morph[2] = {TEXT("ArmUp_l"), TEXT("ArmUp_r")};
+	for (int32 i = 0; i < 2; ++i)
+	{
+		const FVector Arm = (Mesh->GetBoneLocation(Lower[i], EBoneSpaces::ComponentSpace)
+			- Mesh->GetBoneLocation(Upper[i], EBoneSpaces::ComponentSpace)).GetSafeNormal();
+		const float Rise = 180.f - FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct(Arm, TorsoUp), -1.f, 1.f)));
+		const float T = FMath::Clamp((Rise - ArmUpStart) / FMath::Max(ArmUpFull - ArmUpStart, 1.f), 0.f, 1.f);
+		Mesh->SetMorphTarget(Morph[i], FMath::SmoothStep(0.f, 1.f, T), false);
+	}
 }
 
 void UVisexBodyComponent::PushToAnim() const

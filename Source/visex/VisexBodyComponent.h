@@ -75,6 +75,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float GluteDetune = 0.15f;
 	/** Overall bounce strength (1 = the sculpted travel at full size). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float JiggleStrength = 0.5f;
+	/** Arm-raise correctives: how far the upper arm has risen from hanging (degrees, in the
+	 *  torso's frame) when they start to fade in, and where they are full (the sculpt pose). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body") float ArmUpStart = 80.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body") float ArmUpFull = 176.6f;
 	/** Bust height at the slider's ends, in bounce-morph weights (1 = 1.4 cm at the fullest point). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body") float BustLiftRange = 2.2f;
 
@@ -113,6 +117,8 @@ private:
 	void PushToAnim() const;
 	void ApplyOutfit();
 	void TickJiggle(float DeltaTime);
+	/** Fades in the arm-raise correctives (ArmUp_l/_r, Tools/blender_correctives.py). */
+	void TickCorrectives();
 
 	UPROPERTY(Transient) TObjectPtr<class UVisexShellComponent> OutfitMesh;
 	/** The skin's material, made dynamic so the tone can change. */

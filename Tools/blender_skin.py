@@ -331,6 +331,12 @@ def shaped(push, iters):
 
 
 key_from_offsets("BustUp", shaped(bust_push, 25))
+# the two reliefs meet at the top of the cleft in small domes (the clothes builder found
+# them through the nylon's sheen): melt the push there into its surroundings
+lat_g = (P - B["pelvis"]) @ SIDE
+top_inner = np.clip((P[:, 2] - (glute_z - 7.0 * M)) / (5.0 * M), 0, 1) * np.clip(1.0 - np.abs(lat_g) / (11.0 * M), 0, 1)
+top_inner = diffuse(top_inner, 6)
+glute_push = glute_push * (1 - top_inner) + diffuse(glute_push, 80) * top_inner
 key_from_offsets("GlutesUp", shaped(glute_push, 30))
 # bounce: the soft tissue moves as a block, most where it is thickest
 for part, proj, amp in (("Bust", SKIN["bust_proj"], SKIN["bust_bounce"]), ("Glute", SKIN["glute_proj"], SKIN["glute_bounce"])):
