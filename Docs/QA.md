@@ -7,6 +7,22 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-10 21:45 · VIS-EX-0286 Shipping (ab61ef3 + QA.md) · PASS, close-ups show hair-card edges
+
+- **Automated turnaround (new):** 8 body and 8 head shots at 1600×900 (window clamped), no keys.
+  - The body shots cut off the top of her head; the camera sits too low or too close for 300 cm.
+  - The HUD shows in every turnaround shot.
+  - Head shots 0/1/7 frame well. Side shot 2 is mostly a silhouette of hair against the sky.
+- **Skin:** no red under the chin, at the collarbone or on her right shoulder (`26_turn_head_0`).
+  Pores are smooth even at 95 cm.
+- **Hair:**
+  - At normal distance the front lock is dark; the back is solid and full (`22_turn_body_4`).
+  - Close up, card edges show: a grey striped see-through card beside her face
+    (`crops/head0_face_lock_card.png`), and pale rectangular card outlines along the side
+    (`crops/head2_side_card_edges.png`, also the left edge of `33_turn_head_7`).
+  - Pale ends at her left hip: not seen in the body shots.
+- **Regression:** orbit landing smooth (0.636 → 0.509 → 0.419 → 0.394 → 0.388), on ground, no crash.
+
 ## 2026-11-10 21:15 · VIS-EX-0281 Shipping (e1537a4) · regression PASS, hair partly checked
 
 - **Orbit landing:** smooth, 0.597 → 0.432 → 0.401 → 0.391 → 0.386. Photo mode on ground. No crash
