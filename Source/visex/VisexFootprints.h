@@ -59,6 +59,11 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Footprints")
 	bool bDebug = false;
 
+	/** Sand mounds under standing feet. Off until they match the dune shading (they
+	 *  rendered as pale smooth pads with a hard rim in Shipping 0244). */
+	UPROPERTY(EditAnywhere, Category = "Mounds")
+	bool bMounds = false;
+
 	/** A unit mound: 100 cm across, 100 cm high, zero slope at its rim. */
 	UPROPERTY(EditAnywhere, Category = "Mounds")
 	TObjectPtr<UStaticMesh> MoundMesh;

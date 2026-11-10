@@ -121,7 +121,7 @@ void AVisexFootprints::Feet(ACharacter* Pawn, USkeletalMeshComponent* Mesh)
 		const float Height = Ankle.Z - Hit.ImpactPoint.Z;
 		const bool bOnSand = Hit.GetActor() && Hit.GetActor()->ActorHasTag(TEXT("Sand"));
 		// standing on sand: a mound under this foot, its top MoundCover above the sole
-		if (bOnSand && Mounds[f] && Pawn->GetVelocity().Size2D() < StandSpeed && Height < PlantHeight + LiftMargin)
+		if (bMounds && bOnSand && Mounds[f] && Pawn->GetVelocity().Size2D() < StandSpeed && Height < PlantHeight + LiftMargin)
 		{
 			FVector Fwd = Ball - Ankle;
 			Fwd.Z = 0;
