@@ -102,7 +102,7 @@ keys = me.shape_keys.key_blocks if me.shape_keys else []
 DELTAS = {k.name: (vget(k.data, "co", nv) - CO) @ R3.T for k in keys[1:]}
 # The rest shape is flat: bust and glutes come from the slider morphs. Design on her
 # default body (the Character page's starting values) and derive the rest shape at the end.
-DESIGN = {k: w for k, w in (("BustUp", 0.70), ("GlutesUp", 1.0), ("Fat", 0.20), ("ThighGap", 0.35)) if k in DELTAS}
+DESIGN = {k: w for k, w in (("BustUp", 0.70), ("BustApart", 0.96), ("GlutesUp", 1.0), ("Fat", 0.20), ("ThighGap", 0.35)) if k in DELTAS}
 for k, w in DESIGN.items():
     X = X + DELTAS[k] * w
 _dm = bpy.data.meshes.new("design")

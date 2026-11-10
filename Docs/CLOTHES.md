@@ -56,7 +56,7 @@ black open-hip bodystocking. What it has that the others do not:
 1. `Tools/blender_outfit.py` (Blender, headless, about 20 s for all six) cuts every piece
    from `SourceArt/Character/android_skin.fbx`, so it fits her exactly.
    - A piece is a coverage field in cm; it is cut cleanly through the triangles.
-   - It designs on her **default body** (Bust 0.70, Glutes 1.0, Fat 0.20, Thigh gap 0.35; Bust height 0):
+   - It designs on her **default body** (Bust 0.70, Glutes 1.0, Fat 0.20, Thigh gap 0.35, Bust spacing 0.8 = BustApart 0.96; Bust height 0):
      the skin's rest shape is flat and the bust only exists in the morph. The rest shape is
      derived at the end. If those slider defaults change, change `DESIGN` to match.
    - Fabric vertices take **all** the weights (up to 8 per vertex: the hips carry 7; cutting
