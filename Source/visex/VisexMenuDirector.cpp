@@ -1026,7 +1026,10 @@ void AVisexMenuDirector::TickOrbit(float DeltaSeconds)
 	if (T >= 1.f)
 	{
 		bOrbiting = false;
-		PC->SetViewTarget(Pawn);      // same place, same angle: an invisible cut
+		// same place, same angle, but not quite the same picture: the menu cine camera rendered
+		// visibly darker than the play camera in motion (QA 0259: luma 0.24 -> 0.38 on the cut),
+		// so blend the hand-over instead of cutting
+		PC->SetViewTargetWithBlend(Pawn, LandingBlendTime, VTBlend_EaseInOut, 2.f);
 		HandBack();
 	}
 }

@@ -223,6 +223,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
 	float MenuAperture = 8.f;
 
+	/** Seconds the Start move blends into the play camera when it lands (0 = a cut). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera", meta = (ClampMin = "0"))
+	float LandingBlendTime = 0.6f;
+
 	/** Panel material override (e.g. MI_MenuDifference, which draws the text as the difference
 	 * from the scene behind it). Unset = the stock widget material: plain white over a soft shade. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
