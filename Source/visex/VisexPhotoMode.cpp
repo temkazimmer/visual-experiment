@@ -94,6 +94,9 @@ void AVisexPhotoMode::Open()
 	Yaw = FMath::RadiansToDegrees(FMath::Atan2(Rel.Y, Rel.X));
 	Distance = StartDistance;
 	Height = StartHeight;
+	bFree = false;
+	Roll = 0.f;
+	Focal = FocalLength;
 	LookZ = -1.f;
 	LookGoal = -1.f;
 	bOpen = true;
@@ -116,6 +119,11 @@ void AVisexPhotoMode::Open()
 		for (const FKey& K : PauseKeys) { InputComponent->BindKey(K, IE_Pressed, this, &AVisexPhotoMode::TogglePause); }
 		for (const FKey& K : ShotKeys) { InputComponent->BindKey(K, IE_Pressed, this, &AVisexPhotoMode::TakeShot); }
 		for (const FKey& K : BackKeys) { InputComponent->BindKey(K, IE_Pressed, this, &AVisexPhotoMode::Close); }
+		const FKey FreeKeys[] = {EKeys::Gamepad_FaceButton_Top, EKeys::Tab};
+		for (const FKey& K : FreeKeys) { InputComponent->BindKey(K, IE_Pressed, this, &AVisexPhotoMode::ToggleFree); }
+		InputComponent->BindKey(EKeys::Gamepad_LeftThumbstick, IE_Pressed, this, &AVisexPhotoMode::LevelRoll);
+		InputComponent->BindAxisKey(EKeys::Gamepad_RightY);
+		InputComponent->BindAxisKey(EKeys::MouseY);
 		// sticks as axes only: on Mac the LeftStick_* keys also fire for the right stick
 		InputComponent->BindAxisKey(EKeys::Gamepad_RightX);
 		InputComponent->BindAxisKey(EKeys::Gamepad_LeftX);
@@ -286,6 +294,27 @@ void AVisexPhotoMode::Tick(float DeltaSeconds)
 	auto Key = [PC](const FKey& K) { return PC && PC->IsInputKeyDown(K) ? 1.f : 0.f; };
 	auto Dead = [](float V) { return FMath::Abs(V) < 0.25f ? 0.f : V; };
 
+	// lens and tilt, in both modes: held, they change smoothly
+	const float LensIn = Key(EKeys::Gamepad_DPad_Up) + Key(EKeys::Z) - Key(EKeys::Gamepad_DPad_Down) - Key(EKeys::X);
+	const float Tilt = Key(EKeys::Gamepad_DPad_Right) + Key(EKeys::V) - Key(EKeys::Gamepad_DPad_Left) - Key(EKeys::C);
+	Focal = FMath::Clamp(Focal * FMath::Exp(LensIn * 0.9f * DeltaSeconds), MinFocal, MaxFocal);
+	Roll = FMath::Clamp(Roll + Tilt * RollSpeed * DeltaSeconds, -MaxRoll, MaxRoll);
+
+	if (bFree)
+	{
+		const float MoveY = Dead(Axis(EKeys::Gamepad_LeftY)) + Key(EKeys::W) - Key(EKeys::S);
+		const float MoveX = Dead(Axis(EKeys::Gamepad_LeftX)) + Key(EKeys::D) - Key(EKeys::A);
+		const float Rise = Axis(EKeys::Gamepad_RightTriggerAxis) - Axis(EKeys::Gamepad_LeftTriggerAxis) + Key(EKeys::R) - Key(EKeys::F);
+		const float AimX = Dead(Axis(EKeys::Gamepad_RightX)) + Key(EKeys::Right) - Key(EKeys::Left);
+		const float AimY = Dead(Axis(EKeys::Gamepad_RightY)) + Key(EKeys::Up) - Key(EKeys::Down);
+		FlyCamera(DeltaSeconds, MoveX, MoveY, Rise, AimX, AimY);
+		// the mouse aims directly (degrees per count), not as a rate
+		FreeAim.Yaw += Axis(EKeys::MouseX) * 0.25f;
+		FreeAim.Pitch = FMath::Clamp(FreeAim.Pitch + Axis(EKeys::MouseY) * 0.25f, -89.f, 89.f);
+		ApplyLens(FreeLoc, FreeAim);
+		return;
+	}
+
 	const float Orbit = Dead(Axis(EKeys::Gamepad_RightX)) + Key(EKeys::Right) - Key(EKeys::Left);
 	const float Lift = Dead(Axis(EKeys::Gamepad_LeftY)) + Key(EKeys::W) - Key(EKeys::S);
 	const float Turn = Dead(Axis(EKeys::Gamepad_LeftX)) + Key(EKeys::D) - Key(EKeys::A);
@@ -302,6 +331,117 @@ void AVisexPhotoMode::Tick(float DeltaSeconds)
 		}
 	}
 	PlaceCamera();
+}
+
+void AVisexPhotoMode::ToggleFree()
+{
+	if (!bOpen || !Camera)
+	{
+		return;
+	}
+	bFree = !bFree;
+	if (bFree)
+	{
+		// take over from wherever the orbit camera is, looking where it looked
+		FreeLoc = Camera->GetActorLocation();
+		FreeAim = Camera->GetActorRotation();
+		FreeAim.Roll = 0.f;
+	}
+	else if (const ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0)))
+	{
+		// back to orbiting: from where the free camera now stands, round her
+		const FVector Feet = Char->GetActorLocation() - FVector(0.f, 0.f, Char->GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+		const FVector Rel = FreeLoc - Feet;
+		Yaw = FMath::RadiansToDegrees(FMath::Atan2(Rel.Y, Rel.X));
+		Distance = FMath::Clamp(FVector2D(Rel.X, Rel.Y).Size(), MinDistance, MaxDistance);
+		Height = FMath::Clamp(Rel.Z, MinHeight, MaxHeight);
+	}
+	RefreshHud();
+}
+
+void AVisexPhotoMode::SetFreeView(FVector Location, FRotator Aim, float InRoll, float InFocal)
+{
+	if (!bOpen)
+	{
+		return;
+	}
+	bFree = true;
+	FreeLoc = Location;
+	FreeAim = FRotator(FMath::Clamp(Aim.Pitch, -89.f, 89.f), Aim.Yaw, 0.f);
+	Roll = FMath::Clamp(InRoll, -MaxRoll, MaxRoll);
+	Focal = FMath::Clamp(InFocal, MinFocal, MaxFocal);
+	ApplyLens(FreeLoc, FreeAim);
+	RefreshHud();
+}
+
+void AVisexPhotoMode::FlyCamera(float DeltaSeconds, float MoveX, float MoveY, float Rise, float AimX, float AimY)
+{
+	FreeAim.Yaw += AimX * LookSpeed * DeltaSeconds;
+	FreeAim.Pitch = FMath::Clamp(FreeAim.Pitch + AimY * LookSpeed * DeltaSeconds, -89.f, 89.f);
+
+	// slow and precise close to her, quicker across the scene
+	float Speed = FlySpeedFar;
+	if (const APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0))
+	{
+		const float Near = FVector::Dist(FreeLoc, Pawn->GetActorLocation());
+		Speed = FMath::GetMappedRangeValueClamped(FVector2D(100.f, 900.f), FVector2D(FlySpeedNear, FlySpeedFar), Near);
+	}
+	const FRotator Flat(0.f, FreeAim.Yaw, 0.f);
+	const FVector Move = (FreeAim.Vector() * MoveY + FRotationMatrix(Flat).GetUnitAxis(EAxis::Y) * MoveX) * Speed
+		+ FVector::UpVector * Rise * Speed * 0.8f;
+	if (Move.IsNearlyZero())
+	{
+		return;
+	}
+	// the lens slides along stone and sand instead of going into them
+	FVector To = FreeLoc + Move * DeltaSeconds;
+	FHitResult Hit;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(VisexFreeCamera), false, UGameplayStatics::GetPlayerPawn(this, 0));
+	const FCollisionShape Ball = FCollisionShape::MakeSphere(10.f);
+	if (GetWorld()->SweepSingleByChannel(Hit, FreeLoc, To, FQuat::Identity, ECC_Camera, Ball, Params))
+	{
+		const FVector Slide = FVector::VectorPlaneProject(To - Hit.Location, Hit.ImpactNormal);
+		To = Hit.Location + Hit.ImpactNormal * 0.5f;
+		FHitResult SlideHit;
+		if (!GetWorld()->SweepSingleByChannel(SlideHit, To, To + Slide, FQuat::Identity, ECC_Camera, Ball, Params))
+		{
+			To += Slide;
+		}
+	}
+	FreeLoc = To;
+}
+
+void AVisexPhotoMode::ApplyLens(const FVector& Loc, const FRotator& Aim)
+{
+	if (!Camera)
+	{
+		return;
+	}
+	Camera->SetActorLocationAndRotation(Loc, FRotator(Aim.Pitch, Aim.Yaw, Roll));
+	UCineCameraComponent* Lens = Camera->GetCineCameraComponent();
+	const ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	const USkeletalMeshComponent* Mesh = Char ? Char->GetMesh() : nullptr;
+	if (!Lens || !Mesh)
+	{
+		return;
+	}
+	Lens->SetCurrentFocalLength(Focal);
+	// focus on the part of her the camera points at: of a few bones, the nearest to the aim line
+	const FVector Forward = Aim.Vector();
+	static const FName Bones[] = {TEXT("head"), TEXT("spine_03"), TEXT("pelvis"), TEXT("hand_l"), TEXT("hand_r"),
+		TEXT("calf_l"), TEXT("calf_r"), TEXT("foot_l"), TEXT("foot_r")};
+	float Best = -1.f;
+	float Focus = Lens->FocusSettings.ManualFocusDistance;
+	for (const FName& Bone : Bones)
+	{
+		if (Mesh->GetBoneIndex(Bone) == INDEX_NONE) { continue; }
+		const FVector To = Mesh->GetSocketLocation(Bone) - Loc;
+		const float Along = FVector::DotProduct(To, Forward);
+		if (Along <= 1.f) { continue; }
+		const float Cos = Along / To.Size();
+		if (Cos > Best) { Best = Cos; Focus = Along; }
+	}
+	Lens->FocusSettings.ManualFocusDistance = FMath::FInterpTo(Lens->FocusSettings.ManualFocusDistance, Focus, GetWorld()->GetDeltaSeconds(), 8.f);
 }
 
 void AVisexPhotoMode::PlaceCamera()
@@ -335,9 +475,11 @@ void AVisexPhotoMode::PlaceCamera()
 		const FVector Back = Hit.Location - Look;
 		Loc = Look + (Loc - Look).GetSafeNormal() * FMath::Max(Back.Size(), (double)MinDistance);
 	}
-	Camera->SetActorLocationAndRotation(Loc, (Look - Loc).Rotation());
+	const FRotator Aim = (Look - Loc).Rotation();
+	Camera->SetActorLocationAndRotation(Loc, FRotator(Aim.Pitch, Aim.Yaw, Roll));
 	if (UCineCameraComponent* Lens = Camera->GetCineCameraComponent())
 	{
+		Lens->SetCurrentFocalLength(Focal);
 		Lens->FocusSettings.ManualFocusDistance = FVector::Dist(Loc, Look);
 	}
 }
@@ -362,9 +504,6 @@ void AVisexPhotoMode::ShowHud(bool bShow)
 	TitleFont.LetterSpacing = 260;
 	FSlateFontInfo SmallFont = FCoreStyle::GetDefaultFontStyle(TEXT("Regular"), 11);
 	SmallFont.LetterSpacing = 160;
-	const FText Help = FText::FromString(TEXT(
-		"L1  R1   MOTION      RIGHT STICK   ORBIT      LEFT STICK   HEIGHT · TURN HER\n"
-		"TRIGGERS   DISTANCE      CROSS   FREEZE      SQUARE   SHOT      CIRCLE   BACK"));
 	Hud = SNew(SBox)
 		.HAlign(HAlign_Left)
 		.VAlign(VAlign_Bottom)
@@ -383,7 +522,7 @@ void AVisexPhotoMode::ShowHud(bool bShow)
 			]
 			+ SVerticalBox::Slot().AutoHeight()
 			[
-				SNew(STextBlock).Text(Help).Font(SmallFont).LineHeightPercentage(1.6f)
+				SAssignNew(Help, STextBlock).Font(SmallFont).LineHeightPercentage(1.6f)
 				.ColorAndOpacity(FLinearColor(1.f, 1.f, 1.f, 0.7f))
 			]
 		];
@@ -401,6 +540,14 @@ void AVisexPhotoMode::RefreshHud()
 			Text += TEXT("   ·   FROZEN");
 		}
 		Title->SetText(FText::FromString(Text));
+	}
+	if (Help.IsValid())
+	{
+		Help->SetText(FText::FromString(bFree
+			? TEXT("FREE CAMERA      LEFT STICK   FLY      RIGHT STICK   AIM      TRIGGERS   RISE · SINK      TRIANGLE   ORBIT\n"
+				   "D-PAD ↕   LENS      D-PAD ↔   TILT      L3   LEVEL      L1  R1   MOTION      CROSS   FREEZE      SQUARE   SHOT      CIRCLE   BACK")
+			: TEXT("L1  R1   MOTION      RIGHT STICK   ORBIT      LEFT STICK   HEIGHT · TURN HER      TRIANGLE   FREE CAMERA\n"
+				   "TRIGGERS   DISTANCE      D-PAD   LENS · TILT      CROSS   FREEZE      SQUARE   SHOT      CIRCLE   BACK")));
 	}
 }
 
