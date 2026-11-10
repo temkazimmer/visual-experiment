@@ -60,7 +60,7 @@ pose wheel. The hull test needs the thigh BVH at each pose, not only the rest po
 Built values: flare +9 cm of radius at the hem, 5 lobes of ±5 cm swing, waistband 3.5 cm tall
 and 0.3 cm out, binding 0.7 cm wide and 0.3 cm proud.
 
-**Weighting is a stand-in until steps 4–5:**
+**Weighting is a stand-in.** Steps 4–5 are now read ([STUDY_SKIRT_SIM.md](STUDY_SKIRT_SIM.md)): the reference uses inpainted weights plus Chaos cloth, so the plan is to keep these weights as the cloth's kinematic base and add a sim.
 - above the hip, the skin's weights;
 - below it, the hip ring's weights blended towards the leg skin under each point, up to 0.5 at
   the sides at the hem;
