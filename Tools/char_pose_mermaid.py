@@ -220,7 +220,9 @@ def shoot(prefix, frames, shots, views=("front", "side")):
             f, r, up = char.get_actor_forward_vector(), char.get_actor_right_vector(), unreal.Vector(0, 0, 1)
             ground = body.get_world_transform().transform_location(unreal.Vector(0, 0, 0))
             tgt = ground + up * 75 + f * 15
-            at = {"front": f * 640, "side": f * 450 - r * 450, "back": f * -640, "back3q": f * -450 - r * 450}
+            at = {"front": f * 640, "side": f * 450 - r * 450, "back": f * -640, "back3q": f * -450 - r * 450,
+                  "left": r * -640, "right": r * 640, "front3qr": f * 450 + r * 450, "back3qr": f * -450 + r * 450,
+                  "top": up * 520 + f * 160}
             views = {v: tgt + at[v] - up * 10 for v in views}
             for name, cam in views.items():
                 g = {"__name__": "__bridge__", "VIEW": ((cam.x, cam.y, cam.z), (tgt.x, tgt.y, tgt.z), 30.0)}

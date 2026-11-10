@@ -61,6 +61,7 @@ private:
 	void BeginExit();
 	void FinishPose();
 	void UpdateFootIK(float DeltaTime);
+	void UpdateGround(float DeltaTime);
 	class UAnimInstance* GetAnim() const;
 
 	UPROPERTY()
@@ -83,6 +84,9 @@ private:
 	EPhase Phase = EPhase::None;
 	float PhaseTime = 0.f;        // seconds since she began to sit down
 	float FootIKAlpha = 1.f;      // the Anim Blueprint's foot IK, off while she is on the floor
+	float GroundAlpha = 0.f;      // how far the body is tilted onto the slope under her
+	FVector MeshBaseLocation = FVector::ZeroVector;   // the body's own placement, put back when she is up
+	FQuat MeshBaseRotation = FQuat::Identity;
 	int32 Current = INDEX_NONE;
 	int32 Pending = INDEX_NONE;   // the pose picked while she was still getting up
 	bool bExitQueued = false;     // asked to get up before she had finished sitting down
