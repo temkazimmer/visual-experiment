@@ -55,7 +55,7 @@ public:
 	/** Tilts the panel in the frame (deg): positive lifts its right end, so the menu rises toward her
 	 * on a diagonal (Persona-style perspective). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
-	float PanelRoll = 7.f;
+	float PanelRoll = 4.f;
 
 	/** World cm per panel pixel. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
@@ -204,6 +204,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
 	TSoftObjectPtr<class UMaterialInterface> PanelMaterial = TSoftObjectPtr<class UMaterialInterface>();
 
+	/** Post-process on the menu camera: a soft darkening from the screen's top-left corner so the
+	 * white menu reads on bright sky. Fades out during the Start move. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
+	TSoftObjectPtr<class UMaterialInterface> CornerShade = TSoftObjectPtr<class UMaterialInterface>(FSoftObjectPath(TEXT("/Game/VisEx/UI/M_MenuCornerShade.M_MenuCornerShade")));
+
 	/** Re-frame the menu shot from the current settings (for tuning while it is open). */
 	UFUNCTION(BlueprintCallable, Category = "Menu")
 	void ReframeMenu();
@@ -321,6 +326,7 @@ private:
 
 	FTransform CameraBase;
 	FTransform LevelCamera;
+	void SetCornerShade(float Weight);
 	bool bHaveLevelCamera = false;
 	bool bHaveBase = false;
 	bool bOrbiting = false;

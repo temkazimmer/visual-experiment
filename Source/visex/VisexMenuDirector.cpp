@@ -177,6 +177,7 @@ void AVisexMenuDirector::ShowMenu()
 		Focus.ManualFocusDistance = FVector::Dist(CameraBase.GetLocation(), MenuAim);
 		Lens->FocusSettings = Focus;
 	}
+	SetCornerShade(1.f);
 	SpawnLeanColumn();
 	Lean(bHaveLeaned);
 	bHaveLeaned = true;
@@ -555,6 +556,25 @@ void AVisexMenuDirector::ToggleMenu()
 	}
 }
 
+void AVisexMenuDirector::SetCornerShade(float Weight)
+{
+	UCineCameraComponent* Lens = GetLens();
+	UMaterialInterface* Mat = CornerShade.LoadSynchronous();
+	if (!Lens || !Mat)
+	{
+		return;
+	}
+	for (FWeightedBlendable& B : Lens->PostProcessSettings.WeightedBlendables.Array)
+	{
+		if (B.Object == Mat)
+		{
+			B.Weight = Weight;
+			return;
+		}
+	}
+	Lens->PostProcessSettings.WeightedBlendables.Array.Add(FWeightedBlendable(Weight, Mat));
+}
+
 void AVisexMenuDirector::ReframeMenu()
 {
 	bHaveBase = false;
@@ -865,6 +885,8 @@ void AVisexMenuDirector::TickOrbit(float DeltaSeconds)
 		Focus.ManualFocusDistance = FVector::Dist(Loc, Look);
 		Lens->FocusSettings = Focus;
 	}
+
+	SetCornerShade(1.f - S);
 
 	if (T >= 1.f)
 	{

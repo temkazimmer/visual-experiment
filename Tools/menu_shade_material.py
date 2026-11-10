@@ -7,8 +7,8 @@ PATH, NAME = "/Game/VisEx/UI", "M_MenuShade"
 full = f"{PATH}/{NAME}"
 mel = unreal.MaterialEditingLibrary
 CENTER = globals().get("CENTER", (0.36, 0.31))   # UV of the text block's middle in the padded panel
-RADIUS = globals().get("RADIUS", (0.46, 0.44))   # where the shade reaches zero
-STRENGTH = globals().get("STRENGTH", 0.6)
+RADIUS = globals().get("RADIUS", (0.52, 0.5))   # where the shade reaches zero
+STRENGTH = globals().get("STRENGTH", 0.8)
 
 # load first: create_asset on an existing name opens a modal Overwrite dialog
 m = unreal.load_asset(full) or unreal.AssetToolsHelpers.get_asset_tools().create_asset(

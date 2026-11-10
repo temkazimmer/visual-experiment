@@ -51,7 +51,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
 	FLinearColor AccentColor = FLinearColor::White;
 
-	/** A soft dark gradient behind the text so white reads on bright sky (UI material). */
+	/** A dark feathered plate behind the text, inside the panel so it tilts with it; works with
+	 * the menu camera's corner shade (AVisexMenuDirector::CornerShade). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
 	TSoftObjectPtr<class UMaterialInterface> ShadeMaterial = TSoftObjectPtr<class UMaterialInterface>(FSoftObjectPath(TEXT("/Game/VisEx/UI/M_MenuShade.M_MenuShade")));
 
