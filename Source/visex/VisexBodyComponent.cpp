@@ -4,6 +4,7 @@
 #include "VisexShellComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Animation/AnimInstance.h"
 #include "Engine/SkeletalMesh.h"
 #include "GameFramework/Character.h"
 #include "Kismet/GameplayStatics.h"
@@ -151,8 +152,39 @@ void UVisexBodyComponent::Apply()
 	}
 
 	ApplySkin();
+	ApplyHair();
 	ApplyOutfit();
 	PushToAnim();
+}
+
+void UVisexBodyComponent::ApplyHair()
+{
+	// game worlds only, like the outfit: a runtime component, never saved with the level
+	USkeletalMeshComponent* Mesh = Body();
+	const UWorld* World = GetWorld();
+	if (HairMesh || !Mesh || !World || !World->IsGameWorld() || !GetOwner())
+	{
+		return;
+	}
+	USkeletalMesh* Asset = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/Character/Hair/SKM_HairCards.SKM_HairCards"));
+	UClass* Anim = LoadClass<UAnimInstance>(nullptr, TEXT("/Game/Character/Hair/ABP_HairCards.ABP_HairCards_C"));
+	if (!Asset || !Anim)
+	{
+		return;
+	}
+	// on the body mesh: the hair's AnimBP copies the pose from its attached parent, then
+	// Kawaii Physics swings the locks. Its own anim class, so no leader pose.
+	HairMesh = NewObject<USkeletalMeshComponent>(GetOwner(), TEXT("Hair"), RF_Transient);
+	HairMesh->SetupAttachment(Mesh);
+	HairMesh->SetCollisionProfileName(TEXT("NoCollision"));
+	HairMesh->SetGenerateOverlapEvents(false);
+	HairMesh->SetSkeletalMeshAsset(Asset);
+	HairMesh->SetAnimInstanceClass(Anim);
+	HairMesh->SetCastShadow(true);
+	const FLightingChannels& Ch = Mesh->LightingChannels;
+	HairMesh->SetLightingChannels(Ch.bChannel0, Ch.bChannel1, Ch.bChannel2);
+	HairMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	HairMesh->RegisterComponent();
 }
 
 void UVisexBodyComponent::ApplySkin()

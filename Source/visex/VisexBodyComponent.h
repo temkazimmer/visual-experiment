@@ -140,6 +140,9 @@ private:
 	void TickCorrectives();
 
 	UPROPERTY(Transient) TObjectPtr<class UVisexShellComponent> OutfitMesh;
+	/** Card hair with its own physics (ABP_HairCards); not a leader-pose follower. */
+	UPROPERTY(Transient) TObjectPtr<class USkeletalMeshComponent> HairMesh;
+	void ApplyHair();
 	/** The skin's material, made dynamic so the tone can change. */
 	UPROPERTY(Transient) TObjectPtr<class UMaterialInstanceDynamic> SkinMaterial;
 	void ApplySkin();
