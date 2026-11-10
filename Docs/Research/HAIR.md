@@ -50,6 +50,22 @@ Order is by visible gain per effort. Each step is one A/B at 4K.
 
 Strands: not recommended. The look conflicts with the direction, and I could not confirm Mac/Metal support (see below).
 
+## Reference: Baldur's Gate 3 (added 2026-11-10, Tema's target for look and feel)
+
+What is verifiable, from [80.lv](https://80.lv/articles/creating-characters-for-baldur-s-gate-3) and [Adobe Substance](https://www.adobe.com/products/substance3d/magazine/bringing-life-to-legends-character-art-in-baldurs-gate-3.html):
+
+- Larian moved from clay-sculpted hair (Divinity: Original Sin 2) to a strand approach, which needed a new in-house hair shading model from their graphics programmers. Their style is "more realistic" than in DOS2.
+- A Maya tool aligns the strands and controls vertex colours; the same tool does fur and feathers. Early hairstyle designs were outsourced to set the quality bar.
+- Overall rule for characters: follow PBR, "but bend them, not too much, just a bit". Eyes get faked highlights so they don't look dead. Skin comes from scans, with fantasy colours for non-human races.
+
+Not found: whether the strands are cards or true curves, texture sizes, card counts, shader maths. Treat anything more specific as unverified.
+
+What that means for us:
+
+- BG3 reads as **grounded realism with a light painterly bend**: soft clumped strands, warm skin-like light wrap, readable value structure, no hard toon bands.
+- That **contradicts the current hair direction** (blue-black spikes, solid locks, 90s anime) and step 1 above (hard-edged anime highlight band). It leans towards the card route: hundreds of cards, a baked strand texture, flow-map anisotropic highlight, root-to-tip colour, flyaway cards, a soft tint instead of near-black.
+- It also pulls on skin and eyes, not only hair. The aerogel body and "statue" eyes are not a BG3 look.
+
 ## What I could not verify
 
 - **No named AA studio's hair method.** I searched for Black Myth: Wukong, Hellblade 2 and Stellar Blade. I found no source describing their hair, so none is claimed here. The studio-level information above is Epic's docs, 80.lv and blog posts.
