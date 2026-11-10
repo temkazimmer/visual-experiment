@@ -8,6 +8,7 @@ Written 2026-11-10 by the research agent. No Unreal Editor was run to produce it
 | [BUY_LIST.md](BUY_LIST.md) | What Tema may buy: ranked packs, prices (checked 2026-11-10), week-by-week order | 5 min |
 | [ANATOMY.md](ANATOMY.md) | Proportions, landmarks, joint deformation, bust/hip/shoulder pitfalls | 5 min |
 | [RIG.md](RIG.md) | Our skeleton, layers, retargeting, pitfalls found in our code | 5 min |
+| [HAIR.md](HAIR.md) | Why her hair reads awkward, how UE5 hair is built, a fix plan | 4 min |
 | [ANIMATION.md](ANIMATION.md) | Craft: weight, overlap, contrapposto, catwalk, poses, motion matching, how to study a pack | 6 min |
 | [STUDY_SKIRT_CORSET.md](STUDY_SKIRT_CORSET.md) | Clothes: what the Jels skirt/corset pack teaches (fit, construction, textures, measured) | 4 min |
 | [DESIGN_SKIRT.md](DESIGN_SKIRT.md) | Clothes: proposal for a skirt garment type (A-line, sculpted folds, weighting plan) | 3 min |
