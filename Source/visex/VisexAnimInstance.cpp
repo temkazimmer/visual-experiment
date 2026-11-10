@@ -11,7 +11,7 @@ static TAutoConsoleVariable<float> CVarCatwalk(TEXT("visex.Catwalk"), 1.f, TEXT(
 static TAutoConsoleVariable<float> CVarCatwalkHipRoll(TEXT("visex.Catwalk.HipRoll"), 11.f, TEXT("Degrees the swing-side hip drops"));
 static TAutoConsoleVariable<float> CVarCatwalkHipYaw(TEXT("visex.Catwalk.HipYaw"), 7.f, TEXT("Degrees the hip turns forward with the leading leg"));
 static TAutoConsoleVariable<float> CVarCatwalkHipShift(TEXT("visex.Catwalk.HipShift"), 2.f, TEXT("Centimetres the pelvis moves over the standing leg"));
-static TAutoConsoleVariable<float> CVarCatwalkLine(TEXT("visex.Catwalk.Line"), 4.5f, TEXT("Degrees each leg angles inward, so the feet land near one line"));
+static TAutoConsoleVariable<float> CVarCatwalkLine(TEXT("visex.Catwalk.Line"), 3.5f, TEXT("Degrees each leg angles inward, so the feet land near one line"));
 static TAutoConsoleVariable<float> CVarCatwalkShoulders(TEXT("visex.Catwalk.Shoulders"), 3.4f, TEXT("How much the chest counters the hips (1 = equal and opposite)"));
 static TAutoConsoleVariable<float> CVarCatwalkHead(TEXT("visex.Catwalk.Head"), 0.9f, TEXT("How steady the head stays against the chest's motion (0..1)"));
 // from the Girl Walk&Run struts (Docs/Research, learning log 2026-11-10): spine 4 deg back, chest
@@ -20,6 +20,7 @@ static TAutoConsoleVariable<float> CVarCatwalkPosture(TEXT("visex.Catwalk.Postur
 static TAutoConsoleVariable<float> CVarCatwalkChestLag(TEXT("visex.Catwalk.ChestLag"), 4.5f, TEXT("How quickly the chest's counter-turn follows the hips (lower = later; 0 = no lag)"));
 static TAutoConsoleVariable<float> CVarCatwalkArmSwing(TEXT("visex.Catwalk.ArmSwing"), 0.3f, TEXT("Share of the clip's fore-aft arm swing kept (0..1)"));
 static TAutoConsoleVariable<float> CVarCatwalkHeadLine(TEXT("visex.Catwalk.HeadLine"), 1.0f, TEXT("How much the head's side-to-side sway is taken out (0..1)"));
+static TAutoConsoleVariable<float> CVarCatwalkClear(TEXT("visex.Catwalk.Clear"), 20.f, TEXT("Centimetres the thigh axes keep apart as the legs cross: the swinging thigh turns out a little (8 degrees at most, eased) to pass beside the other (0 off)"));
 static TAutoConsoleVariable<float> CVarCatwalkSprint(TEXT("visex.Catwalk.Sprint"), 0.35f, TEXT("Share of the layer kept when sprinting (0..1)"));
 
 // Moving hold, from the Female Everyday idles (learning log 2026-11-10). Live: `visex.Hold.Breath 2`.
@@ -73,6 +74,7 @@ void FVisexAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSecond
 	Tune.ChestLag = CVarCatwalkChestLag.GetValueOnGameThread();
 	Tune.ArmSwing = CVarCatwalkArmSwing.GetValueOnGameThread();
 	Tune.HeadLine = CVarCatwalkHeadLine.GetValueOnGameThread();
+	Tune.Clear = CVarCatwalkClear.GetValueOnGameThread();
 	HoldTune.Breath = CVarHoldBreath.GetValueOnGameThread();
 	HoldTune.BreathPeriod = FMath::Max(CVarHoldBreathPeriod.GetValueOnGameThread(), 0.5f);
 	HoldTune.Collar = CVarHoldCollar.GetValueOnGameThread();
@@ -383,6 +385,39 @@ void FVisexAnimProxy::Catwalk(FCompactPose& Pose)
 	S.RotateCS(FootL, InL.Inverse());
 	S.RotateCS(ThighR, InR);
 	S.RotateCS(FootR, InR.Inverse());
+
+	// the swinging thigh clears the standing one: the line and the hip roll bring the thighs
+	// together as the legs pass, so the swinging thigh turns out a little, eased in over the
+	// swing and out again at the landing, never more than 8 degrees. Only the thighs are
+	// judged: real legs brush at the shins and nobody sees it, while a knee that flicks out
+	// at the crossing is what everybody sees.
+	const FCompactPoseBoneIndex Thighs[2] = {ThighL, ThighR}, Calves[2] = {S.Find(TEXT("calf_l")), S.Find(TEXT("calf_r"))};
+	for (int32 i = 0; i < 2; ++i)
+	{
+		const int32 o = 1 - i;
+		float Want = 0.f;
+		const float Swing = i == 0 ? Lift : -Lift; // how far this foot is the one in the air
+		if (Tune.Clear > 0.f && Calves[i].IsValid() && Calves[o].IsValid() && Swing > 0.1f)
+		{
+			const FVector A0 = S.Component(Thighs[i]).GetLocation(), A1 = S.Component(Calves[i]).GetLocation();
+			const FVector B0 = S.Component(Thighs[o]).GetLocation(), B1 = S.Component(Calves[o]).GetLocation();
+			FVector P, Q;
+			FMath::SegmentDistToSegmentSafe(A0, A1, B0, B1, P, Q);
+			const float Gap = float((P - Q).Size()), Lever = FMath::Max(float((P - A0).Size()), 15.f);
+			Want = FMath::Min(FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp((Tune.Clear - Gap) / Lever, 0.f, 0.5f))), 8.f);
+			Want *= FMath::SmoothStep(0.1f, 0.4f, Swing);
+		}
+		KneeOut[i] = FMath::FInterpTo(KneeOut[i], Want, Dt, Want > KneeOut[i] ? 10.f : 6.f);
+		if (KneeOut[i] > 0.02f && Calves[i].IsValid())
+		{
+			const FVector Dir = (S.Component(Calves[i]).GetLocation() - S.Component(Thighs[i]).GetLocation()).GetSafeNormal();
+			const FVector Side = i == 0 ? Left : -Left;
+			const FVector Out = (Side - Dir * (Side | Dir)).GetSafeNormal();
+			const FQuat Q = Turn(Dir, Out, KneeOut[i] * Gait);
+			S.RotateCS(Thighs[i], Q);
+			S.RotateCS(Calves[i], FQuat::Slerp(FQuat::Identity, Q.Inverse(), 0.5f)); // the shin follows half-way
+		}
+	}
 }
 
 /**
