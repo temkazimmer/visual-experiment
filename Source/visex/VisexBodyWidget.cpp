@@ -17,7 +17,7 @@ UVisexBodyWidget::UVisexBodyWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
 	Title = LOCTEXT("Title", "CHARACTER");
-	Hint = LOCTEXT("Hint", "L1 R1  tab      UP DOWN  choose      LEFT RIGHT  shape      RIGHT STICK  turn\nCROSS  apply      TRIANGLE  reset      R3  face me      CIRCLE  back");
+	Hint = LOCTEXT("Hint", "L1 R1  tab      UP DOWN  choose      LEFT RIGHT  shape      RIGHT STICK  turn\nTRIANGLE  reset      R3  face me      CIRCLE  done, keeps her");
 }
 
 int32 UVisexBodyWidget::RowCount(int32 Tab)
@@ -123,7 +123,7 @@ void UVisexBodyWidget::Build()
 	for (int32 i = 0; i < BodyRows.Num(); ++i)
 	{
 		const bool bLast = i == BodyRows.Num() - 1;
-		BodyList->AddChildToVerticalBox(BodyRows[i].Box)->SetPadding(FMargin(0.f, bLast ? 18.f : 0.f, 0.f, 8.f));
+		BodyList->AddChildToVerticalBox(BodyRows[i].Box)->SetPadding(FMargin(0.f, bLast ? 14.f : 0.f, 0.f, 4.f));
 	}
 	for (int32 i = 0; i < DressRows.Num(); ++i)
 	{

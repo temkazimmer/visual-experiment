@@ -103,6 +103,13 @@ void UVisexBodyComponent::Apply()
 	Mesh->SetMorphTarget(TEXT("AbsLines"), Lines, false);
 	Mesh->SetMorphTarget(TEXT("AbsPack"), Pack, false);
 	Mesh->SetMorphTarget(TEXT("ThighGap"), Profile.Get("ThighGap"), false);
+	// bust height rides the bounce morphs: a standing offset the jiggle adds to
+	for (const TCHAR* Side : {TEXT("L"), TEXT("R")})
+	{
+		const float Lift = Profile.Get("BustLift") * BustLiftRange;
+		Mesh->SetMorphTarget(FName(FString::Printf(TEXT("BustBounce%s_Up"), Side)), FMath::Max(0.f, Lift), false);
+		Mesh->SetMorphTarget(FName(FString::Printf(TEXT("BustBounce%s_Down"), Side)), FMath::Max(0.f, -Lift), false);
+	}
 
 	ApplySkin();
 	ApplyOutfit();
@@ -239,7 +246,11 @@ void UVisexBodyComponent::TickJiggle(float DeltaTime)
 		J.Offset = FMath::Clamp(J.Offset, -2.5f * Travel, 2.5f * Travel);
 		// bigger is heavier: a small bust barely moves
 		const float Size = Profile.Get(bBust ? FName("Bust") : FName("Glutes"));
-		const float Weight = FMath::Clamp(J.Offset / Travel * JiggleStrength * (0.25f + Size), -1.f, 1.f);
+		float Weight = FMath::Clamp(J.Offset / Travel * JiggleStrength * (0.25f + Size), -1.f, 1.f);
+		if (bBust)
+		{
+			Weight += Profile.Get("BustLift") * BustLiftRange;   // the standing bust height
+		}
 		Mesh->SetMorphTarget(Up[i], FMath::Max(0.f, Weight), false);
 		Mesh->SetMorphTarget(Down[i], FMath::Max(0.f, -Weight), false);
 	}
