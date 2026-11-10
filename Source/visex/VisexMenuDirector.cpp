@@ -2,6 +2,7 @@
 
 #include "VisexMenuWidget.h"
 #include "VisexBodyEditor.h"
+#include "VisexPhotoMode.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
 #include "CineCameraActor.h"
@@ -219,8 +220,7 @@ void AVisexMenuDirector::OnItemChosen_Implementation(int32 Index)
 		OpenBody();
 		break;
 	case 2:
-		StartGame();
-		OnPhotoMode();
+		OpenPhoto();
 		break;
 	case 3:
 		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
@@ -279,10 +279,112 @@ void AVisexMenuDirector::OpenBodyNow()
 		return;
 	}
 	bStudio = true;
+	StudioStrength = 1.f;
 	// the menu steps aside while the body page has the screen
 	bOpen = false;
 	Panel->SetVisibility(false);
 	DisableInput(PC);
+}
+
+void AVisexMenuDirector::OpenPhoto()
+{
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	if (!bOpen || !PC)
+	{
+		return;
+	}
+	bOpen = false;
+	FadeOut = 0.f;
+	DisableInput(PC);
+	// she pushes off the column, then the photo camera takes over
+	const float Up = StandUp();
+	if (Up > 0.f)
+	{
+		GetWorldTimerManager().SetTimer(StandTimer, this, &AVisexMenuDirector::OpenPhotoNow, Up * 0.8f, false);
+		return;
+	}
+	OpenPhotoNow();
+}
+
+void AVisexMenuDirector::OpenPhotoNow()
+{
+	if (!PhotoMode)
+	{
+		UClass* Cls = PhotoModeClass ? PhotoModeClass.Get() : AVisexPhotoMode::StaticClass();
+		PhotoMode = GetWorld()->SpawnActor<AVisexPhotoMode>(Cls, GetActorTransform());
+		if (PhotoMode)
+		{
+			PhotoMode->OnClosed.AddDynamic(this, &AVisexMenuDirector::HandlePhotoClosed);
+		}
+	}
+	if (PhotoMode)
+	{
+		PhotoMode->Open();
+	}
+	if (!PhotoMode || !PhotoMode->IsOpen())
+	{
+		if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
+		{
+			EnableInput(PC);
+		}
+		ShowMenu();
+		return;
+	}
+	Panel->SetVisibility(false);
+	// only sand and fog, and a soft light on her
+	SetSceneStripped(true);
+	bStudio = true;
+	StudioStrength = PhotoStudioStrength;
+	OnPhotoMode();
+}
+
+void AVisexMenuDirector::SetSceneStripped(bool bStrip)
+{
+	if (bStrip)
+	{
+		Stripped.Reset();
+		for (TActorIterator<AStaticMeshActor> It(GetWorld()); It; ++It)
+		{
+			const FString Label = It->GetActorNameOrLabel();
+			const bool bGround = Label.StartsWith(TEXT("Dunes")) || Label.StartsWith(TEXT("LowerGround")) || Label == TEXT("Plaza");
+			if (!bGround && !It->IsHidden())
+			{
+				It->SetActorHiddenInGame(true);
+				Stripped.Add(*It);
+			}
+		}
+	}
+	else
+	{
+		for (const TWeakObjectPtr<AActor>& A : Stripped)
+		{
+			if (A.IsValid())
+			{
+				A->SetActorHiddenInGame(false);
+			}
+		}
+		Stripped.Reset();
+	}
+}
+
+void AVisexMenuDirector::HandlePhotoClosed()
+{
+	// the photo camera blends back to the menu shot; the scene returns; she sits back on the column
+	SetSceneStripped(false);
+	bStudio = false;
+	const float Wait = PhotoMode ? FMath::Max(0.05f, PhotoMode->BlendTime) : 0.05f;
+	GetWorldTimerManager().SetTimer(BodyTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
+	{
+		if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
+		{
+			EnableInput(PC);
+		}
+		ShowMenu();
+		if (UVisexMenuWidget* W = GetMenuWidget())
+		{
+			W->SetSelected(2);
+		}
+	}), Wait, false);
 }
 
 void AVisexMenuDirector::HandleBodyClosed()
@@ -588,7 +690,8 @@ void AVisexMenuDirector::TickStudio(float DeltaSeconds)
 
 	const float Step = DeltaSeconds / FMath::Max(0.05f, StudioBlendTime);
 	StudioAlpha = FMath::Clamp(StudioAlpha + (bStudio ? Step : -Step), 0.f, 1.f);
-	const float S = FMath::SmoothStep(0.f, 1.f, StudioAlpha);
+	// photo mode uses a gentler version of the page's look: StudioStrength scales all of it
+	const float S = FMath::SmoothStep(0.f, 1.f, StudioAlpha) * StudioStrength;
 
 	if (Sun.IsValid()) { Sun->GetLightComponent()->SetIntensity(BaseSun * FMath::Lerp(1.f, StudioSunScale, S)); }
 	if (Sky.IsValid()) { Sky->GetLightComponent()->SetIntensity(BaseSky * FMath::Lerp(1.f, StudioSkyScale, S)); }

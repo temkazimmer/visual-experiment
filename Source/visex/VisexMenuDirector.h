@@ -101,6 +101,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Body")
 	TSubclassOf<AVisexBodyEditor> BodyEditorClass;
 
+	/** What the Photo mode item opens; spawned on first use. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Photo")
+	TSubclassOf<class AVisexPhotoMode> PhotoModeClass;
+
 	/** Character page lighting: the desert goes nearly dark and a theatrical spot plus a
 	 * rim light pick her out, so body shape, clothes and motion read clearly. The two lights
 	 * use lighting channel 1 and only reach her (and whatever she wears). */
@@ -130,6 +134,10 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Studio")
 	float RimIntensity = 35.f;
+
+	/** Share of the studio look photo mode uses (the Character page uses all of it). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Studio", meta = (ClampMin = "0", ClampMax = "1"))
+	float PhotoStudioStrength = 0.5f;
 
 	/** How much of the menu camera's distance to her is kept: 0.5 frames her twice as large.
 	 * The camera moves along the line to CameraAimHeight on her, so she stays where she is in frame. */
@@ -201,7 +209,7 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Menu")
 	void OnGameStarted();
 
-	/** Photo mode isn't built yet: for now it starts the game, then fires this. */
+	/** Fired when photo mode opens. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Menu")
 	void OnPhotoMode();
 
@@ -259,6 +267,17 @@ private:
 	bool bLeaning = false;
 	bool bHaveLeaned = false;
 	void OpenBodyNow();
+
+	// photo mode
+	void OpenPhoto();
+	void OpenPhotoNow();
+	UFUNCTION()
+	void HandlePhotoClosed();
+	UPROPERTY(Transient)
+	TObjectPtr<class AVisexPhotoMode> PhotoMode;
+	void SetSceneStripped(bool bStrip);
+	TArray<TWeakObjectPtr<AActor>> Stripped;
+	float StudioStrength = 1.f;
 	UPROPERTY(Transient)
 	TObjectPtr<AActor> LeanColumn;
 	FTimerHandle StandTimer;
