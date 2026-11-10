@@ -31,15 +31,17 @@ LOOK = dict(
     cap=0.25,             # cm the cap sits off the scalp
     # the hairline, as elevation (degrees above the head's centre) by direction
     line_front=38.0, line_side=14.0, line_back=-30.0,
-    side_width=3.7, sides=7, steps=14,
+    side_width=3.7, sides=7, steps=20,
+    tip_bulge=0.45,        # how much a lock fills out toward its end (0 = plain taper)
+    tip_taper=0.82,       # where along the lock the final point starts (0..1)
     thickness=0.30,       # a lock's thickness against its width
     # layers: rows of locks. elevation band above the hairline (0 = on it, 1 = the crown),
     # how many around, length (cm), lift off the head (degrees), how fast they fall, clearance
     layers=(
-        dict(name="under",  band=(0.03, 0.14), count=30, length=(8.5, 12.0), lift=5,  fall=0.30, clear=0.30),
-        dict(name="middle", band=(0.26, 0.44), count=28, length=(10.0, 13.5), lift=10, fall=0.26, clear=0.70),
-        dict(name="upper",  band=(0.52, 0.68), count=22, length=(10.0, 13.0), lift=14, fall=0.24, clear=1.05),
-        dict(name="crown",  band=(0.80, 0.93), count=12, length=(9.0, 12.0), lift=18, fall=0.22, clear=1.35),
+        dict(name="under",  band=(0.03, 0.14), count=30, length=(17.0, 23.0), lift=5,  fall=0.34, clear=0.30),
+        dict(name="middle", band=(0.26, 0.44), count=28, length=(18.0, 24.0), lift=10, fall=0.30, clear=0.70),
+        dict(name="upper",  band=(0.52, 0.68), count=22, length=(17.0, 22.0), lift=14, fall=0.28, clear=1.05),
+        dict(name="crown",  band=(0.80, 0.93), count=12, length=(15.0, 20.0), lift=18, fall=0.26, clear=1.35),
     ),
     fringe=0.96,          # the fringe's length against the rest (it stops at the eyes)
     flick=0.11,           # how much the tips turn outward
@@ -156,7 +158,9 @@ def blade(path, width):
             side = tan.orthogonal()
         side.normalize()
         up = side.cross(tan).normalized()
-        w = width * min(1.0, 0.55 + 2.2 * t) * (1 - t ** 1.7) / 2
+        fill = 1 + LOOK["tip_bulge"] * t * t * (3 - 2 * t)
+        pt = max(0.0, (t - LOOK["tip_taper"]) / (1 - LOOK["tip_taper"]))
+        w = width * min(1.0, 0.55 + 2.2 * t) * fill * (1 - pt ** 1.6) / 2
         if k == n:
             V.append(p)
             UV.append((0.5, 1.0))
@@ -164,7 +168,7 @@ def blade(path, width):
         for s_ in range(ns):
             a = 2 * pi * s_ / ns
             # a lens: wide and flat, with a soft ridge on the outer face
-            off = side * (cos(a) * w) + up * (sin(a) * w * LOOK["thickness"] * (1.25 if sin(a) > 0 else 0.6))
+            off = side * (cos(a) * w) + up * (sin(a) * w * LOOK["thickness"] * (0.6 + 0.4 * fill) * (1.25 if sin(a) > 0 else 0.6))
             V.append(p + off)
             UV.append((s_ / ns, t))
     for k in range(n - 1):
@@ -250,9 +254,9 @@ if PREVIEW:
     scn.collection.objects.link(cam)
     scn.camera = cam
     cam.data.lens = 85
-    target = Vector((0, 0, 167))
-    for label, offset in (("front", (0, -105, 0)), ("three_quarter", (60, -85, 4)), ("side", (105, 0, 0)),
-                          ("back", (-35, 98, 8)), ("top", (20, -50, 90))):
+    target = Vector((0, 0, 158))
+    for label, offset in (("front", (0, -150, 0)), ("three_quarter", (90, -125, 4)), ("side", (150, 0, 0)),
+                          ("back", (-50, 140, 8)), ("top", (20, -50, 90))):
         cam.location = target + Vector(offset)
         cam.rotation_euler = (target - cam.location).to_track_quat("-Z", "Y").to_euler()
         scn.render.filepath = os.path.join(PREVIEW, "hair_%s.png" % label)
