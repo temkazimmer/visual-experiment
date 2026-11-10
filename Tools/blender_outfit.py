@@ -103,7 +103,9 @@ DELTAS = {k.name: (vget(k.data, "co", nv) - CO) @ R3.T for k in keys[1:]}
 # The rest shape is flat: bust and glutes come from the slider morphs. Design on her
 # default body (the Character page's starting values) and derive the rest shape at the end.
 DESIGN = {k: w for k, w in (("BustUp", 0.80), ("BustApart", 1.097), ("GlutesUp", 0.5), ("Fat", 0.38),
-                                         ("ThighGap", 0.0), ("AbsLines", 0.734), ("AbsPack", 0.734)) if k in DELTAS}
+                                         ("ThighGap", 0.0), ("AbsLines", 0.734), ("AbsPack", 0.734),
+                                         # Bust height 0.5 x BustLiftRange 1.3 rides the bounce morphs
+                                         ("BustBounceL_Up", 0.65), ("BustBounceR_Up", 0.65)) if k in DELTAS}
 for k, w in DESIGN.items():
     X = X + DELTAS[k] * w
 _dm = bpy.data.meshes.new("design")
@@ -278,8 +280,15 @@ def ray(bvh, c, z, theta, offset):
 
 
 # ---- builders ----------------------------------------------------------------------------------
-PIECES = []          # (bmesh, slot, sources) of the outfit being built
+PIECES = []          # (bmesh, slot, sources[, edge distance per vertex]) of the outfit being built
 SRC_OF = {}          # outfit object name -> per-vertex (skin a, skin b, t), a = -1 if unknown
+SEAM_OF = {}         # outfit object name -> per-vertex (edge distance, signed seam distance), cm
+SEAMS = []           # seam centre lines of the outfit being built (lists of Vectors)
+EXTRA_OF = {}        # outfit object name -> per-vertex overrides (weights, morph scale, UV0, seam y)
+# depth from stacked pieces (Docs/Research/STUDY_SKIRT_CORSET.md): structural trim stands 0.3 cm
+# proud of the panel under it, hardware 0.5-0.8 cm; flat seams stay low and live in the normal
+TRIM_PROUD, HW_PROUD = 0.3, 0.6
+NO_SEAM = 9.0        # UVSeam value far from any edge or seam (the material's profile is flat there)
 
 
 def edge_loops(bm, min_len):
@@ -353,6 +362,21 @@ def region(val, offset, slot, rim=None, pipe=None, pipe_r=0.18, min_loop=10.0, l
             except ValueError:
                 pass
     loops = edge_loops(bm, min_loop) if (pipe or bind) else []
+    # true distance from every vertex to the cut edge, for the seam/piping normal (UVSeam.x)
+    bpts = []
+    for e in bm.edges:
+        if e.is_boundary:
+            a, b = e.verts[0].co, e.verts[1].co
+            k = max(1, int((b - a).length / 0.1))
+            bpts += [a.lerp(b, i / k) for i in range(k + 1)]
+    if bpts:
+        ek = KDTree(len(bpts))
+        for i, p in enumerate(bpts):
+            ek.insert(p, i)
+        ek.balance()
+        edist = [min(ek.find(v.co)[2], NO_SEAM - 0.01) for v in bm.verts]    # < NO_SEAM marks fabric
+    else:
+        edist = [NO_SEAM - 0.01] * len(bm.verts)
     if rim if rim is not None else slot in OPAQUE:
         inner = {}
         for e in [e for e in bm.edges if e.is_boundary]:
@@ -361,13 +385,14 @@ def region(val, offset, slot, rim=None, pipe=None, pipe_r=0.18, min_loop=10.0, l
                 if v not in inner:
                     inner[v] = bm.verts.new(v.co - nrm[v] * max(0.0, offset - 0.03))
                     src.append(srcof[v])
+                    edist.append(0.0)
             bm.faces.new((a, b, inner[b], inner[a]))
-    PIECES.append((bm, slot, src))
+    PIECES.append((bm, slot, src, edist))
     for pts, closed in loops:
         if pipe:
             tube(pts, pipe_r, pipe, closed, push=0.08)
-        if bind:
-            tube(pts, 0.0, bind[0], closed, push=0.015, flat=(bind[1], 0.045), step=0.5)
+        if bind:      # a rounded binding standing TRIM_PROUD off the panel edge it covers
+            tube(pts, 0.0, bind[0], closed, flat=(bind[1], TRIM_PROUD), step=0.5)
     return bm
 
 
@@ -397,10 +422,13 @@ def resample(pts, closed, step):
 
 
 def tube(pts, r, slot, closed=False, sides=6, push=0.0, step=0.8, flat=None, rigid=None):
-    """A round cord along a point list. flat=(width, thickness): a tape lying on the
-    surface instead. rigid: one skin vertex the whole piece rides (jewellery)."""
+    """A round cord along a point list. flat=(width, height): a tape lying on the surface
+    instead, its top rounded like a bound edge. rigid: one skin vertex the whole piece rides
+    (jewellery)."""
     if flat:
-        sides = 4
+        # cross-section: flat underside, then a half-ellipse crown (smooth-shaded piping)
+        prof = [(-1.0, 0.0), (1.0, 0.0)] + [(math.cos(math.pi * k / 6), math.sin(math.pi * k / 6)) for k in range(1, 6)]
+        sides = len(prof)
     pts = smooth_pts(resample(pts, closed, step), closed)
     n = len(pts)
     if n < 4:
@@ -421,7 +449,7 @@ def tube(pts, r, slot, closed=False, sides=6, push=0.0, step=0.8, flat=None, rig
         c = p + out * push
         if flat:
             w_, t_ = flat
-            rings.append([bm.verts.new(c + b * sx * w_ * 0.5 + a * h) for sx, h in ((-1, 0), (1, 0), (1, t_), (-1, t_))])
+            rings.append([bm.verts.new(c + b * sx * w_ * 0.5 + a * h * t_) for sx, h in prof])
         else:
             rings.append([bm.verts.new(c + (a * math.cos(2 * math.pi * k / sides) + b * math.sin(2 * math.pi * k / sides)) * r)
                           for k in range(sides)])
@@ -438,8 +466,11 @@ def tube(pts, r, slot, closed=False, sides=6, push=0.0, step=0.8, flat=None, rig
 def seam(pts, r, slot, field=None):
     """A flat tape sewn along surface points (boning channel, stocking seam, stripe); with a
     field, only where the garment is. Kept low: the engine's screen-space shadow trace turns
-    a raised cord into a row of dark dashes on the skin beside it in raking light."""
+    a raised cord into a row of dark dashes on the skin beside it in raking light. The fabric
+    pulled into it is in the normal instead (UVSeam.y, the signed distance to SEAMS)."""
     pts = [p for p in pts if p]
+    if len(pts) > 5:
+        SEAMS.append(smooth_pts(resample(pts, False, 0.1), False, 8))
     tape = lambda run: ribbon(run, r * 2.6, 0.07, slot) if len(run) > 5 else None
     if field is None:
         return tape(pts)
@@ -522,7 +553,7 @@ def garter(s, th_belt, th_leg, belt_z, bot_z, off_top, off_bot, slot="Satin", wi
     t = (pts[-1] - pts[-5]).normalized()
     for at, size in ((pts[-2], (width + 0.8, 2.4, 0.5)), (pts[1], (width + 0.6, 1.2, 0.45)),
                      (pts[len(pts) // 2], (width + 0.4, 0.8, 0.4))):
-        clip(at + nearest_normal(at) * 0.3, nearest_normal(at), t, size)
+        clip(at + nearest_normal(at) * HW_PROUD, nearest_normal(at), t, size)
 
 
 # ---- coverage fields (cm, 0 on the edge) ----------------------------------------------------------
@@ -623,12 +654,13 @@ def string_tanga():
     return where(reg, panel)
 
 
-def tanga_strings(fit, rise=6.0, width=0.32):
-    """The tanga's strings as flat tapes traced over the skin: from each top corner of the
+def tanga_string_paths(fit, rise=6.0):
+    """The tanga's strings as point lines traced over the skin: from each top corner of the
     front panel up over the hip bone and down to the top of the thong at the small of the back."""
     cr, hb = LM["crotch"], LM["hip_top"]
     top_f, top_b = hb - 1.5, hb - 0.5
     bvh = bvh_of(TORSO & (HANDS < 0.5) if "HANDS" in globals() else TORSO)
+    lines = []
     for s in (1, -1):
         pts, started = [], False
         for k in range(181):
@@ -645,7 +677,8 @@ def tanga_strings(fit, rise=6.0, width=0.32):
                 continue                                    # still inside the front panel
             started = True
             pts.append(hit[0] + nearest_normal(hit[0]) * (0.06 + float(fit[nearest(hit[0])])))
-        tube(pts, 0.0, "Binding", flat=(width, 0.04), step=0.35)
+        lines.append(pts)
+    return lines
 
 
 def bodysuit(neck=None):
@@ -843,15 +876,26 @@ def bodystocking():
     g = np.minimum.reduce([(0.3 - UPPERARM) * 25.0, (0.5 - HEAD) * 30.0, f_neck, f_arm, f_hip, f_open])
 
     fit = BRIDGE
-    region(g, 0.09, "Nylon", lift=fit, bind=("Binding", 0.3), min_loop=6.0)
     # a sheer string tanga under the nylon (Tema's references): small see-through front, bound
-    # edges, thin strings rising high over the hips (they show in the hip windows), thong back
-    region(string_tanga(), 0.05, "Sheer", lift=fit, bind=("Binding", 0.2), min_loop=4.0)
-    tanga_strings(fit)
-    # the stocking tops are knitted double: a second layer from the hip crease down the thigh
-    region(np.minimum(g, np.minimum((LEGS - 0.5) * 12.0, Z - (cs - 12.5))), 0.115, "Nylon", lift=fit)
+    # edges, thin strings rising high over the hips (they show in the hip windows), thong back.
+    # Its bindings stand TRIM_PROUD, so the nylon over it is lifted clear and eases back down.
+    tanga, strings = string_tanga(), tanga_string_paths(fit)
+    under = (tanga > -0.6).astype(float)
+    for line in strings:
+        for q in line[::3]:
+            for _, i, _ in kd.find_range(q, 0.8):
+                under[i] = 1.0
+    ease = np.clip(diffuse(under, 40) * 2.0, 0.0, 1.0)            # 1 over it, easing out over ~4 cm
+    over = fit + np.maximum(under, ease * ease * (3.0 - 2.0 * ease)) * (TRIM_PROUD + 0.06)
+    region(g, 0.09, "Nylon", lift=over, bind=("Binding", 0.6), min_loop=6.0)
+    region(tanga, 0.05, "Sheer", lift=fit, bind=("Binding", 0.4), min_loop=4.0)
+    for line in strings:
+        tube(line, 0.0, "Binding", flat=(0.32, 0.1), step=0.35)
+    # the stocking tops are knitted double: a welt from the hip crease down the thigh, stacked
+    # TRIM_PROUD over the leg
+    region(np.minimum(g, np.minimum((LEGS - 0.5) * 12.0, Z - (cs - 12.5))), 0.09 + TRIM_PROUD, "Nylon", lift=over)
     for th in (0, 180):                                          # centre seams, front and back
-        line = [q + nearest_normal(q) * float(fit[nearest(q)]) for q in torso_line(th, zn - 6, cs, 0.19) if q]
+        line = [q + nearest_normal(q) * float(over[nearest(q)]) for q in torso_line(th, zn - 6, cs, 0.19) if q]
         seam(line, 0.085, "Binding", g)
 
     # jewellery: a fine chain resting on the collarbones, oval bangles close round the wrists
@@ -888,17 +932,106 @@ def bodystocking():
             tube(ring, 0.1, "Trim", closed=True, sides=8, step=0.35, rigid=nearest(cv))
 
 
+def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.5, slot="Satin"):
+    """A short satin A-line worn over the bodystocking (Docs/Research/DESIGN_SKIRT.md). Not cut
+    from the skin: rings lofted from the waist down. Each ring follows her hull to the hip, then
+    hangs straight from the widest point above it, flares out (A-line) and swings in broad
+    sculpted folds, so the rest pose already reads as draped. Double waistband 0.3 cm apart
+    with a bound top; side and back seams and a rolled hem live in the seam normal.
+    Weights: the skin's down to the hip, then a simple pelvis/thigh blend (a stand-in until the
+    reference skirt's weights and cloth setup can be read, study steps 4-5)."""
+    cr, hb = LM["crotch"], LM["hip_top"]
+    top = LM["waist"] + 1.0 if top is None else top
+    hem = cr - 6.0 if hem is None else hem
+    nt = 144
+    th = math.pi + np.linspace(0.0, 2 * math.pi, nt + 1)          # starts and ends at centre back
+    zs = np.linspace(top, hem, int(round((top - hem) / 0.7)) + 1)
+    dirs = np.stack([np.outer(np.cos(th), FWD) + np.outer(np.sin(th), LEFT)])[0]
+    R = np.zeros((len(zs), nt + 1))
+    J = np.zeros((len(zs), nt + 1), int)
+    for i, z in enumerate(zs):
+        for k in range(nt + 1):
+            d = V3(dirs[k])
+            o = Vector((PEL[0], PEL[1], z)) + d * 80
+            hit = TORSO_BVH.ray_cast(o, -d, 80)
+            R[i, k] = 80 - hit[3] if hit[0] else (R[i - 1, k] if i else 10.0)
+            J[i, k] = nearest(hit[0]) if hit[0] else (J[i - 1, k] if i else 0)
+    R = np.maximum.accumulate(R, axis=0)                           # hangs from the widest point above
+    for _ in range(3):                                             # soften round and down
+        R[:, :-1] = (np.roll(R[:, :-1], 1, 1) + 2 * R[:, :-1] + np.roll(R[:, :-1], -1, 1)) / 4
+        R[1:-1] = (R[:-2] + 2 * R[1:-1] + R[2:]) / 4
+        R[:, -1] = R[:, 0]
+    u = np.clip((hb - zs) / (hb - hem), 0, 1)[:, None]             # 0 at the hip, 1 at the hem
+    t = th[None, :] - math.pi
+    fold = np.sin(lobes * t + 0.7 * np.sin(2 * t + 1.0) + 0.4)
+    r = R + off + 1.5 * u + flare * u ** 1.4 + swing * u ** 1.6 * fold     # more room where the legs move
+    hip_row = int(np.argmin(np.abs(zs - hb)))
+    Jm = np.where(zs[:, None] >= hb, J, J[hip_row][None, :])          # below the hip: the hip ring's vertex
+
+    nb = len(gnames)
+    kl, kr = nt // 4, 3 * nt // 4                                  # columns straight out over her left and right leg
+
+    def sheet(rr, z0, z1, piece_slot, own_uv=True):
+        rows = [i for i, z in enumerate(zs) if z1 - 1e-6 <= z <= z0 + 1e-6]
+        bm = bmesh.new()
+        grid, src, ed, ys, uvs, ws, ms = [], [], [], [], [], [], []
+        arc = np.zeros(nt + 1)
+        for i in rows:
+            pts = [Vector((PEL[0], PEL[1], zs[i])) + V3(dirs[k]) * float(rr[i, k]) for k in range(nt + 1)]
+            arc[1:] = np.cumsum([(pts[k + 1] - pts[k]).length for k in range(nt)])
+            grid.append([bm.verts.new(p) for p in pts])
+            for k in range(nt + 1):
+                j = int(Jm[i, k])
+                src.append((j, j, 0.0))
+                ed.append(min(zs[i] - zs[rows[-1]], zs[rows[0]] - zs[i], NO_SEAM - 0.01))
+                # signed distance (cm, round the ring) to the nearest side or back seam
+                a = (t[0, k] + math.pi) % (2 * math.pi) - math.pi      # 0 = front
+                cand = [a - math.pi / 2, a + math.pi / 2, a - math.pi if a > 0 else a + math.pi]
+                ys.append(float(min(cand, key=abs)) * float(rr[i, k]))
+                uvs.append((arc[k], zs[i]) if own_uv else (np.nan, np.nan))
+                # pelvis = the hip ring's skin weights; each thigh pulls the part of the skirt
+                # that hangs over it, more towards the hem (stand-in for cloth, see the doc)
+                uu = float(u[i, 0])
+                grow = 0.9 * smooth01(0.0, 0.8, np.array(uu)).item()
+                tl = grow * max(0.0, math.sin(t[0, k])) ** 1.5
+                tr = grow * max(0.0, -math.sin(t[0, k])) ** 1.5
+                w = WM[j] * (1.0 - tl - tr) + WM[int(J[i, kl])] * tl + WM[int(J[i, kr])] * tr
+                b = smooth01(0.0, 0.25, np.array(uu)).item()           # skin weights above the hip
+                ws.append(w * b + WM[j] * (1.0 - b) if b > 0 else np.full(nb, np.nan))
+                ms.append(1.0 - uu)                                    # body morphs fade out down the skirt
+        for r0, r1 in zip(grid, grid[1:]):
+            for k in range(nt):
+                bm.faces.new((r0[k], r1[k], r1[k + 1], r0[k + 1]))      # facing out
+        ws = np.array(ws)
+        PIECES.append((bm, piece_slot, src, ed, dict(w=ws, m=np.array(ms), uv=np.array(uvs, float), y=np.array(ys))))
+        return grid
+
+    sheet(r, top, hem, slot)
+    band = r + TRIM_PROUD                                          # outer waistband, stacked 0.3 cm out
+    grid = sheet(band, top, top - band_h, slot)
+    top_ring = [v.co.copy() for v in grid[0][:-1]]
+    tube(top_ring, 0.0, slot, closed=True, flat=(0.7, TRIM_PROUD), step=0.5)
+
+
 OUTFITS = {"Noir": noir, "Garter": garter_set, "Cocoa": cocoa, "Fishnet": fishnet,
-           "Catsuit": catsuit_set, "Sheer": sheer, "Bodystocking": bodystocking}
+           "Catsuit": catsuit_set, "Sheer": sheer, "Bodystocking": bodystocking,
+           "BodystockingSkirt": lambda: (bodystocking(), skirt())}
 
 
 # ---- assemble: one mesh, weights, shape keys, garment UVs ------------------------------------------
 def assemble(name):
     out_bm = bmesh.new()
-    srcs = []
-    for bm, slot, src in PIECES:
-        srcs += src if src is not None else [(-1, -1, 0.0)] * len(bm.verts)
-        assert src is None or len(src) == len(bm.verts)
+    srcs, edist, extras = [], [], []
+    for bm, slot, src, *ed in PIECES:
+        n_ = len(bm.verts)
+        srcs += src if src is not None else [(-1, -1, 0.0)] * n_
+        assert src is None or len(src) == n_
+        edist += ed[0] if ed and ed[0] is not None else [NO_SEAM] * n_   # cords and tapes: shape is geometry
+        assert len(edist) == len(srcs)
+        ex = ed[1] if len(ed) > 1 else {}
+        nb = len(gnames)
+        extras.append(dict(w=ex.get("w", np.full((n_, nb), np.nan)), m=ex.get("m", np.ones(n_)),
+                           uv=ex.get("uv", np.full((n_, 2), np.nan)), y=ex.get("y", np.full(n_, np.nan))))
         tmp = bpy.data.meshes.new("tmp")
         bm.to_mesh(tmp)
         bm.free()
@@ -920,7 +1053,90 @@ def assemble(name):
         om.materials.append(MATS[s])
     assert len(srcs) == len(om.vertices)
     SRC_OF[ob.name] = np.array(srcs, float)
+    # signed distance to the nearest seam line, on fabric panels only (UVSeam.y): the sign
+    # flips across the line so it interpolates cleanly over a triangle the seam runs through
+    ed = np.array(edist, float)
+    sd = np.full(len(ed), NO_SEAM)
+    pts = [(q, (line[min(i + 1, len(line) - 1)] - line[max(i - 1, 0)]).normalized())
+           for line in SEAMS for i, q in enumerate(line)]
+    if pts:
+        sk = KDTree(len(pts))
+        for i, (q, _) in enumerate(pts):
+            sk.insert(q, i)
+        sk.balance()
+        for i in np.nonzero(ed < NO_SEAM)[0].tolist():
+            p = om.vertices[i].co
+            q, j, dist = sk.find(p)
+            if dist < 3.0:
+                side = (pts[j][1].cross(nearest_normal(p))).dot(p - q)
+                sd[i] = dist if side >= 0 else -dist
+    SEAMS.clear()
+    ex = {k: np.concatenate([e[k] for e in extras]) for k in ("w", "m", "uv", "y")}
+    sd = np.where(np.isnan(ex["y"]), sd, ex["y"])
+    EXTRA_OF[ob.name] = ex
+    SEAM_OF[ob.name] = np.stack([ed, sd], 1)
     return ob
+
+
+# what a garment must clear, relative to the default body: the rest pose, then each morph at
+# full strength on its own (arm-raise and hip-flexion correctives, bust sway and bounce)
+CLEAR_KEYS = ["ArmUp_l", "ArmUp_r", "ThighUp_l", "ThighUp_r", "BustSwayL_In", "BustSwayR_In",
+              "BustSwayL_Out", "BustSwayR_Out", "BustBounceL_Up", "BustBounceR_Up"]
+CLEARANCE = 0.08     # cm of fabric kept above the skin
+
+
+def _shortfall(S_, C_, fab):
+    """Per fabric vertex: how far short of CLEARANCE it is, and the skin normal to push along."""
+    bvh = BVHTree.FromPolygons([V3(p) for p in S_], T.tolist())
+    out = np.zeros((len(C_), 3))
+    for i in fab.tolist():
+        loc, nrm, _, dist = bvh.find_nearest(V3(C_[i]))
+        if loc is None or dist > 2.0:                            # the skirt and other loose pieces
+            continue
+        short = CLEARANCE - (V3(C_[i]) - loc).dot(nrm)
+        if short > 0:
+            out[i] = np.array(nrm) * short
+    return out
+
+
+def _smooth_push(push, idx3, w3, fab):
+    """Gather a per-vertex push onto the skin, spread it so it has no edge, read it back."""
+    acc = np.zeros((nv, 3))
+    mag = np.zeros(nv)
+    m = np.linalg.norm(push, axis=1)
+    for i in np.nonzero(m > 0)[0].tolist():
+        j = int(idx3[i, 0])
+        if m[i] > mag[j]:
+            mag[j], acc[j] = m[i], push[i]
+    torso = (Z >= LM["crotch"]) & (HANDS <= 0.5)               # toes and fingers fold too tight
+    acc[~torso] = 0.0
+    sm = diffuse(acc, 6)
+    sn, an = np.linalg.norm(sm, axis=1), np.linalg.norm(acc, axis=1)
+    acc = np.where((an > sn)[:, None], acc, sm * 1.5)
+    out = sum(acc[idx3[:, k]] * w3[:, k, None] for k in range(3))
+    out[~fab] = 0.0
+    return out, int((an > 1e-4).sum())
+
+
+def clear_skin(oc, idx3, w3, fab, dl):
+    """Fabric copies its skin's deltas, but a delta that turns the surface (ArmUp at the shoulder)
+    or a cut between two skin vertices can bring skin through it. Lift the rest shape where the
+    default body pokes through, then add to each morph's own delta whatever it needs on top,
+    along the morphed surface, so the fix rides that morph only."""
+    fab = np.asarray(fab)
+    idx = np.nonzero(fab)[0]
+    push, n = _smooth_push(_shortfall(X, oc, idx), idx3, w3, fab)
+    oc = oc + push
+    report = ["rest %d" % n]
+    for k in CLEAR_KEYS * 2:                                       # a second pass picks up what the first moved
+        if k not in DELTAS or k not in dl:
+            continue
+        push, n = _smooth_push(_shortfall(X + DELTAS[k], oc + dl[k], idx), idx3, w3, fab)
+        if n:
+            dl[k] = dl[k] + push
+            report.append("%s %d" % (k, n))
+    print("cleared (skin verts short):", ", ".join(report))
+    return oc
 
 
 def finalize(ob):
@@ -944,6 +1160,9 @@ def finalize(ob):
     w3 /= w3.sum(1, keepdims=True)
 
     ow = sum(WM[idx3[:, k]] * w3[:, k, None] for k in range(3))
+    ex = EXTRA_OF.pop(ob.name)
+    own = ~np.isnan(ex["w"][:, 0])                         # pieces that bring their own weights (skirt)
+    ow[own] = ex["w"][own]
     # keep every influence the skin has (it carries up to 7 round the hips): cutting to 4
     # makes cloth and skin deform differently there, and skin shows through in slivers
     top = np.argsort(-ow, axis=1)[:, :8]
@@ -956,7 +1175,8 @@ def finalize(ob):
             if w > 1e-4:
                 vgs[g].add((i,), w, "REPLACE")
 
-    dl = {kname: sum(DL[idx3[:, k]] * w3[:, k, None] for k in range(3)) for kname, DL in DELTAS.items()}
+    dl = {kname: sum(DL[idx3[:, k]] * w3[:, k, None] for k in range(3)) * ex["m"][:, None] for kname, DL in DELTAS.items()}
+    oc = clear_skin(oc, idx3, w3, SEAM_OF[ob.name][:, 0] < NO_SEAM, dl)     # fabric panels only
     rest = oc - sum(dl[k] * w for k, w in DESIGN.items())      # designed on the default body
     om.vertices.foreach_set("co", rest.ravel())
     ob.shape_key_add(name="Basis", from_mix=False)
@@ -974,9 +1194,13 @@ def finalize(ob):
     u = ul * (1 - t) + up * t
     u = u - PERIOD * np.floor(u.mean(1, keepdims=True) / PERIOD)
     v = v - PERIOD * np.floor(v.mean(1, keepdims=True) / PERIOD)
+    lu = ex["uv"][loops].reshape(-1, 3, 2)                  # pieces with their own UV0 (skirt: cm round and down)
+    mine = ~np.isnan(lu[..., 0])
+    u, v = np.where(mine, lu[..., 0], u), np.where(mine, lu[..., 1], v)
     om.uv_layers.new(name="UVMap").data.foreach_set("uv", np.stack([u, v], -1).ravel())
     per_vert = lambda arr: sum(arr[idx3[:, k]] * w3[:, k] for k in range(3))[loops]
     om.uv_layers.new(name="UVStretch").data.foreach_set("uv", np.stack([per_vert(STRETCH), per_vert(ZONE)], -1).ravel())
+    om.uv_layers.new(name="UVSeam").data.foreach_set("uv", SEAM_OF.pop(ob.name)[loops].ravel())   # UV2, cm
     print(name, "verts", n, "tris", len(om.polygons))
 
 

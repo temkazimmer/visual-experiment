@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "CineCameraSettings.h"
 #include "VisexMenuDirector.generated.h"
 
 class ACameraActor;
@@ -39,21 +40,30 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu")
 	TObjectPtr<AActor> StandIn;
 
+	/** Every scalability group at Cinematic (4) when Play starts: max shadows, lighting, GI, reflections. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu")
+	bool bMaxQualityOnPlay = true;
+
 	/** Untick to skip straight to play while testing. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu")
 	bool bShowMenuOnPlay = true;
 
 	/** Panel position in camera space: forward, right, up (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
-	FVector PanelOffset = FVector(100.f, -22.f, 3.f);
+	FVector PanelOffset = FVector(100.f, -34.f, 6.f);
 
-	/** How far the panel turns toward the figure (degrees). */
+	/** How far the panel turns (deg): negative sends its right end away, so the menu recedes toward her. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
-	float PanelYaw = 24.f;
+	float PanelYaw = -55.f;
+
+	/** Tilts the panel in the frame (deg): positive lifts its right end, so the menu rises toward her
+	 * on a diagonal (Persona-style perspective). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
+	float PanelRoll = 4.f;
 
 	/** World cm per panel pixel. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
-	float PanelScale = 0.032f;
+	float PanelScale = 0.048f;
 
 	/** Unlit panel brightness against the scene's exposure. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
@@ -85,6 +95,10 @@ public:
 	/** Back from Character or Photo mode: a dip to black while she returns to the column (s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
 	float ReturnFadeTime = 0.3f;
+
+	/** Share of the stand-up after which the player can walk; the camera keeps circling meanwhile. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Start", meta = (ClampMin = "0", ClampMax = "1"))
+	float StandUpHandOver = 0.6f;
 
 	/** Which way round her the camera circles: 1 or -1. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Start")
@@ -151,6 +165,62 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
 	float CameraAimHeight = 115.f;
 
+	/** Menu shot from the sand by her feet, looking up at her, instead of the level camera's
+	 * spot (which only sets which side of her it sits on). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
+	bool bFloorCamera = true;
+
+	/** Lens height above the sand (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
+	float FloorCameraHeight = 14.f;
+
+	/** From her feet to the camera, along the ground (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
+	float FloorCameraDistance = 160.f;
+
+	/** Swings the floor camera round her from the level camera's side (deg). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
+	float FloorCameraYaw = -60.f;
+
+	/** Turns the floor camera off her (deg): negative puts her right of centre, leaving the left for the menu. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
+	float FloorCameraPan = -16.f;
+
+	/** Where the floor camera points, above her feet (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
+	float FloorCameraLookHeight = 80.f;
+
+	/** Menu lens focal length (mm): wide, low by her feet; 0 keeps the camera's own. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
+	float MenuFocalLength = 15.f;
+
+	/** Menu depth of field: the lens is simulated on a sensor this many times larger, with the
+	 * focal length scaled to keep the framing, so the background blurs like a big-format camera. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera", meta = (ClampMin = "1"))
+	float MenuSensorScale = 3.f;
+
+	/** Menu aperture (f-stop) on that sensor; 0 keeps the camera's own. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
+	float MenuAperture = 0.7f;
+
+	/** Panel material override (e.g. MI_MenuDifference, which draws the text as the difference
+	 * from the scene behind it). Unset = the stock widget material: plain white over a soft shade. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
+	TSoftObjectPtr<class UMaterialInterface> PanelMaterial = TSoftObjectPtr<class UMaterialInterface>();
+
+	/** Post-process on the menu camera: a soft darkening from the screen's top-left corner so the
+	 * white menu reads on bright sky. Fades out during the Start move. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
+	TSoftObjectPtr<class UMaterialInterface> CornerShade = TSoftObjectPtr<class UMaterialInterface>(FSoftObjectPath(TEXT("/Game/VisEx/UI/M_MenuCornerShade.M_MenuCornerShade")));
+
+	/** Re-frame the menu shot from the current settings (for tuning while it is open). */
+	UFUNCTION(BlueprintCallable, Category = "Menu")
+	void ReframeMenu();
+
+	/** Options / O in play: back to the menu; in the menu: back to play. */
+	UFUNCTION(BlueprintCallable, Category = "Menu")
+	void ToggleMenu();
+
 	/** On the menu she leans on a fallen column, spawned behind her at Play (no level edit). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
 	bool bLeanOnColumn = true;
@@ -171,6 +241,14 @@ public:
 	/** How far along the column she sits, from its middle toward its left end (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
 	float LeanColumnShift = 60.f;
+
+	/** The stone's measured surface radius at Play (cm): the collision capsule's radius, and the
+	 * pivot sits this far above the drum's axis. The spawned actor carries the tag LeanColumn. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Menu|Lean")
+	float LeanColumnSurfaceRadius = 0.f;
+
+	UFUNCTION(BlueprintPure, Category = "Menu|Lean")
+	AActor* GetLeanColumn() const { return LeanColumn; }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
 	TSoftObjectPtr<class UAnimSequence> LeanIdle = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Lean.A_Menu_Lean")));
@@ -251,15 +329,22 @@ private:
 	void SpawnStudioLights();
 
 	FTransform CameraBase;
+	FTransform LevelCamera;
+	void SetCornerShade(float Weight);
+	bool bHaveLevelCamera = false;
 	bool bHaveBase = false;
 	bool bOrbiting = false;
 	float OrbitT = 0.f;
 	float OrbitA0 = 0.f, OrbitR0 = 0.f, OrbitZ0 = 0.f;
 	float MenuFocal = 0.f, MenuFStop = 0.f;
+	FCameraFilmbackSettings MenuFilmback;
 	bool bHaveLens = false;
 	bool bOpen = false;
 	bool bInputBound = false;
 	bool bStickHeld = false;
+	bool bPlaying = false;   // handed back to the player after Start
+	bool bWalkOffArmed = false;   // player has her mid stand-up: first stick push ends the clip
+	FVector MenuAim = FVector::ZeroVector;
 
 	// leaning on the column
 	void SpawnLeanColumn();

@@ -8,6 +8,9 @@ Endless: past the set the grid cells grow (75 cm -> 20 m) and the same dunes run
 on for a kilometre in every direction, into fog that is opaque long before the
 mesh ends. Invisible walls (Dunes_Bound_*) 600 m out keep the player inside.
 
+Settled: no face stands steeper than the angle of repose (REPOSE, 34 deg), so
+every slope is walkable and there are no sheer slip-face cliffs.
+
 Run live: python3 Tools/ue.py Tools/add_dunes.py
 """
 import math
@@ -22,8 +25,12 @@ BOUND = 60000                                # invisible walls this far outside 
 FAR = 100000                                 # sand runs this far outside the set
 GROW, MAX_CELL = 1.08, 2000                  # cell growth per step outside, and its cap
 LOW = -1000                                  # the open desert sits at the lower ground's level
+REPOSE = 34.0                                # deg: sand never stands steeper (slip faces settle here)
 DUNES_X0 = 1500                              # dunes fade out west of here (the ramp runs on)
 CELL = 75                                    # cm between vertices
+FINE = (6000, 13500, -4500, 1300)            # the menu set: the camera sits on the sand here...
+FINE_CELL = 25                               # ...so it gets 25 cm cells (no facets at grazing view)
+SMOOTH = 3                                   # passes that round off the settled slopes' creases
 HEIGHT = 1100                                # cm, tallest crests
 WAVELENGTH = 6500                            # cm between main ridges
 CLEAN_CENTRE = (1000, -2800)                 # the steps: no sand here
@@ -130,9 +137,14 @@ def sand(x, y):
     return ground(y) - (250 if STEPS_END + 100 < y < STEPS_TOP else SINK)
 
 
-def axis(a0, a1, lo, hi):
-    """Vertex coordinates: CELL apart over [a0, a1], cells growing out to [lo, hi]."""
+def axis(a0, a1, lo, hi, fine=None):
+    """Vertex coordinates: CELL apart over [a0, a1] (FINE_CELL inside fine=(f0, f1)),
+    cells growing out to [lo, hi]."""
     inner = [a0 + i * CELL for i in range(int((a1 - a0) / CELL) + 1)]
+    if fine:
+        inner = [v for v in inner if not fine[0] <= v <= fine[1]]
+        inner += [fine[0] + i * FINE_CELL for i in range(int((fine[1] - fine[0]) / FINE_CELL) + 1)]
+        inner.sort()
     def out(start, end, sign):
         pts, v, step = [], start, CELL
         while sign * (end - v) > 0:
@@ -143,11 +155,64 @@ def axis(a0, a1, lo, hi):
     return out(a0, lo, -1)[::-1] + inner + out(inner[-1], hi, 1)
 
 
-def write_obj(path):
-    xs = axis(X0, X1, CORE[0] - FAR, CORE[1] + FAR)
-    ys = axis(Y0, Y1, CORE[2] - FAR, CORE[3] + FAR)
-    nx, ny = len(xs), len(ys)
+def heights(xs, ys):
+    """sand() on the grid, then settled to the angle of repose: wherever a face is
+    steeper than REPOSE, sand slides down and fills its foot (each point rises to at
+    least neighbour - tan(REPOSE) * distance), the way a real slip face avalanches.
+    It only adds sand, so nothing opens up under the architecture. Chamfer sweeps
+    over the 8 neighbours, repeated until settled."""
     zs = [[sand(x, y) for x in xs] for y in ys]
+    k = math.tan(math.radians(REPOSE))
+    nx, ny = len(xs), len(ys)
+    fwd = ((0, -1), (-1, -1), (-1, 0), (-1, 1))
+    for _ in range(6):
+        moved = 0.0
+        for order, offs in ((range(ny), fwd), (range(ny - 1, -1, -1), [(-a, -b) for a, b in fwd])):
+            for j in order:
+                row = zs[j]
+                cols = range(nx) if offs is fwd else range(nx - 1, -1, -1)
+                for i in cols:
+                    best = row[i]
+                    for dj, di in offs:
+                        jj, ii = j + dj, i + di
+                        if 0 <= jj < ny and 0 <= ii < nx:
+                            v = zs[jj][ii] - k * math.hypot(xs[ii] - xs[i], ys[jj] - ys[j])
+                            if v > best:
+                                best = v
+                    if best > row[i]:
+                        moved = max(moved, best - row[i])
+                        row[i] = best
+        if moved < 1.0:
+            break
+    # settling leaves flat facets meeting at hard creases (chamfer cones), which read as
+    # polygons from a camera on the sand. Round the creases: each pass pulls a point half
+    # way to the line through its neighbours (planar slopes stay as they are), along x
+    # then y, only where cells are small (the far dunes keep their shape).
+    for _ in range(SMOOTH):
+        for j in range(ny):
+            row, new = zs[j], zs[j][:]
+            for i in range(1, nx - 1):
+                hl, hr = xs[i] - xs[i - 1], xs[i + 1] - xs[i]
+                if hl + hr <= 160:
+                    new[i] = 0.5 * row[i] + 0.5 * (row[i - 1] * hr + row[i + 1] * hl) / (hl + hr)
+            zs[j] = new
+        for j in range(1, ny - 1):
+            hl, hr = ys[j] - ys[j - 1], ys[j + 1] - ys[j]
+            if hl + hr <= 160:
+                a, b, c = zs[j - 1], zs[j], zs[j + 1]
+                zs[j] = [0.5 * b[i] + 0.5 * (a[i] * hr + c[i] * hl) / (hl + hr) for i in range(nx)]
+    return zs
+
+
+def grid():
+    return (axis(X0, X1, CORE[0] - FAR, CORE[1] + FAR, FINE[:2]),
+            axis(Y0, Y1, CORE[2] - FAR, CORE[3] + FAR, FINE[2:]))
+
+
+def write_obj(path):
+    xs, ys = grid()
+    nx, ny = len(xs), len(ys)
+    zs = heights(xs, ys)
     lines = []
     for j in range(ny):
         for i in range(nx):

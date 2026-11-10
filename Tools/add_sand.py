@@ -64,6 +64,13 @@ float3 c = Sand * lerp(0.82, 1.12, big) * lerp(0.93, 1.06, mid) * lerp(0.97, 1.0
 c = lerp(c, c * float3(1.06, 1.0, 0.9), smoothstep(0.4, 0.7, streak) * 0.6);     // warmer streaks
 c *= lerp(1.0, 0.86, saturate(N.x * 2.5));                                        // lee faces a touch darker
 c = lerp(c, c * float3(1.08, 1.05, 1.0) + 0.02, saturate(-N.x * 3) * 0.5);        // windward paler
+// vast sheets (~300 m) and hue drift across the open desert: iron-rich pinker sand,
+// bleached paler sand, so the endless field never reads as one colour
+float vast = S.fbm(WP * 0.00003 + 50);
+float hue = S.fbm(WP * 0.00006 + 77);
+c *= lerp(0.88, 1.1, vast);
+c = lerp(c, c * float3(1.04, 0.95, 0.9), smoothstep(0.55, 0.75, hue));
+c = lerp(c, c * float3(0.97, 1.0, 1.06) + 0.015, smoothstep(0.55, 0.75, 1 - hue));
 return c;
 """
 
@@ -86,15 +93,22 @@ float patchy = lerp(0.25, 1.15, smoothstep(0.3, 0.7, S.fbm(WP * 0.0005 + 21)));
 patchy *= 1 - 0.75 * smoothstep(0.45, 0.62, S.fbm(WP * 0.0004 + 40));     // desert patches are flatter
 float r1 = frac(u1); r1 = r1 < 0.7 ? r1 / 0.7 : (1 - r1) / 0.3;    // asymmetric ripple profile
 float scan = 0.3 + 0.7 * saturate((d - 1500) / 1500);               // the scan takes over close up
-float s = -0.45 * (r1 - 0.5) * near * scan - 0.25 * cos(6.2832 * u2) * far;
-return normalize(N + float3(dir * s * Mask * Strength * lee * patchy, 0));
+// sharper ripples: the slope itself (long windward rise, short steep lee) gives a crisp
+// crest line; fwidth blends back to the soft profile wherever the ripple gets under a pixel
+float f1 = frac(u1), f2 = frac(u2);
+float crisp1 = -0.16 * (f1 < 0.7 ? 1.0 / 0.7 : -1.0 / 0.3);
+float crisp2 = -0.09 * (f2 < 0.75 ? 1.0 / 0.75 : -1.0 / 0.25);
+float k1 = saturate(1 - fwidth(u1) * 4) * 0.75, k2 = saturate(1 - fwidth(u2) * 4) * 0.6;
+float s = lerp(-0.45 * (r1 - 0.5), crisp1, k1) * near * scan + lerp(-0.25 * cos(6.2832 * u2), crisp2, k2) * far;
+float graze = lerp(0.2, 1, smoothstep(0.04, 0.35, abs(dot(normalize(Cam - WP), N))));   // calmer at grazing view
+return normalize(N + float3(dir * s * Mask * Strength * lee * patchy * graze, 0));
 """
 
-# Glints: a few grains catch the light, sparse random cells that twinkle with the
-# view angle and vanish beyond ~15 m before they can alias.
+# Glints at three sizes, each twinkling with the view angle and fading before it can
+# alias: dense micro grains at the feet (<5 m), grains (<15 m), sparse mica flakes (10-45 m).
 # emissive the hazed stone fades to; calibrated so fully hazed stone matches the fog
 # behind it (Tools/.bridge calibration: HAZE_O Start=0 End=1, compare stone vs sky)
-HAZE_COLOR = (1.5, 0.55, 0.12)       # = DustFog inscattering in cinematic_pass.py: keep them equal
+HAZE_COLOR = (1.7, 1.45, 0.4)        # calibrated against the fog (HAZE_O run); not the raw DustFog inscatter
 
 HAZE = """
 // 0..1: how far this point has dissolved into the high dust. Rises with height, wobbles
@@ -107,13 +121,26 @@ return Amount * h * h * (3.0 - 2.0 * h) * nearFade;
 
 GLINTS = """
 float d = distance(WP, Cam);
-float fade = 1 - saturate((d - 400) / 1100);
-if (fade <= 0) return 0;
+if (d > 4500) return 0;
 float3 v = normalize(WP - Cam);
-float3 cell = floor(WP / 0.8);
-float h = S.hash(cell + floor(v * 40) * 0.37);
-float g = smoothstep(0.9975, 1.0, h) * (0.5 + S.hash(cell * 1.7));
-return Sand * g * 6 * fade * Mask * Strength * saturate(N.z);
+float g = 0;
+float f1 = 1 - saturate((d - 400) / 1100);
+if (f1 > 0) {
+    float3 cell = floor(WP / 0.8);
+    g += smoothstep(0.9975, 1.0, S.hash(cell + floor(v * 40) * 0.37)) * (0.5 + S.hash(cell * 1.7)) * f1;
+}
+float f0 = 1 - saturate((d - 150) / 350);
+if (f0 > 0) {
+    float3 cell = floor(WP / 0.3);
+    g += smoothstep(0.996, 1.0, S.hash(cell * 1.31 + floor(v * 60) * 0.41)) * 0.6 * f0;
+}
+float f2 = saturate((d - 800) / 700) * (1 - saturate((d - 1500) / 3000));
+if (f2 > 0) {
+    float3 cell = floor(WP / 4.0);
+    g += smoothstep(0.9993, 1.0, S.hash(cell * 0.77 + floor(v * 25) * 0.29 + 5.3)) * 1.4 * f2;
+}
+g *= smoothstep(0.08, 0.4, abs(dot(-v, N)));               // cells stretch into blocks at grazing view
+return Sand * g * 6 * Mask * Strength * saturate(N.z);
 """
 
 # Megascans Rippled Sand (2 m tile), in distance tiers so far sand costs nothing:
@@ -178,6 +205,7 @@ float2 td = 0;
 }
 t = lerp(t, td, flat);
 t.y *= FlipY;
+t *= lerp(0.3, 1, smoothstep(0.04, 0.35, abs(dot(normalize(Cam - WP), N))));   // no smeared bands at grazing view
 return normalize(RN + float3(t * Strength * Mask, 0));
 """
 
