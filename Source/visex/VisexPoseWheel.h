@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "VisexSkinProbe.h"
 #include "VisexPoseWheel.generated.h"
 
 class UAnimMontage;
@@ -52,6 +53,40 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Pose")
 	float BlendTime = 0.4f;
 
+	/** Contact probe, measured on her skin each frame (cm, + above the surface under it,
+	 *  - inside it, 999 when nothing is under it), before the fix below is applied. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Contact")
+	float HandGapL = 999.f;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Contact")
+	float HandGapR = 999.f;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Contact")
+	float SeatGap = 999.f;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Contact")
+	float BodyGap = 999.f;
+	/** The fix in use (cm, world up): each hand's move, and the body's on a floor pose. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Contact")
+	float HandFixZL = 0.f;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Contact")
+	float HandFixZR = 0.f;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Contact")
+	float SeatFixZ = 0.f;
+	/** Lying: the lowest skin of each half of her body above the ground (cm), and the tip. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Contact")
+	float HeadEndGap = 999.f;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Contact")
+	float FeetEndGap = 999.f;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Contact")
+	float PitchFixDeg = 0.f;
+	/** Debug: the lowest palm point found on each hand and the surface point under it (world). */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Contact")
+	FVector ProbeLowL = FVector::ZeroVector;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Contact")
+	FVector ProbeLowR = FVector::ZeroVector;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Contact")
+	FVector ProbeHitL = FVector::ZeroVector;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Contact")
+	FVector ProbeHitR = FVector::ZeroVector;
+
 private:
 	void OnWheelPressed(const FInputActionValue& Value);
 	void OnWheelReleased(const FInputActionValue& Value);
@@ -64,6 +99,8 @@ private:
 	void FinishPose();
 	void UpdateFootIK(float DeltaTime);
 	void UpdateGround(float DeltaTime);
+	void UpdateContacts(float DeltaTime);
+	bool IsOnFloor() const;
 	class UAnimInstance* GetAnim() const;
 
 	UPROPERTY()
@@ -99,6 +136,11 @@ private:
 	int32 Pending = INDEX_NONE;   // the pose picked while she was still getting up
 	bool bExitQueued = false;     // asked to get up before she had finished sitting down
 	bool bMovementHeld = false;   // walking is switched off while she is on the ground
+	FVisexSkinProbe Probe;        // her skin, for contacts
+	TWeakObjectPtr<const class USkeletalMesh> ProbeFailedFor;
+	float AppliedSeat = 0.f;      // the body offset the last frame was drawn with
+	float PitchFix = 0.f;         // degrees the lying body is tipped along its length, so both ends touch
+	FVector PitchAxis = FVector::ZeroVector; // that tip's axis, in the actor's frame
 
 	TWeakObjectPtr<UInputComponent> BoundInput;
 	TSharedPtr<FVisexPoseWheelView> View;

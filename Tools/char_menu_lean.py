@@ -25,10 +25,19 @@ exec(compile(_kit, "char_pose_mermaid.py", "exec"), globals())
 globals().update(_keep)
 
 MENU_DIR = "/Game/Characters/Menu"
-GAP = globals().get("GAP", 24.0)            # her root to the column's nearest point, cm
-RADIUS, TOP = 45.0, 90.0
+# the drum she leans on in Lvl_Dust (SM_Drum_0, measured in Play 2026-11-10, in her mesh space,
+# i.e. divided by her body scale 0.935): radius 50.6, top 94.1, nearest point 23.2 cm behind her
+GAP = globals().get("GAP", 23.2)            # her root to the column's nearest point, cm
+RADIUS, TOP = globals().get("RADIUS", 50.6), globals().get("TOP", 94.1)
 CY, CZ = -(GAP + RADIUS), TOP - RADIUS      # the column's axis, in mesh space (Y forward)
 PROPS = [("/Engine/BasicShapes/Cylinder", (0.0, CY, CZ), (1.0, 0.0, 0.0), (RADIUS / 50.0, RADIUS / 50.0, 3.0))]
+
+# hands near the top of the drum, where its collision matches the stone (the contact probe
+# traces against collision), with room for the palm under the wrist bone
+HAND_DEG = globals().get("HAND_DEG", 12.0)
+PALM_OFF = globals().get("PALM_OFF", 4.5)
+FINGER_DIP = globals().get("FINGER_DIP", 0.12)      # 0.25 put the fingertips into the stone, 0 lifted them
+FINGER_CURL = globals().get("FINGER_CURL", (6.0, 9.0, 5.0))
 
 def lerp(a, b, t): return tuple(x + (y - x) * t for x, y in zip(a, b))
 
@@ -41,8 +50,8 @@ def lean_arms(P):
     """Hands flat on the stone beside the hips, fingers over the front edge."""
     for s, side in (("l", 1.0), ("r", -1.0)):
         pt, n = on_stone(side * P["hand_x"], P["hand_deg"])
-        wrist = add(pt, mul(n, 3.5))
-        fingers = norm(lerp(cross((1.0, 0.0, 0.0), n), (0.0, 0.0, -1.0), 0.25))
+        wrist = add(pt, mul(n, PALM_OFF))       # the wrist bone sits this far off the stone: palm thickness
+        fingers = norm(lerp(cross((1.0, 0.0, 0.0), n), (0.0, 0.0, -1.0), FINGER_DIP))  # along the stone
         fingers = norm(add(fingers, (side * -0.15, 0.0, 0.0)))
         reach(s, wrist, (side * 0.6, -1.0, 0.2))
         set_hand(s, fingers, neg(n))
@@ -51,18 +60,19 @@ def lean_arms(P):
         for fn, sp in zip(("index", "middle", "ring", "pinky"), spread):
             straighten(s, fn, sp)
         for fn in ("index", "middle", "ring", "pinky"):
-            curl(s, fn, (10.0, 14.0, 8.0))
+            curl(s, fn, FINGER_CURL)                     # relaxed, following the stone
 ARMS = lean_arms
 
 for k in (STAND, HALF, KNEEL):
-    k.update(hand_x=24.0, hand_deg=22.0)
+    k.update(hand_x=24.0, hand_deg=HAND_DEG)
 
 def foot(side, ankle, toe, sole_hint=(0.0, 0.0, -1.0)):
     toe = norm(toe)
     return {"ball_" + side: ball_from(side, ankle, toe), "toe_" + side: toe, "sole_" + side: norm(perp(sole_hint, toe))}
 
 # the lean: weight on the left leg, the right knee forward and in, on the ball of the foot
-LEAN = dict(STAND, pelvis=(1.0, CY + 36.0, 86.0), roll=4.0, pitch=12.0, yaw=-18.0,
+SEAT = globals().get("SEAT", -4.0)          # pelvis bone height against the drum's top (skin on stone)
+LEAN = dict(STAND, pelvis=(1.0, CY + 36.0, TOP + SEAT), roll=4.0, pitch=12.0, yaw=-18.0,
             knee_l=(18.0, 60.0, 50.0), knee_r=(-2.0, 70.0, 55.0),
             lean_left=2.0, lean_fwd=-11.0, twist_left=6.0, head_tilt=5.0, head_down=-2.0, head_left=10.0,
             arms=1.0, floor=5.5)
@@ -74,9 +84,9 @@ LEAN.update(globals().get("TWEAK", {}))
 # the trunk goes first (Park Life Bench_Sit_Stand_Sit: the trunk tips forward ~0.8 s before the hips
 # leave the seat, the head comes over the feet, and the lean peaks just after the hips are up)
 PREP = dict(LEAN, lean_fwd=3.0, head_down=5.0, head_left=6.0, arms=1.0)
-PUSH = dict(LEAN, pelvis=(1.0, CY + 46.0, 91.0), pitch=2.0, lean_fwd=9.0, head_down=4.0, head_left=4.0, arms=0.85)
+PUSH = dict(LEAN, pelvis=(1.0, CY + 46.0, TOP + SEAT + 5.0), pitch=2.0, lean_fwd=9.0, head_down=4.0, head_left=4.0, arms=0.85)
 # over her feet, the right foot stepping through to its idle place
-STEP = dict(STAND, pelvis=(1.5, -6.0, 92.0), yaw=-6.0, lean_fwd=3.0, arms=0.25, hand_x=24.0, hand_deg=22.0)
+STEP = dict(STAND, pelvis=(1.5, -6.0, 92.0), yaw=-6.0, lean_fwd=3.0, arms=0.25, hand_x=24.0, hand_deg=HAND_DEG)
 STEP.update(foot("l", (12.0, 0.0, 8.5), (0.2, 0.96, -0.2)))
 _mid_r = lerp(sub(LEAN["ball_r"], mul(LEAN["toe_r"], FOOT["r"])), sub(I["ball_r"], mul(I_TOE["r"], FOOT["r"])), 0.5)
 STEP.update(foot("r", add(_mid_r, (0.0, 0.0, 7.0)), (0.0, 0.7, -0.7), (0.0, -1.0, -0.4)))

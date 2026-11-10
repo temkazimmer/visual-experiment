@@ -27,6 +27,7 @@ private:
 	void Reshape(FCompactPose& Pose) const;
 	void Catwalk(FCompactPose& Pose);
 	void Alive(FCompactPose& Pose);
+	void Contact(FCompactPose& Pose);
 
 	FVisexBodyProfile Profile;
 	bool bHasProfile = false;
@@ -54,6 +55,8 @@ private:
 	float HoldTarget = 0.f; // copied from the instance: 1 while a pose is held
 	float Hold = 0.f;       // HoldTarget, eased
 	float HoldClock = 0.f;  // seconds of hold time; the breath and drift run on it
+
+	FVector HandFix[2] = {FVector::ZeroVector, FVector::ZeroVector}; // copied from the instance
 };
 
 UCLASS(Transient, Blueprintable)
@@ -79,6 +82,14 @@ public:
 	 *  and drifts it, so a photo pose reads as a held pose, not a frozen frame. */
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Hold")
 	float HoldAlpha = 0.f;
+
+	/** Where each hand has to move (component space, cm) so its skin meets the surface under
+	 *  it, set each frame by the pose wheel's contact probe. Applied last, after the reshape. */
+	UPROPERTY(BlueprintReadWrite, Category = "Contact")
+	FVector HandFixL = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Contact")
+	FVector HandFixR = FVector::ZeroVector;
 
 protected:
 	virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override { return new FVisexAnimProxy(this); }

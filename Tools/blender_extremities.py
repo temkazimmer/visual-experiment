@@ -35,6 +35,7 @@ LOOK = dict(
     subdiv=2,            # Catmull-Clark levels on the MakeHuman pieces (its base is low-poly)
     hand_cut=1.5,        # cm behind the wrist (hand bone head) where the skin is cut
     foot_cut=9.0,        # cm above the ankle (foot bone head) along the shin
+    ankle_blend=5.0,     # cm each side of the ankle joint over which foot weight hands to the calf
     gap=0.6,             # cm between the two cut edges, bridged
     match=4.0,           # cm over which the graft's cross-section eases into the skin's
     blend=2.5,           # cm over which weights ease from the skin's into the graft's
@@ -224,10 +225,15 @@ def foot(s):
     knuckle = (sc * (R @ (toes - ma).T)).T + qa
     edge = (out - knuckle.mean(0)) @ fdir
     w_ball = np.clip(0.5 + edge / 2.0, 0, 1)
-    Wt = np.stack([1 - w_ball, w_ball], 1)
     calf = bone("calf_" + s)
     n = (qa - calf) / np.linalg.norm(qa - calf)
-    return obj, out, Wt, ["foot_" + s, "ball_" + s], qa - n * LOOK["foot_cut"], n, s, ("calf", "foot", "ball")
+    # the ankle bends at the joint, not up the shin: foot share is 0.5 at the joint and
+    # eases to the calf over +-ankle_blend (Quinn and Motus Woman both measure about this)
+    h = (out - qa) @ -n
+    u = np.clip(0.5 - h / (2 * LOOK["ankle_blend"]), 0, 1)
+    w_foot = u * u * (3 - 2 * u)
+    Wt = np.stack([1 - w_foot, w_foot * (1 - w_ball), w_foot * w_ball], 1)
+    return obj, out, Wt, ["calf_" + s, "foot_" + s, "ball_" + s], qa - n * LOOK["foot_cut"], n, s, ("calf", "foot", "ball")
 
 
 # ---- cut, match, stitch -------------------------------------------------------------------
