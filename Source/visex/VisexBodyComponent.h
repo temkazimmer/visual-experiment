@@ -66,6 +66,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float GluteTravel = 1.1f;
 	/** Overall bounce strength (1 = the sculpted travel at full size). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float JiggleStrength = 0.5f;
+	/** Bust height at the slider's ends, in bounce-morph weights (1 = 1.4 cm at the fullest point). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body") float BustLiftRange = 2.2f;
 
 	UFUNCTION(BlueprintCallable, Category = "Body")
 	void Apply();
