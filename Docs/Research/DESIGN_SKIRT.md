@@ -1,6 +1,6 @@
 # Design note: a skirt garment type
 
-Clothes agent, 2026-11-10. **This is a proposal, not built yet.** It is the first garment that is
+Clothes agent, 2026-11-10. **Built as `skirt()` in `Tools/blender_outfit.py`, worn in the outfit row "BodystockingSkirt".** It is the first garment that is
 not cut from the skin. Numbers come from [STUDY_SKIRT_CORSET.md](STUDY_SKIRT_CORSET.md). Weighting
 waits on study steps 4–5, which need the 5.8 package.
 
@@ -48,8 +48,23 @@ pose wheel. The hull test needs the thigh BVH at each pose, not only the rest po
   sim setup: max distance, backstop, leg collision, LODs. Then decide between this blend and
   Chaos cloth on a coarse sim mesh driving the 5.5 mm render mesh.
 
-## Open questions for Tema
+## Tema's answers (2026-11-10) and what was built
 
-1. Length: mid-thigh like the study, or shorter for the photo poses?
-2. Fabric: matte cotton (roughness 0.8) or satin (0.3–0.45)?
-3. Worn over the bodystocking, or as its own outfit row?
+1. **Length:** shorter than the study, for the photo poses. The hem sits 6 cm below the crotch,
+   so the skirt runs about 31 cm from the waist.
+2. **Fabric:** black satin, roughness 0.38. The `Satin` slot gets the seam normal: side and
+   back seams, rolled hem.
+3. **Layering:** worn over the bodystocking. Because a profile wears one mesh, the outfit row
+   "BodystockingSkirt" is the bodystocking with the skirt built in, standing 0.75 cm off it.
+
+Built values: flare +9 cm of radius at the hem, 5 lobes of ±5 cm swing, waistband 3.5 cm tall
+and 0.3 cm out, binding 0.7 cm wide and 0.3 cm proud.
+
+**Weighting is a stand-in until steps 4–5:**
+- above the hip, the skin's weights;
+- below it, the hip ring's weights blended towards the leg skin under each point, up to 0.5 at
+  the sides at the hem;
+- body morphs fade to 0 at the hem.
+
+**Known limit:** when she sits or kneels the thighs pass through the front of the skirt. Only a
+cloth setup or the reference weights fix that.

@@ -128,13 +128,14 @@ const TArray<FVisexOutfit>& FVisexBodyProfile::Outfits()
 		Out.Mesh = Asset;
 		return Out;
 	};
-	// One outfit for now (Tema, 2026-11-09). Meshes: Tools/blender_outfit.py, imported by
+	// The bodystocking, alone or with a satin skirt over it (Tema, 2026-11-10). Meshes: Tools/blender_outfit.py, imported by
 	// Tools/char_outfit.py. The other six (Noir, Garter, Cocoa, Fishnet, Catsuit, Sheer) are
 	// still on disk under /Game/Character/Outfits and /Game/Character/Clothes; add a row to
 	// list one again. A saved profile naming an unlisted outfit falls back to "None".
 	static const TArray<FVisexOutfit> Table = {
 		O(TEXT("None"),    LOCTEXT("OutfitNone", "Nothing"),          TEXT("")),
 		O(TEXT("Bodystocking"), LOCTEXT("OutfitBodystocking", "Sheer bodystocking"), TEXT("/Game/Character/Clothes/SKM_Outfit_Bodystocking.SKM_Outfit_Bodystocking")),
+		O(TEXT("BodystockingSkirt"), LOCTEXT("OutfitBodystockingSkirt", "Bodystocking and skirt"), TEXT("/Game/Character/Clothes/SKM_Outfit_BodystockingSkirt.SKM_Outfit_BodystockingSkirt")),
 	};
 	return Table;
 }
