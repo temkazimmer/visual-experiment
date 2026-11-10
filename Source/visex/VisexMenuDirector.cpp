@@ -517,10 +517,25 @@ void AVisexMenuDirector::SetSceneStripped(bool bStrip)
 	if (bStrip)
 	{
 		Stripped.Reset();
+		// whatever she stands on stays, however it is named
+		const AActor* Under = nullptr;
+		if (const APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0))
+		{
+			FHitResult Hit;
+			FCollisionQueryParams Q(TEXT("StripFloor"), true, Pawn);
+			if (GetWorld()->LineTraceSingleByChannel(Hit, Pawn->GetActorLocation(), Pawn->GetActorLocation() - FVector(0, 0, 1000), ECC_Visibility, Q))
+			{
+				Under = Hit.GetActor();
+			}
+		}
 		for (TActorIterator<AStaticMeshActor> It(GetWorld()); It; ++It)
 		{
+			// labels exist only in editor and non-Shipping builds: Shipping sees "StaticMeshActor_12",
+			// stripped the dunes too and she fell through the world. The VisexGround tag
+			// (Tools/tag_ground.py) survives cooking; the label check stays for older levels.
 			const FString Label = It->GetActorNameOrLabel();
-			const bool bGround = Label.StartsWith(TEXT("Dunes")) || Label.StartsWith(TEXT("LowerGround")) || Label == TEXT("Plaza")
+			const bool bGround = *It == Under || It->ActorHasTag(TEXT("VisexGround"))
+				|| Label.StartsWith(TEXT("Dunes")) || Label.StartsWith(TEXT("LowerGround")) || Label == TEXT("Plaza")
 				|| Label.StartsWith(TEXT("StepRamp"));   // walkable ramp under the pawn-ignoring steps
 			if (!bGround && !It->IsHidden())
 			{
