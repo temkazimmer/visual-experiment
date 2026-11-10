@@ -102,9 +102,108 @@ lift = build(LEAN)
 print("lean: hips lifted %.1f, pelvis %s, hands %s %s, knees %s %s" % (
     lift, [round(v, 1) for v in pos("pelvis")], [round(v, 1) for v in pos("hand_l")], [round(v, 1) for v in pos("hand_r")],
     [round(v, 1) for v in pos("calf_l")], [round(v, 1) for v in pos("calf_r")]))
-frames_up = clip(UP_KEYS)
+# ---- getting up and walking off: the push, three steps of the real walk, a closing step ----
+WALK = "/Game/Characters/Mannequins/Anims/Unarmed/Walk/MF_Unarmed_Walk_Fwd"
+ROOT_KIDS = [b for b in bones if parent[b] == "root"]
+
+def snap():
+    return {b: (tuple(local[b][0]), tuple(local[b][1]), tuple(local[b][2])) for b in bones}
+
+def walk_pose(T, W, opt):
+    """The walk at unwrapped time T (s); returns (pose, its root's forward travel)."""
+    L = W.get_play_length()
+    p = APE.get_anim_pose_at_time(W, T % L, opt)
+    for b in bones:
+        x = APE.get_bone_pose(p, b, unreal.AnimPoseSpaces.LOCAL); r = x.rotation
+        local[b] = [(x.translation.x, x.translation.y, x.translation.z), qnorm((r.x, r.y, r.z, r.w)),
+                    (x.scale3d.x, x.scale3d.y, x.scale3d.z)]
+    _cache.clear()
+    travel = local["root"][0][1] + math.floor(T / L) * WALK_CYCLE
+    local["root"][0] = (0.0, 0.0, 0.0)
+    _cache.clear()
+    return snap(), travel
+
+def placed(pose, anchor, root):
+    """`pose` drawn with its root at `anchor` (cm forward), re-expressed for a root at `root`."""
+    out = dict(pose)
+    for b in ROOT_KIDS:
+        t, q, sc = pose[b]
+        out[b] = ((t[0], t[1] + anchor - root, t[2]), q, sc)
+    out["root"] = ((0.0, root, 0.0), pose["root"][1], pose["root"][2])
+    return out
+
+def mix(fa, fb, t):
+    def nl(a, b):
+        if sum(x * y for x, y in zip(a, b)) < 0:
+            b = tuple(-v for v in b)
+        q = tuple(x + (y - x) * t for x, y in zip(a, b)); n = math.sqrt(sum(v * v for v in q))
+        return tuple(v / n for v in q)
+    return {b: (tuple(x + (y - x) * t for x, y in zip(fa[b][0], fb[b][0])), nl(fa[b][1], fb[b][1]),
+                tuple(x + (y - x) * t for x, y in zip(fa[b][2], fb[b][2]))) for b in fa}
+
+def ease(x): x = min(max(x, 0.0), 1.0); return x * x * (3 - 2 * x)
+
+def up_and_walk():
+    W = unreal.load_asset(WALK)
+    opt = unreal.AnimPoseEvaluationOptions(); opt.set_editor_property("extract_root_motion", False)
+    global WALK_CYCLE
+    WALK_CYCLE = 0.0
+    WALK_CYCLE = APE.get_bone_pose(APE.get_anim_pose_at_time(W, W.get_play_length(), opt), "root", unreal.AnimPoseSpaces.LOCAL).translation.y
+    T0, T_STOP, PUSH_T, IN_T, CLOSE_T, HOLD_T = 1.0, 2.1, 0.40, 0.35, 0.45, 0.15
+    # the walk is placed so its planted right foot lands where her right foot rests in the lean
+    build(LEAN); lean_r = pos("foot_r")[1]
+    w0, tr0 = walk_pose(T0, W, opt); base_tr = tr0
+    build_walk_r = None
+    walk_pose(T0, W, opt); walk_r = pos("foot_r")[1]
+    offset = lean_r - walk_r                         # walk root at T0, in her lean's space
+    def WP(T):
+        pose, tr = walk_pose(T, W, opt)
+        return pose, offset + tr - base_tr
+    # where she stops: the left foot planted at T_STOP, the idle's left foot over it
+    stop_pose, stop_root = WP(T_STOP); walk_pose(T_STOP % W.get_play_length(), W, opt)
+    left_rel = pos("foot_l")[1]
+    build(STAND); stand_pose = snap(); stand_left = pos("foot_l")[1]
+    RF = stop_root + left_rel - stand_left
+    frames = []
+    fps = float(FPS)
+    push_keys = [(0.0, LEAN), (PUSH_T, PUSH)]
+    total = PUSH_T + (T_STOP - T0) + CLOSE_T + HOLD_T
+    v_end = WALK_CYCLE / W.get_play_length()
+    for f in range(int(round(total * fps)) + 1):
+        tau = f / fps
+        if tau <= PUSH_T:
+            build(sample(push_keys, tau)); frames.append(placed(snap(), 0.0, 0.0)); continue
+        T = T0 + (tau - PUSH_T)
+        if tau <= PUSH_T + (T_STOP - T0):
+            wp, wr = WP(T)
+            x = (tau - PUSH_T) / IN_T
+            if x < 1.0:                              # out of the push into the walk
+                build(PUSH); push = snap()
+                k = ease(x); root = max(0.0, wr) * k
+                frames.append(mix(placed(push, 0.0, root), placed(wp, wr, root), k))
+            else:
+                frames.append(placed(wp, wr, wr))
+            continue
+        x = (tau - PUSH_T - (T_STOP - T0)) / CLOSE_T
+        if x <= 1.0:                                 # the closing step, settling into the idle
+            wp, wr = WP(min(T, T_STOP + 0.15))
+            d = RF - stop_root
+            m0 = min(v_end * CLOSE_T, 3.0 * d)
+            xx = min(x, 1.0)
+            root = (2 * xx ** 3 - 3 * xx ** 2 + 1) * stop_root + (xx ** 3 - 2 * xx ** 2 + xx) * m0 + (-2 * xx ** 3 + 3 * xx ** 2) * RF
+            frames.append(mix(placed(wp, wr, root), placed(stand_pose, RF, root), ease(x)))
+        else:
+            frames.append(placed(stand_pose, RF, RF))
+    print("lean up: %.2f s, walks %.0f cm" % (total, RF))
+    return frames
+
+frames_up = up_and_walk()
 if BUILD:
     write("A_Menu_Lean", breathing(), MENU_DIR)
-    write("A_Menu_Lean_Up", frames_up, MENU_DIR)
+    up_seq = write("A_Menu_Lean_Up", frames_up, MENU_DIR, False)
+    up_seq.set_editor_property("enable_root_motion", True)   # she walks away from the column
+    up_seq.set_editor_property("force_root_lock", False)
+    unreal.EditorAssetLibrary.save_loaded_asset(up_seq, only_if_is_dirty=False)
+    print("saved %s/A_Menu_Lean_Up %.2f s, root motion" % (MENU_DIR, up_seq.get_play_length()))
     write("A_Menu_Lean_Down", clip(DOWN_KEYS), MENU_DIR)
 shoot("lean", frames_up, SHOTS, globals().get("VIEWS", ("front3qr", "right")))

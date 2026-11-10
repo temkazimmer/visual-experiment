@@ -4,6 +4,7 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimSequence.h"
+#include "Misc/PackageName.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -146,12 +147,13 @@ void UVisexPoseWheelComponent::BeginPlay()
 	FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get().GetAssetsByPath(PoseFolder, Found, true);
 	Found.Sort([](const FAssetData& A, const FAssetData& B) { return A.AssetName.LexicalLess(B.AssetName); });
 	View = MakeShared<FVisexPoseWheelView>();
+	TArray<FString> Packages; // each pose's package, to find the flows between them
 	for (const FAssetData& Asset : Found)
 	{
 		const FString Name = Asset.AssetName.ToString();
-		if (Name.EndsWith(TEXT("_In")) || Name.EndsWith(TEXT("_Out")))
+		if (Name.EndsWith(TEXT("_In")) || Name.EndsWith(TEXT("_Out")) || Name.Contains(TEXT("_To_")))
 		{
-			continue; // the way into and out of a pose, found through the pose itself
+			continue; // the way into, out of and between poses, found through the poses themselves
 		}
 		if (UAnimSequence* Pose = Cast<UAnimSequence>(Asset.GetAsset()))
 		{
@@ -159,12 +161,30 @@ void UVisexPoseWheelComponent::BeginPlay()
 			Label.RemoveFromStart(TEXT("A_Pose_"));
 			const FString Path = Asset.PackageName.ToString();
 			Poses.Add(Pose);
+			Packages.Add(Path);
 			PoseIns.Add(LoadObject<UAnimSequence>(nullptr, *FString::Printf(TEXT("%s_In.%s_In"), *Path, *Name), nullptr, LOAD_NoWarn | LOAD_Quiet));
 			PoseOuts.Add(LoadObject<UAnimSequence>(nullptr, *FString::Printf(TEXT("%s_Out.%s_Out"), *Path, *Name), nullptr, LOAD_NoWarn | LOAD_Quiet));
 			View->Labels.Add(Label.Replace(TEXT("_"), TEXT(" ")));
 		}
 	}
 	View->Labels.Add(TEXT("Stand")); // the last place lets go of the pose
+
+	// already down, she moves from one floor pose to the next without getting up
+	const int32 N = Poses.Num();
+	Flows.SetNum(N * N);
+	for (int32 From = 0; From < N; ++From)
+	{
+		for (int32 To = 0; To < N; ++To)
+		{
+			if (From != To && PoseIns[From] && PoseIns[To])
+			{
+				const FString Name = FString::Printf(TEXT("%s_To_%s"), *FPackageName::GetShortName(Packages[From]),
+					*FPackageName::GetShortName(Packages[To]).Replace(TEXT("A_Pose_"), TEXT("")));
+				Flows[From * N + To] = LoadObject<UAnimSequence>(nullptr, *FString::Printf(TEXT("%s/%s.%s"),
+					*FPackageName::GetLongPackagePath(Packages[From]), *Name, *Name), nullptr, LOAD_NoWarn | LOAD_Quiet);
+			}
+		}
+	}
 
 	const APawn* Pawn = Cast<APawn>(GetOwner());
 	UGameViewportClient* Viewport = GetWorld()->GetGameViewport();
@@ -292,6 +312,8 @@ void UVisexPoseWheelComponent::StartPose(int32 Index)
 		PoseMontage = Anim->PlaySlotAnimationAsDynamicMontage(In, PoseSlot, 0.25f, 0.f, 1.f, 1);
 		Phase = EPhase::Enter;
 		PhaseTime = 0.f;
+		EnterLength = In->GetPlayLength();
+		bFlowing = false;
 	}
 	else
 	{
@@ -307,6 +329,34 @@ void UVisexPoseWheelComponent::StartPose(int32 Index)
 	{
 		FinishPose();
 	}
+}
+
+UAnimSequence* UVisexPoseWheelComponent::FlowTo(int32 From, int32 To) const
+{
+	const int32 N = Poses.Num();
+	return Poses.IsValidIndex(From) && Poses.IsValidIndex(To) && Flows.IsValidIndex(From * N + To) ? Flows[From * N + To].Get() : nullptr;
+}
+
+void UVisexPoseWheelComponent::StartFlow(int32 Index)
+{
+	UAnimInstance* Anim = GetAnim();
+	UAnimSequence* Flow = FlowTo(Current, Index);
+	if (!Anim || !Flow)
+	{
+		return;
+	}
+	PoseMontage = Anim->PlaySlotAnimationAsDynamicMontage(Flow, PoseSlot, 0.2f, 0.f, 1.f, 1);
+	if (PoseMontage)
+	{
+		PoseMontage->bEnableAutoBlendOut = false;
+	}
+	Current = Index;
+	Pending = INDEX_NONE;
+	bExitQueued = false;
+	Phase = EPhase::Enter;
+	PhaseTime = 0.f;
+	EnterLength = Flow->GetPlayLength();
+	bFlowing = true;
 }
 
 void UVisexPoseWheelComponent::BeginExit()
@@ -395,7 +445,7 @@ void UVisexPoseWheelComponent::UpdateGround(float DeltaTime)
 		return;
 	}
 	const bool bOnFloor = PoseIns.IsValidIndex(Current) && PoseIns[Current]
-		&& ((Phase == EPhase::Enter && PhaseTime > 0.9f) || Phase == EPhase::Hold);
+		&& ((Phase == EPhase::Enter && (PhaseTime > 0.9f || bFlowing)) || Phase == EPhase::Hold);
 	if (!bOnFloor && GroundAlpha <= 0.f)
 	{
 		return;
@@ -466,7 +516,7 @@ void UVisexPoseWheelComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 		const bool bWantsMove = Move && (!Move->GetCurrentAcceleration().IsNearlyZero() || !Character->GetLastMovementInputVector().IsNearlyZero());
 		PhaseTime += DeltaTime;
 		if (Anim && Phase == EPhase::Enter && PoseIns[Current] && !(Move && Move->IsFalling())
-			&& PhaseTime >= PoseIns[Current]->GetPlayLength() - FMath::Max(0.1f, 3.f * DeltaTime))
+			&& PhaseTime >= EnterLength - FMath::Max(0.1f, 3.f * DeltaTime))
 		{
 			// a one-shot montage lets go of the slot at its end, so the still pose (the same
 			// frame, looped) takes over just before that
@@ -491,7 +541,14 @@ void UVisexPoseWheelComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 		}
 		else if (Phase == EPhase::Hold && (bExitQueued || (bWantsMove && !bOpen)))
 		{
-			BeginExit(); // moving breaks the pose; a seated one gets up first
+			if (bExitQueued && FlowTo(Current, Pending))
+			{
+				StartFlow(Pending); // another floor pose: she moves into it without getting up
+			}
+			else
+			{
+				BeginExit(); // moving breaks the pose; a seated one gets up first
+			}
 		}
 	}
 

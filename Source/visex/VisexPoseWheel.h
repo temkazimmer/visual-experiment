@@ -59,6 +59,8 @@ private:
 	void BindInput();
 	void StartPose(int32 Index);
 	void BeginExit();
+	void StartFlow(int32 Index);
+	UAnimSequence* FlowTo(int32 From, int32 To) const;
 	void FinishPose();
 	void UpdateFootIK(float DeltaTime);
 	void UpdateGround(float DeltaTime);
@@ -77,12 +79,18 @@ private:
 	UPROPERTY()
 	TArray<TObjectPtr<UAnimSequence>> PoseOuts;
 
+	/** Floor to floor, Poses.Num() squared, [From * Num + To]: null where there is none. */
+	UPROPERTY()
+	TArray<TObjectPtr<UAnimSequence>> Flows;
+
 	UPROPERTY()
 	TObjectPtr<UAnimMontage> PoseMontage;
 
 	enum class EPhase : uint8 { None, Enter, Hold, Exit };
 	EPhase Phase = EPhase::None;
 	float PhaseTime = 0.f;        // seconds since she began to sit down
+	float EnterLength = 0.f;      // the clip taking her into the pose: its _In, or a flow from the last one
+	bool bFlowing = false;        // moving from one floor pose to another, already down
 	float FootIKAlpha = 1.f;      // the Anim Blueprint's foot IK, off while she is on the floor
 	float GroundAlpha = 0.f;      // how far the body is tilted onto the slope under her
 	FVector MeshBaseLocation = FVector::ZeroVector;   // the body's own placement, put back when she is up
