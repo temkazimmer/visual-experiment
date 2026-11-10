@@ -1,7 +1,10 @@
-"""Arm-raise correctives for the android's skin (headless Blender, the sixth skin stage):
+"""Arm-raise correctives for the android's skin (headless Blender, the last skin stage):
 
-  blender -b <android_skin.blend from blender_hair.py> \
+  blender -b <android_skin.blend from blender_face.py> \
       --python Tools/blender_correctives.py -- <out.fbx> [<preview_dir>]
+
+It runs straight after blender_face.py: her hair is the separate card-hair mesh
+(SKM_HairCards, put on by UVisexBodyComponent), so blender_hair.py is no longer in the chain.
 
 Raising an arm with plain skin weights folds the armpit into a hard crease, stacks the
 shoulder into a shelf and leaves the chest flat and the breast where it hung. For each arm:
@@ -28,6 +31,11 @@ LOOK = dict(
     relax=150,         # Taubin iterations in the raised pose (the mesh is dense: ~0.3 cm edges)
     lift=2.6,          # cm the breast rides up with the arm
     pec_lift=1.6,      # cm the pectoral and upper chest stretch up
+    thigh_deg=100.0,   # how far the thigh is folded up for the hip sculpt
+    thigh_reach=16.0,  # cm around the groin fold the relax reaches
+    thigh_fold=260,    # plain Laplacian passes on the fold
+    thigh_volume=0.7,  # cm the thigh and glute swell in deep flexion
+    thigh_open=1.0,    # cm each side of the groin fold steps back out
 )
 
 args = sys.argv[sys.argv.index("--") + 1:]
@@ -194,6 +202,82 @@ for s in ("l", "r"):
     pb.rotation_euler = Euler((0, 0, 0))
     bpy.context.view_layer.update()
 print("RAISE_AT", round(min(v[0] for v in made.values()), 1), "REST_RISE", round(min(rest_rise.values()), 1))
+
+# ---- hip flexion (seated, kneeling, lying): ThighUp_l / ThighUp_r ---------------------------
+# Folding the thigh up collapses the crotch crease and flattens the thigh and glute. In the
+# flexed pose: open the groin fold, then give the thigh and glute back some volume.
+
+
+def flex_deg(pose, s):
+    """Thigh lifted from hanging straight down, in the torso's frame (0 = standing)."""
+    a = pose.bones["thigh_" + s].head
+    b = pose.bones["calf_" + s].head
+    d = (b - a).normalized()
+    return 180.0 - math.degrees(math.acos(max(-1.0, min(1.0, d.dot(torso_up)))))
+
+
+thigh_made = {}
+for s in ("l", "r"):
+    sign = 1.0 if B["thigh_" + s].x > 0 else -1.0
+    pb = arm.pose.bones["thigh_" + s]
+    # pick the local axis and sign that swings the knee forward (-Y)
+    best = None
+    for axis in range(3):
+        for sg in (1.0, -1.0):
+            e = [0.0, 0.0, 0.0]
+            e[axis] = sg * math.radians(LOOK["thigh_deg"])
+            pb.rotation_euler = Euler(e)
+            bpy.context.view_layer.update()
+            knee = arm.pose.bones["calf_" + s].head
+            hip = arm.pose.bones["thigh_" + s].head
+            score = -(knee.y - hip.y) - abs(knee.x - hip.x) * 2.0
+            if best is None or score > best[0]:
+                best = (score, e)
+    pb.rotation_euler = Euler(best[1])
+    bpy.context.view_layer.update()
+    flexed = flex_deg(arm.pose, s)
+    P = evaluated()
+    joint = np.array(arm.pose.bones["thigh_" + s].head)
+    centres = (joint + np.array((-sign * 2.0, -7.0, -2.0)),      # the front fold, belly onto thigh
+               joint + np.array((-sign * 7.0, -3.0, -8.0)))      # the inner groin
+    dist = np.min([np.linalg.norm(P - c, axis=1) for c in centres], axis=0)
+    near = np.clip(1.0 - dist / LOOK["thigh_reach"], 0, 1)
+    side = np.clip(0.5 + sign * P[:, 0] / 6.0, 0, 1)
+    mine = group("thigh_" + s, "pelvis", "spine_01")
+    lower = group("calf_" + s, "foot_" + s, "ball_" + s)
+    mask = near * side * np.clip(mine * 2.0, 0, 1) * np.clip(1.0 - lower * 3.0, 0, 1) * (~hair)
+    mask = diffuse(mask, 4)
+    Q = taubin(P, np.clip(mask * 1.6, 0, 1) ** 2, LOOK["thigh_fold"], mu=0.0)
+    Q = taubin(Q, mask, LOOK["relax"])
+    # volume: the thigh and glute swell a little instead of flattening
+    NRM = np.empty(n * 3)
+    dg = bpy.context.evaluated_depsgraph_get()
+    ev = skin.evaluated_get(dg)
+    m = ev.to_mesh()
+    m.vertices.foreach_get("normal", NRM)
+    ev.to_mesh_clear()
+    NRM = NRM.reshape(-1, 3)
+    upper_thigh = group("thigh_" + s) * np.clip(1.0 - lower * 4.0, 0, 1)
+    glute = group("pelvis") * np.clip(sign * P[:, 0] / 4.0, 0, 1) * np.clip((P[:, 1] - joint[1]) / 6.0, 0, 1)
+    swell = diffuse(np.clip(upper_thigh + glute, 0, 1) * (~hair), 6) * (1 - np.clip(mask * 2.0, 0, 1))
+    Q = Q + NRM * (LOOK["thigh_volume"] * swell)[:, None]
+    # the belly and the thigh pass through each other in the fold: each side steps back out
+    # along its own normal, so the crease opens into a line instead of a jagged cut
+    fold = diffuse(np.clip(near * 1.4, 0, 1) ** 2 * side * (~hair), 3)
+    Q = Q + NRM * (LOOK["thigh_open"] * fold)[:, None]
+    moved = Q - P
+    Mv = deform_3x3()
+    live = np.linalg.norm(moved, axis=1) > 1e-4
+    rest_delta = np.zeros_like(moved)
+    rest_delta[live] = np.linalg.solve(Mv[live], moved[live][:, :, None])[:, :, 0]
+    k = skin.shape_key_add(name="ThighUp_" + s, from_mix=False)
+    k.data.foreach_set("co", (REST + rest_delta).ravel())
+    thigh_made[s] = flexed
+    print("ThighUp_%s: flex %.1f deg, moves %d verts, max %.2f cm" % (
+        s, flexed, int(live.sum()), float(np.linalg.norm(rest_delta, axis=1).max())))
+    pb.rotation_euler = Euler((0, 0, 0))
+    bpy.context.view_layer.update()
+print("FLEX_AT", round(min(thigh_made.values()), 1))
 
 # ---- preview: both arms up, without and with the correctives ---------------------------
 if PREVIEW:

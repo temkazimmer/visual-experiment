@@ -7,11 +7,11 @@ import unreal
 BP_PATH = "/Game/ThirdPerson/Blueprints/BP_ThirdPersonCharacter"
 MOVE = {
     "max_walk_speed": 190.0,                # calm walk (Stride Warping shortens steps); Shift/L2 runs at 540 (sprint_nodes.t3d)
-    "max_acceleration": 550.0,              # template 1500: eases into the walk, ~1s up to a sprint
-    "braking_deceleration_walking": 700.0,  # template 2000: settles to a stop, no snap
-    "ground_friction": 4.0,                 # template 8: softer direction changes
+    "max_acceleration": 900.0,              # template 1500: still eases in, but a light stick answers in ~0.2 s
+    "braking_deceleration_walking": 1300.0, # template 2000: stops within a step, no slide
+    "ground_friction": 6.0,                 # template 8: direction changes hold without drifting
 }
-TURN_YAW = 180.0                            # template 500 deg/s: she arcs through a turn, no pivot
+TURN_YAW = 240.0                            # template 500 deg/s: she arcs through a turn, no pivot
 
 if unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).is_in_play_in_editor():
     raise RuntimeError("Play mode is running: stop PIE before saving assets")

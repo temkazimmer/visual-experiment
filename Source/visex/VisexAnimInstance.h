@@ -26,6 +26,8 @@ struct FVisexAnimProxy : public FAnimInstanceProxy
 private:
 	void Reshape(FCompactPose& Pose) const;
 	void Catwalk(FCompactPose& Pose);
+	void Alive(FCompactPose& Pose);
+	void Contact(FCompactPose& Pose);
 
 	FVisexBodyProfile Profile;
 	bool bHasProfile = false;
@@ -34,13 +36,29 @@ private:
 	struct FCatwalkTune
 	{
 		float HipRoll = 0.f, HipYaw = 0.f, HipShift = 0.f, Line = 0.f, Shoulders = 0.f, Head = 0.f;
+		float Posture = 0.f, ChestLag = 0.f, ArmSwing = 1.f, HeadLine = 0.f;
+		float Clear = 0.f; // cm the thigh axes keep apart at the crossing (the swing knee turns out)
 	} Tune;
 	float GaitTarget = 0.f; // 0 standing or airborne, 1 walking, less when sprinting
 	float PhotoGait = -1.f; // copied from the instance: the gait forced by photo mode, or -1
 	float Gait = 0.f;       // GaitTarget, eased
 	float Step = 0.f;       // -1..1: which foot is ahead (+ left)
 	float Lift = 0.f;       // -1..1: which foot is in the air (+ left)
+	float ChestStep = 0.f, ChestLift = 0.f; // Step and Lift as the chest feels them, a few frames late
+	float HeadSide = 0.f;   // the head's slow average sideways position, its line
+	float KneeOut[2] = {0.f, 0.f}; // degrees each thigh (L, R) is turned out to clear the other, eased
 	float Dt = 0.f;
+
+	// moving hold: a held pose breathes and drifts instead of freezing (visex.Hold.*)
+	struct FHoldTune
+	{
+		float Breath = 0.f, BreathPeriod = 4.f, Collar = 0.f, Sway = 0.f, SwayPeriod = 8.f, Head = 0.f, Pin = 30.f, LyingBreath = 1.f;
+	} HoldTune;
+	float HoldTarget = 0.f; // copied from the instance: 1 while a pose is held
+	float Hold = 0.f;       // HoldTarget, eased
+	float HoldClock = 0.f;  // seconds of hold time; the breath and drift run on it
+
+	FVector HandFix[2] = {FVector::ZeroVector, FVector::ZeroVector}; // copied from the instance
 };
 
 UCLASS(Transient, Blueprintable)
@@ -61,6 +79,19 @@ public:
 	 *  0.35 for MF_Unarmed_Jog_Fwd. -1 hands it back to her speed. */
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Catwalk")
 	float PhotoGait = -1.f;
+
+	/** 1 while a still pose is held (set by the pose wheel): the moving-hold layer breathes
+	 *  and drifts it, so a photo pose reads as a held pose, not a frozen frame. */
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Hold")
+	float HoldAlpha = 0.f;
+
+	/** Where each hand has to move (component space, cm) so its skin meets the surface under
+	 *  it, set each frame by the pose wheel's contact probe. Applied last, after the reshape. */
+	UPROPERTY(BlueprintReadWrite, Category = "Contact")
+	FVector HandFixL = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Contact")
+	FVector HandFixR = FVector::ZeroVector;
 
 protected:
 	virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override { return new FVisexAnimProxy(this); }

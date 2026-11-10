@@ -1,0 +1,242 @@
+#include "VisexQATour.h"
+#include "VisexMenuDirector.h"
+#include "VisexPhotoMode.h"
+#include "VisexBodyComponent.h"
+#include "VisexBodyProfile.h"
+#include "VisexShellComponent.h"
+#include "EngineUtils.h"
+#include "Engine/SkeletalMesh.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Animation/AnimInstance.h"
+#include "Kismet/GameplayStatics.h"
+#include "Kismet/KismetSystemLibrary.h"
+#include "UnrealClient.h"
+#include "Misc/Paths.h"
+#include "Misc/ConfigCacheIni.h"
+#include "RHI.h"
+#include "RenderCore.h"
+#include "GameFramework/GameUserSettings.h"
+#include "VisexSettings.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogVisexQA, Log, All);
+
+AVisexQATour::AVisexQATour()
+{
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bTickEvenWhenPaused = true;
+}
+
+ACharacter* AVisexQATour::Her() const
+{
+	return Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+}
+
+AVisexPhotoMode* AVisexQATour::Photo() const
+{
+	for (TActorIterator<AVisexPhotoMode> It(GetWorld()); It; ++It) { return *It; }
+	return nullptr;
+}
+
+void AVisexQATour::Shot(const FString& Name)
+{
+	const FString File = FPaths::ProjectSavedDir() / TEXT("QA") / FString::Printf(TEXT("%02d_%s.png"), ++ShotCount, *Name);
+	FScreenshotRequest::RequestScreenshot(File, true, false);
+	UE_LOG(LogVisexQA, Display, TEXT("VisexQA: shot %s"), *File);
+}
+
+void AVisexQATour::Report(const FString& Where) const
+{
+	ACharacter* C = Her();
+	FString Body = TEXT("no pawn");
+	if (C)
+	{
+		const FVector L = C->GetActorLocation();
+		const UCharacterMovementComponent* Move = C->GetCharacterMovement();
+		Body = FString::Printf(TEXT("at %.0f %.0f %.0f, %s"), L.X, L.Y, L.Z,
+			Move ? (Move->IsFalling() ? TEXT("FALLING") : Move->IsMovingOnGround() ? TEXT("on ground") : TEXT("other")) : TEXT("no movement"));
+		// every skinned part, the cloth skirt (UChaosClothComponent, "OutfitCloth") included
+		TArray<USkinnedMeshComponent*> Meshes;
+		C->GetComponents<USkinnedMeshComponent>(Meshes);
+		for (const USkinnedMeshComponent* Part : Meshes)
+		{
+			const USkeletalMeshComponent* M = Cast<USkeletalMeshComponent>(Part);
+			const UAnimInstance* A = M ? M->GetAnimInstance() : nullptr;
+			Body += FString::Printf(TEXT(" | %s: %s%s%s"), *Part->GetName(),
+				Part->GetSkinnedAsset() ? *Part->GetSkinnedAsset()->GetName() : TEXT("NO MESH"),
+				Part->IsVisible() ? TEXT("") : TEXT(" (hidden)"),
+				A && A->GetCurrentActiveMontage() ? *FString::Printf(TEXT(", montage %s"), *A->GetCurrentActiveMontage()->GetName()) : TEXT(""));
+		}
+	}
+	if (FrameN > 0)
+	{
+		Body += FString::Printf(TEXT(" || frame %.1f ms avg, %.1f worst | game %.1f, render %.1f, rhi %.1f, gpu %.1f ms (%d frames)"),
+			FrameSum / FrameN, FrameMax, GameSum / FrameN, DrawSum / FrameN, RhiSum / FrameN, GpuSum / FrameN, FrameN);
+	}
+	FrameSum = FrameMax = GpuSum = GameSum = DrawSum = RhiSum = 0.0;
+	FrameN = 0;
+	UE_LOG(LogVisexQA, Display, TEXT("VisexQA: %s: %s"), *Where, *Body);
+}
+
+void AVisexQATour::Build()
+{
+	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
+	AVisexMenuDirector* D = Director;
+
+	Add(6.f, [this] { Report(TEXT("menu")); Shot(TEXT("menu")); });
+	Add(0.5f, [D] { D->StartGame(); });
+	Add(4.f, [this] { Report(TEXT("play")); Shot(TEXT("play")); WalkFor = 3.f; });
+	Add(3.5f, [this] { Report(TEXT("walked")); Shot(TEXT("walked")); });
+
+	// what each quality level costs here, standing in play (applied, not saved)
+	for (int32 Level = 0; Level <= 4; ++Level)
+	{
+		Add(0.5f, [this, Level]
+		{
+			if (UGameUserSettings* S = UGameUserSettings::GetGameUserSettings())
+			{
+				S->SetOverallScalabilityLevel(Level);
+				FVisexSettings::ApplyBetweenFrames();
+			}
+			FrameSum = FrameMax = GpuSum = 0.0;
+			FrameN = 0;
+		});
+		Add(1.f, [this] { FrameSum = FrameMax = GpuSum = GameSum = DrawSum = RhiSum = 0.0; FrameN = 0; });   // let it settle
+		Add(3.f, [this, Level] { Report(FString::Printf(TEXT("quality %d"), Level)); });
+	}
+	// from Epic, each category alone at Ultra: what every Cinematic feature costs
+	struct FCat { const TCHAR* Name; void (UGameUserSettings::*Set)(int32); };
+	static const FCat Cats[] = {
+		{TEXT("shadows"), &UGameUserSettings::SetShadowQuality},
+		{TEXT("lighting"), &UGameUserSettings::SetGlobalIlluminationQuality},
+		{TEXT("reflections"), &UGameUserSettings::SetReflectionQuality},
+		{TEXT("effects"), &UGameUserSettings::SetVisualEffectQuality},
+		{TEXT("post"), &UGameUserSettings::SetPostProcessingQuality},
+		{TEXT("antialiasing"), &UGameUserSettings::SetAntiAliasingQuality},
+		{TEXT("shading"), &UGameUserSettings::SetShadingQuality},
+		{TEXT("viewdistance"), &UGameUserSettings::SetViewDistanceQuality},
+		{TEXT("foliage"), &UGameUserSettings::SetFoliageQuality},
+		{TEXT("textures"), &UGameUserSettings::SetTextureQuality},
+	};
+	for (const FCat& Cat : Cats)
+	{
+		Add(0.5f, [this, Cat]
+		{
+			if (UGameUserSettings* S = UGameUserSettings::GetGameUserSettings())
+			{
+				S->SetOverallScalabilityLevel(3);
+				(S->*Cat.Set)(4);
+			}
+			FVisexSettings::ApplyBetweenFrames();
+		});
+		Add(1.f, [this] { FrameSum = FrameMax = GpuSum = GameSum = DrawSum = RhiSum = 0.0; FrameN = 0; });
+		Add(2.5f, [this, Cat] { Report(FString::Printf(TEXT("epic + ultra %s"), Cat.Name)); });
+	}
+	Add(0.5f, []
+	{
+		if (UGameUserSettings* S = UGameUserSettings::GetGameUserSettings()) { S->SetOverallScalabilityLevel(4); }
+		FVisexSettings::ApplyBetweenFrames();
+	});
+	Add(0.5f, [D] { D->ToggleMenu(); });
+	Add(5.f, [this] { Report(TEXT("menu again")); Shot(TEXT("menu_again")); });
+
+	// the Settings page: open, both tabs, step a value there and back, close
+	Add(0.5f, [D] { D->OpenSettings(); });
+	Add(1.5f, [this] { Report(TEXT("settings")); Shot(TEXT("settings")); });
+	Add(0.5f, [D] { D->SettingsTab(1); D->SettingsStep(1); });
+	Add(1.5f, [this] { Report(TEXT("settings visuals")); Shot(TEXT("settings_visuals")); });
+	Add(0.5f, [D] { D->SettingsStep(-1); D->SettingsTab(1); D->CloseSettings(); });
+
+	// each outfit on her, seen from the menu camera
+	for (const FVisexOutfit& O : FVisexBodyProfile::Outfits())
+	{
+		const FName Name = O.Name;
+		Add(0.5f, [this, Name]
+		{
+			if (ACharacter* C = Her())
+			{
+				if (UVisexBodyComponent* B = C->FindComponentByClass<UVisexBodyComponent>()) { B->SetOutfit(Name); }
+			}
+		});
+		Add(2.f, [this, Name] { Report(FString::Printf(TEXT("outfit %s"), *Name.ToString())); Shot(FString::Printf(TEXT("outfit_%s"), *Name.ToString())); });
+	}
+	Add(0.5f, [this]
+	{
+		if (ACharacter* C = Her())
+		{
+			if (UVisexBodyComponent* B = C->FindComponentByClass<UVisexBodyComponent>()) { B->SetOutfit(FVisexBodyProfile().Outfit); }
+		}
+	});
+
+	// photo mode, through every motion and pose
+	Add(0.5f, [D] { D->OnItemChosen(2); });
+	Add(6.f, [this]
+	{
+		AVisexPhotoMode* P = Photo();
+		UE_LOG(LogVisexQA, Display, TEXT("VisexQA: photo mode %s"), P && P->IsOpen() ? TEXT("open") : TEXT("DID NOT OPEN"));
+		if (!P || !P->IsOpen()) { return; }
+		for (int32 I = 0; I < 60; ++I)
+		{
+			P->SetMotion(I);
+			if (P->GetMotion() != I) { UE_LOG(LogVisexQA, Display, TEXT("VisexQA: %d motions"), I); break; }
+		}
+		P->SetMotion(0);
+	});
+	for (int32 I = 0; I < 40; ++I)
+	{
+		Add(I == 0 ? 0.5f : 2.5f, [this, I]
+		{
+			AVisexPhotoMode* P = Photo();
+			if (!P || !P->IsOpen()) { return; }
+			P->SetMotion(I);
+			if (P->GetMotion() != I) { Next = AfterPoses; return; }   // past the last motion
+			Report(FString::Printf(TEXT("photo motion %d"), I));
+			Shot(FString::Printf(TEXT("photo_%02d"), I));
+		});
+	}
+	AfterPoses = Steps.Num();
+	// a full GC, then walk and run again: Shipping 0240 crashed here once GC freed the loop clips
+	Add(1.f, [] { CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS, true); UE_LOG(LogVisexQA, Display, TEXT("VisexQA: forced GC")); });
+	Add(1.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetMotion(1); } });
+	Add(2.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetMotion(2); } Report(TEXT("photo after GC")); });
+	Add(1.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->Close(); } });
+	Add(5.f, [this] { Report(TEXT("after photo")); Shot(TEXT("after_photo")); });
+	Add(1.f, [this]
+	{
+		// the tour's Settings pass saved; leave this Mac as a first launch (Epic until chosen)
+		GConfig->RemoveKeyFromSection(TEXT("VisEx"), TEXT("bQualityChosen"), GGameUserSettingsIni);
+		GConfig->Flush(false, GGameUserSettingsIni);
+		UE_LOG(LogVisexQA, Display, TEXT("VisexQA: done"));
+		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
+	});
+}
+
+void AVisexQATour::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	if (!Director) { return; }
+	if (!bBuilt) { Build(); bBuilt = true; }
+	FrameSum += DeltaSeconds * 1000.0;
+	FrameMax = FMath::Max(FrameMax, double(DeltaSeconds) * 1000.0);
+	GpuSum += FPlatformTime::ToMilliseconds(RHIGetGPUFrameCycles(0));
+	GameSum += FPlatformTime::ToMilliseconds(GGameThreadTime);
+	DrawSum += FPlatformTime::ToMilliseconds(GRenderThreadTime);
+	RhiSum += FPlatformTime::ToMilliseconds(GRHIThreadTime);
+	++FrameN;
+	if (WalkFor > 0.f)
+	{
+		WalkFor -= DeltaSeconds;
+		if (ACharacter* C = Her())
+		{
+			const FRotator Yaw(0.f, UGameplayStatics::GetPlayerCameraManager(this, 0)->GetCameraRotation().Yaw, 0.f);
+			C->AddMovementInput(Yaw.Vector(), 1.f);
+		}
+	}
+	Clock += DeltaSeconds;
+	if (Steps.IsValidIndex(Next) && Clock >= Steps[Next].Wait)
+	{
+		Clock = 0.f;
+		Steps[Next++].Run();
+	}
+}

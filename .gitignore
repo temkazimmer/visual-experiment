@@ -15,4 +15,11 @@ Tools/.bridge/
 
 # Fab / Quixel Megascans assets: licensed, not redistributable. See README.
 SourceArt/Megascans/
+SourceArt/Fab/
 Content/VisEx/Megascans/
+Content/FemaleMovement/
+Content/FemaleEveryday/
+
+# licensed pack clips imported or retargeted for study only (movement), never committed
+Content/Study/
+__pycache__/

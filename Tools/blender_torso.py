@@ -9,7 +9,7 @@ shows (see Docs/CHARACTER_DIRECTION.md, "Middle body"):
 - first, the hips: the remesh seams are relaxed and pelvis/thigh weights blended over a
   wide band, so the leg meets the body in a curve and not a hinge.
 - always there: a navel (vertical oval under a small hood, in a shallow dish), a faint
-  midline above it, the soft low-belly curve, the spinal furrow (deepest in the lumbar
+  midline above it, the rounded low belly below it, the spinal furrow (deepest in the lumbar
   curve) between two soft columns, and the two dimples over the pelvis.
 - shape keys, driven by sliders: Fat (a soft layer over belly, flanks and low back), AbsLines (midline, the rectus' side lines, the
   lines from hip bone to pubis), AbsPack (the three cross lines above the navel and the
@@ -37,11 +37,12 @@ LOOK = dict(
     hood=0.14,           # the lip over its top
     dish=0.22,           # the shallow hollow around it
     midline=0.12,        # midline groove that is always there, above the navel
-    low_belly=0.2,       # soft curve below the navel
+    low_belly=2.0,       # the low belly: a soft rounded pad below the navel (subumbilical fat;
+                         # Motus Woman and real anatomy carry it, abs never segment below the navel)
     furrow=1.3,         # spinal furrow at its deepest (lumbar)
     furrow_upper=0.2,    # and between the shoulder blades
     columns=0.45,        # the two muscle columns beside it
-    dimple=0.45,         # dimples over the pelvis
+    dimple=0.6,          # dimples over the pelvis
     dimple_x=4.6, dimple_z=102.5,
     fat=2.0,             # Fat: how far the belly comes out at full
     lines=0.8,          # AbsLines: midline depth; the side lines are a bit shallower
@@ -50,10 +51,20 @@ LOOK = dict(
     gap=1.6,             # ThighGap: how far each inner thigh moves
     weld=0.16,           # seam slivers shorter than this are welded away
     seam_passes=14,      # smoothing passes that relax the remesh seams, knees to ribs
+    key_smooth=12,       # passes smoothing the earlier keys' offsets after the sliver weld
     joint_passes=90,     # weight-diffusion passes across the hip (about 3 cm of blend)
     mons=0.55,           # the pubic mound: how far it stands out
     cleft=0.22,          # the shallow line at its lower end
     groin=0.09,          # the soft crease from hip bone to pubis, always there
+    clavicle=0.3,       # landmarks (cm): the collarbone ridge
+    clavicle_hollow=0.16,  # and the hollow above it
+    notch=0.4,          # the dip between the collarbones' inner ends
+    deltoid=0.35,        # the shoulder cap
+    asis=0.2,            # front hip points
+    kneecap=0.4,
+    knee_hollow=0.14,
+    ankle_knob=0.25,
+    achilles=0.22,       # the grooves either side of the tendon
 )
 
 skin = next(o for o in bpy.data.objects if o.type == "MESH")
@@ -93,6 +104,8 @@ bm.normal_update()
 refine(lambda c: abs(c.x) < 8 and 98 < c.z < 128, 1, facing=1)       # the lumbar furrow and dimples
 bm.normal_update()
 refine(lambda c: (c.x / 2.6) ** 2 + ((c.z - ZN) / 3.0) ** 2 < 1, 2)
+bm.normal_update()
+refine(lambda c: abs(c.x) < 16 and 141 < c.z < 153, 1)                 # collarbones and the notch
 bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
 bm.to_mesh(skin.data)
 bm.free()
@@ -226,11 +239,62 @@ base += IN * (pit * LOOK["navel_depth"])[:, None]
 base += IN * (g(np.hypot(x / 3.0, (z - ZN) / 3.5), 1.0) * front * LOOK["dish"])[:, None]
 base += along(g(np.hypot(x / 0.9, (z - ZN - 1.15) / 0.45), 1.0) * front * LOOK["hood"])
 base -= along(g(x, 1.3) * band(z, ZN + 1.5, 127, 2) * front * LOOK["midline"])
-base += along(g(np.hypot(x / 6.5, (z - 97.5) / 5.0), 1.0) * front * (1 - pit) * LOOK["low_belly"])
+base += along(g(np.hypot(x / 9.5, (z - 99.5) / 7.0), 1.0) * front * (1 - pit) * LOOK["low_belly"])
 furrow = LOOK["furrow_upper"] * band(z, 104, 141, 3) + (LOOK["furrow"] - LOOK["furrow_upper"]) * band(z, 104, 122, 4)
 base -= along(g(x, 1.8) * furrow * back)
 base += along(g(ax - 3.6, 2.0) * band(z, 104, 124, 4) * back * LOOK["columns"])
 base -= along(g(np.hypot(ax - LOOK["dimple_x"], z - LOOK["dimple_z"]), 1.1) * back * LOOK["dimple"])
+
+# landmarks: what an anime figure's sculptor keys the anatomy on, crisp and small
+# (Docs/Research/ANATOMY.md, "Surface landmarks"). Positions from the skeleton, in cm.
+# (masks and pushes on smoothed normals: the raw ones crinkled the fine shapes)
+deg_l = np.zeros(n)
+np.add.at(deg_l, E[:, 0], 1.0)
+np.add.at(deg_l, E[:, 1], 1.0)
+deg_l = np.maximum(deg_l, 1.0)
+Nl = Nn.copy()
+for _ in range(12):
+    acc = np.zeros_like(Nl)
+    np.add.at(acc, E[:, 0], Nl[E[:, 1]])
+    np.add.at(acc, E[:, 1], Nl[E[:, 0]])
+    Nl = 0.5 * Nl + 0.5 * acc / deg_l[:, None]
+Nl /= np.maximum(np.linalg.norm(Nl, axis=1, keepdims=True), 1e-6)
+
+
+def out(f):
+    return Nl * f[:, None]
+
+
+facing_front = ramp(-Nl[:, 1], 0.05, 0.45)
+facing_back = ramp(Nl[:, 1], 0.1, 0.5)
+facing_out = ramp(Nl[:, 0] * sgn, 0.2, 0.6)        # the side of a limb away from the middle
+facing_in = ramp(-Nl[:, 0] * sgn, 0.2, 0.6)
+# collarbones: a fine ridge from the notch out to the shoulder, rising a little, with the
+# soft hollow above it; the notch itself between their inner ends
+c0, c1 = np.array([1.9, 146.6]), np.array([14.2, 148.4])
+q = np.stack([ax, z], 1) - c0
+t = np.clip(q @ (c1 - c0) / ((c1 - c0) @ (c1 - c0)), 0, 1)
+clav_d = np.linalg.norm(q - t[:, None] * (c1 - c0), axis=1)
+upper_chest = band(z, 140, 156, 1.5) * (ax < 17)
+base += out(g(clav_d, 1.0) * facing_front * upper_chest * LOOK["clavicle"])
+above = np.linalg.norm(np.stack([ax, z], 1) - (c0 + t[:, None] * (c1 - c0) + np.array([0.0, 2.3])), axis=1)
+base -= out(g(above, 1.3) * band(t, 0.15, 0.8, 0.12) * facing_front * upper_chest * LOOK["clavicle_hollow"])
+base -= out(g(np.hypot(x / 1.3, (z - 147.6) / 1.1), 1.0) * facing_front * LOOK["notch"])
+# the shoulder cap: the deltoid's round over the joint, on the outside of the arm
+base += out(g(np.hypot((ax - 18.3) / 2.6, (z - 139.5) / 4.0), 1.0) * facing_out * LOOK["deltoid"])
+# the front hip points (ASIS), where the abs' V lines start
+base += out(g(np.hypot(ax - 10.6, z - 101.0), 1.2) * facing_front * LOOK["asis"])
+# knees: the kneecap, with the soft hollows either side below it
+leg = (ax > 6) & (ax < 20)
+knee = leg * band(z, 40, 60, 1)
+base += out(g(np.hypot((ax - 13.0) / 2.2, (z - 51.0) / 2.6), 1.0) * facing_front * knee * LOOK["kneecap"])
+base -= out(g(np.hypot((np.abs(ax - 13.0) - 2.9) / 1.0, (z - 47.0) / 1.6), 1.0) * facing_front * knee * LOOK["knee_hollow"])
+# ankles: the inner knob sits higher than the outer; the Achilles stands between two grooves
+ankle = leg * band(z, 3, 16, 1)
+base += out(g(np.hypot(z - 9.6, Nl[:, 1] * 2.0), 1.0) * facing_in * ankle * (ax < 14.5) * LOOK["ankle_knob"])
+base += out(g(np.hypot(z - 8.2, Nl[:, 1] * 2.0), 1.0) * facing_out * ankle * (ax > 14.5) * LOOK["ankle_knob"])
+achilles = facing_back * ankle * band(z, 5, 14, 1.5)
+base -= out(g(np.abs(ax - 14.7) - 1.6, 0.6) * achilles * LOOK["achilles"])
 
 # Fat: belly out (most below the navel), flanks and low back fuller, the navel sinks deeper into it
 soft = along(g(np.hypot(x / 9.5, (z - 100.0) / 9.0), 1.0) * front * (1 - pit) * LOOK["fat"])
@@ -251,16 +315,14 @@ low = ramp(-Nn[:, 1], -0.35, 0.3) * torso * band(z, 82.5, 100, 1.5)
 base += along(g(np.hypot(x / 3.4, (z - 89.5) / 4.2), 1.0) * low * LOOK["mons"])
 base -= along(g(x, 0.5) * band(z, 83.5, 88.5, 1.2) * low * LOOK["cleft"])
 base -= along(g(vee_d, 2.2) * band(z, 91, 100, 3) * front * LOOK["groin"])
-mid = g(x, 1.0) * (band(z, ZN + 1.2, 127, 2) + 0.4 * band(z, 95, ZN - 1.5, 2)) * (1 - pit)
+mid = g(x, 1.0) * (band(z, ZN + 1.2, 127, 2) + 0.12 * band(z, 97, ZN - 1.5, 2)) * (1 - pit)   # linea alba fades below the navel
 lines = -along((mid * LOOK["lines"] + side * LOOK["lines"] * 0.75 + vee * 0.22) * front)
 lines += along(g(ax - xs / 2, xs / 2.6) * band(z, 97, 125, 3) * front * 0.18)
-lines -= along(g(np.hypot(x / 6.5, (z - 97.5) / 5.0), 1.0) * front * (1 - pit) * 0.25)
 
 # AbsPack: three cross lines above the navel, blocks between them
 inside = (1 - ramp(ax, xs - 1.6, xs + 0.6)) * ramp(ax, 0.2, 1.6)
 cross = sum(g(z - zi - 0.5 * ax / xs, 1.3) for zi in (ZN + 1.0, ZN + 6.5, ZN + 12.5))
-block = g(ax - xs / 2, xs / 2.4) * inside * (band(z, ZN + 1, 126, 1.5) * (1 - np.clip(cross, 0, 1))
-                                             + 0.5 * band(z, 96, ZN - 1.5, 2))
+block = g(ax - xs / 2, xs / 2.4) * inside * band(z, ZN + 1, 126, 1.5) * (1 - np.clip(cross, 0, 1))   # no blocks below the navel
 pack = -along((cross * inside * LOOK["pack"] + mid * 0.2 + side * 0.15) * front)
 pack += along(block * front * LOOK["pack"])
 
@@ -272,6 +334,34 @@ gap[:, 0] = sgn * amount
 
 # ---- write: the base into every key, then the new keys -------------------------------------
 keys = mesh.shape_keys.key_blocks
+# welding the remesh slivers merged vertices whose offsets in the earlier keys differed (the
+# bust's), leaving a scratchy step pattern where those shapes change fast (under and beside
+# the bust): smooth each earlier key's offsets over the welded band
+deg = np.zeros(n)
+np.add.at(deg, E[:, 0], 1.0)
+np.add.at(deg, E[:, 1], 1.0)
+deg = np.maximum(deg, 1.0)
+welded = ((P[:, 2] > 40) & (P[:, 2] < 131)).astype(float)
+
+
+def smooth_offsets(d, passes):
+    for _ in range(passes):
+        acc = np.zeros_like(d)
+        np.add.at(acc, E[:, 0], d[E[:, 1]])
+        np.add.at(acc, E[:, 1], d[E[:, 0]])
+        d = d + welded[:, None] * 0.5 * (acc / deg[:, None] - d)
+    return d
+
+
+rest = np.empty(n * 3)
+keys[0].data.foreach_get("co", rest)
+rest = rest.reshape(-1, 3)
+for k in keys[1:]:
+    co = np.empty(n * 3)
+    k.data.foreach_get("co", co)
+    d = co.reshape(-1, 3) - rest
+    if np.abs(d).max() > 1e-4:
+        k.data.foreach_set("co", (rest + smooth_offsets(d, LOOK["key_smooth"])).ravel())
 for k in keys:
     co = np.empty(n * 3)
     k.data.foreach_get("co", co)

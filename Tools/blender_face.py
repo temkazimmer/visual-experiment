@@ -48,9 +48,14 @@ LOOK = dict(
     chin_drop=0.5,       # cm the chin point is pulled down, for a sharper V
     nose_shrink=0.22,    # nose stands this much less proud
     eye_grow=1.25,       # eyes and lids, scaled about each eye
-    ear_length=9.5,      # cm the ear's upper half is drawn out into a point
-    ear_dir=(0.90, 0.38, 0.20),   # out, back, up (mirrored on the other side)
-    ear_taper=0.82,      # how far the drawn-out part closes toward its tip
+    # elf ears: the whole ear drawn out along its length, so the rim (helix), the inner
+    # fold (antihelix) and the bowl run on up into a leaf-shaped point (Tema's references)
+    ear_stretch=1.5,     # the upper ear's length, times the human one
+    ear_start=0.05,      # where the stretch starts, as a fraction of the ear above its centre
+    ear_back=28.0,       # degrees the drawn-out part sweeps back
+    ear_out=1.6,         # cm the tip leans away from the skull
+    ear_taper=0.7,       # how far the ear narrows toward its tip (1 = to a needle)
+    ear_relax=6,         # relax passes over the drawn-out part, so stretched folds don't streak
 )
 
 skin = next(o for o in bpy.data.objects if o.type == "MESH")
@@ -219,17 +224,54 @@ fy = smooth((2.0 - P[:, 1]) / 6.0) * smooth((P[:, 2] - (chin_z - 2.5)) / 2.0)
 P[:, 0] *= 1 - LOOK["jaw_taper"] * down * fy * ~is_ear
 w = np.exp(-((P[:, 0] / 2.2) ** 2 + ((P[:, 2] - chin_z) / 2.0) ** 2)) * front
 P[:, 2] -= LOOK["chin_drop"] * w
-# ears: the upper half drawn out into a long point
+# ears: the whole ear drawn out into a leaf-shaped point, swept back
 for side in (-1.0, 1.0):
-    m = is_ear & (P[:, 0] * side > 0)
-    E = P[m]
-    zmid, ztop = np.percentile(E[:, 2], 30), E[:, 2].max()
-    anchor = E[np.argmax(E[:, 2] + 0.4 * E[:, 1] + 0.3 * side * E[:, 0])].copy()
-    d = np.array(LOOK["ear_dir"]) * [side, 1, 1]
-    d /= np.linalg.norm(d)
-    w = smooth((E[:, 2] - zmid) / (ztop - zmid)) ** 1.8 * ear_w[m]
-    E = anchor + (E - anchor) * (1 - LOOK["ear_taper"] * w)[:, None] + np.outer(w, d) * LOOK["ear_length"]
-    P[m] = E
+    # only what stands off the skull: |x| against the skull's own width at that spot (the
+    # mean of the nearest plain-skull vertices in side view), so the skull around the root stays
+    sk = np.nonzero((P[:, 0] * side > 0) & ~is_ear & (np.abs(P[:, 0]) > 3.0))[0]
+    kd = KDTree(len(sk))
+    for j, i in enumerate(sk):
+        kd.insert((0.0, P[i, 1], P[i, 2]), j)
+    kd.balance()
+    cand = np.nonzero(is_ear & (P[:, 0] * side > 0))[0]
+    off = np.array([abs(P[i, 0]) - np.mean([abs(P[sk[j], 0]) for _, j, _ in kd.find_n((0.0, P[i, 1], P[i, 2]), 8)])
+                    for i in cand])
+    keep_ = smooth((off - 0.25) / 0.6)
+    m = np.zeros(len(P), bool)
+    m[cand[keep_ > 0]] = True
+    E = P[m].copy()
+    we = keep_[keep_ > 0]
+    core = E[we > 0.9]
+    cy, cz = (core[:, 1].min() + core[:, 1].max()) / 2, (core[:, 2].min() + core[:, 2].max()) / 2
+    h, v = E[:, 2] - cz, E[:, 1] - cy
+    H = h.max()
+    h0 = LOOK["ear_start"] * H
+    t = np.clip((h - h0) / (H - h0), 0, 1)
+    # the ear's own centre line at each height, so it narrows about itself
+    bins = np.linspace(h.min(), H, 24)
+    k_ = np.clip(np.digitize(h, bins) - 1, 0, 22)
+    mids = np.array([(v[k_ == b].min() + v[k_ == b].max()) / 2 if (k_ == b).any() else np.nan for b in range(23)])
+    ok = ~np.isnan(mids)
+    mid = np.interp(h, (bins[:-1] + bins[1:])[ok] / 2, mids[ok])
+    v2 = mid + (v - mid) * (1 - LOOK["ear_taper"] * t ** 2.2)
+    h2 = np.where(h > h0, h0 + (h - h0) * (1 + (LOOK["ear_stretch"] - 1) * t ** 0.7), h)
+    # sweep back about the start of the stretch (front is -Y, so back is +Y)
+    a_ = np.radians(LOOK["ear_back"]) * smooth(t)
+    y2 = (v2 - mid * 0) * np.cos(a_) + (h2 - h0) * np.sin(a_)
+    z2 = h0 + (h2 - h0) * np.cos(a_) - v2 * np.sin(a_)
+    N = E.copy()
+    N[:, 1] = cy + np.where(h > h0, y2, v2)
+    N[:, 2] = cz + np.where(h > h0, z2, h2)
+    N[:, 0] += side * LOOK["ear_out"] * t ** 2
+    P[m] = E + (N - E) * we[:, None]
+    tw = np.zeros(len(P))
+    tw[np.nonzero(m)[0]] = smooth(t * 1.4) * we
+    for _ in range(LOOK["ear_relax"]):
+        idx = np.nonzero(tw > 0.01)[0]
+        avg = np.array([P[nb[i]].mean(0) for i in idx])
+        P[idx] += (avg - P[idx]) * (0.5 * tw[idx])[:, None]
+    tip = P[m][np.argmax(P[m][:, 2])]
+    print("ear %+d: tip at x %.1f y %.1f z %.1f (centre y %.1f z %.1f)" % (side, *tip, cy, cz))
 print("head: chin z %.1f, nose y %.1f, crown %.1f, half width %.1f" % (
     P[P[:, 1] < P[:, 1].min() + 4][:, 2].min(), P[:, 1].min(), P[:, 2].max(), np.abs(P[:, 0]).max()))
 

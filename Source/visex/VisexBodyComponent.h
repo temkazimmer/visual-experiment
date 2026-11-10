@@ -92,6 +92,10 @@ public:
 	 *  torso's frame) when they start to fade in, and where they are full (the sculpt pose). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body") float ArmUpStart = 80.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body") float ArmUpFull = 176.6f;
+	/** Hip-flexion correctives (ThighUp_l/_r): the thigh's lift from hanging, degrees, where
+	 *  they start to fade in and where they are full (the sculpt pose). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body") float ThighUpStart = 45.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body") float ThighUpFull = 94.f;
 	/** Bust height at the slider's ends, in bounce-morph weights (1 = 2.4 cm at the tip). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body") float BustLiftRange = 1.3f;
 
@@ -132,10 +136,19 @@ private:
 	void TickJiggle(float DeltaTime);
 	/** Moves one spring on: X is its bone's position along the spring's axis (cm). */
 	static void StepSpring(FVisexJiggleState& J, float X, float DeltaTime, float Hz, float Zeta, float Limit);
-	/** Fades in the arm-raise correctives (ArmUp_l/_r, Tools/blender_correctives.py). */
+	/** Fades in the arm-raise and hip-flexion correctives (ArmUp_l/_r, ThighUp_l/_r, Tools/blender_correctives.py). */
 	void TickCorrectives();
 
 	UPROPERTY(Transient) TObjectPtr<class UVisexShellComponent> OutfitMesh;
+	/** Card hair with its own physics (ABP_HairCards); not a leader-pose follower. */
+	UPROPERTY(Transient) TObjectPtr<class USkeletalMeshComponent> HairMesh;
+	void ApplyHair();
+	/** The outfit's cloth piece (the skirt), when its row names one. Follows the body's pose only:
+	 *  it stays out of the jiggle and corrective morphs. */
+	UPROPERTY(Transient) TObjectPtr<class UChaosClothComponent> ClothMesh;
+	/** Resets the cloth when the pose jumps (a pose snap, a teleport), so the skirt doesn't whip. */
+	void TickCloth(float DeltaTime);
+	FVector ClothLast[3] = {FVector::ZeroVector, FVector::ZeroVector, FVector::ZeroVector};
 	/** The skin's material, made dynamic so the tone can change. */
 	UPROPERTY(Transient) TObjectPtr<class UMaterialInstanceDynamic> SkinMaterial;
 	void ApplySkin();

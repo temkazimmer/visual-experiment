@@ -21,15 +21,15 @@ const TArray<FVisexBodySlider>& FVisexBodyProfile::Sliders()
 	static TArray<FVisexBodySlider> Table = {
 		S(TEXT("Skin"),      LOCTEXT("Skin", "Skin tone"),      0.f,   1.f,   0.25f, false, true),
 		S(TEXT("Height"),    LOCTEXT("Height", "Height"),       145.f, 185.f, 166.f, true),
-		S(TEXT("Head"),      LOCTEXT("Head", "Head"),           0.85f, 1.15f, 0.985f),
+		S(TEXT("Head"),      LOCTEXT("Head", "Head"),           0.85f, 1.15f, 1.04f),
 		S(TEXT("Neck"),      LOCTEXT("Neck", "Neck"),           0.80f, 1.30f, 0.90f),
 		S(TEXT("Shoulders"), LOCTEXT("Shoulders", "Shoulders"), 0.80f, 1.20f, 0.88f),
 		S(TEXT("Chest"),     LOCTEXT("Chest", "Ribcage"),       0.85f, 1.20f, 1.0175f),
 		S(TEXT("Bust"),      LOCTEXT("Bust", "Bust"),           0.f,   1.f,   0.80f),
-		S(TEXT("BustLift"),  LOCTEXT("BustLift", "Bust height"), -1.f,  1.f,   0.06f),
+		S(TEXT("BustLift"),  LOCTEXT("BustLift", "Bust height"), -1.f,  1.f,   0.5f),
 		S(TEXT("BustApart"), LOCTEXT("BustApart", "Bust spacing"), -1.f, 1.f,  0.8f),
-		S(TEXT("Waist"),     LOCTEXT("Waist", "Waist"),         0.60f, 1.20f, 0.672f),
-		S(TEXT("Abs"),       LOCTEXT("Abs", "Abs"),             0.f,   1.f,   1.f),
+		S(TEXT("Waist"),     LOCTEXT("Waist", "Waist"),         0.60f, 1.20f, 0.85f),
+		S(TEXT("Abs"),       LOCTEXT("Abs", "Abs"),             0.f,   1.f,   0.5f),
 		S(TEXT("Fat"),       LOCTEXT("Fat", "Body fat"),        0.f,   1.f,   0.38f),
 		S(TEXT("Hips"),      LOCTEXT("Hips", "Hips"),           0.85f, 1.50f, 0.954f),
 		S(TEXT("Glutes"),    LOCTEXT("Glutes", "Glutes"),       0.f,   1.f,   0.5f),
@@ -120,21 +120,24 @@ FText FVisexBodyProfile::SkinToneName(float Tone)
 
 const TArray<FVisexOutfit>& FVisexBodyProfile::Outfits()
 {
-	auto O = [](const TCHAR* Name, const FText& Label, const TCHAR* Asset)
+	auto O = [](const TCHAR* Name, const FText& Label, const TCHAR* Asset, const TCHAR* Cloth = TEXT(""))
 	{
 		FVisexOutfit Out;
 		Out.Name = Name;
 		Out.Label = Label;
 		Out.Mesh = Asset;
+		Out.Cloth = Cloth;
 		return Out;
 	};
-	// One outfit for now (Tema, 2026-11-09). Meshes: Tools/blender_outfit.py, imported by
+	// The bodystocking, alone or with a satin skirt over it (Tema, 2026-11-10). Meshes: Tools/blender_outfit.py, imported by
 	// Tools/char_outfit.py. The other six (Noir, Garter, Cocoa, Fishnet, Catsuit, Sheer) are
 	// still on disk under /Game/Character/Outfits and /Game/Character/Clothes; add a row to
 	// list one again. A saved profile naming an unlisted outfit falls back to "None".
 	static const TArray<FVisexOutfit> Table = {
 		O(TEXT("None"),    LOCTEXT("OutfitNone", "Nothing"),          TEXT("")),
 		O(TEXT("Bodystocking"), LOCTEXT("OutfitBodystocking", "Sheer bodystocking"), TEXT("/Game/Character/Clothes/SKM_Outfit_Bodystocking.SKM_Outfit_Bodystocking")),
+		O(TEXT("BodystockingSkirt"), LOCTEXT("OutfitBodystockingSkirt", "Bodystocking and skirt"), TEXT("/Game/Character/Clothes/SKM_Outfit_Bodystocking.SKM_Outfit_Bodystocking"),
+			TEXT("/Game/Character/Clothes/CA_Skirt.CA_Skirt")),   // the skirt is Chaos cloth (Docs/Research/STUDY_SKIRT_SIM.md)
 	};
 	return Table;
 }

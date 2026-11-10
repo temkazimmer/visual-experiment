@@ -30,6 +30,7 @@ one back.
 | Catsuit | Navy latex suit with waist and chest cutouts, white piping, stripes, collar, cuffs, belt | Latex, Trim (white) |
 | Sheer | High-neck sheer bodysuit, latex yoke, bands and garter belt, six straps, opera gloves | Sheer, Latex, Trim |
 | **Bodystocking** | The hero outfit: one piece of sheer black nylon. Scoop tank, deep V back, open hips, open gusset with a sheer string tanga underneath, strap-held stocking legs, gold chain and bangles | Nylon, Sheer (tanga), Binding, Trim (gold) |
+| **BodystockingSkirt** | The bodystocking with a short black satin skirt over it that follows her hips and hangs straight, with a double waistband and a bound top. The skirt is **Chaos cloth** (see below): only the hem moves, a little | + Satin (cloth) |
 
 ## The hero outfit: Bodystocking (Tema, 2026-11-09)
 
@@ -51,12 +52,61 @@ black open-hip bodystocking. What it has that the others do not:
 - Not done: the references' heels (needs a foot pose, which is the animation lane), and
   hair or a face to hang earrings on.
 
+## The skirt is cloth (2026-11-10)
+
+**Reshaped the same day (Tema):** the first cloth skirt flared and read as stiff. It now follows
+her body form, and only the hem moves, slightly.
+
+**Sim off by default (2026-11-10).** `visex.ClothSim` (console variable, default 0) decides on
+each outfit change whether the cloth component simulates. Off, the component doesn't tick and
+the skirt is skinned to her pose by the leader pose. That is the shipping look, for two reasons:
+- **The ridge:** wherever the cloth is free, it springs back towards its reference-pose shape
+  (the idle pose bends the skinned skirt away from it at the sides) and leaves a horizontal
+  ridge at the edge of the free zone. Tema flagged it. Gravity, colliders, an anim drive and
+  the backstop made no difference, and even 1.2 cm of hem freedom showed a lip. Fully pinned it
+  is clean. Movement without the ridge needs the cloth's rest shape built in her standing pose.
+- **Cost:** in a packaged Development build the sim cost 50-70 ms of game thread
+  (PhysicsParallelFor, waits in `HandleExistingParallelSimulation`).
+
+The mesh for the skinned look: no flare or folds; 1 cm off at the top, easing out as u squared
+to about 4 cm at the hem; the skin's weights down to 2 cm above the crotch, then each column keeps
+the weights of that ring, with no thigh pull (`skirt(..., tight=True)`).
+
+The outfit row names a cloth asset beside its mesh: "BodystockingSkirt" wears
+`SKM_Outfit_Bodystocking` plus `CA_Skirt`, a `UChaosClothComponent` that follows the body's
+pose. Settings come from the reference skirt read in UE 5.8 ([STUDY_SKIRT_SIM.md](Research/STUDY_SKIRT_SIM.md)).
+
+- **Source mesh** `SKM_Outfit_Skirt`: `skirt()` alone with no flare or folds (see above), the default body's morphs baked into the rest shape (the cloth gets no morphs), no
+  shape keys. It copies the skin's weights down to 2 cm above the crotch, so it moves with her
+  hip and thigh there; with the hip ring's weights her hip front showed through in idle.
+- **Graph** `DF_Skirt`, built by `Tools/char_skirt_cloth.py`: import, max-distance map,
+  stretch/bending (satin), mass, damping, tethers, backstop, collision (0.5 cm, friction
+  0.8), solver (6 substeps, 2 iterations), physics asset.
+- **Max distance** from height, by our own Dataflow node `VisexHeightWeightMap`
+  (`Source/visexEditor`, editor only): 0 down to 93 cm, rising to 4 cm at the hem
+  (exponent 1.5).
+- **Backstop:** distance 0, radius 50, so the cloth never goes inside its skinned surface.
+- **Colliders** `PA_Skirt`: tapered thigh and calf capsules fitted to the skin by
+  `UVisexClothLibrary::FitCapsules`, at the median distance of the vertices in the quarter
+  nearest each end (thigh 10.3 to 5.7 cm). No arms, so her hands don't catch the hem. A higher
+  percentile picks up the glutes the thigh bone drives: a 12.6 cm thigh pushed the whole hem
+  out into a stiff cuff.
+- **Material:** the skirt's satin instance is two-sided, so folds show their inside.
+- **Snaps:** the body component resets the sim when the pelvis or a calf jumps more than
+  25 cm in a frame, and on every outfit change. Not on slow frames: a reset puts the hem
+  where the skinned pose has it, which can be inside a thigh.
+- **Checking it in Play:** a background editor runs PIE at about 3 fps, too coarse for the
+  sim. Run `slomo 0.05` and wait about 45 s before a shot.
+- **Rebuild:** `--only=Skirt` in Blender, `ONLY = ["Skirt"]` in `char_outfit.py`, then
+  regenerate `CA_Skirt` (its graph reads the mesh again). To rebuild the graph itself,
+  delete `CA_Skirt`, `DF_Skirt` and `PA_Skirt` with the editor closed first.
+
 ## How it is made
 
 1. `Tools/blender_outfit.py` (Blender, headless, about 20 s for all six) cuts every piece
    from `SourceArt/Character/android_skin.fbx`, so it fits her exactly.
    - A piece is a coverage field in cm; it is cut cleanly through the triangles.
-   - It designs on her **default body** (Bust 0.80, Bust spacing 0.8 = BustApart 1.10, Glutes 0.5, Fat 0.38, Thigh gap 0, six-pack abs = AbsLines/AbsPack 0.73):
+   - It designs on her **default body** (Bust 0.80, Bust spacing 0.8 = BustApart 1.10, Glutes 0.5, Fat 0.38, Thigh gap 0, abs = AbsLines 0.73, AbsPack 0.12, Bust height 0.5 = BustBounceL/R_Up 0.65):
      the skin's rest shape is flat and the bust only exists in the morph. The rest shape is
      derived at the end. If those slider defaults change, change `DESIGN` to match.
    - Fabric vertices take **all** the weights (up to 8 per vertex: the hips carry 7; cutting
@@ -64,6 +114,13 @@ black open-hip bodystocking. What it has that the others do not:
      vertices they were cut from, so cloth cannot sink into the body at a joint. Cords, tapes,
      straps and hardware ride the single skin vertex beneath them.
    - UV0 is a garment coordinate in cm, so lace and fishnet wrap round her without a seam.
+   - Structural trim (bindings, welts) stands `TRIM_PROUD` = 0.3 cm off the panel under it,
+     hardware `HW_PROUD` = 0.6 cm. Fabric over a trimmed piece is lifted clear of it (the
+     nylon over the tanga). Flat seams stay low.
+   - UV2 (`UVSeam`) holds each fabric vertex's distance to the nearest cut edge (x) and the
+     signed distance to the nearest seam line (y), in cm. The materials turn it into a rolled
+     edge and a topstitch groove (`SEAM_HLSL` in `char_outfit.py`; `SeamStrength` on the
+     instance, off by default).
 2. `Tools/blender_outfit_textures.py` writes three tileable 2K detail textures: a satin
    weave normal, a latex ripple normal and a mask for roughness variation.
 3. `python3 Tools/ue.py Tools/char_outfit.py` imports textures and meshes and builds the
@@ -102,8 +159,12 @@ Walking with the game's own walk (not a looped clip): Noir at hips and knees, Ca
 hips. No skin showed through in those frames.
 
 ## Known limits
-
-- Clothes are skinned, not simulated: nothing flutters in the wind yet.
+- **Skirt at big slider values:** the cloth keeps its own length, so at Height 185, Legs 1.12,
+  Hips 1.5 it rides up to the crotch (a real skirt would too). Body morphs (Glutes, Fat)
+  beyond the default are not seen by the cloth; its colliders are legs only.
+- **Skirt hem:** it hangs straight from the widest point of her hips and glutes, so from the
+  side it reads as a slight A-line rather than tucking in under the glutes.
+- Clothes are skinned, not simulated, except the skirt (Chaos cloth).
 - Bone sliders scale hardware and piping with the body (a wider hip widens the belt).
 - Sheer and lace cast no shadow.
 - Garter straps are skinned ribbons: in a deep hip bend they can cut into the thigh.
