@@ -140,6 +140,12 @@ private:
 	void TickCorrectives();
 
 	UPROPERTY(Transient) TObjectPtr<class UVisexShellComponent> OutfitMesh;
+	/** The outfit's cloth piece (the skirt), when its row names one. Follows the body's pose only:
+	 *  it stays out of the jiggle and corrective morphs. */
+	UPROPERTY(Transient) TObjectPtr<class UChaosClothComponent> ClothMesh;
+	/** Resets the cloth when the pose jumps (a pose snap, a teleport), so the skirt doesn't whip. */
+	void TickCloth(float DeltaTime);
+	FVector ClothLast[3] = {FVector::ZeroVector, FVector::ZeroVector, FVector::ZeroVector};
 	/** The skin's material, made dynamic so the tone can change. */
 	UPROPERTY(Transient) TObjectPtr<class UMaterialInstanceDynamic> SkinMaterial;
 	void ApplySkin();

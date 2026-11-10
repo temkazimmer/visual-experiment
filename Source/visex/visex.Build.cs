@@ -12,7 +12,7 @@ public class visex : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PublicDependencyModuleNames.AddRange(new string[] {
 			"Core", "CoreUObject", "Engine", "InputCore", "UMG", "Slate", "SlateCore", "CinematicCamera",
-			"EnhancedInput", "AssetRegistry"
+			"EnhancedInput", "AssetRegistry", "ChaosClothAssetEngine", "RHI", "RenderCore"
 		});
 	}
 

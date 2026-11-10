@@ -8,5 +8,6 @@ public class visexEditorTarget : TargetRules
 		DefaultBuildSettings = BuildSettingsVersion.Latest;
 		IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
 		ExtraModuleNames.Add("visex");
+		ExtraModuleNames.Add("visexEditor");   // editor-only: cloth Dataflow nodes
 	}
 }

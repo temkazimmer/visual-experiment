@@ -30,7 +30,11 @@ private:
 	float Clock = 0.f;
 	float WalkFor = 0.f;
 	int32 ShotCount = 0;
+	int32 AfterPoses = INDEX_NONE;
 	bool bBuilt = false;
+	// frame times since the last Report: game-thread frame and GPU, ms
+	mutable double FrameSum = 0.0, FrameMax = 0.0, GpuSum = 0.0, GameSum = 0.0, DrawSum = 0.0, RhiSum = 0.0;
+	mutable int32 FrameN = 0;
 
 	void Build();
 	void Shot(const FString& Name);

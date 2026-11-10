@@ -28,6 +28,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu")
 	TArray<FText> Items;
 
+	/** Per item, a value shown in a column right of it (Settings); empty = a plain item. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu")
+	TArray<FText> Values;
+
+	/** Tabs over the items (Settings); empty = none. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu")
+	TArray<FText> Tabs;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu")
+	int32 ActiveTab = 0;
+
 	/** Layout scale inside the panel's texture. The director draws the panel this many times
 	 * larger and shrinks it back, so text stays sharp at 1440p and up. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
@@ -61,16 +72,38 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
 	float ShadePadding = 600.f;
 
+	/** Where the value column starts, layout px from the left of the items. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
+	float ValueColumn = 400.f;
+
+	/** Item size, selected scale and row gap on a page with values (more rows to fit). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
+	int32 ValueItemSize = 26;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
+	float ValueSelectedScale = 1.12f;
+
 	/** How much larger the selected item is drawn. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
 	float SelectedScale = 1.4f;
 
-	/** Opacity of the items that aren't selected. */
+	/** Colour scale of the items that aren't selected. The panel is lit well over white
+	 * (AVisexMenuDirector::PanelBrightness), so this sits much lower than it looks. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
+	float IdleBrightness = 0.12f;
+
+	/** Opacity of the items that aren't selected (unused: they dim by IdleBrightness). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
 	float IdleOpacity = 0.5f;
 
 	UFUNCTION(BlueprintCallable, Category = "Menu")
 	void SetSelected(int32 Index);
+
+	/** Show another page in the same panel: title, tabs, items and their values. */
+	void SetPage(const FText& InTitle, const TArray<FText>& InTabs, int32 InActiveTab, const TArray<FText>& InItems, const TArray<FText>& InValues, int32 Select);
+
+	/** Update the value column only (no rebuild, so nothing jumps). */
+	void SetValues(const TArray<FText>& InValues);
 
 	UFUNCTION(BlueprintPure, Category = "Menu")
 	int32 GetSelected() const { return Selected; }
@@ -92,7 +125,14 @@ private:
 	TArray<TObjectPtr<UTextBlock>> Labels;
 
 	UPROPERTY(Transient)
-	TArray<TObjectPtr<UTextBlock>> Markers;
+	TArray<TObjectPtr<UTextBlock>> ValueLabels;
+
+	UPROPERTY(Transient)
+	TObjectPtr<class UVerticalBox> Root;
+
+	void BuildContent();
+	bool HasValues() const;
+	FText ValueText(int32 Index, bool bSelected) const;
 
 	int32 Selected = 0;
 };

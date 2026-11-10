@@ -88,6 +88,9 @@ void AVisexBodyEditor::BeginPlay()
 	{
 		Panel->SetMaterial(0, M);
 	}
+	// stencil 1 keeps the text out of screen filters (M_Anime80s, Tools/menu_panel_material.py)
+	Panel->SetRenderCustomDepth(true);
+	Panel->SetCustomDepthStencilValue(1);
 	if (bOpenOnPlay)
 	{
 		GetWorldTimerManager().SetTimer(OpenTimer, this, &AVisexBodyEditor::TryOpen, 0.1f, true);
