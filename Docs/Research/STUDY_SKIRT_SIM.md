@@ -53,7 +53,7 @@ between the thighs much as our blend does. What makes their skirt behave is the 
 top. Our weights are a reasonable **kinematic base** for the same setup: in their graph the skinned
 pose is the anchor the sim is held near.
 
-## Proposal
+## Proposal (built 2026-11-10, see [CLOTHES.md](../CLOTHES.md))
 
 Our 5.7 has the same Chaos Cloth Asset and Dataflow (they are not new in 5.8).
 

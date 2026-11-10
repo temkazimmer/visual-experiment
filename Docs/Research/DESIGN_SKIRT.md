@@ -66,5 +66,6 @@ and 0.3 cm out, binding 0.7 cm wide and 0.3 cm proud.
   the sides at the hem;
 - body morphs fade to 0 at the hem.
 
-**Known limit:** when she sits or kneels the thighs pass through the front of the skirt. Only a
-cloth setup or the reference weights fix that.
+**Known limit (skinned version):** when she sits or kneels the thighs pass through the front of
+the skirt. **Since 2026-11-10 the skirt is Chaos cloth** ([CLOTHES.md](../CLOTHES.md)), which
+drapes over the thighs instead; these weights are its skinned anchor.
