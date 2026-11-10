@@ -7,13 +7,24 @@ walk speed (no idle mixed in) and play at WALK_RATE: a slower step rhythm, so th
 clip's own speed is 300*0.75 = 225 and Stride Warping (ABP_Unarmed) only trims the
 stride to ~85%. Heavier trimming bends the knees and drops the pelvis (sneaky look).
 Walk speed itself: tune_movement.py and the Shift-release node (both 190).
+
+A light stick walks slowly: each walk clip is in the blend space a second time at
+SLOW_SPEED, playing at SLOW_RATE, so between 70 and 190 cm/s she takes shorter, slower
+steps instead of blending in the idle (whose staggered stance turned her hips and
+read as a limp). Only below SLOW_SPEED does the idle mix in.
+
+After moving samples the cached triangulation has to be rebuilt
+(VisexAnimInstanceLibrary.resample_blend_space): setting sample_data alone left the
+runtime blending against the old 300 cm/s walk positions.
 """
 import unreal
 
 BS_PATH = "/Game/Characters/Mannequins/Anims/Unarmed/BS_Idle_Walk_Run"
 WALK_SPEED = 190.0
 WALK_RATE = 0.75
-SPEED_GRID = 60  # 10 cm/s cells on the 0..600 Speed axis, so 190 is a grid point
+SLOW_SPEED = 70.0
+SLOW_RATE = 0.5     # clip speed 150, so Stride Warping trims to ~0.47: short, unhurried steps
+SPEED_GRID = 60  # 10 cm/s cells on the 0..600 Speed axis, so 190 and 70 are grid points
 
 if unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).is_in_play_in_editor():
     raise RuntimeError("Play mode is running: stop PIE before saving assets")
@@ -26,6 +37,8 @@ params[1] = speed
 bs.set_editor_property("blend_parameters", params)
 
 samples = bs.get_editor_property("sample_data")
+# drop the slow copies from an earlier run first (they are walk clips too)
+samples = [x for x in samples if abs(x.get_editor_property("sample_value").y - SLOW_SPEED) > 1.0]
 for i in range(len(samples)):
     s = samples[i]  # a copy: modify, then write back by index
     if "_Walk_" in s.get_editor_property("animation").get_name():
@@ -33,7 +46,17 @@ for i in range(len(samples)):
         s.set_editor_property("sample_value", unreal.Vector(v.x, WALK_SPEED, 0.0))
         s.set_editor_property("rate_scale", WALK_RATE)
         samples[i] = s
-bs.set_editor_property("sample_data", samples)  # triggers PostEditChange (grid rebuild)
+# the slow copies: one per walk sample
+for x in list(samples):
+    if "_Walk_" in x.get_editor_property("animation").get_name():
+        v = x.get_editor_property("sample_value")
+        slow = unreal.BlendSample()
+        slow.set_editor_property("animation", x.get_editor_property("animation"))
+        slow.set_editor_property("sample_value", unreal.Vector(v.x, SLOW_SPEED, 0.0))
+        slow.set_editor_property("rate_scale", SLOW_RATE)
+        samples.append(slow)
+bs.set_editor_property("sample_data", samples)
+print("resampled", unreal.VisexAnimInstanceLibrary.resample_blend_space(bs))
 unreal.EditorAssetLibrary.save_loaded_asset(bs, only_if_is_dirty=False)
 
 bs = unreal.load_asset(BS_PATH)
