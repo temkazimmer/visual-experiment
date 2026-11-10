@@ -27,6 +27,7 @@
 #include "Components/InputComponent.h"
 #include "Components/WidgetComponent.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
 #include "Kismet/GameplayStatics.h"
@@ -110,12 +111,31 @@ void AVisexMenuDirector::ShowMenu()
 		Pawn->DisableInput(PC);
 	}
 	// the Start move flies MenuCamera away: remember where the shot lives
-	const FVector Aim = (StandIn ? StandIn->GetActorLocation() : PC->GetPawn()->GetActorLocation()) + FVector(0.f, 0.f, CameraAimHeight);
+	bPlaying = false;
 	if (!bHaveBase)
 	{
+		const FVector Feet = StandIn ? StandIn->GetActorLocation() : PC->GetPawn()->GetActorLocation();
 		CameraBase = MenuCamera->GetActorTransform();
-		// closer along the line to her, so she grows in place in the frame
-		CameraBase.SetLocation(Aim + (CameraBase.GetLocation() - Aim) * FMath::Clamp(CameraPullIn, 0.1f, 1.f));
+		MenuAim = Feet + FVector(0.f, 0.f, CameraAimHeight);
+		if (bFloorCamera)
+		{
+			// on the sand by her feet, on the level camera's side of her, looking up
+			const FVector Side = (CameraBase.GetLocation() - Feet).GetSafeNormal2D().RotateAngleAxis(FloorCameraYaw, FVector::UpVector);
+			FVector Loc = Feet + Side * FloorCameraDistance;
+			FHitResult Hit;
+			FCollisionQueryParams Params(SCENE_QUERY_STAT(MenuFloor), false, PC->GetPawn());
+			if (LeanColumn) { Params.AddIgnoredActor(LeanColumn); }
+			const float GroundZ = GetWorld()->LineTraceSingleByChannel(Hit, Loc + FVector(0.f, 0.f, 300.f), Loc - FVector(0.f, 0.f, 500.f), ECC_Visibility, Params)
+				? Hit.Location.Z : Feet.Z;
+			Loc.Z = GroundZ + FloorCameraHeight;
+			MenuAim = Feet + FVector(0.f, 0.f, FloorCameraLookHeight);
+			CameraBase = FTransform((MenuAim - Loc).Rotation(), Loc);
+		}
+		else
+		{
+			// closer along the line to her, so she grows in place in the frame
+			CameraBase.SetLocation(MenuAim + (CameraBase.GetLocation() - MenuAim) * FMath::Clamp(CameraPullIn, 0.1f, 1.f));
+		}
 		bHaveBase = true;
 	}
 	MenuCamera->SetActorTransform(CameraBase);
@@ -128,10 +148,15 @@ void AVisexMenuDirector::ShowMenu()
 			MenuFStop = Lens->CurrentAperture;
 			bHaveLens = true;
 		}
-		Lens->SetCurrentFocalLength(MenuFocal);
+		if (MenuFocalLength > 0.f)
+		{
+			// the lens preset's range would clamp a very wide setting
+			Lens->LensSettings.MinFocalLength = FMath::Min(Lens->LensSettings.MinFocalLength, MenuFocalLength);
+		}
+		Lens->SetCurrentFocalLength(MenuFocalLength > 0.f ? MenuFocalLength : MenuFocal);
 		Lens->SetCurrentAperture(MenuFStop);
 		FCameraFocusSettings Focus = Lens->FocusSettings;
-		Focus.ManualFocusDistance = FVector::Dist(CameraBase.GetLocation(), Aim);
+		Focus.ManualFocusDistance = FVector::Dist(CameraBase.GetLocation(), MenuAim);
 		Lens->FocusSettings = Focus;
 	}
 	SpawnLeanColumn();
@@ -143,7 +168,9 @@ void AVisexMenuDirector::ShowMenu()
 
 	// the panel rides with the camera, turned toward the figure on the right
 	Panel->AttachToComponent(MenuCamera->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
-	Panel->SetRelativeLocation(PanelOffset);
+	// PanelOffset is set for the camera's own lens: a wider menu lens brings the panel in to keep its size on screen
+	const float LensScale = (MenuFocalLength > 0.f && MenuFocal > 0.f) ? MenuFocalLength / MenuFocal : 1.f;
+	Panel->SetRelativeLocation(PanelOffset * LensScale);
 	Panel->SetRelativeRotation(FRotator(0.f, 180.f + PanelYaw, 0.f));
 	// draw the panel's texture larger and shrink it back to the same size on screen
 	const UVisexMenuWidget* MenuDefaults = Panel->GetWidgetClass()
@@ -151,7 +178,7 @@ void AVisexMenuDirector::ShowMenu()
 	const float SS = GetMenuWidget() ? FMath::Max(1.f, GetMenuWidget()->Supersample)
 		: MenuDefaults ? FMath::Max(1.f, MenuDefaults->Supersample) : 1.f;
 	Panel->SetDrawSize(FVector2D(1100.f, 1000.f) * SS);
-	Panel->SetRelativeScale3D(FVector(PanelScale / SS));
+	Panel->SetRelativeScale3D(FVector(PanelScale * LensScale / SS));
 	Panel->SetTintColorAndOpacity(FLinearColor(PanelBrightness, PanelBrightness, PanelBrightness, 1.f));
 	Panel->SetVisibility(true);
 	if (UVisexMenuWidget* W = GetMenuWidget())
@@ -169,10 +196,17 @@ void AVisexMenuDirector::ShowMenu()
 		const FKey UpKeys[] = {EKeys::Gamepad_DPad_Up, EKeys::Up, EKeys::W};
 		const FKey DownKeys[] = {EKeys::Gamepad_DPad_Down, EKeys::Down, EKeys::S};
 		InputComponent->BindAxisKey(EKeys::Gamepad_LeftY);
-		const FKey OkKeys[] = {EKeys::Gamepad_FaceButton_Bottom, EKeys::Gamepad_Special_Right, EKeys::Enter, EKeys::SpaceBar};
+		const FKey OkKeys[] = {EKeys::Gamepad_FaceButton_Bottom, EKeys::Enter, EKeys::SpaceBar};
+		const FKey MenuKeys[] = {EKeys::Gamepad_Special_Right, EKeys::O};
 		for (const FKey& K : UpKeys) { InputComponent->BindKey(K, IE_Pressed, this, &AVisexMenuDirector::Up); }
 		for (const FKey& K : DownKeys) { InputComponent->BindKey(K, IE_Pressed, this, &AVisexMenuDirector::Down); }
 		for (const FKey& K : OkKeys) { InputComponent->BindKey(K, IE_Pressed, this, &AVisexMenuDirector::Confirm); }
+		// the director's input stays on through play, so these work from the game too;
+		// they don't consume, so the pawn still sees its own keys
+		for (const FKey& K : MenuKeys)
+		{
+			InputComponent->BindKey(K, IE_Pressed, this, &AVisexMenuDirector::ToggleMenu).bConsumeInput = false;
+		}
 		bInputBound = true;
 	}
 	bOpen = true;
@@ -448,7 +482,42 @@ void AVisexMenuDirector::HandBack()
 		PC->GetPawn()->EnableInput(PC);
 	}
 	SetColumnBlocksPawn(true);
+	bPlaying = true;
 	OnGameStarted();
+}
+
+void AVisexMenuDirector::ToggleMenu()
+{
+	if (bOpen)
+	{
+		StartGame();
+	}
+	else if (bPlaying)
+	{
+		bPlaying = false;
+		if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
+		{
+			if (PC->GetPawn())
+			{
+				PC->GetPawn()->DisableInput(PC);
+			}
+			if (ACharacter* Char = Cast<ACharacter>(PC->GetPawn()))
+			{
+				Char->GetCharacterMovement()->StopMovementImmediately();
+			}
+		}
+		// she is somewhere out on the sand: a dip to black covers the trip back to the column
+		BackToMenu(0.45f, 0);
+	}
+}
+
+void AVisexMenuDirector::ReframeMenu()
+{
+	bHaveBase = false;
+	if (bOpen)
+	{
+		ShowMenu();
+	}
 }
 
 UAnimInstance* AVisexMenuDirector::GetPawnAnim() const
@@ -662,7 +731,7 @@ void AVisexMenuDirector::TickOrbit(float DeltaSeconds)
 	if (UCineCameraComponent* Lens = GetLens())
 	{
 		const float HalfW = Lens->Filmback.SensorWidth * 0.5f;
-		const float FovStart = 2.f * FMath::RadiansToDegrees(FMath::Atan(HalfW / FMath::Max(1.f, MenuFocal)));
+		const float FovStart = 2.f * FMath::RadiansToDegrees(FMath::Atan(HalfW / FMath::Max(1.f, MenuFocalLength > 0.f ? MenuFocalLength : MenuFocal)));
 		const float Fov = FMath::Lerp(FovStart, Follow->FieldOfView, S);
 		Lens->SetCurrentFocalLength(HalfW / FMath::Tan(FMath::DegreesToRadians(Fov * 0.5f)));
 		const float MaxStop = FMath::Max(MenuFStop, Lens->LensSettings.MaxFStop);

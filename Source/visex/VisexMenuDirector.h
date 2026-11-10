@@ -151,6 +151,39 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
 	float CameraAimHeight = 115.f;
 
+	/** Menu shot from the sand by her feet, looking up at her, instead of the level camera's
+	 * spot (which only sets which side of her it sits on). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
+	bool bFloorCamera = true;
+
+	/** Lens height above the sand (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
+	float FloorCameraHeight = 14.f;
+
+	/** From her feet to the camera, along the ground (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
+	float FloorCameraDistance = 200.f;
+
+	/** Swings the floor camera round her from the level camera's side (deg). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
+	float FloorCameraYaw = 0.f;
+
+	/** Where the floor camera points, above her feet (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
+	float FloorCameraLookHeight = 80.f;
+
+	/** Menu lens focal length (mm): wide, low by her feet; 0 keeps the camera's own. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
+	float MenuFocalLength = 15.f;
+
+	/** Re-frame the menu shot from the current settings (for tuning while it is open). */
+	UFUNCTION(BlueprintCallable, Category = "Menu")
+	void ReframeMenu();
+
+	/** Options / O in play: back to the menu; in the menu: back to play. */
+	UFUNCTION(BlueprintCallable, Category = "Menu")
+	void ToggleMenu();
+
 	/** On the menu she leans on a fallen column, spawned behind her at Play (no level edit). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
 	bool bLeanOnColumn = true;
@@ -260,6 +293,8 @@ private:
 	bool bOpen = false;
 	bool bInputBound = false;
 	bool bStickHeld = false;
+	bool bPlaying = false;   // handed back to the player after Start
+	FVector MenuAim = FVector::ZeroVector;
 
 	// leaning on the column
 	void SpawnLeanColumn();
