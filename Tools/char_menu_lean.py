@@ -100,7 +100,7 @@ STEP.update(foot("r", add(_mid_r, (0.0, 0.0, 7.0)), (0.0, 0.7, -0.7), (0.0, -1.0
 STEP["knee_r"] = (-8.0, 60.0, 50.0)
 
 UP_KEYS = [(0.0, LEAN), (0.40, PUSH), (0.80, STEP), (1.40, STAND)]
-DOWN_KEYS = [(0.0, STAND), (0.55, STEP), (1.05, PUSH), (1.50, LEAN)]
+DOWN_KEYS = [(0.0, STAND), (0.70, STEP), (1.35, PUSH), (1.95, LEAN)]   # settling back, unhurried
 
 def breathing(seconds=12.0):
     """The lean, alive: three breaths, one slow sway of the hips and trunk, and the right knee
@@ -130,12 +130,28 @@ print("lean: hips lifted %.1f, pelvis %s, hands %s %s, knees %s %s" % (
 # ---- getting up and walking off: the push, three steps of the real walk, a closing step ----
 WALK = "/Game/Characters/Mannequins/Anims/Unarmed/Walk/MF_Unarmed_Walk_Fwd"
 ROOT_KIDS = [b for b in bones if parent[b] == "root"]
+# She walks off at the game's slow walk (calm_walk.py: a light stick plays the walk at rate 0.5 and
+# Stride Warping trims the stride to about half), so the clip plays the walk at RATE and re-solves
+# the legs onto a stride of STRIDE: short, unhurried steps, about 90 cm/s. The arms swing half as
+# far (the catwalk layer keeps only a third of the mocap swing in play).
+RATE = globals().get("RATE", 0.55)
+STRIDE = globals().get("STRIDE", 0.55)
+LIFT = globals().get("LIFT", 0.75)          # how much of the walk's foot lift a short step keeps
+ARM_MIX = globals().get("ARM_MIX", 0.5)     # the arms, this far from the walk's swing toward the idle's hang
+WALK_FOOT_Z = 7.3                           # the foot bone's height when the foot is flat on the ground
+build(STAND); STAND_ARMS = {b: tuple(local[b][1]) for b in ARM}
 
 def snap():
     return {b: (tuple(local[b][0]), tuple(local[b][1]), tuple(local[b][2])) for b in bones}
 
+def qmix(a, b, t):
+    if sum(x * y for x, y in zip(a, b)) < 0:
+        b = tuple(-v for v in b)
+    q = tuple(x + (y - x) * t for x, y in zip(a, b)); n = math.sqrt(sum(v * v for v in q))
+    return tuple(v / n for v in q)
+
 def walk_pose(T, W, opt):
-    """The walk at unwrapped time T (s); returns (pose, its root's forward travel)."""
+    """The walk at unwrapped time T (s), its stride shortened; returns (pose, its root's forward travel)."""
     L = W.get_play_length()
     p = APE.get_anim_pose_at_time(W, T % L, opt)
     for b in bones:
@@ -146,7 +162,20 @@ def walk_pose(T, W, opt):
     travel = local["root"][0][1] + math.floor(T / L) * WALK_CYCLE
     local["root"][0] = (0.0, 0.0, 0.0)
     _cache.clear()
-    return snap(), travel
+    if STRIDE < 1.0:
+        pv = pos("pelvis")
+        for s in "lr":
+            f, knee = "foot_" + s, pos("calf_" + s)
+            toe0, sole0 = toe_dir(s), rot(world(f)[1], SOLE[s])
+            a = pos(f)
+            target = (a[0], pv[1] + (a[1] - pv[1]) * STRIDE, WALK_FOOT_Z + (a[2] - WALK_FOOT_Z) * LIFT)
+            hint = (knee[0], pv[1] + (knee[1] - pv[1]) * STRIDE, knee[2])
+            limb("thigh_" + s, "calf_" + s, f, target, hint)
+            rotate(f, align2(toe_dir(s), rot(world(f)[1], SOLE[s]), toe0, sole0))   # the foot keeps its own angle
+    for b in ARM:
+        local[b][1] = qmix(tuple(local[b][1]), STAND_ARMS[b], ARM_MIX)
+    _cache.clear()
+    return snap(), travel * STRIDE
 
 def placed(pose, anchor, root):
     """`pose` drawn with its root at `anchor` (cm forward), re-expressed for a root at `root`."""
@@ -180,8 +209,10 @@ def up_and_walk():
     global WALK_CYCLE
     WALK_CYCLE = 0.0
     WALK_CYCLE = APE.get_bone_pose(APE.get_anim_pose_at_time(W, W.get_play_length(), opt), "root", unreal.AnimPoseSpaces.LOCAL).translation.y
-    T0, T_STOP, PUSH_T, IN_T, CLOSE_T, HOLD_T = 1.0, 2.1, 0.70, 0.35, 0.45, 0.85
-    PREP_T = 0.35
+    # lazily: the trunk tips over 0.6 s, the hips leave the stone at 1.25 s (the bench rise took
+    # 0.7), the walk eases in over 0.6 s and runs on its slow clock, and the closing step takes 0.65
+    T0, T_STOP, PUSH_T, IN_T, CLOSE_T, HOLD_T = 1.0, 2.1, 1.25, 0.60, 0.65, 0.85
+    PREP_T = 0.60
     # the walk is placed so its planted right foot lands where her right foot rests in the lean
     build(LEAN); lean_r = pos("foot_r")[1]
     w0, tr0 = walk_pose(T0, W, opt); base_tr = tr0
@@ -190,7 +221,7 @@ def up_and_walk():
     offset = lean_r - walk_r                         # walk root at T0, in her lean's space
     def WP(T):
         pose, tr = walk_pose(T, W, opt)
-        return pose, offset + tr - base_tr
+        return pose, offset + tr - base_tr          # travel is already on the short stride
     # where she stops: the left foot planted at T_STOP, the idle's left foot over it
     stop_pose, stop_root = WP(T_STOP); walk_pose(T_STOP % W.get_play_length(), W, opt)
     left_rel = pos("foot_l")[1]
@@ -207,19 +238,20 @@ def up_and_walk():
     frames = []
     fps = float(FPS)
     push_keys = [(0.0, LEAN), (PREP_T, PREP), (PUSH_T, PUSH)]
-    total = PUSH_T + (T_STOP - T0) + CLOSE_T + HOLD_T
-    # the walk's own clock slows to a stop over the last step (Gamma: from walking speed to still in
-    # ~0.3 s, never past the stop): from BRAKE_AT before T_STOP it runs on a monotone ease that ends
-    # STOP_PAST after T_STOP, where her hips sit over the idle's, so nothing has to slide back
-    brake_tau = PUSH_T + (T_STOP - T0) - BRAKE_AT
-    span, budget = BRAKE_AT + CLOSE_T, BRAKE_AT + STOP_PAST
-    m0 = min(span / budget, 3.0)
+    total = PUSH_T + (T_STOP - T0) / RATE + CLOSE_T + HOLD_T
+    # the walk's own clock (running at RATE) slows to a stop over the last step (Gamma: from walking
+    # speed to still in ~0.3 s, never past the stop): from BRAKE_AT before T_STOP it runs on a
+    # monotone ease that ends STOP_PAST after T_STOP, where her hips sit over the idle's, so nothing
+    # has to slide back
+    brake_tau = PUSH_T + (T_STOP - T0 - BRAKE_AT) / RATE
+    span, budget = BRAKE_AT / RATE + CLOSE_T, BRAKE_AT + STOP_PAST
+    m0 = min(RATE * span / budget, 3.0)
     def walk_t(tau):
         if tau <= brake_tau:
-            return T0 + (tau - PUSH_T)
+            return T0 + (tau - PUSH_T) * RATE
         x = min((tau - brake_tau) / span, 1.0)
         return T_STOP - BRAKE_AT + budget * ((x ** 3 - 2 * x ** 2 + x) * m0 + (-2 * x ** 3 + 3 * x ** 2))
-    close_tau = PUSH_T + (T_STOP - T0)
+    close_tau = PUSH_T + (T_STOP - T0) / RATE
     _, r_a = WP(walk_t(close_tau)); _, r_b = WP(walk_t(close_tau + 1.0 / fps))
     root_a, v_close = r_a, (r_b - r_a) * fps
     for f in range(int(round(total * fps)) + 1):
