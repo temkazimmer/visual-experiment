@@ -298,12 +298,21 @@ STAND = dict(pelvis=I["pelvis"], roll=0.0, pitch=0.0, yaw=0.0,
              arms=0.0, prop=(14.0, 4.0, 7.0),
              floor=5.5)   # the lowest a knee bone may go; the hips rise to keep it there
 TUCK, HEEL = (0.0, 0.25, -1.0), (0.0, -1.0, -0.25)          # on the ball of the foot, heel up
-# right knee down beside the left foot, left knee still up
-HALF = dict(STAND, pelvis=(0.0, 10.0, 40.0), pitch=-6.0, yaw=-10.0,
-            toe_r=TUCK, sole_r=HEEL, knee_r=(-15.0, 70.0, -10.0), knee_l=(17.0, 90.0, 50.0),
+# The way down to the floor (and back up), shared by every floor pose. Not a squat: she steps
+# back onto the ball of one foot, lowers that knee to the ground well behind her with the hips
+# still high over the front heel, then brings the other knee down. Going up it runs backwards,
+# the trunk leaning first (what rising people do), then the hips.
+BACK = -36.0                                                  # how far the right foot steps back, cm
+STEP = dict(STAND, pelvis=add(I["pelvis"], (0.0, -6.0, -8.0)), pitch=-3.0, yaw=-6.0,
+            ball_r=add(I["ball_r"], (0.0, BACK, 0.0)), toe_r=TUCK, sole_r=HEEL, knee_r=(-14.0, 60.0, 30.0), knee_l=(17.0, 90.0, 50.0),
+            lean_fwd=5.0, head_down=3.0)
+# right knee on the ground behind her, left foot flat in front, hips over the front heel
+HALF = dict(STEP, pelvis=(0.0, 1.0, 47.0), pitch=-6.0, yaw=-10.0,
+            knee_r=(-15.0, 40.0, -10.0),
             lean_fwd=10.0, head_down=6.0)
-# left foot drawn back: kneeling on both knees, hips above the heels
+# left foot drawn back beside the right: kneeling on both knees, hips above the heels
 KNEEL = dict(HALF, pelvis=(2.0, 2.0, 30.0), pitch=0.0, yaw=-22.0,
+             ball_r=add(I["ball_r"], (0.0, -10.0, 0.0)), knee_r=(-13.0, 70.0, -10.0),
              ball_l=(17.0, -10.0, 0.5), toe_l=TUCK, sole_l=HEEL, knee_l=(13.0, 70.0, -10.0),
              lean_fwd=4.0, head_down=2.0, arms=0.12)
 # ---- the seat: mermaid ----
@@ -316,8 +325,8 @@ SIT = dict(KNEEL, pelvis=(18.0, -13.0, 17.0), roll=28.0, pitch=8.0, yaw=0.0,
            lean_left=-16.0, lean_fwd=4.0, twist_left=8.0, head_tilt=14.0, head_down=3.0, head_left=0.0, arms=1.0, floor=0.0)
 SIT.update(globals().get("TWEAK", {}))
 
-IN_KEYS = [(0.0, STAND), (0.60, HALF), (1.10, KNEEL), (1.90, SIT)]
-OUT_KEYS = [(0.0, SIT), (0.75, KNEEL), (1.25, HALF), (1.85, STAND)]
+IN_KEYS = [(0.0, STAND), (0.55, STEP), (1.25, HALF), (1.85, KNEEL), (2.65, SIT)]
+OUT_KEYS = [(0.0, SIT), (0.75, KNEEL), (1.35, HALF), (2.00, STEP), (2.70, STAND)]
 
 lift = build(SIT)
 print("sit: hips lifted %.1f, knees L %s R %s, hand_l %s" % (

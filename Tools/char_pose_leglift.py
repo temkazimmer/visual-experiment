@@ -52,7 +52,7 @@ def leglift_arms(P):
         curl("r", f, (6.0, 10.0, 6.0))
 ARMS = leglift_arms
 
-for k in (STAND, HALF, KNEEL):
+for k in (STAND, STEP, HALF, KNEEL):
     k.update(down=0.0, touch=0.0, along=0.5, cradle=(-3.0, -2.0, -13.0))
 
 # 1. the mermaid's seat, hands quiet: left hand on the ground, right on the thigh
@@ -79,8 +79,8 @@ LIFT = dict(LIE, ball_r=ball_from("r", (16.0, 8.0, 104.0), TOE_UP), toe_r=TOE_UP
             knee_r=(12.0, 50.0, 62.0), touch=1.0, along=0.45)
 LIFT.update(globals().get("TWEAK", {}))
 
-IN_KEYS = [(0.0, STAND), (0.60, HALF), (1.10, KNEEL), (1.80, SIT), (2.55, LIE), (3.00, BEND), (3.55, LIFT)]
-OUT_KEYS = [(0.0, LIFT), (0.45, BEND), (0.90, LIE), (1.60, SIT), (2.20, KNEEL), (2.70, HALF), (3.30, STAND)]
+IN_KEYS = [(0.0, STAND), (0.55, STEP), (1.25, HALF), (1.85, KNEEL), (2.55, SIT), (3.30, LIE), (3.75, BEND), (4.30, LIFT)]
+OUT_KEYS = [(0.0, LIFT), (0.45, BEND), (0.90, LIE), (1.60, SIT), (2.20, KNEEL), (2.80, HALF), (3.45, STEP), (4.15, STAND)]
 
 lift = build(LIFT)
 print("leglift: hips lifted %.1f, elbow_l %s hand_l %s head %s, foot_r %s hand_r %s" % (
