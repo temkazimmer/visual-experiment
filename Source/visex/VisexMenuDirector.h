@@ -206,7 +206,7 @@ public:
 	/** Panel material override (e.g. MI_MenuDifference, which draws the text as the difference
 	 * from the scene behind it). Unset = the stock widget material: plain white over a soft shade. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
-	TSoftObjectPtr<class UMaterialInterface> PanelMaterial = TSoftObjectPtr<class UMaterialInterface>();
+	TSoftObjectPtr<class UMaterialInterface> PanelMaterial = TSoftObjectPtr<class UMaterialInterface>(FSoftObjectPath(TEXT("/Game/VisEx/UI/M_MenuPanel.M_MenuPanel")));
 
 	/** Post-process on the menu camera: a soft darkening from the screen's top-left corner so the
 	 * white menu reads on bright sky. Fades out during the Start move. */
@@ -220,6 +220,12 @@ public:
 	/** Options / O in play: back to the menu; in the menu: back to play. */
 	UFUNCTION(BlueprintCallable, Category = "Menu")
 	void ToggleMenu();
+
+	/** The Settings page (VisexSettings.h): open, close (saves), step the selected row, switch tab. */
+	UFUNCTION(BlueprintCallable, Category = "Menu|Settings") void OpenSettings();
+	UFUNCTION(BlueprintCallable, Category = "Menu|Settings") void CloseSettings();
+	UFUNCTION(BlueprintCallable, Category = "Menu|Settings") void SettingsStep(int32 Dir);
+	UFUNCTION(BlueprintCallable, Category = "Menu|Settings") void SettingsTab(int32 Dir);
 
 	/** On the menu she leans on a fallen column, spawned behind her at Play (no level edit). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
@@ -306,6 +312,16 @@ private:
 	void Up() { MoveSelection(-1); }
 	void Down() { MoveSelection(1); }
 	void HandBack();
+
+	// the Settings page: same panel, other rows. Page 0 is the main menu, 1 Graphics, 2 Visuals.
+	int32 Page = 0;
+	bool bStickXHeld = false;
+	void ShowSettingsPage(int32 Select);
+	void Left() { SettingsStep(-1); }
+	void Right() { SettingsStep(1); }
+	void PrevTab() { SettingsTab(-1); }
+	void NextTab() { SettingsTab(1); }
+	void Back() { if (bOpen && Page > 0) { CloseSettings(); } }
 	void TickOrbit(float DeltaSeconds);
 	UFUNCTION()
 	void HandleBodyClosed();
