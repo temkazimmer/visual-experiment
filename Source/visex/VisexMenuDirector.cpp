@@ -24,6 +24,8 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "EngineUtils.h"
+#include "Materials/MaterialInterface.h"
+#include "Engine/CollisionProfile.h"
 #include "Components/InputComponent.h"
 #include "Components/WidgetComponent.h"
 #include "GameFramework/Character.h"
@@ -129,7 +131,9 @@ void AVisexMenuDirector::ShowMenu()
 				? Hit.Location.Z : Feet.Z;
 			Loc.Z = GroundZ + FloorCameraHeight;
 			MenuAim = Feet + FVector(0.f, 0.f, FloorCameraLookHeight);
-			CameraBase = FTransform((MenuAim - Loc).Rotation(), Loc);
+			FRotator Look = (MenuAim - Loc).Rotation();
+			Look.Yaw += FloorCameraPan;
+			CameraBase = FTransform(Look, Loc);
 		}
 		else
 		{
@@ -146,15 +150,22 @@ void AVisexMenuDirector::ShowMenu()
 		{
 			MenuFocal = Lens->CurrentFocalLength;
 			MenuFStop = Lens->CurrentAperture;
+			MenuFilmback = Lens->Filmback;
 			bHaveLens = true;
 		}
-		if (MenuFocalLength > 0.f)
-		{
-			// the lens preset's range would clamp a very wide setting
-			Lens->LensSettings.MinFocalLength = FMath::Min(Lens->LensSettings.MinFocalLength, MenuFocalLength);
-		}
-		Lens->SetCurrentFocalLength(MenuFocalLength > 0.f ? MenuFocalLength : MenuFocal);
-		Lens->SetCurrentAperture(MenuFStop);
+		// a bigger sensor with a matching focal length frames the same and blurs more
+		const float Scale = FMath::Max(1.f, MenuSensorScale);
+		Lens->Filmback = MenuFilmback;
+		Lens->Filmback.SensorWidth *= Scale;
+		Lens->Filmback.SensorHeight *= Scale;
+		const float Focal = (MenuFocalLength > 0.f ? MenuFocalLength : MenuFocal) * Scale;
+		const float Stop = MenuAperture > 0.f ? MenuAperture : MenuFStop;
+		// the lens preset's range would clamp these
+		Lens->LensSettings.MinFocalLength = FMath::Min(Lens->LensSettings.MinFocalLength, Focal);
+		Lens->LensSettings.MaxFocalLength = FMath::Max(Lens->LensSettings.MaxFocalLength, Focal);
+		Lens->LensSettings.MinFStop = FMath::Min(Lens->LensSettings.MinFStop, Stop);
+		Lens->SetCurrentFocalLength(Focal);
+		Lens->SetCurrentAperture(Stop);
 		FCameraFocusSettings Focus = Lens->FocusSettings;
 		Focus.ManualFocusDistance = FVector::Dist(CameraBase.GetLocation(), MenuAim);
 		Lens->FocusSettings = Focus;
@@ -179,6 +190,13 @@ void AVisexMenuDirector::ShowMenu()
 		: MenuDefaults ? FMath::Max(1.f, MenuDefaults->Supersample) : 1.f;
 	Panel->SetDrawSize(FVector2D(1100.f, 1000.f) * SS);
 	Panel->SetRelativeScale3D(FVector(PanelScale * LensScale / SS));
+	if (UMaterialInterface* Mat = PanelMaterial.LoadSynchronous())
+	{
+		if (Panel->GetMaterial(0) != Mat)
+		{
+			Panel->SetMaterial(0, Mat);
+		}
+	}
 	Panel->SetTintColorAndOpacity(FLinearColor(PanelBrightness, PanelBrightness, PanelBrightness, 1.f));
 	Panel->SetVisibility(true);
 	if (UVisexMenuWidget* W = GetMenuWidget())
@@ -391,6 +409,12 @@ void AVisexMenuDirector::SetSceneStripped(bool bStrip)
 				Stripped.Add(*It);
 			}
 		}
+		if (LeanColumn && !LeanColumn->IsHidden())
+		{
+			LeanColumn->SetActorHiddenInGame(true);
+			LeanColumn->SetActorEnableCollision(false);
+			Stripped.Add(LeanColumn.Get());
+		}
 	}
 	else
 	{
@@ -533,44 +557,104 @@ void AVisexMenuDirector::SpawnLeanColumn()
 	{
 		return;
 	}
-	UStaticMesh* Mesh = LeanColumnMesh.LoadSynchronous();
-	if (!Mesh)
+	UStaticMesh* StoneMesh = LeanColumnMesh.LoadSynchronous();
+	if (!StoneMesh)
 	{
 		return;
 	}
-	// a drum lying across behind her, its top at her hip
+	// A drum lying across behind her, settled a little into the sand. Built so the animation
+	// side can read it exactly: actor tagged LeanColumn, uniform scale, pivot on the top of the
+	// stone at the middle of its length, X along the drum, Z up, no roll; collision is a capsule
+	// sized to the stone's real surface.
 	const FVector Feet = Char->GetActorLocation() - FVector(0.f, 0.f, Char->GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
 	const FVector Fwd = Char->GetActorForwardVector().GetSafeNormal2D();
 	const FVector Right = FVector::CrossProduct(FVector::UpVector, Fwd);
-	const FVector Centre = Feet - Fwd * (LeanColumnGap + LeanColumnRadius) + Right * LeanColumnShift
-		+ FVector(0.f, 0.f, LeanColumnRadius - 3.f);   // settled a little into the sand
+	const float R = LeanColumnRadius;
+	const FVector Axis = Feet - Fwd * (LeanColumnGap + R) + Right * LeanColumnShift + FVector(0.f, 0.f, R - 3.f);
+	const FRotator Rot = FRotationMatrix::MakeFromXZ(Right, FVector::UpVector).Rotator();
 
 	FActorSpawnParameters Params;
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	AStaticMeshActor* Column = GetWorld()->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), FTransform(Centre), Params);
+	AActor* Column = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(), FTransform(Rot, Axis + FVector(0.f, 0.f, R)), Params);
 	if (!Column)
 	{
 		return;
 	}
-	UStaticMeshComponent* Comp = Column->GetStaticMeshComponent();
-	Comp->SetMobility(EComponentMobility::Movable);
-	Comp->SetStaticMesh(Mesh);
-	// the drum's length runs along her left-right; the stone's own size is 50 cm radius, 100 cm long
-	Column->SetActorRotation(FRotationMatrix::MakeFromZX(Right, Fwd).Rotator());
-	Column->SetActorScale3D(FVector(LeanColumnRadius / 50.f, LeanColumnRadius / 50.f, LeanColumnLength / 100.f));
-	FVector Origin, Extent;
-	Column->GetActorBounds(false, Origin, Extent);
-	Column->AddActorWorldOffset(Centre - Origin);
+	USceneComponent* Top = NewObject<USceneComponent>(Column, TEXT("Top"));
+	Top->SetMobility(EComponentMobility::Movable);
+	Column->SetRootComponent(Top);
+	Top->RegisterComponent();
+	Column->SetActorLocationAndRotation(Axis + FVector(0.f, 0.f, R), Rot);
+	Column->Tags.Add(TEXT("LeanColumn"));
+
+	// the stone: its own length runs along its Z (100 cm), radius 50; its X faced her before
+	UStaticMeshComponent* Stone = NewObject<UStaticMeshComponent>(Column, TEXT("Stone"));
+	Stone->SetMobility(EComponentMobility::Movable);
+	Stone->SetStaticMesh(StoneMesh);
+	Stone->SetupAttachment(Top);
+	Stone->SetRelativeRotation(FRotationMatrix::MakeFromZX(FVector(1.f, 0.f, 0.f), FVector(0.f, -1.f, 0.f)).Rotator());
+	Stone->SetRelativeScale3D(FVector(R / 50.f, R / 50.f, LeanColumnLength / 100.f));
+	Stone->SetRelativeLocation(FVector(0.f, 0.f, -R));
+	// traceable for the measurement below only; the capsule does the colliding
+	Stone->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	Stone->SetCollisionResponseToAllChannels(ECR_Ignore);
+	Stone->RegisterComponent();
+	// centre the stone's bounds on the axis (its pivot is a hair off)
+	const FVector Off = Stone->Bounds.Origin - Axis;
+	Stone->AddWorldOffset(FVector(-FVector::DotProduct(Off, Fwd) * Fwd - FVector(0.f, 0.f, Off.Z)));
+
+	// the real surface: trace down onto the stone across its top, along the middle of its length
+	TArray<float> Radii;
+	FHitResult Hit;
+	FCollisionQueryParams Trace(SCENE_QUERY_STAT(LeanColumnSurface), true);
+	for (int32 i = -4; i <= 4; ++i)
+	{
+		for (int32 j = -3; j <= 3; ++j)
+		{
+			const FVector Along = Right * (LeanColumnLength * 0.35f * i / 4.f);
+			const float Ang = FMath::DegreesToRadians(12.f * j);
+			const FVector Dir = Fwd * FMath::Sin(Ang) + FVector::UpVector * FMath::Cos(Ang);
+			const FVector Start = Axis + Along + Dir * (R * 2.f);
+			if (Stone->LineTraceComponent(Hit, Start, Axis + Along, Trace))
+			{
+				// distance from the drum's axis, across the drum
+				const FVector D = Hit.Location - Axis;
+				Radii.Add(FVector2D(FVector::DotProduct(D, Fwd), D.Z).Size());
+			}
+		}
+	}
+	float Surface = R;
+	if (Radii.Num() >= 5)
+	{
+		Radii.Sort();
+		Surface = Radii[Radii.Num() / 2];
+	}
+	LeanColumnSurfaceRadius = Surface;
+	// pivot onto the measured top
+	Column->SetActorLocation(Axis + FVector(0.f, 0.f, Surface));
+	Stone->AddWorldOffset(FVector(0.f, 0.f, R - Surface));   // the stone stays where it was
+
+	UCapsuleComponent* Body = NewObject<UCapsuleComponent>(Column, TEXT("Collision"));
+	Body->SetMobility(EComponentMobility::Movable);
+	Body->SetupAttachment(Top);
+	Body->SetRelativeLocation(FVector(0.f, 0.f, -Surface));
+	Body->SetRelativeRotation(FRotator(90.f, 0.f, 0.f));   // capsule axis along the drum
+	Body->SetCapsuleSize(Surface, LeanColumnLength * 0.5f);
+	Body->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
+	Body->RegisterComponent();
+
+	UE_LOG(LogTemp, Log, TEXT("LeanColumn: surface radius %.1f (from %d hits), top %.1f, axis %s, gap %.1f"),
+		Surface, Radii.Num(), Axis.Z + Surface, *Axis.ToString(), LeanColumnGap);
 	LeanColumn = Column;
 	SetColumnBlocksPawn(false);
 }
 
 void AVisexMenuDirector::SetColumnBlocksPawn(bool bBlock)
 {
-	if (const AStaticMeshActor* Column = Cast<AStaticMeshActor>(LeanColumn))
+	if (UCapsuleComponent* Body = LeanColumn ? LeanColumn->FindComponentByClass<UCapsuleComponent>() : nullptr)
 	{
 		// while she leans her capsule sits partly inside it
-		Column->GetStaticMeshComponent()->SetCollisionResponseToChannel(ECC_Pawn, bBlock ? ECR_Block : ECR_Ignore);
+		Body->SetCollisionResponseToChannel(ECC_Pawn, bBlock ? ECR_Block : ECR_Ignore);
 	}
 }
 
@@ -731,11 +815,13 @@ void AVisexMenuDirector::TickOrbit(float DeltaSeconds)
 	if (UCineCameraComponent* Lens = GetLens())
 	{
 		const float HalfW = Lens->Filmback.SensorWidth * 0.5f;
-		const float FovStart = 2.f * FMath::RadiansToDegrees(FMath::Atan(HalfW / FMath::Max(1.f, MenuFocalLength > 0.f ? MenuFocalLength : MenuFocal)));
+		const float StartFocal = (MenuFocalLength > 0.f ? MenuFocalLength : MenuFocal) * FMath::Max(1.f, MenuSensorScale);
+		const float FovStart = 2.f * FMath::RadiansToDegrees(FMath::Atan(HalfW / FMath::Max(1.f, StartFocal)));
 		const float Fov = FMath::Lerp(FovStart, Follow->FieldOfView, S);
 		Lens->SetCurrentFocalLength(HalfW / FMath::Tan(FMath::DegreesToRadians(Fov * 0.5f)));
-		const float MaxStop = FMath::Max(MenuFStop, Lens->LensSettings.MaxFStop);
-		Lens->SetCurrentAperture(FMath::Exp(FMath::Lerp(FMath::Loge(FMath::Max(0.7f, MenuFStop)), FMath::Loge(MaxStop), S)));
+		const float StartStop = MenuAperture > 0.f ? MenuAperture : MenuFStop;
+		const float MaxStop = FMath::Max(StartStop, Lens->LensSettings.MaxFStop);
+		Lens->SetCurrentAperture(FMath::Exp(FMath::Lerp(FMath::Loge(FMath::Max(0.5f, StartStop)), FMath::Loge(MaxStop), S)));
 		FCameraFocusSettings Focus = Lens->FocusSettings;
 		Focus.ManualFocusDistance = FVector::Dist(Loc, Look);
 		Lens->FocusSettings = Focus;

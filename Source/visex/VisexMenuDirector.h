@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "CineCameraSettings.h"
 #include "VisexMenuDirector.generated.h"
 
 class ACameraActor;
@@ -45,15 +46,15 @@ public:
 
 	/** Panel position in camera space: forward, right, up (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
-	FVector PanelOffset = FVector(100.f, -22.f, 3.f);
+	FVector PanelOffset = FVector(100.f, -34.f, 6.f);
 
 	/** How far the panel turns toward the figure (degrees). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
-	float PanelYaw = 24.f;
+	float PanelYaw = 0.f;
 
 	/** World cm per panel pixel. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
-	float PanelScale = 0.032f;
+	float PanelScale = 0.048f;
 
 	/** Unlit panel brightness against the scene's exposure. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
@@ -162,11 +163,15 @@ public:
 
 	/** From her feet to the camera, along the ground (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
-	float FloorCameraDistance = 200.f;
+	float FloorCameraDistance = 160.f;
 
 	/** Swings the floor camera round her from the level camera's side (deg). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
-	float FloorCameraYaw = 0.f;
+	float FloorCameraYaw = -60.f;
+
+	/** Turns the floor camera off her (deg): negative puts her right of centre, leaving the left for the menu. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
+	float FloorCameraPan = -16.f;
 
 	/** Where the floor camera points, above her feet (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
@@ -175,6 +180,20 @@ public:
 	/** Menu lens focal length (mm): wide, low by her feet; 0 keeps the camera's own. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
 	float MenuFocalLength = 15.f;
+
+	/** Menu depth of field: the lens is simulated on a sensor this many times larger, with the
+	 * focal length scaled to keep the framing, so the background blurs like a big-format camera. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera", meta = (ClampMin = "1"))
+	float MenuSensorScale = 3.f;
+
+	/** Menu aperture (f-stop) on that sensor; 0 keeps the camera's own. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
+	float MenuAperture = 0.7f;
+
+	/** Panel material: the text is drawn as the difference from the scene behind it, so it
+	 * reads dark on bright sky and light on dark stone. Unset = the stock widget material. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
+	TSoftObjectPtr<class UMaterialInterface> PanelMaterial = TSoftObjectPtr<class UMaterialInterface>(FSoftObjectPath(TEXT("/Game/VisEx/UI/MI_MenuDifference.MI_MenuDifference")));
 
 	/** Re-frame the menu shot from the current settings (for tuning while it is open). */
 	UFUNCTION(BlueprintCallable, Category = "Menu")
@@ -204,6 +223,14 @@ public:
 	/** How far along the column she sits, from its middle toward its left end (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
 	float LeanColumnShift = 60.f;
+
+	/** The stone's measured surface radius at Play (cm): the collision capsule's radius, and the
+	 * pivot sits this far above the drum's axis. The spawned actor carries the tag LeanColumn. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Menu|Lean")
+	float LeanColumnSurfaceRadius = 0.f;
+
+	UFUNCTION(BlueprintPure, Category = "Menu|Lean")
+	AActor* GetLeanColumn() const { return LeanColumn; }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
 	TSoftObjectPtr<class UAnimSequence> LeanIdle = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Lean.A_Menu_Lean")));
@@ -289,6 +316,7 @@ private:
 	float OrbitT = 0.f;
 	float OrbitA0 = 0.f, OrbitR0 = 0.f, OrbitZ0 = 0.f;
 	float MenuFocal = 0.f, MenuFStop = 0.f;
+	FCameraFilmbackSettings MenuFilmback;
 	bool bHaveLens = false;
 	bool bOpen = false;
 	bool bInputBound = false;
