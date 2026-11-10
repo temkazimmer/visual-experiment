@@ -18,18 +18,18 @@ HAIR = dict(
     tip_start=0.60,                # v where the blue starts
     ao_min=0.35,                   # root occlusion (1 = none)
     ao_len=0.45,                   # v where the occlusion has faded out
-    sun_dir=(-0.55, 0.45, 0.70),   # direction TOWARD the sun (world); matches Lvl_Dust's key light
+    sun_dir=(0.524, -0.748, 0.407),  # direction TOWARD the sun (world): minus Lvl_Dust's key light travel dir
     spec_color=(0.45, 0.62, 1.0),  # cool band tint
-    spec_power=60.0,               # sin(T,H)^power: tighter = thinner band
-    spec_lo=0.50,                  # smoothstep edge: below = none
-    spec_hi=0.56,                  # above = full (small gap = hard edge)
-    spec_max=0.9,                  # clamped intensity
+    spec_power=160.0,               # sin(T,H)^power: tighter = thinner band
+    spec_lo=0.55,                  # smoothstep edge: below = none
+    spec_hi=0.60,                  # above = full (small gap = hard edge)
+    spec_max=0.7,                  # clamped intensity
     spec_shift=0.12,               # slides the band along the lock (tangent nudged by normal)
     rim=(0.55, 0.26, 0.09),        # warm, picks up the dust
     rim_strength=0.10,
     rim_power=3.5,
-    roughness=0.38,
-    specular=0.35,
+    roughness=0.55,
+    specular=0.15,
 )
 DIR = "/Game/Character/Android"
 if unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).is_in_play_in_editor():
