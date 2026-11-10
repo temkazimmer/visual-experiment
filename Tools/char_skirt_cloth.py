@@ -13,13 +13,15 @@ import unreal
 
 DIR = "/Game/Character/Clothes"
 MESH = DIR + "/SKM_Outfit_Skirt"
-PHYS = DIR + "/PA_Skirt"            # leg capsules fitted to her skin; no arms, so her hands don't catch the hem
+PHYS = DIR + "/PA_Skirt"            # tapered leg capsules fitted to her skin; no arms, so her hands do not catch the hem
 SKIN = "/Game/Character/Android/SKM_AndroidSkin"
-FIT = (0.92, 1.12)                  # percentile, scale: the capsules reach her skin, or the thighs show through the cloth
+FIT = (0.5, 1.0)                    # percentile, scale per end: higher picks up the glutes the thigh drives, and the fat capsule pushed the hem out in a cuff
 LEGS = (["thigh_l", "thigh_r", "calf_l", "calf_r"], ["calf_l", "calf_r", "foot_l", "foot_r"])
-# cm in the reference pose: pinned over the hip (the thigh capsules bulge there), free by the hem (LM: crotch 85.5, hem 79.5)
-TOP_Z, BOTTOM_Z, EXPONENT = 93.0, 80.0, 1.3
-MAX_DISTANCE = 12.0
+# cm in the reference pose: pinned over the hip, a little free by the hem (LM: crotch 85.5, hem 79.5).
+# Tema 2026-11-10: the skirt follows her shape, only the hem moves, and only slightly.
+TOP_Z, BOTTOM_Z, EXPONENT = 93.0, 79.5, 1.5
+MAX_DISTANCE = 4.0
+BACKSTOP_RADIUS = 50.0              # a big sphere behind each particle: a near-flat wall at its skinned position
 
 eal = unreal.EditorAssetLibrary
 lib = unreal.DataflowEditorBlueprintLibrary
@@ -101,6 +103,11 @@ chain.append(da)
 
 te = add("FChaosClothAssetSimulationLongRangeAttachmentConfigNode_v2", "Tethers")
 chain.append(te)
+
+bs = add("FChaosClothAssetSimulationBackstopConfigNode", "Backstop")     # never inside its skinned surface
+prop(bs, "BackstopDistance", wv(0.0, 0.0))
+prop(bs, "BackstopRadius", wv(BACKSTOP_RADIUS, BACKSTOP_RADIUS))
+chain.append(bs)
 
 co = add("FChaosClothAssetSimulationCollisionConfigNode", "Collision")
 prop(co, "CollisionThicknessImported", "(ImportedValue=0.5,bUseImportedValue=False)")

@@ -69,3 +69,8 @@ and 0.3 cm out, binding 0.7 cm wide and 0.3 cm proud.
 **Known limit (skinned version):** when she sits or kneels the thighs pass through the front of
 the skirt. **Since 2026-11-10 the skirt is Chaos cloth** ([CLOTHES.md](../CLOTHES.md)), which
 drapes over the thighs instead; these weights are its skinned anchor.
+
+**Body-hugging cloth version (Tema, 2026-11-10).** The flared cloth skirt read as stiff, so
+the `Skirt` build (the cloth's source mesh) has no flare or folds, sits 1.5 cm off the body,
+keeps at least the raw hull under the smoothing, and takes the skin's own weights down to
+2 cm above the crotch. The skinned "BodystockingSkirt" keeps the flared shape above.
