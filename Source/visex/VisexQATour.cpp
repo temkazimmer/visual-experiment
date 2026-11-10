@@ -12,6 +12,7 @@
 #include "Animation/AnimInstance.h"
 #include "Kismet/GameplayStatics.h"
 #include "Camera/PlayerCameraManager.h"
+#include "Components/CapsuleComponent.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "UnrealClient.h"
 #include "Misc/Paths.h"
@@ -72,6 +73,30 @@ void AVisexQATour::Report(const FString& Where) const
 		{
 			const FVector V = Cam->GetCameraLocation();
 			Body += FString::Printf(TEXT(", view at %.0f %.0f %.0f"), V.X, V.Y, V.Z);
+		}
+		// why she would fall: what the movement thinks is under her, what a trace finds, and her collision
+		if (Move)
+		{
+			const FFindFloorResult& F = Move->CurrentFloor;
+			Body += FString::Printf(TEXT(", floor %s %s dist %.1f"), F.bBlockingHit ? TEXT("hit") : TEXT("none"),
+				F.HitResult.GetComponent() ? *F.HitResult.GetComponent()->GetName() : TEXT("-"), F.FloorDist);
+			Body += FString::Printf(TEXT(", vel z %.0f, rootmotion %d, montage-rm %d"), Move->Velocity.Z,
+				Move->HasAnimRootMotion() ? 1 : 0, C->IsPlayingRootMotion() ? 1 : 0);
+		}
+		FHitResult Down;
+		FCollisionQueryParams Q(TEXT("QAFloor"), true, C);
+		if (GetWorld()->LineTraceSingleByChannel(Down, L + FVector(0, 0, 500), L - FVector(0, 0, 100000), ECC_Visibility, Q))
+		{
+			Body += FString::Printf(TEXT(", trace %s at z %.0f"), Down.GetComponent() ? *Down.GetComponent()->GetName() : TEXT("?"), Down.ImpactPoint.Z);
+		}
+		else
+		{
+			Body += TEXT(", trace NOTHING below");
+		}
+		if (const UCapsuleComponent* Cap = C->GetCapsuleComponent())
+		{
+			Body += FString::Printf(TEXT(", capsule coll %d vs WorldStatic %d"), int32(Cap->GetCollisionEnabled()),
+				int32(Cap->GetCollisionResponseToChannel(ECC_WorldStatic)));
 		}
 		// every skinned part, the cloth skirt (UChaosClothComponent, "OutfitCloth") included
 		TArray<USkinnedMeshComponent*> Meshes;
@@ -187,7 +212,14 @@ void AVisexQATour::Build()
 	});
 
 	// photo mode, through every motion and pose
-	Add(0.5f, [D] { D->OnItemChosen(2); });
+	Add(0.5f, [this, D] { Report(TEXT("before photo")); D->OnItemChosen(2); });
+	// when does she start to drop: just after choosing, through the stand-up, as the camera takes over
+	float Since = 0.f;
+	for (const float Wait : {0.1f, 0.3f, 0.4f, 0.7f, 1.5f})
+	{
+		Since += Wait;
+		Add(Wait, [this, Since] { Report(FString::Printf(TEXT("photo +%.1fs"), Since)); });
+	}
 	Add(6.f, [this]
 	{
 		AVisexPhotoMode* P = Photo();
