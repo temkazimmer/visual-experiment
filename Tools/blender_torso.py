@@ -41,7 +41,7 @@ LOOK = dict(
     furrow=1.3,         # spinal furrow at its deepest (lumbar)
     furrow_upper=0.2,    # and between the shoulder blades
     columns=0.45,        # the two muscle columns beside it
-    dimple=0.45,         # dimples over the pelvis
+    dimple=0.6,          # dimples over the pelvis
     dimple_x=4.6, dimple_z=102.5,
     fat=2.0,             # Fat: how far the belly comes out at full
     lines=0.8,          # AbsLines: midline depth; the side lines are a bit shallower
@@ -55,6 +55,15 @@ LOOK = dict(
     mons=0.55,           # the pubic mound: how far it stands out
     cleft=0.22,          # the shallow line at its lower end
     groin=0.09,          # the soft crease from hip bone to pubis, always there
+    clavicle=0.3,       # landmarks (cm): the collarbone ridge
+    clavicle_hollow=0.16,  # and the hollow above it
+    notch=0.4,          # the dip between the collarbones' inner ends
+    deltoid=0.35,        # the shoulder cap
+    asis=0.2,            # front hip points
+    kneecap=0.4,
+    knee_hollow=0.14,
+    ankle_knob=0.25,
+    achilles=0.22,       # the grooves either side of the tendon
 )
 
 skin = next(o for o in bpy.data.objects if o.type == "MESH")
@@ -94,6 +103,8 @@ bm.normal_update()
 refine(lambda c: abs(c.x) < 8 and 98 < c.z < 128, 1, facing=1)       # the lumbar furrow and dimples
 bm.normal_update()
 refine(lambda c: (c.x / 2.6) ** 2 + ((c.z - ZN) / 3.0) ** 2 < 1, 2)
+bm.normal_update()
+refine(lambda c: abs(c.x) < 16 and 141 < c.z < 153, 1)                 # collarbones and the notch
 bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
 bm.to_mesh(skin.data)
 bm.free()
@@ -232,6 +243,57 @@ furrow = LOOK["furrow_upper"] * band(z, 104, 141, 3) + (LOOK["furrow"] - LOOK["f
 base -= along(g(x, 1.8) * furrow * back)
 base += along(g(ax - 3.6, 2.0) * band(z, 104, 124, 4) * back * LOOK["columns"])
 base -= along(g(np.hypot(ax - LOOK["dimple_x"], z - LOOK["dimple_z"]), 1.1) * back * LOOK["dimple"])
+
+# landmarks: what an anime figure's sculptor keys the anatomy on, crisp and small
+# (Docs/Research/ANATOMY.md, "Surface landmarks"). Positions from the skeleton, in cm.
+# (masks and pushes on smoothed normals: the raw ones crinkled the fine shapes)
+deg_l = np.zeros(n)
+np.add.at(deg_l, E[:, 0], 1.0)
+np.add.at(deg_l, E[:, 1], 1.0)
+deg_l = np.maximum(deg_l, 1.0)
+Nl = Nn.copy()
+for _ in range(12):
+    acc = np.zeros_like(Nl)
+    np.add.at(acc, E[:, 0], Nl[E[:, 1]])
+    np.add.at(acc, E[:, 1], Nl[E[:, 0]])
+    Nl = 0.5 * Nl + 0.5 * acc / deg_l[:, None]
+Nl /= np.maximum(np.linalg.norm(Nl, axis=1, keepdims=True), 1e-6)
+
+
+def out(f):
+    return Nl * f[:, None]
+
+
+facing_front = ramp(-Nl[:, 1], 0.05, 0.45)
+facing_back = ramp(Nl[:, 1], 0.1, 0.5)
+facing_out = ramp(Nl[:, 0] * sgn, 0.2, 0.6)        # the side of a limb away from the middle
+facing_in = ramp(-Nl[:, 0] * sgn, 0.2, 0.6)
+# collarbones: a fine ridge from the notch out to the shoulder, rising a little, with the
+# soft hollow above it; the notch itself between their inner ends
+c0, c1 = np.array([1.9, 146.6]), np.array([14.2, 148.4])
+q = np.stack([ax, z], 1) - c0
+t = np.clip(q @ (c1 - c0) / ((c1 - c0) @ (c1 - c0)), 0, 1)
+clav_d = np.linalg.norm(q - t[:, None] * (c1 - c0), axis=1)
+upper_chest = band(z, 140, 156, 1.5) * (ax < 17)
+base += out(g(clav_d, 1.0) * facing_front * upper_chest * LOOK["clavicle"])
+above = np.linalg.norm(np.stack([ax, z], 1) - (c0 + t[:, None] * (c1 - c0) + np.array([0.0, 2.3])), axis=1)
+base -= out(g(above, 1.3) * band(t, 0.15, 0.8, 0.12) * facing_front * upper_chest * LOOK["clavicle_hollow"])
+base -= out(g(np.hypot(x / 1.3, (z - 147.6) / 1.1), 1.0) * facing_front * LOOK["notch"])
+# the shoulder cap: the deltoid's round over the joint, on the outside of the arm
+base += out(g(np.hypot((ax - 18.3) / 2.6, (z - 139.5) / 4.0), 1.0) * facing_out * LOOK["deltoid"])
+# the front hip points (ASIS), where the abs' V lines start
+base += out(g(np.hypot(ax - 10.6, z - 101.0), 1.2) * facing_front * LOOK["asis"])
+# knees: the kneecap, with the soft hollows either side below it
+leg = (ax > 6) & (ax < 20)
+knee = leg * band(z, 40, 60, 1)
+base += out(g(np.hypot((ax - 13.0) / 2.2, (z - 51.0) / 2.6), 1.0) * facing_front * knee * LOOK["kneecap"])
+base -= out(g(np.hypot((np.abs(ax - 13.0) - 2.9) / 1.0, (z - 47.0) / 1.6), 1.0) * facing_front * knee * LOOK["knee_hollow"])
+# ankles: the inner knob sits higher than the outer; the Achilles stands between two grooves
+ankle = leg * band(z, 3, 16, 1)
+base += out(g(np.hypot(z - 9.6, Nl[:, 1] * 2.0), 1.0) * facing_in * ankle * (ax < 14.5) * LOOK["ankle_knob"])
+base += out(g(np.hypot(z - 8.2, Nl[:, 1] * 2.0), 1.0) * facing_out * ankle * (ax > 14.5) * LOOK["ankle_knob"])
+achilles = facing_back * ankle * band(z, 5, 14, 1.5)
+base -= out(g(np.abs(ax - 14.7) - 1.6, 0.6) * achilles * LOOK["achilles"])
 
 # Fat: belly out (most below the navel), flanks and low back fuller, the navel sinks deeper into it
 soft = along(g(np.hypot(x / 9.5, (z - 100.0) / 9.0), 1.0) * front * (1 - pit) * LOOK["fat"])
