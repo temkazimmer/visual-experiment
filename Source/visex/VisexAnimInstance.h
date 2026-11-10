@@ -49,7 +49,7 @@ private:
 	// moving hold: a held pose breathes and drifts instead of freezing (visex.Hold.*)
 	struct FHoldTune
 	{
-		float Breath = 0.f, BreathPeriod = 4.f, Collar = 0.f, Sway = 0.f, SwayPeriod = 8.f, Head = 0.f, Pin = 30.f;
+		float Breath = 0.f, BreathPeriod = 4.f, Collar = 0.f, Sway = 0.f, SwayPeriod = 8.f, Head = 0.f, Pin = 30.f, LyingBreath = 1.f;
 	} HoldTune;
 	float HoldTarget = 0.f; // copied from the instance: 1 while a pose is held
 	float Hold = 0.f;       // HoldTarget, eased
