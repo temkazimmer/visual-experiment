@@ -16,14 +16,13 @@ import os
 import unreal
 
 HAIR = dict(
-    root=(0.004, 0.005, 0.010),     # linear colour at the roots
-    tip=(0.035, 0.042, 0.075),      # ...and at the tips (blue-black)
-    variation=(0.45, 0.9),          # brightness = R * b + a, per strand
-    roughness=0.42,
-    specular=0.5,
-    scatter=0.25,
-    backlit=0.6,
-    clip=0.33,                      # opacity mask clip
+    root=(0.012, 0.010, 0.0085),   # linear colour at the roots: soft black, a touch warm
+    tip=(0.040, 0.032, 0.026),      # ...and at the tips. No blue: the plaza's sky light adds it
+    variation=(0.55, 0.8),          # brightness = R * b + a, per strand
+    roughness=0.5,
+    specular=0.3,                   # 0.5 lit every card edge white in the body page's rim light
+    scatter=0.05,                   # dark hair lets little light through
+    clip=0.5,                       # opacity mask clip, after the temporal dither
 )
 DIR = "/Game/Character/Hair"
 SRC = os.path.join(unreal.Paths.project_dir(), "SourceArt/Character/Hair")
@@ -78,6 +77,9 @@ tex = unreal.load_asset(DIR + "/T_HairAtlas")
 tex.set_editor_property("srgb", False)
 tex.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_DEFAULT)
 tex.set_editor_property("mip_gen_settings", unreal.TextureMipGenSettings.TMGS_SHARPEN4)
+# keep the strands' coverage in the small mips, or the hair thins out and gaps open at a distance
+tex.set_editor_property("do_scale_mips_for_alpha_coverage", True)
+tex.set_editor_property("alpha_coverage_thresholds", unreal.Vector4(0, 0, 0, 0.5))
 
 # ---- material ---------------------------------------------------------------------------
 mel = unreal.MaterialEditingLibrary
@@ -127,7 +129,11 @@ base = mel.create_material_expression(m, unreal.MaterialExpressionMultiply, -450
 mel.connect_material_expressions(lerp, "", base, "A")
 mel.connect_material_expressions(vb, "", base, "B")
 mel.connect_material_property(base, "", MP.MP_BASE_COLOR)
-mel.connect_material_property(ts, "A", MP.MP_OPACITY_MASK)
+# soft strand edges: dithered coverage that TSR resolves, not a hard alpha cut
+dith = mel.create_material_expression(m, unreal.MaterialExpressionMaterialFunctionCall, -450, 440)
+dith.set_editor_property("material_function", unreal.load_asset("/Engine/Functions/Engine_MaterialFunctions02/Utility/DitherTemporalAA"))
+assert mel.connect_material_expressions(ts, "A", dith, "Alpha Threshold"), "DitherTemporalAA input"
+mel.connect_material_property(dith, "", MP.MP_OPACITY_MASK)
 mel.connect_material_property(num("Roughness", HAIR["roughness"], -450, 200), "", MP.MP_ROUGHNESS)
 mel.connect_material_property(num("Specular", HAIR["specular"], -450, 280), "", MP.MP_SPECULAR)
 mel.connect_material_property(num("Scatter", HAIR["scatter"], -450, 360), "", MP.MP_METALLIC)  # Hair: Metallic pin = Scatter
