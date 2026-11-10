@@ -240,7 +240,23 @@ def grow(az, el, layer, zone, flyaway=False):
 
 
 # ---- guides ------------------------------------------------------------------------------
+def runs_level(pts, n=4):
+    """True if the strand runs level for n steps by the head (caught going round an ear): it
+    would render as a horizontal spike sticking out of the silhouette."""
+    P = np.array([tuple(x) for x in pts])
+    d = np.diff(P, axis=0)
+    L = np.linalg.norm(d, axis=1) + 1e-9
+    flat = (np.abs(d[:, 2]) / L < 0.3) & (P[1:, 2] > C.z - 20)
+    run = 0
+    for f in flat:
+        run = run + 1 if f else 0
+        if run >= n:
+            return True
+    return False
+
+
 guides = []        # (pts, layer, flyaway, az, zone)
+dropped = 0
 for k in range(LOOK["guides"]):                       # the main mass, combed behind the ears
     az = rng.uniform(0, 360)
     lo = hairline(az)
@@ -255,7 +271,11 @@ for k in range(LOOK["guides"]):                       # the main mass, combed be
         continue
     fly = rng.uniform() < 0.04
     layer = 0 if u > 0.62 else int(rng.choice([0, 1, 2], p=[0.25, 0.4, 0.35]))
-    guides.append((grow(az, el, layer, "back", fly), layer, fly, az, "back"))
+    pts = grow(az, el, layer, "back", fly)
+    if runs_level(pts):
+        dropped += 1
+        continue
+    guides.append((pts, layer, fly, az, "back"))
 for k in range(LOOK["fringe"]):                       # the fringe, to the brow
     az = rng.uniform(-LOOK["fringe_az"], LOOK["fringe_az"]) % 360
     el = rng.uniform(hairline(az) + 4, LOOK["fringe_el"])
@@ -265,7 +285,7 @@ for sgn in (1, -1):                                   # two face-framing side lo
         az = (sgn * rng.uniform(*LOOK["side_az"])) % 360
         el = rng.uniform(hairline(az) + 2, hairline(az) + 22)
         guides.append((grow(az, el, 2, "side"), 2, False, az, "side"))
-print("guides", len(guides))
+print("guides", len(guides), "dropped (ran level round an ear)", dropped)
 
 # ---- cards -------------------------------------------------------------------------------
 TILES = 8
