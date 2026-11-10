@@ -66,6 +66,26 @@ What that means for us:
 - That **contradicts the current hair direction** (blue-black spikes, solid locks, 90s anime) and step 1 above (hard-edged anime highlight band). It leans towards the card route: hundreds of cards, a baked strand texture, flow-map anisotropic highlight, root-to-tip colour, flyaway cards, a soft tint instead of near-black.
 - It also pulls on skin and eyes, not only hair. The aerogel body and "statue" eyes are not a BG3 look.
 
+## Card hair physics: how others do it (added 2026-11-10)
+
+Tema chose the long, Frieren-style cut built by `Tools/blender_hair_cards.py` (fringe to the brow, two face-framing side locks in front of the elf ears, the rest combed behind them). It is cards, so it moves the way card hair moves in shipped games: on bones.
+
+| Option | How it works | Who uses it | Verdict for us |
+|---|---|---|---|
+| **Kawaii Physics** | One AnimGraph node sways bone chains. A simple solver without PhysX that keeps bone length, so chains never stretch. Sphere, capsule, box and plane colliders; wind and gravity ([docs](https://pafuhana1213.github.io/KawaiiPhysics-Portal/en/docs), [GitHub](https://github.com/pafuhana1213/KawaiiPhysics)). MIT licence, UE 5.3 to 5.8. | Stellar Blade and Granblue Fantasy Versus Rising (listed on the plugin's portal); Clair Obscur: Expedition 33 ([PC Gamer](https://www.pcgamer.com/games/rpg/clair-obscur-expedition-33-uses-a-plugin-called-kawaiiphysics-a-free-engine-built-to-cutely-animate-things-thats-used-in-a-ton-of-popular-games-from-gachas-to-soulslikes)); Wuthering Waves is only a technical artist's guess ([Automaton](https://automaton-media.com/en/column/wuthering-waves-is-full-of-beautiful-technical-headaches-that-would-make-the-average-ue-developer-say-please-dont-make-me-do-this/)). | **Recommended.** It is the de facto standard for stylized card hair in UE. |
+| AnimDynamics | Built-in AnimGraph node with its own light solver ([Epic](https://dev.epicgames.com/documentation/unreal-engine/animation-blueprint-animdynamics-in-unreal-engine)). | Common in forum setups. | Fallback with no plugin. Forum reports say chains of 4 or more bones twitch ([thread](https://forums.unrealengine.com/t/physics-for-short-stylized-anime-hair/243622)). Our locks need 4 to 6. |
+| RigidBody node and Physics Asset | Real rigid bodies per bone. | Generic. | Chains stretch in fast moves (same thread). Costlier to tune. |
+| Chaos Cloth on cards | Paint tips free and roots fixed ([Reallusion's setup](https://manual.reallusion.com/CC_and_IC_Auto_Setup_Plugin/ENU/CC_and_iC_Auto_Setup/1.2/02_for_Unreal/Hair-Physics.htm)). | Character Creator exports. | Works, but forum users call it far below groom. Cards collapse and clip. |
+| Groom strands with simulation | Guides simulate and strands follow ([Epic](https://dev.epicgames.com/documentation/unreal-engine/hair-physics-in-unreal-engine---overview)). | MetaHumans. | Not for cards. Generated cards do not follow the sim. |
+
+**Plan for her:**
+1. In Blender, add bone chains to the hair: about 6 behind (5 bones each), one per side lock (5 bones), 3 short ones in the fringe (2 bones). Bind each card to the chain nearest its root, weighted along its length.
+2. Export the hair as **its own skeletal mesh** (root bone = `head`), attached to the character's `head` socket, with a small AnimBP running Kawaii Physics. This avoids adding bones to the shared Quinn skeleton, which the character branch owns.
+3. Colliders: a head sphere, a neck capsule, shoulder and upper-back capsules kept 1 cm out (the clothes agent's strap clearance).
+4. Tune for weight, not bounce: high damping and low stiffness at the roots, so the hair swings late and settles, matching [ANIMATION.md](ANIMATION.md).
+
+Open points: Kawaii Physics is a C++ plugin, so the Mac build has to compile it (the project already builds C++). Adding a plugin is Tema's call.
+
 ## What I could not verify
 
 - **No named AA studio's hair method.** I searched for Black Myth: Wukong, Hellblade 2 and Stellar Blade. I found no source describing their hair, so none is claimed here. The studio-level information above is Epic's docs, 80.lv and blog posts.

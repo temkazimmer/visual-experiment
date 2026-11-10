@@ -28,20 +28,29 @@ os.makedirs(OUT, exist_ok=True)
 
 LOOK = dict(
     seed=11,
-    guides=900,            # strands that become cards
+    guides=800,            # strands that become cards
     part_x=1.6,            # the part, cm to her left of centre
     steps=22,              # points along a card
-    length=dict(front=(32, 40), side=(40, 48), back=(48, 58)),
+    length=dict(front=(44, 52), side=(48, 56), back=(52, 60), side_lock=(40, 48)),
+    fringe=150,            # guides in the fringe
+    fringe_az=34.0,        # degrees either side of the face the fringe spans
+    fringe_el=72.0,        # how far back on the head the fringe grows from
+    brow=0.8,             # cm below the head centre where the fringe is cut
+    side_locks=40,         # guides per face-framing lock
+    side_az=(40.0, 66.0),  # where the locks grow, degrees round from the face
     stiff=(0.90, 0.76),    # how much a strand keeps its heading, root -> tip
-    wave_amp=0.9,         # cm
+    wave_amp=0.35,         # cm
     wave_len=13.0,         # cm
-    card_w=(3.6, 5.4),     # cm, a clump card's width
+    card_w_back=(3.6, 5.4),  # cm, card widths by zone
+    card_w_fringe=(1.4, 2.4),
+    card_w_side=(1.8, 2.8),
     arch=0.20,             # how much a card bows out of flat, against its width
-    margin=0.30,           # cm a card keeps off the body
+    margin=0.30,           # cm a card keeps off the head
+    body_clear=1.0,        # cm off the shoulders and back (clothes agent: straps, binding)
     layer_margin=0.30,     # cm per layer outward
     face_halfw=9.2,        # cm: hair below the brow stays outside this, so the face shows
     ear_open=0.09,         # radians around each ear (seen from the head centre) hair goes round
-    line_front=36.0, line_side=10.0, line_back=-34.0,   # hairline elevation (deg)
+    line_front=36.0, line_side=-14.0, line_back=-34.0,   # hairline elevation (deg)
 )
 rng = np.random.default_rng(LOOK["seed"])
 
@@ -56,6 +65,12 @@ bvh = bvh_of(skin)
 from mathutils import Vector as _V
 cand = np.where((co[:, 2] > C.z - 12) & (co[:, 2] < C.z + 10) & (np.abs(co[:, 0]) > 6.5) & (co[:, 1] > C.y - 5))[0]
 ear = np.zeros(len(co), bool)
+_att = skin.data.attributes.get("ear")          # blender_face.py marks the ears
+if _att is not None and _att.domain == "POINT":
+    _v = np.zeros(len(co))
+    _att.data.foreach_get("value", _v)
+    ear = _v > 0.5
+    cand = []
 for i in cand:
     v = _V(co[i])
     dvec = v - C
@@ -127,47 +142,62 @@ def region_length(az):
     return rng.uniform(blend(lo[0], hi[0], t), blend(lo[1], hi[1], t))
 
 
-def grow(az, el, layer, flyaway=False):
-    """One guide: list of points, root first."""
+def grow(az, el, layer, zone, flyaway=False):
+    """One guide, root first, resampled to LOOK["steps"] + 1 points.
+
+    zone: "fringe" falls forward over the forehead and is cut at the brow; "side" is a
+    face-framing lock that hangs in front of the ear; "back" is combed behind the ears.
+    """
     p0, n0 = scalp(az, el)
     margin = LOOK["margin"] + LOOK["layer_margin"] * layer
     p = p0 + n0 * (0.15 + margin * 0.6)
-    L = region_length(az) * (rng.uniform(0.55, 0.85) if flyaway else 1.0)
-    side = 1.0 if p.x - LOOK["part_x"] > 0 else -1.0
     fa = abs(((az + 180) % 360) - 180)
-    sweep = Vector((side, 0.0, 0.0)) * (1.2 if fa < 60 else 0.0)
-    # over the ear: swept back above it, so it falls behind the ear
-    over_ear = EAR_AZ_FRONT - 4 <= fa <= EAR_AZ_BACK + 10 and el > EAR_EL_TOP - 25
-    back = Vector((0.0, 1.1, 0.0)) if over_ear else Vector((0.0, 0.0, 0.0))
-    want = Vector((0, 0, -1)) + sweep + back           # where the hair wants to go
-    tang = want - n0 * want.dot(n0)                     # ...laid along the scalp
+    side = 1.0 if p.x - LOOK["part_x"] > 0 else -1.0
+    if zone == "fringe":
+        L = 40.0                                       # stops at the brow instead
+        want = Vector((p.x * 0.04, -0.75, -1.0))
+    elif zone == "side":
+        L = rng.uniform(*LOOK["length"]["side_lock"])
+        want = Vector((0.0, -0.2, -1.0))          # hangs straight, close to the face
+    else:
+        L = region_length(az)
+        over_ear = EAR_AZ_FRONT - 25 <= fa <= EAR_AZ_BACK + 10 and EAR_EL_TOP - 25 < el < EAR_EL_TOP + 40
+        behind = 0.25 if fa > 70 else 0.0               # falls behind the shoulders
+        want = Vector((side * (0.5 if fa < 60 else 0.0), (0.7 if over_ear else 0.0) + behind, -1.0))
+    if flyaway:
+        L *= rng.uniform(0.55, 0.85)
+    tang = want - n0 * want.dot(n0)                     # laid along the scalp
     if tang.length < 1e-3:
         tang = Vector((0, 0.3, -1)) - n0 * Vector((0, 0.3, -1)).dot(n0)
     lift = 0.18 + 0.25 * max(0.0, (el - 45.0) / 45.0)   # a little volume at the crown
+    if zone == "fringe":
+        lift = 0.04                                    # the fringe lies on the head
     d = (tang.normalized() + n0 * lift).normalized()
-    front_of_ear = fa < EAR_AZ_FRONT - 4
-    dodged = False
+    front_of_ear = zone != "back"
+    z_cut = C.z + LOOK["brow"] + rng.uniform(-0.8, 0.8)
     pts = [p.copy()]
-    nsteps = LOOK["steps"]
-    step = L / nsteps
+    step = 0.6
+    travelled = 0.0
     phase = math.radians(az) * 2.3 + rng.uniform(-0.5, 0.5)
-    for i in range(1, nsteps + 1):
-        t = i / nsteps
-        s = blend(LOOK["stiff"][0], LOOK["stiff"][1], t)
-        down = Vector((0, 0, -1))
-        d = (d * s + down * (1 - s) * (1.0 + 0.5 * t)).normalized()
-        wav = math.sin(phase + i * step / LOOK["wave_len"] * 6.283) * LOOK["wave_amp"] * min(1.0, t * 3)
+    while travelled < L:
+        t = travelled / L
+        s = blend(LOOK["stiff"][0], LOOK["stiff"][1], t) ** (step / 1.9)
+        d = (d * s + Vector((0, 0, -1)) * (1 - s) * (1.0 + 0.5 * t)).normalized()
+        wav = math.sin(phase + travelled / LOOK["wave_len"] * 6.283) * LOOK["wave_amp"] * min(1.0, t * 3)
         perp = d.cross(Vector((0, 0, 1)))
         if perp.length > 1e-4:
-            d = (d + perp.normalized() * wav * 0.12).normalized()
+            d = (d + perp.normalized() * wav * 0.04).normalized()
         p = p + d * step
+        travelled += step
+        if zone == "fringe" and p.z < z_cut:
+            break
         # the face shows: from the brow down, hair in front of the face goes out to its sides
         hw = LOOK["face_halfw"] * (1.0 - 0.12 * max(0.0, min(1.0, (C.z - p.z) / 24.0)))
-        if p.y < C.y - 1 and C.z - 26 < p.z < C.z + 3 and abs(p.x) < hw:
+        if zone != "fringe" and p.y < C.y - 1 and C.z - 26 < p.z < C.z + 3 and abs(p.x) < hw:
             sx = 1.0 if p.x >= 0 else -1.0
             p.x = sx * hw
             d = (d + Vector((sx * 0.6, 0.2, 0))).normalized()
-        # the ears show: hair that would cross an ear goes round it, in front or behind
+        # the ears show: side locks pass in front of them, everything else behind
         for _ in range(30):
             rel = p - C
             q, _, dd = ear_dirs.find(rel.normalized())
@@ -176,46 +206,66 @@ def grow(az, el, layer, flyaway=False):
             a_ = math.atan2(rel.x, -rel.y)
             back_v = Vector((math.cos(a_), math.sin(a_), 0.0)) * (1.0 if rel.x > 0 else -1.0)
             mv = -back_v if front_of_ear else back_v
-            p = p + mv * 0.35
+            p = p + mv * 0.25
             hit, nrm, _, _ = bvh_body.find_nearest(p)      # ...along the head, not off it
             if hit is not None:
                 p = hit + nrm * max(margin, min((p - hit).length, margin + 0.6))
             d = (d + mv * 0.25).normalized()
-            dodged = True
         for _ in range(2):                           # keep off the body
             hit, nrm, _, dist = bvh_body.find_nearest(p)
             if hit is not None:
                 v = p - hit
-                if v.dot(nrm) < 0 or v.length < margin:
-                    p = hit + nrm * margin
+                m_here = max(margin, LOOK["body_clear"]) if p.z < C.z - 22 else margin
+                if v.dot(nrm) < 0 or v.length < m_here:
+                    p = hit + nrm * m_here
                     d = (d - nrm * min(0.0, d.dot(nrm))).normalized()
         pts.append(p.copy())
-    return pts, dodged
+    # resample to an even number of points along the path
+    P = np.array([tuple(x) for x in pts])
+    seg = np.r_[0, np.cumsum(np.linalg.norm(np.diff(P, axis=0), axis=1))]
+    if seg[-1] < 1e-3:
+        P = np.vstack([P, P[-1] + np.array([0, 0, -1.0])])
+        seg = np.r_[0, 1.0]
+    tt = np.linspace(0, seg[-1], LOOK["steps"] + 1)
+    R = np.stack([np.interp(tt, seg, P[:, k]) for k in range(3)], 1)
+    return [Vector(r) for r in R]
 
 
 # ---- guides ------------------------------------------------------------------------------
-guides = []        # (pts, layer, flyaway, az)
-for k in range(LOOK["guides"]):
+guides = []        # (pts, layer, flyaway, az, zone)
+for k in range(LOOK["guides"]):                       # the main mass, combed behind the ears
     az = rng.uniform(0, 360)
     lo = hairline(az)
     u = rng.uniform(0, 1) ** 0.8
     el = lo + (88.0 - lo) * u
-    fly = rng.uniform() < 0.07
+    fa = abs(((az + 180) % 360) - 180)
+    if fa < LOOK["fringe_az"] and el < LOOK["fringe_el"]:
+        continue                                      # the fringe has its own guides
+    if LOOK["side_az"][1] <= fa < EAR_AZ_FRONT - 2 and el < EAR_EL_TOP + 8:
+        if rng.uniform() < 0.5:
+            guides.append((grow(az, el, 1, "side"), 1, False, az, "side"))
+        continue
+    fly = rng.uniform() < 0.04
     layer = 0 if u > 0.62 else int(rng.choice([0, 1, 2], p=[0.25, 0.4, 0.35]))
-    if (az < 20 or az > 340) and el < 62:             # the fringe zone: top layer
-        layer = 2
-    pts, dodged = grow(az, el, layer, fly)
-    guides.append((pts, layer, fly, az))
+    guides.append((grow(az, el, layer, "back", fly), layer, fly, az, "back"))
+for k in range(LOOK["fringe"]):                       # the fringe, to the brow
+    az = rng.uniform(-LOOK["fringe_az"], LOOK["fringe_az"]) % 360
+    el = rng.uniform(hairline(az) + 4, LOOK["fringe_el"])
+    guides.append((grow(az, el, 2, "fringe"), 2, False, az, "fringe"))
+for sgn in (1, -1):                                   # two face-framing side locks
+    for k in range(LOOK["side_locks"]):
+        az = (sgn * rng.uniform(*LOOK["side_az"])) % 360
+        el = rng.uniform(hairline(az) + 2, hairline(az) + 22)
+        guides.append((grow(az, el, 2, "side"), 2, False, az, "side"))
 print("guides", len(guides))
 
 # ---- cards -------------------------------------------------------------------------------
 TILES = 8
 V, F, UVs = [], [], []
 n = LOOK["steps"] + 1
-for pts, layer, fly, az in guides:
+for pts, layer, fly, az, zone in guides:
     P = [np.array(x) for x in pts]
-    fa = abs(((az + 180) % 360) - 180)
-    w0 = rng.uniform(*LOOK["card_w"]) * (0.45 if fly else 1.0) * (0.6 if fa < 45 else 1.0)
+    w0 = rng.uniform(*LOOK["card_w_" + zone]) * (0.45 if fly else 1.0)
     base = len(V)
     prev_n = None
     tile = int(rng.integers(0, TILES // 2)) if layer == 0 else int(rng.integers(TILES // 2, TILES))

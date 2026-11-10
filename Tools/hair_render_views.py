@@ -8,7 +8,7 @@ out, views = args[0], (args[1:] or ["front", "front34"])
 scn = bpy.context.scene
 scn.render.resolution_x, scn.render.resolution_y = 3840, 2160
 scn.cycles.samples = 48
-top = max((bpy.data.objects["SKM_AndroidSkin"].matrix_world @ v.co).z for v in bpy.data.objects["SKM_AndroidSkin"].data.vertices[::50])
+top = max(v[2] for v in (bpy.data.objects["SKM_AndroidSkin"].matrix_world @ bpy.data.objects["SKM_AndroidSkin"].data.vertices[i].co for i in range(0, len(bpy.data.objects["SKM_AndroidSkin"].data.vertices), 50)))
 tz = top - 20
 EYES = {"front": (0, -120, tz + 6), "front34": (85, -90, tz + 8), "side": (120, 0, tz + 6), "back": (0, 120, tz + 6),
         "back34": (-80, 95, tz + 8)}

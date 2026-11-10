@@ -15,11 +15,19 @@ SKIN_FBX = os.environ.get("HAIR_SKIN", "/Users/tema/Documents/Unreal Projects/vi
 
 def load_skin(fbx=SKIN_FBX):
     """Import the skin FBX, delete the old hair faces (material 'Hair'). Returns (skin, armature)."""
-    bpy.ops.wm.read_factory_settings(use_empty=True)
-    bpy.ops.import_scene.fbx(filepath=fbx)
+    if fbx.endswith(".blend"):                    # the face stage's blend: no hair in it
+        bpy.ops.wm.open_mainfile(filepath=fbx)
+        for o in list(bpy.data.objects):
+            if o.type not in ("MESH", "ARMATURE"):
+                bpy.data.objects.remove(o)
+    else:
+        bpy.ops.wm.read_factory_settings(use_empty=True)
+        bpy.ops.import_scene.fbx(filepath=fbx)
     skin = next(o for o in bpy.data.objects if o.type == "MESH")
     arm = next(o for o in bpy.data.objects if o.type == "ARMATURE")
     names = [m.name if m else "" for m in skin.data.materials]
+    if "Hair" not in names:
+        return skin, arm
     hair_i = names.index("Hair")
     bpy.context.view_layer.objects.active = skin
     bpy.ops.object.mode_set(mode="EDIT")
