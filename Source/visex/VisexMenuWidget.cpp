@@ -131,7 +131,7 @@ void UVisexMenuWidget::BuildContent()
 		for (int32 T = 0; T < Tabs.Num(); ++T)
 		{
 			UTextBlock* Tab = MakeText(Tabs[T], ValueItemSize, T == ActiveTab ? TEXT("Regular") : TEXT("Light"), 400, TextColor);
-			if (T != ActiveTab) { Tab->SetColorAndOpacity(FSlateColor(FLinearColor(TextColor * IdleBrightness).CopyWithNewOpacity(1.f))); }
+			if (T != ActiveTab) { Tab->SetColorAndOpacity(FSlateColor(TextColor.CopyWithNewOpacity(IdleOpacity))); }
 			if (UHorizontalBoxSlot* TabSlot = TabRow->AddChildToHorizontalBox(Tab))
 			{
 				TabSlot->SetPadding(FMargin(0.f, 0.f, 70.f, 0.f));
@@ -207,7 +207,7 @@ void UVisexMenuWidget::SetSelected(int32 Index)
 			if (!Block) { continue; }
 			// dimmed by colour, not transparency: solid text is what the panel material masks out
 			// of screen filters (stencil, opacity over 0.9), and over the shade it reads the same
-			Block->SetColorAndOpacity(FSlateColor(bOn ? TextColor : FLinearColor(TextColor * IdleBrightness).CopyWithNewOpacity(1.f)));
+			Block->SetColorAndOpacity(FSlateColor(bOn ? TextColor : TextColor.CopyWithNewOpacity(IdleOpacity)));
 			FSlateFontInfo Font = Block->GetFont();
 			Font.Size = bOn ? FMath::RoundToInt(Size * Scale) : Size;
 			Font.TypefaceFontName = bOn ? FName(TEXT("Regular")) : FName(TEXT("Light"));
