@@ -88,7 +88,9 @@ Open points: Kawaii Physics is a C++ plugin, so the Mac build has to compile it 
 
 **Status (2026-11-10):** Kawaii Physics 1.21.0 is in `Plugins/` and builds on Mac. `Tools/char_hair_cards.py` imports `SKM_HairCards` (own skeleton `SK_HairCards`, 11 chains, 0.01 scale like the skin) with `M_HairCards`. First UE captures: it sits on the head, ears clear. It reads darker than the Blender renders; the highlight needs tuning.
 
-**AnimBP by hand** (Python can't add AnimGraph nodes in 5.7):
+**Physics (2026-11-10):** `ABP_HairCards` is built by `Tools/char_hair_physics.py` through the editor-only `visexTools` module (Python can't wire AnimGraph nodes). The colliders are measured off the body. Tuning is damping 0.25, stiffness 0.1 and gravity -980: it hangs, lags a turn and settles. Test in Simulate with editor background throttling off; at 3 fps the solver explodes. If the game ever drops that low, turn on Kawaii's fixed substepping (project setting).
+
+The manual equivalent, for reference:
 1. Right-click `SK_HairCards` → Create → Anim Blueprint → `ABP_HairCards`.
 2. AnimGraph: **Copy Pose From Mesh** (tick *Use Attached Parent*) → **Kawaii Physics** → Output Pose.
 3. Kawaii Physics node: Root Bone `hair_b0_01`, then add the other 10 roots as extra chains (`hair_b1..b5_01`, `hair_s0_01`, `hair_s1_01`, `hair_f0..f2_01`). Damping 0.8, Stiffness 0.05, World Damping Location 0.8, Gravity -980.
