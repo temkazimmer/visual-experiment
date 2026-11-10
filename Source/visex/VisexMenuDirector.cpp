@@ -117,7 +117,14 @@ void AVisexMenuDirector::ShowMenu()
 	if (!bHaveBase)
 	{
 		const FVector Feet = StandIn ? StandIn->GetActorLocation() : PC->GetPawn()->GetActorLocation();
-		CameraBase = MenuCamera->GetActorTransform();
+		// the level's own camera spot, kept from the first time: after that MenuCamera is wherever
+		// the menu (or the Start move) left it, and re-framing from there would compound
+		if (!bHaveLevelCamera)
+		{
+			LevelCamera = MenuCamera->GetActorTransform();
+			bHaveLevelCamera = true;
+		}
+		CameraBase = LevelCamera;
 		MenuAim = Feet + FVector(0.f, 0.f, CameraAimHeight);
 		if (bFloorCamera)
 		{
@@ -182,13 +189,15 @@ void AVisexMenuDirector::ShowMenu()
 	// PanelOffset is set for the camera's own lens: a wider menu lens brings the panel in to keep its size on screen
 	const float LensScale = (MenuFocalLength > 0.f && MenuFocal > 0.f) ? MenuFocalLength / MenuFocal : 1.f;
 	Panel->SetRelativeLocation(PanelOffset * LensScale);
-	Panel->SetRelativeRotation(FRotator(0.f, 180.f + PanelYaw, 0.f));
+	Panel->SetRelativeRotation(FRotator(0.f, 180.f + PanelYaw, 0.f) + FRotator(0.f, 0.f, PanelRoll));
 	// draw the panel's texture larger and shrink it back to the same size on screen
 	const UVisexMenuWidget* MenuDefaults = Panel->GetWidgetClass()
 		? Cast<UVisexMenuWidget>(Panel->GetWidgetClass()->GetDefaultObject()) : nullptr;
 	const float SS = GetMenuWidget() ? FMath::Max(1.f, GetMenuWidget()->Supersample)
 		: MenuDefaults ? FMath::Max(1.f, MenuDefaults->Supersample) : 1.f;
-	Panel->SetDrawSize(FVector2D(1100.f, 1000.f) * SS);
+	// the widget pads its text for the shade to fade out in: grow the panel to match
+	const float Pad = GetMenuWidget() ? GetMenuWidget()->ShadePadding : MenuDefaults ? MenuDefaults->ShadePadding : 0.f;
+	Panel->SetDrawSize((FVector2D(1100.f, 1000.f) + FVector2D(2.f * Pad)) * SS);
 	Panel->SetRelativeScale3D(FVector(PanelScale * LensScale / SS));
 	if (UMaterialInterface* Mat = PanelMaterial.LoadSynchronous())
 	{

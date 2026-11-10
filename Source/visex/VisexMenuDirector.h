@@ -48,9 +48,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
 	FVector PanelOffset = FVector(100.f, -34.f, 6.f);
 
-	/** How far the panel turns toward the figure (degrees). */
+	/** How far the panel turns (deg): negative sends its right end away, so the menu recedes toward her. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
-	float PanelYaw = 0.f;
+	float PanelYaw = -55.f;
+
+	/** Tilts the panel in the frame (deg): positive lifts its right end, so the menu rises toward her
+	 * on a diagonal (Persona-style perspective). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
+	float PanelRoll = 7.f;
 
 	/** World cm per panel pixel. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
@@ -190,10 +195,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
 	float MenuAperture = 0.7f;
 
-	/** Panel material: the text is drawn as the difference from the scene behind it, so it
-	 * reads dark on bright sky and light on dark stone. Unset = the stock widget material. */
+	/** Panel material override (e.g. MI_MenuDifference, which draws the text as the difference
+	 * from the scene behind it). Unset = the stock widget material: plain white over a soft shade. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
-	TSoftObjectPtr<class UMaterialInterface> PanelMaterial = TSoftObjectPtr<class UMaterialInterface>(FSoftObjectPath(TEXT("/Game/VisEx/UI/MI_MenuDifference.MI_MenuDifference")));
+	TSoftObjectPtr<class UMaterialInterface> PanelMaterial = TSoftObjectPtr<class UMaterialInterface>();
 
 	/** Re-frame the menu shot from the current settings (for tuning while it is open). */
 	UFUNCTION(BlueprintCallable, Category = "Menu")
@@ -311,6 +316,8 @@ private:
 	void SpawnStudioLights();
 
 	FTransform CameraBase;
+	FTransform LevelCamera;
+	bool bHaveLevelCamera = false;
 	bool bHaveBase = false;
 	bool bOrbiting = false;
 	float OrbitT = 0.f;

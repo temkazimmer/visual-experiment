@@ -34,10 +34,10 @@ public:
 	float Supersample = 2.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
-	int32 TitleSize = 150;
+	int32 TitleSize = 104;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
-	int32 TitleLetterSpacing = 420;
+	int32 TitleLetterSpacing = 200;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
 	int32 TaglineSize = 24;
@@ -46,14 +46,27 @@ public:
 	int32 ItemSize = 40;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
-	FLinearColor TextColor = FLinearColor(1.0f, 0.92f, 0.82f, 1.0f);
+	FLinearColor TextColor = FLinearColor::White;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
-	FLinearColor AccentColor = FLinearColor(1.0f, 0.55f, 0.22f, 1.0f);
+	FLinearColor AccentColor = FLinearColor::White;
+
+	/** A soft dark gradient behind the text so white reads on bright sky (UI material). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
+	TSoftObjectPtr<class UMaterialInterface> ShadeMaterial = TSoftObjectPtr<class UMaterialInterface>(FSoftObjectPath(TEXT("/Game/VisEx/UI/M_MenuShade.M_MenuShade")));
+
+	/** Room round the text (layout px) for the shade to fade out in; the director grows the
+	 * panel by twice this, so the text stays where it was. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
+	float ShadePadding = 260.f;
+
+	/** How much larger the selected item is drawn. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
+	float SelectedScale = 1.4f;
 
 	/** Opacity of the items that aren't selected. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
-	float IdleOpacity = 0.42f;
+	float IdleOpacity = 0.5f;
 
 	UFUNCTION(BlueprintCallable, Category = "Menu")
 	void SetSelected(int32 Index);
