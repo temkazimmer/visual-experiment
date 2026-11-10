@@ -219,7 +219,7 @@ void UVisexBodyComponent::TickJiggle(float DeltaTime)
 		float Z = Mesh->GetBoneLocation(Hangers[i]).Z;
 		if (bBust)
 		{
-			Z = 0.5f * (Z + Mesh->GetBoneLocation(Chest).Z);
+			Z = FMath::Lerp(Mesh->GetBoneLocation(Chest).Z, Z, BustSideFollow);
 		}
 		else
 		{
@@ -238,7 +238,8 @@ void UVisexBodyComponent::TickJiggle(float DeltaTime)
 		// the tissue is left behind by the bone's move, then pulled back by a damped spring
 		const float BoneVelocity = (Z - J.LastZ) / DeltaTime;
 		J.LastZ = Z;
-		const float Detune = bBust ? 1.f : (i == 2 ? 1.f - GluteDetune : 1.f + GluteDetune);
+		const float Spread = bBust ? BustDetune : GluteDetune;
+		const float Detune = (i % 2 == 0) ? 1.f - Spread : 1.f + Spread;
 		const float W = 2.f * PI * (bBust ? BustFrequency : GluteFrequency) * Detune;
 		const float Zeta = bBust ? BustDamping : GluteDamping;
 		const int32 Steps = FMath::Clamp(FMath::CeilToInt(DeltaTime * W * 2.f), 1, 8);
@@ -257,9 +258,9 @@ void UVisexBodyComponent::TickJiggle(float DeltaTime)
 		// bigger is heavier: a small bust barely moves
 		const float Size = Profile.Get(bBust ? FName("Bust") : FName("Glutes"));
 		const float Raw = J.Offset / Travel * JiggleStrength * (0.25f + Size);
-		// glutes ease into their limit (each half rolls on its own instead of both slamming
-		// the stop together); the bust keeps the hard stop
-		float Weight = bBust ? FMath::Clamp(Raw, -1.f, 1.f) : FMath::Tanh(Raw * 0.8f);
+		// soft tissue eases into its limit instead of hitting a stop, so each side rolls on
+		// its own rather than both slamming the end together
+		float Weight = FMath::Tanh(Raw * (bBust ? 1.f : 0.8f));
 		if (bBust)
 		{
 			Weight += Profile.Get("BustLift") * BustLiftRange;   // the standing bust height

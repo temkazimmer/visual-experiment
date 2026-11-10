@@ -58,8 +58,8 @@ public:
 	/** Soft-tissue bounce. Frequency in Hz, damping ratio (0 = rings forever, 1 = no
 	 *  overshoot), and the travel (cm) one full bounce morph stands for. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") bool bJiggle = true;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float BustFrequency = 3.0f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float BustDamping = 0.18f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float BustFrequency = 2.4f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float BustDamping = 0.14f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float BustTravel = 1.4f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float GluteFrequency = 2.6f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float GluteDamping = 0.24f;
@@ -67,6 +67,10 @@ public:
 	/** Each glute half rides its own leg: how far down the thigh its spring hangs (0 = the hip
 	 *  joint, which both sides share; 1 = the knee). The leg swing then drives each half alone. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float GluteLegFollow = 0.6f;
+	/** Each breast hangs between the chest and its own shoulder: 0 = both ride the chest
+	 *  together, 1 = each rides its own shoulder (arm swing alternates them). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float BustSideFollow = 0.85f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float BustDetune = 0.1f;
 	/** Left and right glute springs ring at slightly different rates, so they drift apart. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float GluteDetune = 0.15f;
 	/** Overall bounce strength (1 = the sculpted travel at full size). */
