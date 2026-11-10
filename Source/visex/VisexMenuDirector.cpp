@@ -349,7 +349,10 @@ void AVisexMenuDirector::SetSceneStripped(bool bStrip)
 			const bool bGround = Label.StartsWith(TEXT("Dunes")) || Label.StartsWith(TEXT("LowerGround")) || Label == TEXT("Plaza");
 			if (!bGround && !It->IsHidden())
 			{
+				// hidden stone keeps its collision unless told: it would catch the photo camera
+				// and tilt her floor poses on things that aren't there
 				It->SetActorHiddenInGame(true);
+				It->SetActorEnableCollision(false);
 				Stripped.Add(*It);
 			}
 		}
@@ -361,6 +364,7 @@ void AVisexMenuDirector::SetSceneStripped(bool bStrip)
 			if (A.IsValid())
 			{
 				A->SetActorHiddenInGame(false);
+				A->SetActorEnableCollision(true);
 			}
 		}
 		Stripped.Reset();

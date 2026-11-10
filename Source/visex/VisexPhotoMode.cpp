@@ -179,6 +179,14 @@ void AVisexPhotoMode::ClearMotion()
 	}
 }
 
+void AVisexPhotoMode::SetView(float InYaw, float InDistance, float InHeight)
+{
+	Yaw = InYaw;
+	Distance = FMath::Clamp(InDistance, MinDistance, MaxDistance);
+	Height = FMath::Clamp(InHeight, MinHeight, MaxHeight);
+	PlaceCamera();
+}
+
 void AVisexPhotoMode::SetMotion(int32 Index)
 {
 	if (!bOpen || Motions.Num() == 0)
@@ -201,9 +209,14 @@ void AVisexPhotoMode::SetMotion(int32 Index)
 	if (M.Pose != INDEX_NONE)
 	{
 		// poses go through the wheel: it handles sitting down, the slope and getting up
-		if (Anim)
+		// stop only a walk/run loop: the slot is shared with the wheel, and stopping a pose under
+		// it makes the wheel think something took the slot, so it drops the next pose
+		if (Anim && PlayingPose == INDEX_NONE)
 		{
 			Anim->StopSlotAnimation(0.2f, Slot);
+		}
+		if (Anim)
+		{
 			Anim->SetRootMotionMode(SavedRootMotion);
 		}
 		if (UVisexPoseWheelComponent* Wheel = Char ? Char->FindComponentByClass<UVisexPoseWheelComponent>() : nullptr)
@@ -313,11 +326,13 @@ void AVisexPhotoMode::PlaceCamera()
 	LookZ = LookZ < 0.f ? LookGoal : FMath::FInterpTo(LookZ, LookGoal, GetWorld()->GetDeltaSeconds(), 1.5f);
 	const FVector Look = Feet + FVector(0.f, 0.f, FMath::Lerp(LookZ * 0.75f, LookZ, FMath::Clamp(Height / 150.f, 0.f, 1.f)));
 	// keep the lens out of stone and sand: come in to whatever is between her and the camera
+	// (never closer than the near limit, so the lens can't end up inside her)
 	FHitResult Hit;
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(VisexPhotoCamera), false, Char);
 	if (GetWorld()->SweepSingleByChannel(Hit, Look, Loc, FQuat::Identity, ECC_Camera, FCollisionShape::MakeSphere(12.f), Params))
 	{
-		Loc = Hit.Location;
+		const FVector Back = Hit.Location - Look;
+		Loc = Look + (Loc - Look).GetSafeNormal() * FMath::Max(Back.Size(), (double)MinDistance);
 	}
 	Camera->SetActorLocationAndRotation(Loc, (Look - Loc).Rotation());
 	if (UCineCameraComponent* Lens = Camera->GetCineCameraComponent())

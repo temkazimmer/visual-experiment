@@ -105,6 +105,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Photo")
 	void TogglePause();
 
+	/** Put the camera somewhere directly: orbit angle (deg, world), distance and height (cm). */
+	UFUNCTION(BlueprintCallable, Category = "Photo")
+	void SetView(float InYaw, float InDistance, float InHeight);
+
 	UFUNCTION(BlueprintCallable, Category = "Photo")
 	void TakeShot();
 
