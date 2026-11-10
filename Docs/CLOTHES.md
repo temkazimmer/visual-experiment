@@ -64,6 +64,13 @@ black open-hip bodystocking. What it has that the others do not:
      vertices they were cut from, so cloth cannot sink into the body at a joint. Cords, tapes,
      straps and hardware ride the single skin vertex beneath them.
    - UV0 is a garment coordinate in cm, so lace and fishnet wrap round her without a seam.
+   - Structural trim (bindings, welts) stands `TRIM_PROUD` = 0.3 cm off the panel under it,
+     hardware `HW_PROUD` = 0.6 cm. Fabric over a trimmed piece is lifted clear of it (the
+     nylon over the tanga). Flat seams stay low.
+   - UV2 (`UVSeam`) holds each fabric vertex's distance to the nearest cut edge (x) and the
+     signed distance to the nearest seam line (y), in cm. The materials turn it into a rolled
+     edge and a topstitch groove (`SEAM_HLSL` in `char_outfit.py`; `SeamStrength` on the
+     instance, off by default).
 2. `Tools/blender_outfit_textures.py` writes three tileable 2K detail textures: a satin
    weave normal, a latex ripple normal and a mask for roughness variation.
 3. `python3 Tools/ue.py Tools/char_outfit.py` imports textures and meshes and builds the

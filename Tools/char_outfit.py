@@ -33,8 +33,8 @@ WARDROBE = {
     "Fishnet": dict(Net=dict(Color=BLACK, Cell=3.0, Width=0.16), Satin=dict(Color=BLACK, Roughness=0.34, RoughnessVariation=0.16), Trim=STEEL),
     "Catsuit": dict(Latex=dict(Color=(0.01, 0.014, 0.05), Roughness=0.24, CoatRoughness=0.04, CoatVariation=0.04), Trim=dict(Color=(0.85, 0.85, 0.9), Roughness=0.25, Metallic=0.0)),
     # the hero outfit: one piece of sheer nylon, heavier on the legs, with gold jewellery
-    "Bodystocking": dict(Nylon=dict(Color=(0.006, 0.006, 0.008), CoverTorso=0.6, CoverLeg=0.84, StretchSheer=0.36),
-                         Sheer=dict(Color=(0.006, 0.006, 0.008), Opacity=0.5, EdgeExponent=1.6),
+    "Bodystocking": dict(Nylon=dict(Color=(0.006, 0.006, 0.008), CoverTorso=0.6, CoverLeg=0.84, StretchSheer=0.36, SeamStrength=1.0),
+                         Sheer=dict(Color=(0.006, 0.006, 0.008), Opacity=0.5, EdgeExponent=1.6, SeamStrength=1.0),
                          Binding=dict(_base="Satin", Color=(0.006, 0.006, 0.008), Roughness=0.74, RoughnessVariation=0.1, NormalStrength=0.5),
                          Trim=dict(Color=(1.0, 0.72, 0.36), Roughness=0.2, RoughnessVariation=0.08, Metallic=1.0)),
     "Sheer": dict(Sheer=dict(Color=BLACK, Opacity=0.66, EdgeExponent=1.5), Latex=dict(Color=(0.012, 0.013, 0.02), Roughness=0.34, CoatRoughness=0.06, CoatVariation=0.07, NormalStrength=0.6), Trim=STEEL),
@@ -125,6 +125,34 @@ if (abs(sa) > abs(sb)) { n2 = float2(1.0, 1.0) * (-(0.5 - abs(sa)) * sign(sa)); 
 else { n2 = float2(1.0, -1.0) * (-(0.5 - abs(sb)) * sign(sb)); }
 n2 = clamp(n2 / (Width * 0.5), -1.0, 1.0) * Bulge;
 return normalize(float3(n2.x, -n2.y, 1.0));
+"""
+
+# Construction in the normal (Docs/Research/STUDY_SKIRT_CORSET.md): a rolled edge along every cut
+# and the fabric pulled into each seam, with a topstitch groove beside both. UVSeam (UV2) holds
+# the distance to the nearest cut edge (x) and the signed distance to the nearest seam line (y)
+# in cm, from blender_outfit.py; the profile is evaluated here per pixel, so a 2.5-5.5 mm bevel
+# stays sharp without a body-sized texture (the study's 70 px/cm would need far more than 16K).
+SEAM_HLSL = """
+float3 N = normalize(Parameters.TangentToWorld[2]);
+float3 P = Parameters.WorldPosition_CamRelative;
+float3 dpx = ddx(P), dpy = ddy(P);
+float3 sx = dpx - dot(dpx, N) * N, sy = dpy - dot(dpy, N) * N;
+float3 r1 = cross(sy, N), r2 = cross(N, sx);
+float det = dot(sx, r1);
+float fp = max(length(dpx), length(dpy));
+float sg = 0.035;
+float fe = saturate(1.5 - fp / (0.5 * Width)), fs = saturate(1.5 - fp / (2.0 * sg));
+float ax = abs(Seam.y), ws = 0.75 * Width;
+float te = saturate(Seam.x / Width), ts = saturate(ax / ws);
+float ue = (Seam.x - Width - 0.12) / sg, us = (ax - 0.25) / sg;
+float he = fe * 2.0 * Depth * (1.0 - te) / Width + fs * 2.0 * Stitch * ue / sg * exp(-ue * ue);
+float hs = fe * 2.0 * Depth * (1.0 - ts) / ws + fs * 2.0 * Stitch * us / sg * exp(-us * us);
+hs *= Seam.y < 0.0 ? -1.0 : 1.0;
+float dhx = he * ddx(Seam.x) + hs * ddx(Seam.y);
+float dhy = he * ddy(Seam.x) + hs * ddy(Seam.y);
+float3 g = abs(det) > 1e-12 ? sign(det) * (dhx * r1 + dhy * r2) / abs(det) : float3(0, 0, 0);
+float3 nt = mul(Parameters.TangentToWorld, normalize(N - Strength * g));
+return normalize(float3(nt.xy + Detail.xy, nt.z * Detail.z));
 """
 
 TEX_DIR = DIR + "/Textures"
@@ -220,6 +248,17 @@ def detail_normal(m, tex, span, strength, y):
     return lerp
 
 
+def seam_normal(m, y, detail=None):
+    """Rolled edges and seams from UVSeam, laid over a tangent-space detail normal. Off
+    (SeamStrength 0) unless an outfit's instance turns it on: older meshes have no UV2."""
+    detail = detail or node(m, unreal.MaterialExpressionConstant3Vector, -900, y, constant=unreal.LinearColor(0, 0, 1, 1))
+    return custom(m, SEAM_HLSL, "SeamNormal", [
+        ("Seam", node(m, unreal.MaterialExpressionTextureCoordinate, -900, y + 60, coordinate_index=2)),
+        ("Width", scalar(m, "SeamWidth", 0.4, y + 120)), ("Depth", scalar(m, "SeamDepth", 0.12, y + 180)),
+        ("Stitch", scalar(m, "SeamStitch", 0.012, y + 240)), ("Strength", scalar(m, "SeamStrength", 0.0, y + 300)),
+        ("Detail", detail)], y, unreal.CustomMaterialOutputType.CMOT_FLOAT3)
+
+
 def varied(m, base, mask, channel, amount_name, amount, y):
     """base + (mask - 0.5) * amount: a surface that is not the same everywhere."""
     d = op(m, unreal.MaterialExpressionSubtract, mask, const(m, 0.5, y + 40), y, out_a=channel)
@@ -268,6 +307,7 @@ def build_materials():
     mel.connect_material_property(color(m, "Color", BLACK, -200), "", MP.MP_BASE_COLOR)
     mel.connect_material_property(scalar(m, "Roughness", 0.65, -80), "", MP.MP_ROUGHNESS)
     mel.connect_material_property(sheer_opacity(m, 0.5), "", MP.MP_OPACITY)
+    mel.connect_material_property(seam_normal(m, 1000), "", MP.MP_NORMAL)
     base["Sheer"] = done(m)
 
     m = material("M_OutfitNylon", T)
@@ -283,6 +323,7 @@ def build_materials():
         ("StretchSheer", scalar(m, "StretchSheer", 0.42, 760)), ("Cell", scalar(m, "KnitCell", 0.09, 820)),
         ("Knit", scalar(m, "Knit", 0.5, 880))], 400)
     mel.connect_material_property(nylon, "", MP.MP_OPACITY)
+    mel.connect_material_property(seam_normal(m, 1000), "", MP.MP_NORMAL)
     base["Nylon"] = done(m)
 
     m = material("M_OutfitLace", T)
@@ -308,7 +349,7 @@ def build_materials():
     mel.connect_material_property(color(m, "Color", BLACK, -200), "", MP.MP_BASE_COLOR)
     mask = sample(m, "DetailMask", detail, False, 24.0, 300)
     mel.connect_material_property(varied(m, scalar(m, "Roughness", 0.36, -80), mask, "R", "RoughnessVariation", 0.16, 0), "", MP.MP_ROUGHNESS)
-    mel.connect_material_property(detail_normal(m, weave, 3.0, 0.7, 600), "", MP.MP_NORMAL)
+    mel.connect_material_property(seam_normal(m, 1000, detail_normal(m, weave, 3.0, 0.7, 600)), "", MP.MP_NORMAL)
     base["Satin"] = done(m)
 
     m = material("M_OutfitLatex", unreal.BlendMode.BLEND_OPAQUE, unreal.MaterialShadingModel.MSM_CLEAR_COAT)

@@ -10,6 +10,7 @@ Written 2026-11-10 by the research agent. No Unreal Editor was run to produce it
 | [RIG.md](RIG.md) | Our skeleton, layers, retargeting, pitfalls found in our code | 5 min |
 | [ANIMATION.md](ANIMATION.md) | Craft: weight, overlap, contrapposto, catwalk, poses, motion matching, how to study a pack | 6 min |
 | [STUDY_SKIRT_CORSET.md](STUDY_SKIRT_CORSET.md) | Clothes: what the Jels skirt/corset pack teaches (fit, construction, textures, measured) | 4 min |
+| [DESIGN_SKIRT.md](DESIGN_SKIRT.md) | Clothes: proposal for a skirt garment type (A-line, sculpted folds, weighting plan) | 3 min |
 
 ## How to use this
 
