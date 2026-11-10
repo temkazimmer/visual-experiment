@@ -141,6 +141,7 @@ void AVisexBodyEditor::Open()
 	PreviousView = PC->GetViewTarget();
 	PC->SetViewTargetWithBlend(this, BlendTime, VTBlend_Cubic);
 	EnableInput(PC);
+	PC->SetIgnoreLookInput(true);   // nothing else may take the stick as a camera look
 	BindKeys();
 	Applied = BodyOf()->Profile;
 	Refresh();
@@ -180,7 +181,7 @@ void AVisexBodyEditor::BindKeys()
 	for (const FKey& K : BackKeys) { InputComponent->BindKey(K, IE_Pressed, this, &AVisexBodyEditor::Close); }
 	InputComponent->BindAxisKey(EKeys::Gamepad_RightX);
 	InputComponent->BindAxisKey(EKeys::MouseX);
-	InputComponent->BindKey(EKeys::Gamepad_RightThumbstick, IE_Pressed, this, &AVisexBodyEditor::FaceCamera);
+	// the right stick only turns her: no R3 (F on the keyboard still faces her to the camera)
 	InputComponent->BindKey(EKeys::F, IE_Pressed, this, &AVisexBodyEditor::FaceCamera);
 	bKeysBound = true;
 }
@@ -207,6 +208,7 @@ void AVisexBodyEditor::Close()
 	if (PC)
 	{
 		DisableInput(PC);
+		PC->SetIgnoreLookInput(false);
 		if (PreviousView.IsValid())
 		{
 			PC->SetViewTargetWithBlend(PreviousView.Get(), BlendTime, VTBlend_Cubic);
@@ -355,7 +357,10 @@ AVisexBodyEditor::FShot AVisexBodyEditor::ShotNow(bool& bOutBack) const
 		Shot.Aperture = WideAperture;
 		return Shot;
 	}
-	FVector P = Mesh->GetSocketLocation(Part->Bone);
+	// aim where the part would be without the stick's turn, so turning her never moves the
+	// camera: she spins in a frame that stays put
+	const FVector Pivot = Char->GetActorLocation();
+	FVector P = Pivot + FRotator(0.f, -Turn, 0.f).RotateVector(Mesh->GetSocketLocation(Part->Bone) - Pivot);
 	P.Z = FMath::Lerp(P.Z, Feet.Z, Part->Down) + Part->Up * Tall;
 	Shot.Look = P;
 	Shot.Focal = Part->Focal;
