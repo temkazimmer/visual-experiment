@@ -44,6 +44,12 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Footprints")
 	float LiftMargin = 3.5f;
 
+	/** cm/s: a low foot counts as planted once it moves slower than this (a planted
+	 *  foot is still), and as lifted again above PlantSpeed x 2. Height alone missed
+	 *  steps in a slow walk, where the ankle barely rises. */
+	UPROPERTY(EditAnywhere, Category = "Footprints")
+	float PlantSpeed = 45.f;
+
 	/** cm: half length and half width of the decal box. */
 	UPROPERTY(EditAnywhere, Category = "Footprints")
 	FVector2D HalfSize = FVector2D(18.f, 10.f);
@@ -58,6 +64,11 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "Footprints")
 	bool bDebug = false;
+
+	/** Sand mounds under standing feet. Off until they match the dune shading (they
+	 *  rendered as pale smooth pads with a hard rim in Shipping 0244). */
+	UPROPERTY(EditAnywhere, Category = "Mounds")
+	bool bMounds = false;
 
 	/** A unit mound: 100 cm across, 100 cm high, zero slope at its rim. */
 	UPROPERTY(EditAnywhere, Category = "Mounds")
@@ -101,6 +112,8 @@ private:
 	};
 	TArray<FPrint> Prints;      // oldest first
 	bool bPlanted[2] = { true, true };
+	FVector LastAnkle[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	bool bHaveLast[2] = { false, false };
 
 	/** The print under each foot while it's down: it follows the foot until it lifts,
 	 *  so it ends up under the flat foot, not where the heel first touched. */

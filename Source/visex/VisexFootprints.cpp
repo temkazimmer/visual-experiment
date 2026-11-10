@@ -121,7 +121,7 @@ void AVisexFootprints::Feet(ACharacter* Pawn, USkeletalMeshComponent* Mesh)
 		const float Height = Ankle.Z - Hit.ImpactPoint.Z;
 		const bool bOnSand = Hit.GetActor() && Hit.GetActor()->ActorHasTag(TEXT("Sand"));
 		// standing on sand: a mound under this foot, its top MoundCover above the sole
-		if (bOnSand && Mounds[f] && Pawn->GetVelocity().Size2D() < StandSpeed && Height < PlantHeight + LiftMargin)
+		if (bMounds && bOnSand && Mounds[f] && Pawn->GetVelocity().Size2D() < StandSpeed && Height < PlantHeight + LiftMargin)
 		{
 			FVector Fwd = Ball - Ankle;
 			Fwd.Z = 0;
@@ -155,9 +155,18 @@ void AVisexFootprints::Feet(ACharacter* Pawn, USkeletalMeshComponent* Mesh)
 			Fwd = Pawn->GetActorForwardVector();
 		}
 		const FVector Sole = FVector(Ankle.X, Ankle.Y, Hit.ImpactPoint.Z) + Fwd * SoleOffset;
+		// how fast the ankle moves over the ground: a planted foot is (nearly) still
+		const float Dt = FMath::Max(GetWorld()->GetDeltaSeconds(), 1e-3f);
+		const float Speed = bHaveLast[f] ? FVector::Dist2D(Ankle, LastAnkle[f]) / Dt : 0.f;
+		LastAnkle[f] = Ankle;
+		bHaveLast[f] = true;
+		// a swinging foot moves at ~2x her speed, a planted one near 0 (a little more if
+		// the walk cycle slides): plant below half her speed, lift above 1.2x
+		const float Body = Pawn->GetVelocity().Size2D();
+		const float PlantBelow = FMath::Max(PlantSpeed, 0.5f * Body), LiftAbove = FMath::Max(PlantSpeed * 2.f, 1.2f * Body);
 		if (bPlanted[f])
 		{
-			bPlanted[f] = Height < PlantHeight + LiftMargin;
+			bPlanted[f] = Height < PlantHeight + LiftMargin && Speed < LiftAbove;
 			if (bPlanted[f] && Active[f].IsValid())
 			{
 				// the foot rolls from heel to flat: keep the print under it
@@ -169,7 +178,7 @@ void AVisexFootprints::Feet(ACharacter* Pawn, USkeletalMeshComponent* Mesh)
 			}
 			continue;
 		}
-		if (Height < PlantHeight)
+		if (Height < PlantHeight + LiftMargin && Speed < PlantBelow)
 		{
 			bPlanted[f] = true;
 			if (bOnSand && Pawn->IsPlayerControlled())
