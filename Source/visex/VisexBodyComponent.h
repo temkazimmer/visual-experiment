@@ -140,6 +140,9 @@ private:
 	void TickCorrectives();
 
 	UPROPERTY(Transient) TObjectPtr<class UVisexShellComponent> OutfitMesh;
+	/** Card hair with its own physics (ABP_HairCards); not a leader-pose follower. */
+	UPROPERTY(Transient) TObjectPtr<class USkeletalMeshComponent> HairMesh;
+	void ApplyHair();
 	/** The outfit's cloth piece (the skirt), when its row names one. Follows the body's pose only:
 	 *  it stays out of the jiggle and corrective morphs. */
 	UPROPERTY(Transient) TObjectPtr<class UChaosClothComponent> ClothMesh;
