@@ -301,6 +301,7 @@ verts = write_obj(obj)
 mesh = import_mesh(obj)
 actor = eas.spawn_actor_from_object(mesh, unreal.Vector(0, 0, 0))
 actor.set_actor_label("Dunes")
+actor.set_editor_property("tags", [unreal.Name("Sand")])     # footprints (add_footprints.py)
 
 # invisible walls BOUND outside the set: block the player only, deep in opaque fog
 CR = unreal.CollisionResponseType
