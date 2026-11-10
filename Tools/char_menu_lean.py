@@ -4,7 +4,7 @@ and the way back. Idempotent.
 
   python3 Tools/ue.py Tools/char_menu_lean.py     # builds three assets, then shoots stills
 
-Writes /Game/Characters/Menu/A_Menu_Lean (a 4 s loop), A_Menu_Lean_Up (lean to idle) and
+Writes /Game/Characters/Menu/A_Menu_Lean (a 12 s loop), A_Menu_Lean_Up (lean to idle) and
 A_Menu_Lean_Down (idle to lean). All in place: the root never moves.
 The column (LeanColumnGap on the menu director) is a lying cylinder, radius 45 cm, top at
 90 cm, its axis across her (mesh X), behind her: its nearest point is GAP cm behind her root.
@@ -71,7 +71,10 @@ LEAN.update(foot("r", (-4.0, 12.0, 12.5), (0.08, 0.5, -0.86), (0.0, -1.0, -0.3))
 LEAN.update(globals().get("TWEAK", {}))
 
 # pushing off: hands press, hips come forward off the stone, chest forward
-PUSH = dict(LEAN, pelvis=(1.0, CY + 46.0, 91.0), pitch=2.0, lean_fwd=6.0, head_down=4.0, head_left=4.0, arms=0.85)
+# the trunk goes first (Park Life Bench_Sit_Stand_Sit: the trunk tips forward ~0.8 s before the hips
+# leave the seat, the head comes over the feet, and the lean peaks just after the hips are up)
+PREP = dict(LEAN, lean_fwd=3.0, head_down=5.0, head_left=6.0, arms=1.0)
+PUSH = dict(LEAN, pelvis=(1.0, CY + 46.0, 91.0), pitch=2.0, lean_fwd=9.0, head_down=4.0, head_left=4.0, arms=0.85)
 # over her feet, the right foot stepping through to its idle place
 STEP = dict(STAND, pelvis=(1.5, -6.0, 92.0), yaw=-6.0, lean_fwd=3.0, arms=0.25, hand_x=24.0, hand_deg=22.0)
 STEP.update(foot("l", (12.0, 0.0, 8.5), (0.2, 0.96, -0.2)))
@@ -82,20 +85,25 @@ STEP["knee_r"] = (-8.0, 60.0, 50.0)
 UP_KEYS = [(0.0, LEAN), (0.40, PUSH), (0.80, STEP), (1.40, STAND)]
 DOWN_KEYS = [(0.0, STAND), (0.55, STEP), (1.05, PUSH), (1.50, LEAN)]
 
-def breathing(seconds=4.0):
-    """The lean, alive: a breath and a slow sway, both whole cycles so it loops."""
+def breathing(seconds=12.0):
+    """The lean, alive: three breaths, one slow sway of the hips and trunk, and the right knee
+    easing in and out, all whole cycles so it loops. Park Life's standing leans move the trunk
+    6-13 deg and the hips 5-12 cm over half a minute; this keeps a calm third of that."""
     frames = []
     n = int(round(seconds * FPS))
     for f in range(n + 1):
-        w = 2.0 * math.pi * f / n
+        w = 2.0 * math.pi * f / n                     # once per loop
+        b = 3.0 * w                                   # the breath, every 4 s
         P = dict(LEAN)
-        P["lean_fwd"] = LEAN["lean_fwd"] - 1.4 * math.sin(w)
-        P["pelvis"] = add(LEAN["pelvis"], (0.8 * math.sin(w + 0.6), 0.0, 0.35 * math.sin(w)))
-        P["roll"] = LEAN["roll"] + 1.2 * math.sin(w + 0.6)
-        P["head_left"] = LEAN["head_left"] + 3.0 * math.sin(w + 1.2)
+        P["lean_fwd"] = LEAN["lean_fwd"] - 1.4 * math.sin(b) - 1.8 * math.sin(w + 0.3)
+        P["pelvis"] = add(LEAN["pelvis"], (2.2 * math.sin(w + 0.6) + 0.6 * math.sin(2 * w), 0.0, 0.35 * math.sin(b)))
+        P["roll"] = LEAN["roll"] + 1.8 * math.sin(w + 0.6)
+        P["twist_left"] = LEAN["twist_left"] + 2.0 * math.sin(w + 2.0)
+        P["head_left"] = LEAN["head_left"] + 3.0 * math.sin(w + 1.2) + 2.0 * math.sin(2 * w + 0.4)
         P["head_tilt"] = LEAN["head_tilt"] + 1.5 * math.sin(2 * w)
+        P["knee_r"] = add(LEAN["knee_r"], (3.0 * math.sin(2 * w + 1.0), 0.0, 0.0))
         build(P)
-        frames.append({b: (local[b][0], local[b][1], local[b][2]) for b in bones})
+        frames.append({b2: (local[b2][0], local[b2][1], local[b2][2]) for b2 in bones})
     return frames
 
 lift = build(LEAN)
@@ -155,7 +163,8 @@ def up_and_walk():
     global WALK_CYCLE
     WALK_CYCLE = 0.0
     WALK_CYCLE = APE.get_bone_pose(APE.get_anim_pose_at_time(W, W.get_play_length(), opt), "root", unreal.AnimPoseSpaces.LOCAL).translation.y
-    T0, T_STOP, PUSH_T, IN_T, CLOSE_T, HOLD_T = 1.0, 2.1, 0.40, 0.35, 0.45, 0.85
+    T0, T_STOP, PUSH_T, IN_T, CLOSE_T, HOLD_T = 1.0, 2.1, 0.70, 0.35, 0.45, 0.85
+    PREP_T = 0.35
     # the walk is placed so its planted right foot lands where her right foot rests in the lean
     build(LEAN); lean_r = pos("foot_r")[1]
     w0, tr0 = walk_pose(T0, W, opt); base_tr = tr0
@@ -180,7 +189,7 @@ def up_and_walk():
     RF = stop_root + left_rel - stand_left
     frames = []
     fps = float(FPS)
-    push_keys = [(0.0, LEAN), (PUSH_T, PUSH)]
+    push_keys = [(0.0, LEAN), (PREP_T, PREP), (PUSH_T, PUSH)]
     total = PUSH_T + (T_STOP - T0) + CLOSE_T + HOLD_T
     # the walk's own clock slows to a stop over the last step (Gamma: from walking speed to still in
     # ~0.3 s, never past the stop): from BRAKE_AT before T_STOP it runs on a monotone ease that ends

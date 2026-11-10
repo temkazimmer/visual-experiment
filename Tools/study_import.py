@@ -14,6 +14,8 @@ ROOT = unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir())
 PACKS = {
     "GirlWalkRun": ("SourceArt/Fab/GirlWalkRun/fbx/SKM_Quinn_Simple.FBX", "SourceArt/Fab/GirlWalkRun/fbx/animations/*.fbx"),
     "LieDown": (None, "SourceArt/Fab/LieDown/*.FBX"),
+    # the clips are on the MotusMan rig (plain names; MotusWoman prefixes hers), not UE bone names: measured through char_study's MOTUS name map
+    "ParkLife": ("SourceArt/Fab/ParkLife/MotusMan_v55/MotusMan_v55.fbx", "SourceArt/Fab/ParkLife/Animation/*.fbx"),
 }
 PACK = globals().get("PACK", "GirlWalkRun")
 ONLY = globals().get("ONLY")                 # e.g. ["AS_Walk_Strut_1"]
