@@ -1,14 +1,15 @@
 # Builds /Game/VisEx/UI/M_MenuShade: the soft dark pool behind the menu text (UI material).
-# An ellipse centred on the text, fading to nothing well inside the panel's edges.
+# A flat ellipse under the text with a long feather, reaching zero well inside the panel's edges.
 #   python3 Tools/ue.py Tools/menu_shade_material.py     (run with Play stopped: it saves)
 import unreal
 
 PATH, NAME = "/Game/VisEx/UI", "M_MenuShade"
 full = f"{PATH}/{NAME}"
 mel = unreal.MaterialEditingLibrary
-CENTER = globals().get("CENTER", (0.36, 0.31))   # UV of the text block's middle in the padded panel
-RADIUS = globals().get("RADIUS", (0.52, 0.5))   # where the shade reaches zero
-STRENGTH = globals().get("STRENGTH", 0.8)
+CENTER = globals().get("CENTER", (0.40, 0.32))   # UV of the text block's middle in the padded panel
+RADIUS = globals().get("RADIUS", (0.38, 0.30))   # where the shade reaches zero
+STRENGTH = globals().get("STRENGTH", 0.5)
+PLATEAU = globals().get("PLATEAU", 0.15)        # flat middle; the feather runs from here to the edge
 
 # load first: create_asset on an existing name opens a modal Overwrite dialog
 m = unreal.load_asset(full) or unreal.AssetToolsHelpers.get_asset_tools().create_asset(
@@ -44,8 +45,9 @@ mel.connect_material_expressions(sat, "", inv, "")
 # smooth falloff: (1-d)^2 * (3 - 2(1-d))-ish via smoothstep on the inverse
 smooth = node(unreal.MaterialExpressionSmoothStep, -150, 0)
 mel.connect_material_expressions(inv, "", smooth, "Value")
+# a flat plate with one long feather: no peak in the middle, nothing left at the rim
 smooth.set_editor_property("const_min", 0.0)
-smooth.set_editor_property("const_max", 1.0)
+smooth.set_editor_property("const_max", 1.0 - PLATEAU)
 amt = node(unreal.MaterialExpressionScalarParameter, -280, 150)
 amt.set_editor_property("parameter_name", "Strength")
 amt.set_editor_property("default_value", STRENGTH)
