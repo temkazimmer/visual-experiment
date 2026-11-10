@@ -5,6 +5,25 @@ the read-only mounted DMG. Shots go to `~/Library/Application Support/Epic/visex
 log goes to `~/Library/Logs/visex/visex.log`. Frame times are ms at 1920×1080 windowed on the M5 Max.
 They're only comparable when the machine is idle.
 
+Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
+
+## 2026-11-10 18:35 · VIS-EX-0244 Shipping (2e6efc4) · FAIL: falls through the world in photo mode
+
+- **Crash:** none. The tour ran to `done` (151 s), and there's no new `.ips`. A plain launch without
+  `-visexqa` reaches the menu and stays up.
+- **The bug:** in every photo step she's in movement mode FALLING at x/y 9420/-1198, and z drops
+  steadily from −7685 at motion 0 to −105383 by "photo after GC". The camera follows her down.
+  The Development build at the same spot is on ground at z 146.
+  - On screen: she hangs in a fall pose against plain fog, and every motion looks identical.
+  - Already present in Tema's installed Shipping 0240 (`QA_0240ship_1826/`), so it's Shipping-only, not new.
+- **Before photo mode:** play, walk, the menus and all outfits are fine. She's on ground, and the
+  meshes and skirt cloth are present.
+- **Footprints (39d5b8e):**
+  - the sand mounds under standing feet read as smooth pale pads, like clogs: lighter than the sand,
+    hard-rimmed and without ripples (`02_play`, `03_walked`);
+  - there's no footprint trail in the foreground of the walked shot.
+- **Earlier today:** Shipping 0242 (be7f068) showed the same photo-mode fall, with no crash.
+
 ## 2026-11-10 18:12 · VIS-EX-0240 Development (HEAD 7abac20 + uncommitted GC fix) · PASS
 
 - **Purpose:** the fix for Tema's Shipping 0240 crash (SIGSEGV 0x38 in
