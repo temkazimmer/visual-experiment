@@ -4,6 +4,14 @@ For Tema to buy himself. Nothing here has been purchased. Prices were read from 
 
 Our skeleton is the UE5 Manny/Quinn mannequin, which Quinn at 159 cm shares. "Native" means authored on it, so no retarget.
 
+## Direction (from Tema, 2026-11-10)
+
+Proper anatomy. A calm but playful character with a **proud** bearing. So rank by:
+- upright chest and level head (pride), unhurried weight (calm);
+- small playful accents on top: a head tilt, a hair tuck, a spin, a half-smile of the body. Never bounce or mugging.
+- Prefer swagger and confident gaits over cute or timid ones. Cute packs (UwU, happy cheers) are accent sources only.
+- Anatomy means mocap over keyframe where weight and ribcage/pelvis counter-rotation matter. Keyframed packs (Girl Walk&Run) are for silhouette study.
+
 ## Week 1 basket (about £95)
 
 | Pack | £ | Why |
@@ -30,7 +38,7 @@ Our skeleton is the UE5 Manny/Quinn mannequin, which Quinn at 159 cm shares. "Na
 - **Free taster:** the [Gamma Free Animation Pack](https://www.fab.com/listings/8de31c5d-93bc-4bd4-9606-ca789ce91b99) is £0 with 24 clips on the same skeleton. It is mostly male and rifle, so use it only to test the rig and retarget path.
 
 ### 2. MoCap Online, Park Life: £33.47
-[Listing](https://www.fab.com/listings/622020b8-1c8d-4c42-978c-99bb6e69f442), now listed as ID 622020b8 (listing text read, no video watched).
+[Listing](https://www.fab.com/listings/5f1df0df-2211-4911-92d4-adeb8d0fa218) (listing text read, no video watched).
 - **Clips:** 65+, about 30 s each, all seamless loops.
 - **Skeleton:** Not stated explicitly. Retargeted to Manny with IK Retargeters included. Expect a small retarget job.
 - **Root motion:** Not mentioned.
@@ -61,7 +69,7 @@ Our skeleton is the UE5 Manny/Quinn mannequin, which Quinn at 159 cm shares. "Na
 - **What it teaches us:** The cross-step and hip sway of a catwalk. The Cascadeur files let our agent open the keys and see the arc.
 
 ### 5. XM3 Studios, Walk Cycle Animations Pack #01: £21.56
-[Listing](https://www.fab.com/listings/8de31c5d-93bc-4bd4-9606-ca789ce91b99) (ID differs from the Gamma free pack, which has the same UUID prefix; use the pack name when searching)
+[Listing](https://www.fab.com/listings/b216a371-a939-45c7-b3c0-b883ea0ec3c3)
 - **Clips:** 20 walk cycles, 30 to 60 s each, at 60 fps.
 - **Skeleton:** Native UE5 Manny.
 - **Root motion:** Not stated. The root is fixed at world 0 between the feet.
@@ -87,7 +95,6 @@ Our skeleton is the UE5 Manny/Quinn mannequin, which Quinn at 159 cm shares. "Na
 - **Clips:** 5. Based on Manny. Lightly cleaned mocap.
 - **Contents:** Dozing, face down, side-lying, sprawling, stretching.
 - **Why it fits:** It is cheap enough to try. It gives a first look at how mocap lies down. Check that "face down" and "sprawling" stay on the pin-up side.
-- **Note:** There were two different pages in my search results at this ID. If the link opens Park Life instead, search the name on Fab.
 
 ## Optional
 
@@ -96,9 +103,10 @@ Our skeleton is the UE5 Manny/Quinn mannequin, which Quinn at 159 cm shares. "Na
 | [Infectedfury, Lean Lay Sit Stand bundle](https://www.fab.com/listings/e86d4294-c9bf-46ef-9555-4f9f89e34135) | 52.07 | Claims 3,200+ clips: lean (~100), laying (900+), sitting (1,200+) and "Strike A Pose" (600+ with transitions). Skeleton, root motion and capture method are all **not stated**, with 1 rating. Potentially the only source of getting down and up, but I can't verify it. Read the preview and message the seller about the skeleton before buying. |
 | [ITBortArt, Female Mocap Dance Vol.1](https://www.fab.com/listings/2358e5ac-abc7-4c39-aea7-34581f634208) | 14.87 | 20 dances (10 UE5). Skeleton "default UE5". Priority 7. Names are not listed. |
 | [Mobility Pro, MoCap Online](https://www.fab.com/listings/52288b17-3c7f-44df-a5c8-3ca37692c288) | 74.39 | 223+ locomotion clips, but on the **UE4 skeleton**, so you need the IK retarget project. Rating 4.0 from 31. Expensive and redundant next to Gamma. |
-| [Kalungis_Arcana, Quick Motion Happy Women](https://www.fab.com/listings/6c059932-d121-43b3-8766-eb489d85aec8) | 2.96 | 33 in-place clips: 7 happy poses, spins, waves. Cute and cheerful, which is off-tone for a calm android. Take only if you want spins. |
+| [Kalungis_Arcana, Quick Motion Happy Women](https://www.fab.com/listings/6c059932-d121-43b3-8766-eb489d85aec8) | 2.96 | 33 in-place clips: 7 happy poses, spins, waves, laughs. Too cheerful for the calm base, but a cheap source of the playful accents (a spin, a small wave). |
+| [Ailive, Various Walk Pack](https://www.fab.com/listings/f03e7d7d-08df-40b7-ab8d-2ca94d111ec9) | 3.71 | 6 mocap walks on Manny, including a Swagger Walk. Cheap proud-gait reference. |
 | [lumiflo, Self Cam Pose Bundle](https://www.fab.com/listings/c51003a2-275c-4946-a4c1-aba95f7be92c) | 59.51 | Only 8 clips (looking at the camera, hand gestures). Mocap, standard UE5 mannequin. It is about photo-mode gaze, but at £7 per clip it is overpriced. |
-| [MC Seated Animation Pack](https://www.fab.com/listings/7383576d-61ae-4c75-9676-85a9b5299750) | 55.79 | 250+ chair clips from a male-led performance. Park Life covers the feminine side. |
+| [MC Seated Animation Pack](https://www.fab.com/listings/7c1ac5c5-9da0-4e47-b7a5-36ce1b55a21d) | 55.79 | 250+ chair clips from a male-led performance. Park Life covers the feminine side. |
 | [XM3 Sitting Idle Pack #01](https://www.fab.com/listings/005be6a1-9e87-468b-8057-c44130ebab7a) | 21.56 | 20 long seated idles on Manny, not female-specific. |
 | [HandMade, Female Locomotion Animations](https://www.fab.com/listings/3df5b4e7-5a62-4d05-b3a5-54d70f8cc9f0) | 7.43 | Walk/run/turn with root motion. Skeleton not stated and clip count not stated. Rating 4.6 from 7. Cheap test of "cute" walk. |
 
@@ -106,7 +114,7 @@ Our skeleton is the UE5 Manny/Quinn mannequin, which Quinn at 159 cm shares. "Na
 
 - **Gamma Ultimate bundle** (£185.98, 1,451 clips): [listing](https://www.fab.com/bundles/62c3612b-8e7f-4d1a-8481-efdffd7d23a0). It is mostly combat, crouch and injured. Over budget and off-topic.
 - **Gamma Pistol/Rifle/Crouch packs:** combat and stealth. We have no use.
-- **Digital Kinetics Male and Female Locomotion bundle** (£96.71): [listing](https://www.fab.com/listings/9657e6b9-a480-43a8-a0f0-55abd806ce85). I could not tell this URL apart from MC Core above, so skip it unless you re-check the link. Rating 3.0 from 1.
+- **Digital Kinetics Male and Female Locomotion bundle** (£96.71): [listing](https://www.fab.com/listings/607032cc-ecac-47ac-8342-c95c6735f736). Rating 3.0 from 1.
 - **Female Horror Survivor** (£37.19) and **Lumiflo Two of Hearts** (£52.07): wrong mood and wrong use.
 - **Anime Girl Standing** and similar pose packs: built on the UE4 mannequin and flagged as retargeting "approximately".
 
@@ -153,4 +161,4 @@ Evidence here is thin; I could not verify topology or deformation quality from l
 - Video quality of every pack.
 - Any price for ActorCore, Rokoko/Kinetic and the character-design packs.
 - Root motion on XM3, Park Life and Inu Games.
-- Whether two UUIDs I saw (the Digital Kinetics bundle and MC Core) were mis-matched by my fetch tool; re-open the links before paying.
+- Links were matched to names by fetch order; open each before paying and confirm the title.
