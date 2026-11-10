@@ -27,6 +27,7 @@ const TArray<FVisexBodySlider>& FVisexBodyProfile::Sliders()
 		S(TEXT("Chest"),     LOCTEXT("Chest", "Ribcage"),       0.85f, 1.20f, 1.0175f),
 		S(TEXT("Bust"),      LOCTEXT("Bust", "Bust"),           0.f,   1.f,   0.70f),
 		S(TEXT("BustLift"),  LOCTEXT("BustLift", "Bust height"), -1.f,  1.f,   0.f),
+		S(TEXT("BustApart"), LOCTEXT("BustApart", "Bust spacing"), -1.f, 1.f,  0.8f),
 		S(TEXT("Waist"),     LOCTEXT("Waist", "Waist"),         0.60f, 1.20f, 0.745f),
 		S(TEXT("Abs"),       LOCTEXT("Abs", "Abs"),             0.f,   1.f,   0.33f),
 		S(TEXT("Fat"),       LOCTEXT("Fat", "Body fat"),        0.f,   1.f,   0.20f),

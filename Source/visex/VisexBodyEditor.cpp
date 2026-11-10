@@ -36,6 +36,7 @@ namespace
 		{TEXT("Chest"),     TEXT("spine_04"), 0.f,   0.f,  72.f,  65.f, false},
 		{TEXT("Bust"),      TEXT("spine_04"), 0.f,   2.f,  62.f,  70.f, false},
 		{TEXT("BustLift"),  TEXT("spine_04"), 0.f,   2.f,  62.f,  70.f, false},
+		{TEXT("BustApart"), TEXT("spine_04"), 0.f,   2.f,  62.f,  70.f, false},
 		{TEXT("Waist"),     TEXT("spine_02"), 0.f,   0.f,  72.f,  65.f, false},
 		{TEXT("Abs"),       TEXT("spine_02"), 0.f,   -2.f, 58.f,  75.f, false},
 		{TEXT("Fat"),       TEXT("spine_02"), 0.f,   -4.f, 92.f,  55.f, false},

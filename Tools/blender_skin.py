@@ -30,7 +30,7 @@ SKIN = dict(
     faces=80000,         # decimate target
     max_influences=4,
     # at slider 1 (morph weight 1): projection beyond the base body, cm
-    bust_proj=9.0, bust_height=0.40, bust_spread=0.50, bust_bounce=1.4,
+    bust_proj=9.0, bust_height=0.40, bust_spread=0.50, bust_bounce=1.4, bust_apart=2.4, bust_cleft=1.0,
     glute_proj=7.0, glute_height=1.0, glute_spread=0.60, glute_bounce=1.1,
 )
 
@@ -339,6 +339,19 @@ for part, proj, amp in (("Bust", SKIN["bust_proj"], SKIN["bust_bounce"]), ("Glut
         m = diffuse(m, 3)
         key_from_offsets("%sBounce%s_Up" % (part, side_name), UP[None, :] * (amp * M) * m[:, None])
         key_from_offsets("%sBounce%s_Down" % (part, side_name), -UP[None, :] * (amp * M) * m[:, None])
+# spacing: each breast slides outward as a block (turned a little outward too), opening
+# the cleavage; the Bust spacing slider drives it, negative pulls them together
+apart = np.zeros((nv, 3))
+for side_name, lat in (("L", LEFT), ("R", -LEFT)):
+    m = diffuse(np.clip(pushes["Bust" + side_name] / (SKIN["bust_proj"] * M), 0, 1) ** 0.6, 4)
+    out = SIDE * lat
+    apart += (out * 1.0 - FWD * 0.15)[None, :] * (SKIN["bust_apart"] * M) * m[:, None]
+# ...and the fill the smooth union left between them sinks back, so a real cleavage opens
+lat_c = (P - B["pelvis"]) @ SIDE
+cleft = np.exp(-(lat_c / (3.0 * M)) ** 2) * SKIN["bust_cleft"]
+apart += -NS * (bust_push * cleft)[:, None]
+apart = diffuse(apart, 3)
+key_from_offsets("BustApart", apart)
 print("keys", [k.name for k in me.shape_keys.key_blocks])
 
 # one material slot is enough for the skin
