@@ -9,13 +9,13 @@ The hair mesh goes on the character as a child of the body mesh with this anim c
 import unreal
 
 PHYS = dict(
-    damping=0.12,           # velocity loss per step (higher = calmer)
-    stiffness=0.04,         # pull back to the animated shape
+    damping=0.25,           # velocity loss per step (higher = calmer)
+    stiffness=0.10,         # pull back to the animated shape
     world_damp_loc=0.75,    # how much the hair ignores world motion of the head
     world_damp_rot=0.75,
     radius=1.2,             # bone collision radius, cm
-    limit_angle=40.0,       # max bend per bone, degrees
-    gravity=(0, 0, -400),   # cm/s^2, on top of the rest shape
+    limit_angle=25.0,       # max bend per bone, degrees
+    gravity=(0, 0, -980),   # cm/s^2, on top of the rest shape
 )
 ROOTS = ["hair_b%d_01" % i for i in range(6)] + ["hair_s0_01", "hair_s1_01"] + ["hair_f%d_01" % i for i in range(3)]
 # Colliders in component space (cm, UE axes: -Y is her front), measured off SKM_AndroidSkin with
