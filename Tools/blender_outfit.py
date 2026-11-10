@@ -103,7 +103,7 @@ DELTAS = {k.name: (vget(k.data, "co", nv) - CO) @ R3.T for k in keys[1:]}
 # The rest shape is flat: bust and glutes come from the slider morphs. Design on her
 # default body (the Character page's starting values) and derive the rest shape at the end.
 DESIGN = {k: w for k, w in (("BustUp", 0.80), ("BustApart", 1.097), ("GlutesUp", 0.5), ("Fat", 0.38),
-                                         ("ThighGap", 0.0), ("AbsLines", 0.734), ("AbsPack", 0.734),
+                                         ("ThighGap", 0.0), ("AbsLines", 0.734), ("AbsPack", 0.12),
                                          # Bust height 0.5 x BustLiftRange 1.3 rides the bounce morphs
                                          ("BustBounceL_Up", 0.65), ("BustBounceR_Up", 0.65)) if k in DELTAS}
 for k, w in DESIGN.items():
@@ -1015,7 +1015,9 @@ def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.
 
 OUTFITS = {"Noir": noir, "Garter": garter_set, "Cocoa": cocoa, "Fishnet": fishnet,
            "Catsuit": catsuit_set, "Sheer": sheer, "Bodystocking": bodystocking,
-           "BodystockingSkirt": lambda: (bodystocking(), skirt())}
+           "BodystockingSkirt": lambda: (bodystocking(), skirt()),
+           "Skirt": lambda: skirt(off=1.1)}      # the skirt alone, source of the cloth asset; 1.1 cm off: the cloth gets no bounce morphs
+CLOTH = {"Skirt"}                                # simulated in UE: the default body's morphs baked into the rest shape
 
 
 # ---- assemble: one mesh, weights, shape keys, garment UVs ------------------------------------------
@@ -1177,7 +1179,10 @@ def finalize(ob):
 
     dl = {kname: sum(DL[idx3[:, k]] * w3[:, k, None] for k in range(3)) * ex["m"][:, None] for kname, DL in DELTAS.items()}
     oc = clear_skin(oc, idx3, w3, SEAM_OF[ob.name][:, 0] < NO_SEAM, dl)     # fabric panels only
-    rest = oc - sum(dl[k] * w for k, w in DESIGN.items())      # designed on the default body
+    if name in CLOTH:                                          # a cloth sim gets no body morphs:
+        om.vertices.foreach_set("co", oc.ravel())              # keep the default body baked in
+        dl = {}
+    rest = oc - sum(dl[k] * w for k, w in DESIGN.items() if k in dl)    # designed on the default body
     om.vertices.foreach_set("co", rest.ravel())
     ob.shape_key_add(name="Basis", from_mix=False)
     for kname, d in dl.items():

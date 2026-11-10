@@ -33,6 +33,8 @@ struct FVisexOutfit
 	UPROPERTY(BlueprintReadOnly, Category = "Body") FText Label;
 	/** Empty for "none". */
 	UPROPERTY(BlueprintReadOnly, Category = "Body") FString Mesh;
+	/** Optional Chaos cloth asset worn on top of Mesh (the skirt), empty for none. */
+	UPROPERTY(BlueprintReadOnly, Category = "Body") FString Cloth;
 };
 
 /**

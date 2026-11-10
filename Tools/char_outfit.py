@@ -43,9 +43,11 @@ WARDROBE = {
                               Binding=dict(_base="Satin", Color=(0.006, 0.006, 0.008), Roughness=0.74, RoughnessVariation=0.1, NormalStrength=0.5),
                               Satin=dict(Color=(0.008, 0.008, 0.01), Roughness=0.38, RoughnessVariation=0.1, NormalStrength=0.5, SeamStrength=1.0),
                               Trim=dict(Color=(1.0, 0.72, 0.36), Roughness=0.2, RoughnessVariation=0.08, Metallic=1.0)),
+    # the skirt alone, the source mesh of the skirt cloth asset (Docs/Research/STUDY_SKIRT_SIM.md)
+    "Skirt": dict(Satin=dict(Color=(0.008, 0.008, 0.01), Roughness=0.38, RoughnessVariation=0.1, NormalStrength=0.5, SeamStrength=1.0, _two_sided=True)),
     "Sheer": dict(Sheer=dict(Color=BLACK, Opacity=0.66, EdgeExponent=1.5), Latex=dict(Color=(0.012, 0.013, 0.02), Roughness=0.34, CoatRoughness=0.06, CoatVariation=0.07, NormalStrength=0.6), Trim=STEEL),
 }
-MESH_DIR = {"Sheer": "/Game/Character/Clothes", "Bodystocking": "/Game/Character/Clothes", "BodystockingSkirt": "/Game/Character/Clothes"}       # the rest: /Game/Character/Outfits
+MESH_DIR = {"Sheer": "/Game/Character/Clothes", "Bodystocking": "/Game/Character/Clothes", "BodystockingSkirt": "/Game/Character/Clothes", "Skirt": "/Game/Character/Clothes"}       # the rest: /Game/Character/Outfits
 DIR = "/Game/Character/Clothes"
 SKELETON = "/Game/Characters/Mannequins/Meshes/SK_Mannequin"
 ONLY = globals().get("ONLY")
@@ -387,6 +389,12 @@ def instance(outfit, slot, parent, values):
     mi = unreal.load_asset(path) if unreal.EditorAssetLibrary.does_asset_exist(path) else \
         tools.create_asset(name, DIR, unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())
     mel.set_material_instance_parent(mi, parent)
+    two = values.pop("_two_sided", False) if isinstance(values, dict) else False
+    if two:                                    # cloth folds show their inside
+        o = mi.get_editor_property("base_property_overrides")
+        o.set_editor_property("override_two_sided", True)
+        o.set_editor_property("two_sided", True)
+        mi.set_editor_property("base_property_overrides", o)
     for k, v in values.items():
         if isinstance(v, tuple):
             mel.set_material_instance_vector_parameter_value(mi, k, unreal.LinearColor(v[0], v[1], v[2], 1.0))
