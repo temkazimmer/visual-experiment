@@ -36,6 +36,7 @@ private:
 		float HipRoll = 0.f, HipYaw = 0.f, HipShift = 0.f, Line = 0.f, Shoulders = 0.f, Head = 0.f;
 	} Tune;
 	float GaitTarget = 0.f; // 0 standing or airborne, 1 walking, less when sprinting
+	float PhotoGait = -1.f; // copied from the instance: the gait forced by photo mode, or -1
 	float Gait = 0.f;       // GaitTarget, eased
 	float Step = 0.f;       // -1..1: which foot is ahead (+ left)
 	float Lift = 0.f;       // -1..1: which foot is in the air (+ left)
@@ -54,6 +55,12 @@ public:
 
 	UPROPERTY(BlueprintReadWrite, Category = "Body")
 	bool bReshapeBody = true;
+
+	/** The catwalk layer normally follows her speed. Set to 0 or more to drive it directly
+	 *  while a walk or run clip plays in place (photo mode): 1 for MF_Unarmed_Walk_Fwd,
+	 *  0.35 for MF_Unarmed_Jog_Fwd. -1 hands it back to her speed. */
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Catwalk")
+	float PhotoGait = -1.f;
 
 protected:
 	virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override { return new FVisexAnimProxy(this); }

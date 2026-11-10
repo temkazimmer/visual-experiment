@@ -23,6 +23,7 @@ void FVisexAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSecond
 	{
 		Profile = Inst->BodyProfile;
 		bHasProfile = Inst->bReshapeBody;
+		PhotoGait = Inst->PhotoGait;
 	}
 
 	Dt = DeltaSeconds;
@@ -37,6 +38,10 @@ void FVisexAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSecond
 			const float Sprint = FMath::SmoothStep(260.f, 480.f, Speed);
 			GaitTarget = In * FMath::Lerp(1.f, CVarCatwalkSprint.GetValueOnGameThread(), Sprint) * CVarCatwalk.GetValueOnGameThread();
 		}
+	}
+	if (PhotoGait >= 0.f)
+	{
+		GaitTarget = PhotoGait * CVarCatwalk.GetValueOnGameThread(); // a walk clip played in place
 	}
 	Tune.HipRoll = CVarCatwalkHipRoll.GetValueOnGameThread();
 	Tune.HipYaw = CVarCatwalkHipYaw.GetValueOnGameThread();
