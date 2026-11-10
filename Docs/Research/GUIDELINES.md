@@ -1,0 +1,64 @@
+# Animation guidelines for vis-ex
+
+The short version, for any agent making animation. Detail lives in [ANIMATION.md](ANIMATION.md), [RIG.md](RIG.md) and [ANATOMY.md](ANATOMY.md).
+
+**Aim (Tema):** raise animation quality by *learning* from professional work and building that knowledge into our own model. Not by pasting assets in. Proper anatomy. A calm, playful, proud protagonist.
+
+## The character in one breath
+
+Upright, unhurried, head level. Calm base with small playful accents. Weighty and deliberate, never floaty or arcade. Android: clean stops, head-first turns, a tiny settle.
+
+## Ten rules
+
+1. **Principle before clip.** Write the rule you are applying ("weight dips on contact", "head settles last") before you touch keys.
+2. **Measure, don't guess.** Pull numbers from reference clips with Python/Sequence Editor: timing, pelvis height, foot plant frames, rotation ranges.
+3. **Silhouette first.** Check every key pose as a black shape from three angles.
+4. **Weight over the support foot** in every still. Stills are the product.
+5. **Contact has weight.** Dip on landing, settle on stops, counter-rotation on turns.
+6. **Overlap.** Pelvis leads; spine, chest, head, hands and hair arrive later. Keep it small and clean.
+7. **Calm base, playful accent.** One small surprise per movement, starting late and ending clean.
+8. **Proper anatomy.** Respect joint ranges, check armpit, crotch, knee-back and waist in deep poses; add a morph rather than bending a bone past what the skin handles.
+9. **Content line:** pin-up and fashion yes; sexual positions no.
+10. **4K captures to review**, at most two editors, kill what you start (project rules).
+
+## Workflow: learn → write down → implement → compare
+
+| Step | What | Output |
+|---|---|---|
+| 1. Question | One thing you want to learn ("how does a good stop settle?") | A sentence |
+| 2. Study | Look at 2 to 3 reference clips (see [BUY_LIST.md](BUY_LIST.md), GASP, your own earlier work). Extract numbers. | A short table in your notes |
+| 3. Rule | State it in our terms: frames, degrees, cm | One line, e.g. "stop: hips settle 0.25 s, head 4 frames after feet" |
+| 4. Implement | Our own clip, an additive layer, a Control Rig, a `visex.Catwalk.*` change, or a blend-space edit | Committed change |
+| 5. Compare | Source vs ours, same camera, 4K | Capture pair |
+| 6. Log | Add a line to the log below | Updated file |
+
+**Do not ship a bought clip unchanged as a signature move.** Use it as study material, or as filler where nobody will notice.
+
+## Where each kind of work goes
+
+| Work | Where | Notes |
+|---|---|---|
+| New walk/run/turn rule | Blend space, `calm_walk.py`, `visex.Catwalk.*` | Re-measure the real speed. Catwalk layer stacks on sway already in the clip. |
+| Idle and micro-animations | Random variations in the AnimBP and additive layers | Breath, head tracking, weight shifts, calibration tics |
+| Poses (photo mode) | `Tools/char_pose_*.py` building `A_Pose_*` assets, plus `_In` and `_Out` | Joint ranges, foot IK, floor slope |
+| Soft tissue | `UVisexBodyComponent` springs | Keep small for the calm read |
+| Shape correction | Blender morphs (`blender_correctives.py`) | Not bone tweaks |
+| Clothes follow | Outfit uses all weights and shape keys | New morph on skin also goes on outfit |
+
+## Review checklist (before telling Tema it is done)
+
+- [ ] Key poses read as silhouettes from front, 3/4 and low.
+- [ ] Feet planted at the intended speed (no skate).
+- [ ] Pelvis dip on contact, settle on stop, head last.
+- [ ] Proud posture (chin level, chest open), calm tempo, one accent.
+- [ ] Armpit, crotch, knee-back and waist are clean at the extremes.
+- [ ] Soft tissue calm.
+- [ ] Catwalk layer not doubled (check the CVars).
+- [ ] 4K captures attached; source vs ours when relevant.
+- [ ] Rule written down in the log.
+
+## Learning log (append as you go)
+
+| Date | Pack / source | Question | Finding (numbers) | Where we used it |
+|---|---|---|---|---|
+| | | | | |
