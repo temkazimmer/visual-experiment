@@ -19,10 +19,9 @@ HAIR = dict(
     root=(0.012, 0.010, 0.0085),   # linear colour at the roots: soft black, a touch warm
     tip=(0.040, 0.032, 0.026),      # ...and at the tips. No blue: the plaza's sky light adds it
     variation=(0.55, 0.8),          # brightness = R * b + a, per strand
-    roughness=0.58,                 # a broader, dimmer highlight
+    roughness=0.5,
     specular=0.2,                   # 0.5 lit every card edge white in the body page's rim light
     scatter=0.0,                    # no light through: backlit by the sun it went pale (QA 0269)
-    edge_exp=2.5,                   # how fast the highlight fades toward the card edges
     coverage=1.7,                   # strand alpha gain: solid strands, not see-through against haze
     clip=0.5,                       # opacity mask clip, after the temporal dither
 )
@@ -154,17 +153,7 @@ assert mel.connect_material_expressions(dith, "", pas, "Dithered")
 assert mel.connect_material_expressions(cov, "", pas, "Hard")
 mel.connect_material_property(pas, "", MP.MP_OPACITY_MASK)
 mel.connect_material_property(num("Roughness", HAIR["roughness"], -450, 200), "", MP.MP_ROUGHNESS)
-# the highlight fades at grazing angles: with the sun behind her, card edges caught it and went
-# pale, near white, against the haze (QA 0276)
-fres = mel.create_material_expression(m, unreal.MaterialExpressionFresnel, -800, 600)
-fres.set_editor_property("exponent", HAIR["edge_exp"])
-fres.set_editor_property("base_reflect_fraction", 0.0)
-inv = mel.create_material_expression(m, unreal.MaterialExpressionOneMinus, -650, 600)
-mel.connect_material_expressions(fres, "", inv, "")
-spec = mel.create_material_expression(m, unreal.MaterialExpressionMultiply, -450, 280)
-mel.connect_material_expressions(num("Specular", HAIR["specular"], -650, 280), "", spec, "A")
-mel.connect_material_expressions(inv, "", spec, "B")
-mel.connect_material_property(spec, "", MP.MP_SPECULAR)
+mel.connect_material_property(num("Specular", HAIR["specular"], -450, 280), "", MP.MP_SPECULAR)
 mel.connect_material_property(num("Scatter", HAIR["scatter"], -450, 360), "", MP.MP_METALLIC)  # Hair: Metallic pin = Scatter
 # Backlit (CustomData0) has no MaterialProperty in 5.7 Python: the Hair model's default is used
 tan = mel.create_material_expression(m, unreal.MaterialExpressionConstant3Vector, -450, 520)
