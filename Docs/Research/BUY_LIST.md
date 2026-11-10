@@ -133,6 +133,29 @@ Proper anatomy. A calm but playful character with a **proud** bearing. So rank b
   - Poses in Heels (a [Marketplace listing](https://docs.unrealengine.com/marketplace/en-US/product/poses-in-heels-mocap): 20 posing mocaps with the performer in heels). It returned 403 and may only be in the Launcher vault.
   - Digital Kinetics' 54-clip Female Locomotion Pack.
 
+## One character pack and one clothing pack (asked 2026-11-10)
+
+Tema wants exactly one of each, for study. Prices checked on Fab 2026-11-10, GBP ex-tax. I searched Fab first (I did not get to ArtStation, CGTrader or Reallusion for the clothing pack). **Neither pick is a close match.** No Fab listing combines what we need (sheer, stockings, fitted, rigged to Quinn). These are the best study value, and I say what each does not give us.
+
+### Character: [UE5: Female Mannequin](https://www.fab.com/listings/be7aa5d1-c081-4c59-ba8e-036c005a5f66), £18.59 (TheRoyalMarket)
+- **Why:** A feminine mannequin ("SK_FemaleDoll") on Epic's default UE5 skeleton with IK bones, weight-painted for quick transfer to other characters. Four colour variants including steel. It is the nearest thing to a display mannequin with proper female proportions, which is what our skin work is about. Not Mature.
+- **Study value:** Compare its weight maps at shoulder, hip and bust with ours. 257,827 vertices is a dense sculpt, so the surface and silhouette are worth reading.
+- **Checks before buying:** UE version is not stated (it says only "after moving to Unreal 5"). Only Windows is listed as a platform, though the asset itself should open on Mac. The default pose is on high heels, built into the model, so the rest pose will not match ours. There are no correctives or extra bones.
+- **Runner-up: [Quinn6 Industrial Female Mannequin](https://www.fab.com/listings/39ea618e-386b-43a8-85f8-3cb54b9d48c6), £11.15 (Tiny RPG).** The only one with an explicit **UE 5.7 and 5.8** statement, on the Quinn skeleton, with 31,762 triangles and 4K PBR. It is an industrial look on the stock Quinn shape, so there is less anatomy to learn than from the pick. Safest on compatibility.
+- **Also seen, not picked:** [Robot Android Female](https://www.fab.com/listings/5f971e2e-6a44-4f01-b81d-658d31df8a06) (£14.87, 20k triangles, extra breast bones, skeleton named only "Epic Skeleton", rusty cyborg look) and [Female Robot R68 Pack](https://www.fab.com/listings/db53636c-9b11-439a-8b6f-42e8ae4bc78f) (£34.21, UE4 skeleton, cyberpunk). Neither is a clean white shell.
+
+### Clothes: [OoMH-05 Skirt and Corset](https://www.fab.com/listings/d9fe36b5-69c7-4132-8831-396611d15682), £18.59 (Jels Studio)
+- **Why:** The only cheap fashion pack I found with a **Chaos cloth preset** (it needs setup per animation). It has a corset and skirt, FBX included, and colour via material parameter collections. This is the cloth setup we lack, since ours is skinned only.
+- **What it does not give us:** no sheer fabric, stockings or layering. Those are already covered by our own pipeline (`Docs/CLOTHES.md`).
+- **Checks before buying:** it is listed as **MetaHuman-compatible**, not Quinn, with no UE version stated, and it fits using a MetaHuman parametric body-fit. Epic says its mannequins share the MetaHuman skeleton and Control Rig ([Mannequins Asset Pack](https://www.fab.com/listings/ad542ee6-34d0-4828-a56c-13846cd649d0)), so a retarget should be possible, but the fit to our own body would need work. Ask the seller before buying whether the FBX has the skin weights.
+- **Runner-up: [Women's Summer Fashion Bundle](https://www.fab.com/listings/ec3ba5b8-ede6-4f86-ba80-f32133892a35), £74.39 (2AwesomeWork).** 13 pieces (two corsets, tops, shorts, skirt, shoes), **UE 5.7+**, with layering controls (alpha selection to hide garment areas under others), and "Epic Skeleton (MetaHuman compatible)". It is the best layering reference, but costs four times as much and has no cloth simulation.
+- **Rejected:** Nice Pictures' modular outfits (£59 to £372 for hazmat, hunting, overalls etc.) are Quinn-skeleton but the wrong genre and expensive; I did not find a lingerie one. A "3D Sexy Latex Cutout Bodysuit" listing exists, but I could not open it and it is described as not rigged, so I excluded it on the content line and on fit.
+
+### What I could not confirm
+- UE versions for both picks (the Female Mannequin and Jels listings are silent).
+- ArtStation, CGTrader and Reallusion were not searched for the clothing pack.
+- Whether Jels ships skin weights in the FBX.
+
 ## Gaps
 
 Floor transitions (priority 4) and stylish jumps (priority 5) are the weak spots on Fab: I found no single clean female pack for getting down and getting up. Park Life's stand-to-sit and the Infectedfury bundle are the only candidates. Expect to author these with our pose-wheel tooling, studying the sit clips for timing.
