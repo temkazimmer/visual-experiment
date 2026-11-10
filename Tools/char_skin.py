@@ -51,6 +51,15 @@ unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
 skin = unreal.load_asset(DIR + "/" + NAME)
 if not skin:
     raise RuntimeError("import failed: " + FBX)
+# Keep LOD 0 readable on the CPU: movement's contact pass reads her skinned vertices,
+# and a packaged build only has GPU render data unless this is on.
+lods = skin.get_editor_property("lod_info")
+if not lods[0].get_editor_property("allow_cpu_access"):
+    lods[0].set_editor_property("allow_cpu_access", True)
+    skin.set_editor_property("lod_info", lods)
+    unreal.EditorAssetLibrary.save_loaded_asset(skin)
+print("lod0 cpu access", skin.get_editor_property("lod_info")[0].get_editor_property("allow_cpu_access"))
+
 b = skin.get_bounds()
 print("skin height", round(b.box_extent.z * 2, 1), "morphs", [m.get_name() for m in skin.get_editor_property("morph_targets")])
 
