@@ -263,8 +263,10 @@ print("guides", len(guides))
 TILES = 8
 V, F, UVs = [], [], []
 n = LOOK["steps"] + 1
+CARDS = []         # (first vertex, zone, az, path) per card, for the rig
 for pts, layer, fly, az, zone in guides:
     P = [np.array(x) for x in pts]
+    CARDS.append((len(V), zone, az, np.array(P)))
     w0 = rng.uniform(*LOOK["card_w_" + zone]) * (0.45 if fly else 1.0)
     base = len(V)
     prev_n = None
@@ -368,3 +370,146 @@ if PREVIEW:
                      ("front34", (105, -110, tz + 8))):
         shoot(os.path.join(OUT, "hair_%s.png" % nme), eye, (0, 0, tz), lens=60)
 bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, "hair_cards.blend"))
+if "rig" in args:
+
+    # ---- the physics rig ----------------------------------------------------------------------
+    # Hair is its own skeletal mesh: the character's bones from pelvis to head (same names, so the
+    # hair's AnimBP can Copy Pose From Mesh) plus swaying chains under "head" for Kawaii Physics.
+    CHAINS = dict(                       # zone -> (azimuths, bones per chain); az 0 = face, + = her left
+        back=([105, 140, 168, -168, -140, -105], 5),
+        side=([53, -53], 5),
+        fringe=([-18, 0, 18], 2),
+    )
+
+
+    def az_diff(a, b):
+        return abs(((a - b + 180) % 360) - 180)
+
+
+    def signed_az(az):
+        return ((az + 180) % 360) - 180
+
+
+    chains = []                          # dict(name, zone, az, bones=[(head, tail)], f0)
+    assign = []                          # per card: [(chain index, weight)]
+    for zone, (azs, nb) in CHAINS.items():
+        for k, a in enumerate(azs):
+            chains.append(dict(zone=zone, az=a, nb=nb, members=[],
+                               name="hair_%s%d" % (zone[0], k)))
+    for ci_card, (first, zone, az, P) in enumerate(CARDS):
+        cand = [(az_diff(signed_az(az), c["az"]), i) for i, c in enumerate(chains) if c["zone"] == zone]
+        cand.sort()
+        if zone == "back" and len(cand) > 1:
+            (d0, i0), (d1, i1) = cand[0], cand[1]
+            w0 = d1 / (d0 + d1 + 1e-6)
+            assign.append([(i0, w0), (i1, 1 - w0)])
+        else:
+            assign.append([(cand[0][1], 1.0)])
+        chains[assign[-1][0][0]]["members"].append(P)
+
+    n_pts = LOOK["steps"] + 1
+    for c in chains:
+        M = np.mean(c["members"], axis=0) if c["members"] else None
+        c["path"] = M
+        # where the chain leaves the head: back and side hang from below the ears, the fringe
+        # from where it lifts off the forehead
+        start = n_pts // 3
+        for i in range(n_pts):
+            q = Vector(M[i])
+            if c["zone"] == "fringe":
+                hit, nrm, _, _ = bvh_body.find_nearest(q)
+                if hit is not None and (q - hit).length > LOOK["margin"] + 0.9:
+                    start = max(1, i - 1)
+                    break
+            elif q.z < C.z - (6.0 if c["zone"] == "side" else 9.0):
+                start = i
+                break
+        start = min(start, n_pts - 3)
+        c["f0"] = start / (n_pts - 1)
+        seg = np.r_[0, np.cumsum(np.linalg.norm(np.diff(M[start:], axis=0), axis=1))]
+        joints = [np.array([np.interp(t, seg, M[start:, k]) for k in range(3)])
+                  for t in np.linspace(0, seg[-1], c["nb"] + 1)]
+        c["bones"] = list(zip(joints[:-1], joints[1:]))
+
+    skin_arm = arm
+    bpy.ops.object.select_all(action="DESELECT")
+    rig_data = skin_arm.data.copy()
+    rig_obj = bpy.data.objects.new("HairRig", rig_data)
+    bpy.context.collection.objects.link(rig_obj)
+    bpy.context.view_layer.objects.active = rig_obj
+    bpy.ops.object.mode_set(mode="EDIT")
+    eb = rig_data.edit_bones
+    keep = set()
+    b = eb["head"]
+    while b:
+        keep.add(b.name)
+        b = b.parent
+    for b in list(eb):
+        if b.name not in keep:
+            eb.remove(b)
+    for c in chains:
+        parent = eb["head"]
+        c["bone_names"] = []
+        for j, (h, t) in enumerate(c["bones"]):
+            nb_ = eb.new("%s_%02d" % (c["name"], j + 1))
+            nb_.head, nb_.tail = Vector(h), Vector(t)
+            nb_.roll = 0.0
+            nb_.parent = parent
+            nb_.use_connect = j > 0
+            parent = nb_
+            c["bone_names"].append(nb_.name)
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+    # weights: each card follows its chain(s) by how far along the card a vertex is
+    groups = {"head": hair.vertex_groups.new(name="head")}
+    for c in chains:
+        for bn in c["bone_names"]:
+            groups[bn] = hair.vertex_groups.new(name=bn)
+    per_card = n_pts * 3
+    for ci_card, (first, zone, az, P) in enumerate(CARDS):
+        for i in range(n_pts):
+            f = i / (n_pts - 1)
+            idx = [first + i * 3 + j for j in range(3)]
+            wts = {}
+            for ci, cw in assign[ci_card]:
+                c = chains[ci]
+                g = (f - c["f0"]) / max(1e-6, 1 - c["f0"]) * c["nb"]
+                if g <= 0:
+                    h = min(1.0, max(0.0, 1.0 + g * 2))          # eases out of the head
+                    wts["head"] = wts.get("head", 0) + cw * (1 - h * 0.0) * (1.0 if g < -0.5 else 1 - (g + 0.5))
+                    if g > -0.5:
+                        bn = c["bone_names"][0]
+                        wts[bn] = wts.get(bn, 0) + cw * (g + 0.5)
+                    continue
+                k = min(int(g), c["nb"] - 1)
+                fr = min(1.0, g - k)
+                bn = c["bone_names"][k]
+                if k + 1 < c["nb"]:
+                    wts[bn] = wts.get(bn, 0) + cw * (1 - fr * 0.5)
+                    bn2 = c["bone_names"][k + 1]
+                    wts[bn2] = wts.get(bn2, 0) + cw * fr * 0.5
+                else:
+                    wts[bn] = wts.get(bn, 0) + cw
+            tot = sum(wts.values()) or 1.0
+            for bn, w in wts.items():
+                groups[bn].add(idx, w / tot, "REPLACE")
+    hair.parent = rig_obj
+    mod = hair.modifiers.new("Armature", "ARMATURE")
+    mod.object = rig_obj
+    print("rig chains", len(chains), "bones", sum(c["nb"] for c in chains))
+
+    # export: the hair and its rig only (the skin is not in this FBX)
+    skin_name = skin.name
+    bpy.data.objects.remove(skin, do_unlink=True)
+    bpy.data.objects.remove(skin_arm, do_unlink=True)
+    rig_obj.name = "root"                 # as in the skin chain: the armature node becomes "root"
+    bpy.ops.object.select_all(action="DESELECT")
+    hair.select_set(True)
+    rig_obj.select_set(True)
+    bpy.context.view_layer.objects.active = rig_obj
+    bpy.ops.export_scene.fbx(filepath=os.path.join(OUT, "hair_cards.fbx"), use_selection=True,
+                             object_types={"ARMATURE", "MESH"}, add_leaf_bones=False,
+                             use_armature_deform_only=False, mesh_smooth_type="FACE", bake_anim=False,
+                             axis_forward="-Z", axis_up="Y")
+    print("wrote", os.path.join(OUT, "hair_cards.fbx"))
+    bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, "hair_rig.blend"))
