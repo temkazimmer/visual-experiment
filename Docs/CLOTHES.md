@@ -29,7 +29,7 @@ one back.
 | Fishnet | Fishnet tights with a satin waistband, satin bra and high thong | Net, Satin, Trim |
 | Catsuit | Navy latex suit with waist and chest cutouts, white piping, stripes, collar, cuffs, belt | Latex, Trim (white) |
 | Sheer | High-neck sheer bodysuit, latex yoke, bands and garter belt, six straps, opera gloves | Sheer, Latex, Trim |
-| **Bodystocking** | The hero outfit: one piece of sheer black nylon. Scoop tank, deep V back, open hips, open gusset, strap-held stocking legs, gold chain and bangles | Nylon, Binding, Trim (gold) |
+| **Bodystocking** | The hero outfit: one piece of sheer black nylon. Scoop tank, deep V back, open hips, open gusset with a sheer string tanga underneath, strap-held stocking legs, gold chain and bangles | Nylon, Sheer (tanga), Binding, Trim (gold) |
 
 ## The hero outfit: Bodystocking (Tema, 2026-11-09)
 

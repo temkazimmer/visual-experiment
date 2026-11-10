@@ -34,6 +34,7 @@ WARDROBE = {
     "Catsuit": dict(Latex=dict(Color=(0.01, 0.014, 0.05), Roughness=0.24, CoatRoughness=0.04, CoatVariation=0.04), Trim=dict(Color=(0.85, 0.85, 0.9), Roughness=0.25, Metallic=0.0)),
     # the hero outfit: one piece of sheer nylon, heavier on the legs, with gold jewellery
     "Bodystocking": dict(Nylon=dict(Color=(0.006, 0.006, 0.008), CoverTorso=0.6, CoverLeg=0.84, StretchSheer=0.36),
+                         Sheer=dict(Color=(0.006, 0.006, 0.008), Opacity=0.5, EdgeExponent=1.6),
                          Binding=dict(_base="Satin", Color=(0.006, 0.006, 0.008), Roughness=0.74, RoughnessVariation=0.1, NormalStrength=0.5),
                          Trim=dict(Color=(1.0, 0.72, 0.36), Roughness=0.2, RoughnessVariation=0.08, Metallic=1.0)),
     "Sheer": dict(Sheer=dict(Color=BLACK, Opacity=0.66, EdgeExponent=1.5), Latex=dict(Color=(0.012, 0.013, 0.02), Roughness=0.34, CoatRoughness=0.06, CoatVariation=0.07, NormalStrength=0.6), Trim=STEEL),

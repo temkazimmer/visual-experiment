@@ -608,6 +608,45 @@ def brief(back="thong", rise=0.0, cut=1.6):
     return where(reg, f)
 
 
+def string_tanga():
+    """A sheer string tanga: a small front triangle down to the gusset, a thong behind, and
+    thin strings from the panel's top corners rising high over the hip bones (tanga_strings)."""
+    cr, hb = LM["crotch"], LM["hip_top"]
+    top_f = hb - 1.5                                             # low in front
+    t = np.clip((Z - cr) / (top_f - cr), 0, 1)
+    front = np.minimum(top_f - Z, 3.6 + 3.4 * t ** 1.6 - ALAT)    # covers the open gusset, 7 cm at the top
+    tb = np.clip((Z - cr) / (hb - cr), 0, 1)
+    rear = np.minimum(hb - 0.5 - Z, 0.5 + 3.2 * tb ** 2 + 2.6 * (1 - smooth01(cr + 1.0, cr + 6.0, Z)) - ALAT)  # thong, gusset-wide low down
+    panel = rear + (front - rear) * SIDE_BLEND
+    reg = TORSO & (Z > cr - 4) & (Z < hb + 8) & ~((LEGS > 0.9) & (Z < cr - 1))
+    return where(reg, panel)
+
+
+def tanga_strings(fit, rise=6.0, width=0.32):
+    """The tanga's strings as flat tapes traced over the skin: from each top corner of the
+    front panel up over the hip bone and down to the top of the thong at the small of the back."""
+    cr, hb = LM["crotch"], LM["hip_top"]
+    top_f, top_b = hb - 1.5, hb - 0.5
+    bvh = bvh_of(TORSO & (HANDS < 0.5) if "HANDS" in globals() else TORSO)
+    for s in (1, -1):
+        pts, started = [], False
+        for k in range(181):
+            phi = math.radians(k)
+            dv = V3(FWD * math.cos(phi) + LEFT * s * math.sin(phi))
+            u = k / 180.0
+            # rises from the front corner to a peak over the hip bone, falls to the thong top behind
+            z = top_f + (top_b - top_f) * u + rise * math.sin(math.pi * min(max((u - 0.12) / 0.8, 0.0), 1.0)) ** 1.4
+            hit = bvh.ray_cast(V3((PEL[0], PEL[1], z)), dv, 60)
+            if not hit[0]:
+                continue
+            lat = abs((np.array(hit[0]) - PEL) @ LEFT)
+            if not started and lat < 6.6:
+                continue                                    # still inside the front panel
+            started = True
+            pts.append(hit[0] + nearest_normal(hit[0]) * (0.06 + float(fit[nearest(hit[0])])))
+        tube(pts, 0.0, "Binding", flat=(width, 0.04), step=0.35)
+
+
 def bodysuit(neck=None):
     neck = neck if neck is not None else LM["bust"] + 8.0
     a = np.clip(ALAT / LM["hip_half"], 0, 1)
@@ -773,7 +812,8 @@ def bodystocking():
     """The hero outfit, from Tema's references: one piece of sheer black nylon. Scoop-neck
     tank with wide straps and deep armholes, a deep V back, open hips from the waist round
     to the back, an open gusset, and stocking legs held by a front and a back strap each
-    side. Bound edges, centre seams front and back, thin gold jewellery."""
+    side, a sheer string tanga underneath. Bound edges, centre seams front and back, thin gold
+    jewellery."""
     cs = LM["crotch_skin"]
     # neckline: a scoop in front, a deeper one behind, sharing the strap over the shoulder
     zn = LM["neck"] + 2.0
@@ -803,6 +843,10 @@ def bodystocking():
 
     fit = BRIDGE
     region(g, 0.09, "Nylon", lift=fit, bind=("Binding", 0.3), min_loop=6.0)
+    # a sheer string tanga under the nylon (Tema's references): small see-through front, bound
+    # edges, thin strings rising high over the hips (they show in the hip windows), thong back
+    region(string_tanga(), 0.05, "Sheer", lift=fit, bind=("Binding", 0.2), min_loop=4.0)
+    tanga_strings(fit)
     # the stocking tops are knitted double: a second layer from the hip crease down the thigh
     region(np.minimum(g, np.minimum((LEGS - 0.5) * 12.0, Z - (cs - 12.5))), 0.115, "Nylon", lift=fit)
     for th in (0, 180):                                          # centre seams, front and back
