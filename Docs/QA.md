@@ -7,6 +7,20 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-10 21:15 · VIS-EX-0281 Shipping (e1537a4) · regression PASS, hair partly checked
+
+- **Orbit landing:** smooth, 0.597 → 0.432 → 0.401 → 0.391 → 0.386. Photo mode on ground. No crash
+  across the tour and 5 plain launches.
+- **Hair from behind:** solid black and full, no horizontal lines, not duller.
+  - The face lock seen from behind: it now reads as dense dark strands; the beige see-through card
+    of 0278 is gone (`QA_0281ship/turn_backonly/`).
+  - A few thin pale strand ends still poke out at her left hip.
+- **Front, 3/4, side and the right-shoulder strands:** not checked. The Mac's keyboard layout is
+  Russian, so the System Events keypresses for D and P don't reach the game as letters. P by key
+  code works; D by key code doesn't turn her. Arrow keys only orbit a few degrees.
+- **Fix for next time:** have the layout set to ABC/US before the turnaround, or add a turnaround stop
+  to the QA tour (in C++, no keys needed).
+
 ## 2026-11-10 20:10 · VIS-EX-0278 Shipping (ab3ac2e) · regression PASS, hair backlog not fixed
 
 - **Orbit landing:** smooth. Luma eases 0.608 → 0.467 → 0.411 → 0.393 → 0.387.
