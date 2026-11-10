@@ -346,7 +346,8 @@ void AVisexMenuDirector::SetSceneStripped(bool bStrip)
 		for (TActorIterator<AStaticMeshActor> It(GetWorld()); It; ++It)
 		{
 			const FString Label = It->GetActorNameOrLabel();
-			const bool bGround = Label.StartsWith(TEXT("Dunes")) || Label.StartsWith(TEXT("LowerGround")) || Label == TEXT("Plaza");
+			const bool bGround = Label.StartsWith(TEXT("Dunes")) || Label.StartsWith(TEXT("LowerGround")) || Label == TEXT("Plaza")
+				|| Label.StartsWith(TEXT("StepRamp"));   // walkable ramp under the pawn-ignoring steps
 			if (!bGround && !It->IsHidden())
 			{
 				// hidden stone keeps its collision unless told: it would catch the photo camera
