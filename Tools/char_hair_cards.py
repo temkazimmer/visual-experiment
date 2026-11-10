@@ -20,8 +20,9 @@ HAIR = dict(
     tip=(0.040, 0.032, 0.026),      # ...and at the tips. No blue: the plaza's sky light adds it
     variation=(0.55, 0.8),          # brightness = R * b + a, per strand
     roughness=0.5,
-    specular=0.3,                   # 0.5 lit every card edge white in the body page's rim light
-    scatter=0.05,                   # dark hair lets little light through
+    specular=0.2,                   # 0.5 lit every card edge white in the body page's rim light
+    scatter=0.0,                    # no light through: backlit by the sun it went pale (QA 0269)
+    coverage=1.7,                   # strand alpha gain: solid strands, not see-through against haze
     clip=0.5,                       # opacity mask clip, after the temporal dither
 )
 DIR = "/Game/Character/Hair"
@@ -130,10 +131,27 @@ mel.connect_material_expressions(lerp, "", base, "A")
 mel.connect_material_expressions(vb, "", base, "B")
 mel.connect_material_property(base, "", MP.MP_BASE_COLOR)
 # soft strand edges: dithered coverage that TSR resolves, not a hard alpha cut
+gain = mel.create_material_expression(m, unreal.MaterialExpressionMultiply, -800, 440)
+mel.connect_material_expressions(ts, "A", gain, "A")
+mel.connect_material_expressions(num("Coverage", HAIR["coverage"], -1000, 480), "", gain, "B")
+cov = mel.create_material_expression(m, unreal.MaterialExpressionSaturate, -650, 440)
+mel.connect_material_expressions(gain, "", cov, "")
 dith = mel.create_material_expression(m, unreal.MaterialExpressionMaterialFunctionCall, -450, 440)
 dith.set_editor_property("material_function", unreal.load_asset("/Engine/Functions/Engine_MaterialFunctions02/Utility/DitherTemporalAA"))
-assert mel.connect_material_expressions(ts, "A", dith, "Alpha Threshold"), "DitherTemporalAA input"
-mel.connect_material_property(dith, "", MP.MP_OPACITY_MASK)
+assert mel.connect_material_expressions(cov, "", dith, "Alpha Threshold"), "DitherTemporalAA input"
+# shadows use the hard mask: dithered shadow maps came out as grainy smudges on her arms (QA 0269)
+pas = mel.create_material_expression(m, unreal.MaterialExpressionCustom, -250, 440)
+ins = []
+for nm in ("Dithered", "Hard"):
+    ci = unreal.CustomInput()
+    ci.set_editor_property("input_name", nm)
+    ins.append(ci)
+pas.set_editor_property("inputs", ins)
+pas.set_editor_property("output_type", unreal.CustomMaterialOutputType.CMOT_FLOAT1)
+pas.set_editor_property("code", "#if SHADOW_DEPTH_SHADER\nreturn Hard;\n#else\nreturn Dithered;\n#endif")
+assert mel.connect_material_expressions(dith, "", pas, "Dithered")
+assert mel.connect_material_expressions(cov, "", pas, "Hard")
+mel.connect_material_property(pas, "", MP.MP_OPACITY_MASK)
 mel.connect_material_property(num("Roughness", HAIR["roughness"], -450, 200), "", MP.MP_ROUGHNESS)
 mel.connect_material_property(num("Specular", HAIR["specular"], -450, 280), "", MP.MP_SPECULAR)
 mel.connect_material_property(num("Scatter", HAIR["scatter"], -450, 360), "", MP.MP_METALLIC)  # Hair: Metallic pin = Scatter

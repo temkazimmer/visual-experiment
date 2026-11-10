@@ -51,6 +51,7 @@ LOOK = dict(
     margin=0.15,           # cm a card keeps off the head
     body_clear=1.0,        # cm off the shoulders and back (clothes agent: straps, binding)
     layer_margin=0.20,     # cm per layer outward: some body, still not a helmet
+    back_body=0.35,        # cm more per layer at the back and sides: a fuller back mass
     face_halfw=8.6,        # cm: hair below the brow stays outside this, so the face shows
     ear_open=0.09,         # radians around each ear (seen from the head centre) hair goes round
     line_front=36.0, line_side=-14.0, line_back=-34.0,   # hairline elevation (deg)
@@ -153,6 +154,8 @@ def grow(az, el, layer, zone, flyaway=False):
     """
     p0, n0 = scalp(az, el)
     margin = LOOK["margin"] + LOOK["layer_margin"] * layer
+    if zone == "back":
+        margin += LOOK["back_body"] * layer                  # the back reads fuller; the front stays sleek
     p = p0 + n0 * (0.15 + margin * 0.6)
     fa = abs(((az + 180) % 360) - 180)
     side = 1.0 if p.x - LOOK["part_x"] > 0 else -1.0
