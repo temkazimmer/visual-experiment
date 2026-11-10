@@ -9,5 +9,6 @@ public class visexEditorTarget : TargetRules
 		IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
 		ExtraModuleNames.Add("visex");
 		ExtraModuleNames.Add("visexEditor");   // editor-only: cloth Dataflow nodes
+		ExtraModuleNames.Add("visexTools");
 	}
 }
