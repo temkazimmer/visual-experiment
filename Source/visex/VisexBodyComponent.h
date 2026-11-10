@@ -72,6 +72,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float BustSwayStrength = 0.8f;
 	/** Where the springs start to stiffen, in travels: past it the tissue hardens (no hard stop). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float SoftLimit = 1.5f;
+	/** Damping added while she stands still (fades out as she walks), so idle tissue settles. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float StandingDamping = 0.35f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float GluteFrequency = 2.6f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float GluteDamping = 0.24f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Jiggle") float GluteTravel = 1.1f;
@@ -141,4 +143,5 @@ private:
 	FVisexJiggleState Jiggle[4];   // bust L, bust R, glute L, glute R
 	FVisexJiggleState Sway[4];     // bust L, bust R sideways (her left +); bust L, bust R forward
 	FVector SwayLast[2] = {FVector::ZeroVector, FVector::ZeroVector};
+	float Stillness = 1.f;
 };

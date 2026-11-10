@@ -237,6 +237,11 @@ void UVisexBodyComponent::TickJiggle(float DeltaTime)
 
 	const float Scale = Mesh->GetComponentScale().Z;   // the springs work in body cm
 	const bool bTeleport = DeltaTime > 0.1f;
+	// standing still the tissue settles: extra damping fades in as she slows to a stop
+	const AActor* Mover = GetOwner();
+	const float Speed = Mover ? Mover->GetVelocity().Size2D() : 0.f;
+	Stillness = FMath::FInterpTo(Stillness, 1.f - FMath::Clamp(Speed / 150.f, 0.f, 1.f), DeltaTime, 3.f);
+	const float Settle = Stillness * StandingDamping;
 	for (int32 i = 0; i < 4; ++i)
 	{
 		const bool bBust = i < 2;
@@ -262,7 +267,7 @@ void UVisexBodyComponent::TickJiggle(float DeltaTime)
 		const float Spread = bBust ? BustDetune : GluteDetune;
 		const float Detune = (i % 2 == 0) ? 1.f - Spread : 1.f + Spread;
 		const float Travel = bBust ? BustTravel : GluteTravel;
-		StepSpring(J, Z, DeltaTime, (bBust ? BustFrequency : GluteFrequency) * Detune, bBust ? BustDamping : GluteDamping,
+		StepSpring(J, Z, DeltaTime, (bBust ? BustFrequency : GluteFrequency) * Detune, (bBust ? BustDamping : GluteDamping) + Settle,
 			SoftLimit * Travel);
 		// bigger is heavier: a small bust barely moves
 		const float Size = Profile.Get(bBust ? FName("Bust") : FName("Glutes"));
@@ -310,9 +315,9 @@ void UVisexBodyComponent::TickJiggle(float DeltaTime)
 		const FVector Last = S.bStarted ? SwayLast[i] : P;
 		SwayLast[i] = P;
 		const FVector Move = P - Last;
-		StepSpring(S, PrevS + FVector::DotProduct(Move, Left), DeltaTime, BustSwayFrequency * Detune, BustSwayDamping,
+		StepSpring(S, PrevS + FVector::DotProduct(Move, Left), DeltaTime, BustSwayFrequency * Detune, BustSwayDamping + Settle,
 			SoftLimit * BustSwayTravel);
-		StepSpring(F, PrevF + FVector::DotProduct(Move, Fwd), DeltaTime, BustSwayFrequency * Detune * 1.15f, BustSwayDamping,
+		StepSpring(F, PrevF + FVector::DotProduct(Move, Fwd), DeltaTime, BustSwayFrequency * Detune * 1.15f, BustSwayDamping + Settle,
 			SoftLimit * BustSwayTravel);
 		// her left breast swings out to her left; the right one out to her right
 		const float Out = FMath::Tanh(S.Offset * Gain) * (i == 0 ? 1.f : -1.f);
@@ -331,6 +336,13 @@ void UVisexBodyComponent::StepSpring(FVisexJiggleState& J, float X, float DeltaT
 		J = FVisexJiggleState();
 		J.LastZ = X;
 		J.bStarted = true;
+		return;
+	}
+	// a jump no step makes (the body reshaped, the menu placing her, a respawn) moves the
+	// tissue with the bone instead of flinging it
+	if (FMath::Abs(X - J.LastZ) > 20.f)
+	{
+		J.LastZ = X;
 		return;
 	}
 	// the tissue is left behind by the bone's move, then pulled back by a damped spring
