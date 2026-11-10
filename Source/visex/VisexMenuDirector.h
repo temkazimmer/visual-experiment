@@ -162,7 +162,7 @@ public:
 
 	/** From her feet back to the column's near surface (cm); set to match the lean clip. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
-	float LeanColumnGap = 30.f;
+	float LeanColumnGap = 24.f;
 
 	/** How far along the column she sits, from its middle toward its left end (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")

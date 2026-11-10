@@ -122,6 +122,7 @@ private:
 		FString Name;
 		UAnimSequence* Loop = nullptr;   // played on DefaultSlot
 		int32 Pose = INDEX_NONE;         // or handed to the pose wheel
+		float Gait = -1.f;               // catwalk strength for an in-place loop
 	};
 	void BuildMotions();
 	void Next() { SetMotion(Motion + 1); }
@@ -138,6 +139,7 @@ private:
 	float Distance = 0.f;
 	float Height = 0.f;
 	float LookZ = -1.f;
+	float LookGoal = -1.f;
 	bool bOpen = false;
 	bool bPaused = false;
 	bool bKeysBound = false;

@@ -1,6 +1,7 @@
 #include "VisexPhotoMode.h"
 
 #include "VisexPoseWheel.h"
+#include "VisexAnimInstance.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimSequence.h"
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -32,16 +33,16 @@ AVisexPhotoMode::AVisexPhotoMode()
 {
 	PrimaryActorTick.bCanEverTick = true;
 	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
-	WalkLoop = TSoftObjectPtr<UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Mannequins/Anims/Unarmed/Walk/MF_Unarmed_Walk_Fwd.MF_Unarmed_Walk_Fwd")));
-	RunLoop = TSoftObjectPtr<UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Mannequins/Anims/Unarmed/Jog/MF_Unarmed_Jog_Fwd.MF_Unarmed_Jog_Fwd")));
+	WalkLoop = TSoftObjectPtr<UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Photo_Walk.A_Photo_Walk")));
+	RunLoop = TSoftObjectPtr<UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Photo_Run.A_Photo_Run")));
 }
 
 void AVisexPhotoMode::BuildMotions()
 {
 	Motions.Reset();
 	Motions.Add({TEXT("Idle"), nullptr, INDEX_NONE});
-	if (UAnimSequence* Walk = WalkLoop.LoadSynchronous()) { Motions.Add({TEXT("Walk"), Walk, INDEX_NONE}); }
-	if (UAnimSequence* Run = RunLoop.LoadSynchronous()) { Motions.Add({TEXT("Run"), Run, INDEX_NONE}); }
+	if (UAnimSequence* Walk = WalkLoop.LoadSynchronous()) { Motions.Add({TEXT("Walk"), Walk, INDEX_NONE, 1.f}); }
+	if (UAnimSequence* Run = RunLoop.LoadSynchronous()) { Motions.Add({TEXT("Run"), Run, INDEX_NONE, 0.35f}); }
 
 	TArray<FAssetData> Found;
 	FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get().GetAssetsByPath(PoseFolder, Found, true);
@@ -93,6 +94,7 @@ void AVisexPhotoMode::Open()
 	Distance = StartDistance;
 	Height = StartHeight;
 	LookZ = -1.f;
+	LookGoal = -1.f;
 	bOpen = true;
 	bPaused = false;
 	PlaceCamera();
@@ -170,6 +172,10 @@ void AVisexPhotoMode::ClearMotion()
 	{
 		Anim->StopSlotAnimation(0.3f, Slot);
 		Anim->SetRootMotionMode(SavedRootMotion);
+		if (UVisexAnimInstance* Visex = Cast<UVisexAnimInstance>(Anim))
+		{
+			Visex->PhotoGait = -1.f;
+		}
 	}
 }
 
@@ -187,6 +193,11 @@ void AVisexPhotoMode::SetMotion(int32 Index)
 	ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
 	UAnimInstance* Anim = Char && Char->GetMesh() ? Char->GetMesh()->GetAnimInstance() : nullptr;
 	const FMotion& M = Motions[Motion];
+	// her catwalk layer follows speed; standing in place it needs telling how hard she walks
+	if (UVisexAnimInstance* Visex = Cast<UVisexAnimInstance>(Anim))
+	{
+		Visex->PhotoGait = M.Loop ? M.Gait : -1.f;
+	}
 	if (M.Pose != INDEX_NONE)
 	{
 		// poses go through the wheel: it handles sitting down, the slope and getting up
@@ -259,7 +270,7 @@ void AVisexPhotoMode::Tick(float DeltaSeconds)
 	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
 	auto Axis = [this](const FKey& K) { return InputComponent->GetAxisKeyValue(K); };
 	auto Key = [PC](const FKey& K) { return PC && PC->IsInputKeyDown(K) ? 1.f : 0.f; };
-	auto Dead = [](float V) { return FMath::Abs(V) < 0.15f ? 0.f : V; };
+	auto Dead = [](float V) { return FMath::Abs(V) < 0.25f ? 0.f : V; };
 
 	const float Orbit = Dead(Axis(EKeys::Gamepad_RightX)) + Key(EKeys::Right) - Key(EKeys::Left);
 	const float Lift = Dead(Axis(EKeys::Gamepad_LeftY)) + Key(EKeys::W) - Key(EKeys::S);
@@ -292,8 +303,14 @@ void AVisexPhotoMode::PlaceCamera()
 	// watch her hips (so floor poses stay framed), eased so the camera doesn't jitter with her;
 	// the eye follows the camera down a little, so low shots still hold her whole
 	const FVector Hips = Char->GetMesh() ? Char->GetMesh()->GetSocketLocation(TEXT("pelvis")) : Feet + FVector(0.f, 0.f, LookHeight);
+	// a steady camera: walking and breathing move the hips a few cm, which it ignores; it only
+	// re-aims when she really changes height (sitting or lying down, getting up)
 	const float Target = FMath::Clamp(Hips.Z - Feet.Z, 20.f, LookHeight);
-	LookZ = LookZ < 0.f ? Target : FMath::FInterpTo(LookZ, Target, GetWorld()->GetDeltaSeconds(), 3.f);
+	if (LookGoal < 0.f || FMath::Abs(Target - LookGoal) > 25.f)
+	{
+		LookGoal = Target;
+	}
+	LookZ = LookZ < 0.f ? LookGoal : FMath::FInterpTo(LookZ, LookGoal, GetWorld()->GetDeltaSeconds(), 1.5f);
 	const FVector Look = Feet + FVector(0.f, 0.f, FMath::Lerp(LookZ * 0.75f, LookZ, FMath::Clamp(Height / 150.f, 0.f, 1.f)));
 	// keep the lens out of stone and sand: come in to whatever is between her and the camera
 	FHitResult Hit;
