@@ -597,7 +597,9 @@ void UVisexPoseWheelComponent::UpdateContacts(float DeltaTime)
 		const FVector Head = Mesh->GetSocketLocation(TEXT("head"));
 		const FVector Feet = 0.5f * (Mesh->GetSocketLocation(TEXT("foot_l")) + Mesh->GetSocketLocation(TEXT("foot_r")));
 		const FVector Along = FVector(Head.X - Feet.X, Head.Y - Feet.Y, 0.f);
-		if (Along.Size() > 60.f)               // lying, not sitting up
+		// lying, not kneeling or sitting up: the trunk (pelvis to head) within 40 degrees of level
+		const FVector Trunk = (Head - Mesh->GetSocketLocation(TEXT("pelvis"))).GetSafeNormal();
+		if (Along.Size() > 60.f && FMath::Abs(Trunk.Z) < 0.64f)
 		{
 			const FVector Axis = Along.GetSafeNormal(), Mid = 0.5f * (Head + Feet);
 			FVector HeadLow, FeetLow;
@@ -618,7 +620,7 @@ void UVisexPoseWheelComponent::UpdateContacts(float DeltaTime)
 		}
 	}
 	SeatFixZ = FMath::Clamp(SeatFixZ + SeatStep * FMath::Min(1.f, DeltaTime * 3.f), -15.f, 30.f);
-	PitchFix = FMath::Clamp(PitchFix + PitchStep * FMath::Min(1.f, DeltaTime * 2.f), -20.f, 20.f);
+	PitchFix = FMath::Clamp(PitchFix + PitchStep * FMath::Min(1.f, DeltaTime * 2.f), -28.f, 28.f);
 	PitchFixDeg = PitchFix;
 }
 
