@@ -22,38 +22,66 @@ globals().update(_keep)
 OUT_NAME = "A_Pose_LegLift"
 
 def lerp(a, b, t): return tuple(x + (y - x) * t for x, y in zip(a, b))
+HAND_LEN = {s: length(sub(pos("middle_01_" + s), pos("hand_" + s))) for s in "lr"}   # wrist to middle knuckle
+
+# Where the hands rest, read off the game (Tools/.bridge/shots/poses_*): the game holds the
+# middle knuckle (middle_01) at least skin + 2.1 cm off her head, thighs and calves and pushes
+# it out otherwise, and clamps the arms to human range. The old cradle sat inside her head and
+# twisted the shoulder 97 deg (range 90): pushed out 12 cm and bent back, the hand slid to her
+# face and the head, unsupported, went down onto the sand. The right hand was laid along the
+# forearm, not the shin, and crossed the leg. Each hand is now put on the surface it rests on.
+CRADLE = dict(globals().get("CRADLE", {}))
+CRADLE = dict(dict(along=8.0, dist=13.0, tilt=0.0, phi=-60.0, pole=(-0.5, 0.3, -1.0)), **CRADLE)
+HOLD = dict(globals().get("HOLD", {}))
+HOLD = dict(dict(shin=8.0, thigh=10.0, roll=-45.0, pole=(-1.0, -0.5, -0.5), thigh_roll=0.0, thigh_pole=(-1.0, -1.0, 0.0), front=40.0), **HOLD)
+
+def on_limb(a, b, along, clear, toward):
+    """A point `clear` cm off the line a-b (bones), `along` of the way, on the side facing `toward`;
+    with the outward normal and the line's direction."""
+    pa, pb = pos(a), pos(b)
+    axis = norm(sub(pb, pa))
+    c = lerp(pa, pb, along)
+    n = norm(perp(sub(toward, c), axis))
+    return add(c, mul(n, clear)), n, axis
 
 def leglift_arms(P):
     """down: 0 left hand on the ground beside her, 1 elbow down, head in the hand.
-    touch: 0 right hand on the top thigh, 1 reaching up along the lifted shin."""
+    touch: 0 right hand on the top thigh, 1 resting on the lifted shin, fingers along it."""
     d, t = min(max(P["down"], 0.0), 1.0), min(max(P["touch"], 0.0), 1.0)
-    sh, hd = pos("upperarm_l"), pos("head")
-    under_head = add(hd, P["cradle"])
-    reach("l", lerp((sh[0] + P["prop"][0], sh[1] + P["prop"][1], P["prop"][2]), under_head, d),
-          lerp((0.2, -1.0, 0.2), (0.1, 0.3, -1.0), d))
-    to_head = norm(sub(hd, pos("hand_l")))
-    set_hand("l", norm(lerp((0.80, 0.55, -0.12), to_head, d)),
-             norm(lerp((0.10, 0.10, -1.0), perp(norm(sub(hd, pos("lowerarm_l"))), to_head), d)))
+    sh = pos("upperarm_l")
+    # the cradle: the palm against the side of her head that faces the ground, fingers back into the hair
+    hq = world("head")[1]
+    hx, hy, hz = rot(hq, X), rot(hq, Y), rot(hq, Z)
+    n = norm(rot(axis_angle(hy, CRADLE["tilt"]), hz))      # palm into the head
+    palm = sub(add(pos("head"), mul(hx, CRADLE["along"])), mul(n, CRADLE["dist"]))
+    f = norm(rot(axis_angle(n, CRADLE["phi"]), norm(perp(hx, n))))
+    cradle_wrist = sub(palm, mul(f, HAND_LEN["l"]))
+    reach("l", lerp((sh[0] + P["prop"][0], sh[1] + P["prop"][1], P["prop"][2]), cradle_wrist, d),
+          lerp((0.2, -1.0, 0.2), CRADLE["pole"], d))
+    set_hand("l", norm(lerp((0.80, 0.55, -0.12), f, d)), norm(lerp((0.10, 0.10, -1.0), n, d)))
     share_twist("l")
-    for f, s in (("index", -9.0), ("middle", -2.0), ("ring", 5.0), ("pinky", 13.0)):
-        straighten("l", f, s)
-    for f in ("index", "middle", "ring", "pinky"):
-        curl("l", f, (10.0 * d, 18.0 * d, 10.0 * d))
-    thigh = lerp(pos("thigh_r"), pos("calf_r"), 0.55)
-    shin = lerp(pos("calf_r"), pos("foot_r"), P["along"])
-    target = lerp(add(thigh, (0.0, 4.0, 9.0)), add(shin, (0.0, 7.0, 0.0)), t)
-    reach("r", target, lerp((0.0, -0.4, 1.0), (0.0, -0.6, -0.8), t))
-    fwd = norm(sub(pos("hand_r"), pos("lowerarm_r")))
-    set_hand("r", fwd, norm(perp(lerp((0.0, 0.0, -1.0), (0.0, -1.0, 0.0), t), fwd)))
+    for fn, sp in (("index", -9.0), ("middle", -2.0), ("ring", 5.0), ("pinky", 13.0)):
+        straighten("l", fn, sp)
+    for fn in ("index", "middle", "ring", "pinky"):
+        curl("l", fn, (10.0 * d, 16.0 * d, 8.0 * d))
+    # the right hand: on the top of the thigh, or on the lifted shin, palm on the stocking
+    shr = pos("upperarm_r")
+    p0, n0, ax0 = on_limb("thigh_r", "calf_r", 0.55, HOLD["thigh"], add(pos("thigh_r"), (0.0, 0.0, 40.0)))
+    p1, n1, ax1 = on_limb("calf_r", "foot_r", P["along"], HOLD["shin"], add(shr, (0.0, HOLD["front"], 0.0)))   # front: toward the camera
+    f0 = norm(rot(axis_angle(n0, HOLD["thigh_roll"]), norm(perp(sub(pos("calf_r"), pos("thigh_r")), n0))))   # toward the knee
+    f1 = norm(rot(axis_angle(n1, HOLD["roll"]), ax1))               # up the shin, toward the foot
+    palm, n, f = lerp(p0, p1, t), norm(lerp(n0, n1, t)), norm(lerp(f0, f1, t))
+    reach("r", sub(palm, mul(f, HAND_LEN["r"])), lerp(HOLD["thigh_pole"], HOLD["pole"], t))
+    set_hand("r", f, neg(n))
     share_twist("r")
-    for f, s in (("index", 6.0), ("middle", 1.0), ("ring", -4.0), ("pinky", -9.0)):
-        straighten("r", f, s)
-    for f in ("index", "middle", "ring", "pinky"):
-        curl("r", f, (6.0, 10.0, 6.0))
+    for fn, sp in (("index", 6.0), ("middle", 1.0), ("ring", -4.0), ("pinky", -9.0)):
+        straighten("r", fn, sp)
+    for fn in ("index", "middle", "ring", "pinky"):
+        curl("r", fn, (10.0, 16.0, 8.0))                            # around the leg, softly
 ARMS = leglift_arms
 
 for k in (STAND, STEP, HALF, KNEEL):
-    k.update(down=0.0, touch=0.0, along=0.5, cradle=(-3.0, -2.0, -13.0))
+    k.update(down=0.0, touch=0.0, along=0.5)
 
 # 1. the mermaid's seat, hands quiet: left hand on the ground, right on the thigh
 ANKLE_L, TOE_L = (-25.8, 11.0, 5.5), (-0.95, -0.30, 0.0)
