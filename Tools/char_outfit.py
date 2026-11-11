@@ -104,10 +104,12 @@ return m;
 NYLON_HLSL = """
 float c = lerp(CoverTorso, CoverLeg, saturate(UV1.y)) * lerp(1.0 + StretchSheer * 0.45, 1.0 - StretchSheer, saturate(UV1.x));
 float2 p = float2(UV.x, 1.0 - UV.y) / Cell;
-float fw = fwidth(p.x) + fwidth(p.y);
+// repeats per pixel along the finer (course, 1.7x) direction; the knit is gone by 3 px per
+// repeat, since anything finer aliases into a hatched moire on the shoulders and back
+float fw = max(fwidth(p.x), 1.7 * fwidth(p.y));
 float wale = 0.5 + 0.5 * cos(6.2831853 * p.x);
 float course = 0.5 + 0.5 * cos(6.2831853 * (p.y * 1.7 + 0.5 * floor(p.x + 0.5)));
-float knit = lerp(wale * 0.65 + course * 0.35, 0.5, saturate(fw * 1.3));
+float knit = lerp(wale * 0.65 + course * 0.35, 0.5, smoothstep(0.12, 0.33, fw));
 c = saturate(c * (1.0 + Knit * (knit - 0.5) * 2.0));
 float nv = max(abs(NoV), 0.14);
 return 1.0 - pow(1.0 - min(c, 0.985), 1.0 / nv);
@@ -429,7 +431,24 @@ def import_mesh(outfit):
     task.set_editor_property("replace_existing", True)
     task.set_editor_property("save", True)
     task.set_editor_property("options", ui)
-    tools.import_asset_tasks([task])
+    # Legacy FBX importer, not Interchange: Interchange places these outfit meshes 100x too
+    # large (bones right, vertices not), so they render around her, invisible.
+    # Replacing an existing mesh reuses the import settings stored on it, not `ui`, so a mesh
+    # once imported at scale 1 or without morphs stays broken: stamp the settings on it first.
+    old = unreal.load_asset(MESH_DIR.get(outfit, "/Game/Character/Outfits") + "/SKM_Outfit_" + outfit)
+    data = old.get_editor_property("asset_import_data") if old else None
+    if isinstance(data, unreal.FbxSkeletalMeshImportData):
+        for k in ("import_morph_targets", "normal_import_method", "update_skeleton_reference_pose",
+                  "use_t0_as_ref_pose", "import_uniform_scale"):
+            data.set_editor_property(k, sk.get_editor_property(k))
+    world = unreal.EditorLevelLibrary.get_editor_world()
+    cvar = "Interchange.FeatureFlags.Import.FBX"
+    was = unreal.SystemLibrary.get_console_variable_bool_value(cvar)
+    unreal.SystemLibrary.execute_console_command(world, cvar + " 0")
+    try:
+        tools.import_asset_tasks([task])
+    finally:
+        unreal.SystemLibrary.execute_console_command(world, "%s %d" % (cvar, 1 if was else 0))
     mesh = unreal.load_asset(MESH_DIR.get(outfit, "/Game/Character/Outfits") + "/SKM_Outfit_" + outfit)
     if not mesh:
         raise RuntimeError("import failed: " + outfit)
