@@ -180,6 +180,8 @@ void AVisexPhotoMode::Open()
 	Height = StartHeight;
 	FindColumn();
 	Phase = EPhase::None;
+	bAutoFrame = true;
+	bFollowSet = false;
 	if (Motions.Num() > 0 && Motions[0].Kind == EKind::Sit)
 	{
 		// she sits with her back to the stone: the camera comes round to face her, a little low
@@ -301,6 +303,7 @@ void AVisexPhotoMode::SetMotion(int32 Index)
 		return;
 	}
 	Motion = (Index % Motions.Num() + Motions.Num()) % Motions.Num();
+	bAutoFrame = true;   // each step frames itself again
 	if (bPaused)
 	{
 		TogglePause();
@@ -484,6 +487,25 @@ void AVisexPhotoMode::Tick(float DeltaSeconds)
 			Pawn->AddActorWorldRotation(FRotator(0.f, Turn * TurnSpeed * DeltaSeconds, 0.f));
 		}
 	}
+	// the camera frames each step until the user touches the orbit, height or zoom
+	if (FMath::Abs(Orbit) + FMath::Abs(Lift) + FMath::Abs(Zoom) + FMath::Abs(Axis(EKeys::MouseX)) + FMath::Abs(Axis(EKeys::MouseWheelAxis)) > 0.01f)
+	{
+		bAutoFrame = false;
+	}
+	const APawn* Her = UGameplayStatics::GetPlayerPawn(this, 0);
+	if (bAutoFrame && Her && Phase != EPhase::None)
+	{
+		// moving: out to her whole figure with headroom, trailing ahead of her at an angle like
+		// a slow dolly; seated (or sitting down): back in, facing her
+		const bool bSeat = Phase == EPhase::SitDown || Phase == EPhase::Seated;
+		const float WantDist = bSeat ? StartDistance : MoveDistance * Focal / 32.f;
+		const float WantYaw = bSeat ? FMath::RadiansToDegrees(FMath::Atan2(Away.Y, Away.X)) + 18.f
+			: Her->GetActorRotation().Yaw + (Motions.IsValidIndex(Motion) && Motions[Motion].Kind == EKind::Jump ? 85.f : MoveAngle);
+		const float Ease = FMath::Clamp(DeltaSeconds * 0.8f, 0.f, 1.f);
+		Distance = FMath::Clamp(FMath::Lerp(Distance, WantDist, Ease), MinDistance, MaxDistance);
+		Height = FMath::Lerp(Height, bSeat ? 95.f : MoveHeight, Ease);
+		Yaw += FMath::FindDeltaAngleDegrees(Yaw, WantYaw) * FMath::Clamp(DeltaSeconds * 0.45f, 0.f, 1.f);
+	}
 	PlaceCamera();
 }
 
@@ -606,8 +628,18 @@ void AVisexPhotoMode::PlaceCamera()
 		return;
 	}
 	const FVector Feet = Char->GetActorLocation() - FVector(0.f, 0.f, Char->GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+	// the anchor trails her feet: quick across the sand, slow up and down, so a leap reads as
+	// a leap and the frame doesn't bob; a jump of metres (she was put by the stone) snaps
+	if (!bFollowSet || FVector::Dist(Follow, Feet) > 400.f)
+	{
+		Follow = Feet;
+		bFollowSet = true;
+	}
+	const float Dt = GetWorld()->GetDeltaSeconds();
+	const FVector Flat = FMath::VInterpTo(FVector(Follow.X, Follow.Y, 0.f), FVector(Feet.X, Feet.Y, 0.f), Dt, 6.f);
+	Follow = FVector(Flat.X, Flat.Y, FMath::FInterpTo(Follow.Z, Feet.Z, Dt, 1.5f));
 	const float A = FMath::DegreesToRadians(Yaw);
-	FVector Loc = Feet + FVector(FMath::Cos(A) * Distance, FMath::Sin(A) * Distance, Height);
+	FVector Loc = Follow + FVector(FMath::Cos(A) * Distance, FMath::Sin(A) * Distance, Height);
 	// watch her hips (so floor poses stay framed), eased so the camera doesn't jitter with her;
 	// the eye follows the camera down a little, so low shots still hold her whole
 	const FVector Hips = Char->GetMesh() ? Char->GetMesh()->GetSocketLocation(TEXT("pelvis")) : Feet + FVector(0.f, 0.f, LookHeight);
@@ -619,7 +651,7 @@ void AVisexPhotoMode::PlaceCamera()
 		LookGoal = Target;
 	}
 	LookZ = LookZ < 0.f ? LookGoal : FMath::FInterpTo(LookZ, LookGoal, GetWorld()->GetDeltaSeconds(), 1.5f);
-	const FVector Look = Feet + FVector(0.f, 0.f, FMath::Lerp(LookZ * 0.75f, LookZ, FMath::Clamp(Height / 150.f, 0.f, 1.f)));
+	const FVector Look = Follow + FVector(0.f, 0.f, FMath::Lerp(LookZ * 0.75f, LookZ, FMath::Clamp(Height / 150.f, 0.f, 1.f)));
 	// keep the lens out of stone and sand: come in to whatever is between her and the camera
 	// (never closer than the near limit, so the lens can't end up inside her)
 	FHitResult Hit;

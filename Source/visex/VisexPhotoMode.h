@@ -143,6 +143,14 @@ public:
 	float JumpEvery = 3.5f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Sequence")
 	float JumpSpeed = 520.f;
+	/** Moving steps frame her whole: camera distance at 32 mm (scaled with the lens), height,
+	 * and its angle off her heading (deg; small = ahead of her, 90 = beside her). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Sequence")
+	float MoveDistance = 560.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Sequence")
+	float MoveHeight = 140.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Sequence")
+	float MoveAngle = 40.f;
 
 	UFUNCTION(BlueprintCallable, Category = "Photo")
 	void Open();
@@ -214,6 +222,9 @@ private:
 	EPhase Phase = EPhase::None;
 	float PhaseTime = 0.f;
 	float JumpClock = 0.f;
+	bool bAutoFrame = true;               // the camera frames the step until the user touches it
+	FVector Follow = FVector::ZeroVector;  // her feet, eased: the camera's anchor
+	bool bFollowSet = false;
 	float SavedAirBrake = -1.f;            // her falling braking, lifted for a leap
 	TWeakObjectPtr<AActor> Column;
 	FVector SitSpot = FVector::ZeroVector;   // her actor location when seated
