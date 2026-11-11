@@ -206,6 +206,8 @@ void AVisexMenuDirector::ShowMenu()
 	Lean(bHaveLeaned);
 	bHaveLeaned = true;
 	bOrbiting = false;
+	WalkOffClock = -1.f;
+	LandedFor = -1.f;
 	PC->SetViewTarget(MenuCamera);
 	Clock = 0.f;
 
@@ -755,26 +757,112 @@ void AVisexMenuDirector::StartGame()
 	}
 	bOpen = false;
 	FadeOut = 0.f;
-	// she pushes off the column while the camera circles round to her back; the player gets
-	// her as soon as she's mostly on her feet, so walking and the camera move overlap
+	// she pushes off the column while the camera circles round to her back, then walks off on
+	// her own; walking and the camera move overlap, both timed off the stand-up clip
 	const float Up = StandUp();
-	GetWorldTimerManager().SetTimer(HandBackTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
+	GetWorldTimerManager().SetTimer(HandBackTimer, this, &AVisexMenuDirector::BeginWalkOff,
+		FMath::Max(0.02f, Up * StandUpHandOver), false);
+	// tick between the player's input and her movement: the director reads the stick she was
+	// given this frame and adds her own walk before the movement component spends it
+	AddTickPrerequisiteActor(PC);
+	if (ACharacter* Char = Cast<ACharacter>(PC->GetPawn()))
 	{
-		APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
-		if (PC && PC->GetPawn() && !bOpen)
-		{
-			PC->GetPawn()->EnableInput(PC);
-			bWalkOffArmed = true;
-		}
-	}), FMath::Max(0.05f, Up * StandUpHandOver), false);
+		Char->GetCharacterMovement()->AddTickPrerequisiteActor(this);
+	}
 	// start of the orbit, in polar terms around her
 	const FVector Pivot = PC->GetPawn()->GetActorLocation();
 	const FVector S = MenuCamera->GetActorLocation() - Pivot;
 	OrbitA0 = FMath::RadiansToDegrees(FMath::Atan2(S.Y, S.X));
 	OrbitR0 = FVector2D(S.X, S.Y).Size();
 	OrbitZ0 = S.Z;
+	// the menu frames her off-centre: keep that framing for the first frames and ease it out,
+	// rather than snapping to the orbit's watch on frame one
+	const FVector Look = Pivot + FVector(0.f, 0.f, OrbitLookHeight - 90.f);
+	OrbitAim0 = (Look - MenuCamera->GetActorLocation()).Rotation().Quaternion().Inverse() * MenuCamera->GetActorQuat();
 	OrbitT = 0.f;
+	LandedFor = -1.f;
 	bOrbiting = true;
+}
+
+void AVisexMenuDirector::BeginWalkOff()
+{
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	if (!Pawn || bOpen)
+	{
+		return;
+	}
+	Pawn->EnableInput(PC);
+	// the rest of the stand-up blends out under the first steps: its root motion would hold her
+	// in place, and the push off the column reads in the blend
+	if (UAnimInstance* Anim = GetPawnAnim())
+	{
+		Anim->StopSlotAnimation(0.5f, FName(TEXT("DefaultSlot")));
+	}
+	WalkOffDir = Pawn->GetActorForwardVector().GetSafeNormal2D();
+	WalkOffClock = 0.f;
+	WalkOffWeight = 1.f;
+}
+
+void AVisexMenuDirector::TickWalkOff(float DeltaSeconds)
+{
+	ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	if (!Char || bOpen)
+	{
+		WalkOffClock = -1.f;
+		return;
+	}
+	WalkOffClock += DeltaSeconds;
+	// the stick takes her over: her own walk fades out under it instead of snapping off, and the
+	// two add up meanwhile, so there's no pop in speed or heading
+	const FVector Player = Char->GetPendingMovementInputVector();
+	if (Player.SizeSquared() > 0.01f)
+	{
+		WalkOffWeight = FMath::Max(0.f, WalkOffWeight - DeltaSeconds / 0.6f);
+	}
+	// once the camera has landed she eases to a stop unless the player walks her on
+	if (LandedFor >= 0.f)
+	{
+		WalkOffWeight = FMath::Min(WalkOffWeight, 1.f - FMath::Clamp(LandedFor / FMath::Max(0.05f, WalkOffCoast), 0.f, 1.f));
+	}
+	if (WalkOffWeight <= 0.f)
+	{
+		WalkOffClock = -1.f;
+		return;
+	}
+	const UCharacterMovementComponent* Move = Char->GetCharacterMovement();
+	const float Pace = FMath::Clamp(WalkOffSpeed / FMath::Max(1.f, Move->GetMaxSpeed()), 0.f, 1.f);
+	const float Ramp = WalkOffRamp > 0.f ? FMath::SmoothStep(0.f, 1.f, WalkOffClock / WalkOffRamp) : 1.f;
+	// smooth at both ends: the ease-out of the weight too
+	const float W = FMath::SmoothStep(0.f, 1.f, WalkOffWeight);
+	Char->AddMovementInput(WalkOffDir, FMath::Max(0.02f, Pace * Ramp) * W);
+}
+
+void AVisexMenuDirector::TickFocus()
+{
+	UCineCameraComponent* Lens = GetLens();
+	const ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	const USkeletalMeshComponent* Mesh = Char ? Char->GetMesh() : nullptr;
+	if (!Lens || !Mesh)
+	{
+		return;
+	}
+	FVector Target = Char->GetActorLocation() + FVector(0.f, 0.f, 60.f);
+	for (const FName& Bone : FocusBones)
+	{
+		if (Mesh->GetBoneIndex(Bone) != INDEX_NONE)
+		{
+			Target = Mesh->GetSocketLocation(Bone);
+			break;
+		}
+	}
+	// depth of field is sharp on a plane, so focus on her depth along the lens, not the
+	// straight-line distance: she sits off-centre in the menu frame
+	const FTransform View = Lens->GetComponentTransform();
+	const float Depth = FVector::DotProduct(Target - View.GetLocation(), View.GetRotation().GetForwardVector());
+	FCameraFocusSettings Focus = Lens->FocusSettings;
+	Focus.ManualFocusDistance = FMath::Max(10.f, Depth);
+	Lens->FocusSettings = Focus;
 }
 
 void AVisexMenuDirector::HandBack()
@@ -785,8 +873,8 @@ void AVisexMenuDirector::HandBack()
 		PC->GetPawn()->EnableInput(PC);
 	}
 	SetColumnBlocksPawn(true);
-	bWalkOffArmed = false;   // the stand-up is over by now; don't cut whatever plays next
 	bPlaying = true;
+	LandedFor = 0.f;
 	OnGameStarted();
 }
 
@@ -1137,28 +1225,23 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 		}
 	}
 
-	// the first push of the stick after the hand-over cuts the rest of the stand-up: its root
-	// motion would otherwise hold her in place while the player is already asking her to walk
-	if (bWalkOffArmed)
+	if (LandedFor >= 0.f)
 	{
-		const APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0);
-		if (!Pawn || bOpen)
-		{
-			bWalkOffArmed = false;
-		}
-		else if (Pawn->GetLastMovementInputVector().SizeSquared() > 0.01f)
-		{
-			bWalkOffArmed = false;
-			if (UAnimInstance* Anim = GetPawnAnim())
-			{
-				Anim->StopSlotAnimation(0.3f, FName(TEXT("DefaultSlot")));
-			}
-		}
+		LandedFor += DeltaSeconds;
+	}
+	if (WalkOffClock >= 0.f)
+	{
+		TickWalkOff(DeltaSeconds);
 	}
 
 	if (bOrbiting)
 	{
 		TickOrbit(DeltaSeconds);
+	}
+	// after the camera moved: focus on her for this frame's view, through the landing blend too
+	if (bOpen || bOrbiting || (LandedFor >= 0.f && LandedFor <= LandingBlendTime + 0.1f))
+	{
+		TickFocus();
 	}
 
 	if (bStudio || StudioAlpha > 0.f)
@@ -1218,9 +1301,11 @@ void AVisexMenuDirector::TickOrbit(float DeltaSeconds)
 
 	// watch her, then settle into the play camera's exact angle
 	const FVector Look = Pivot + FVector(0.f, 0.f, OrbitLookHeight - 90.f);
-	const FRotator Watch = (Look - Loc).Rotation();
+	// the menu's off-centre framing eases out over the first part, so frame one doesn't jump
+	const FQuat Offset = FQuat::Slerp(OrbitAim0, FQuat::Identity, FMath::SmoothStep(0.f, 0.4f, T));
+	const FQuat Watch = (Look - Loc).Rotation().Quaternion() * Offset;
 	const float Settle = FMath::SmoothStep(0.7f, 1.f, T);
-	const FQuat Rot = FQuat::Slerp(Watch.Quaternion(), Follow->GetComponentQuat(), Settle);
+	const FQuat Rot = FQuat::Slerp(Watch, Follow->GetComponentQuat(), Settle);
 	MenuCamera->SetActorLocationAndRotation(Loc, Rot);
 
 	// lens: from the menu's cine lens to the play camera's field of view, depth of field
@@ -1236,9 +1321,7 @@ void AVisexMenuDirector::TickOrbit(float DeltaSeconds)
 		const float StartStop = MenuAperture > 0.f ? MenuAperture : MenuFStop;
 		const float MaxStop = FMath::Max(StartStop, Lens->LensSettings.MaxFStop);
 		Lens->SetCurrentAperture(FMath::Exp(FMath::Lerp(FMath::Loge(FMath::Max(0.5f, StartStop)), FMath::Loge(MaxStop), S)));
-		FCameraFocusSettings Focus = Lens->FocusSettings;
-		Focus.ManualFocusDistance = FVector::Dist(Loc, Look);
-		Lens->FocusSettings = Focus;
+		// focus follows her head in Tick, after this move
 	}
 
 	SetCornerShade(1.f - S);
