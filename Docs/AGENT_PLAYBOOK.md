@@ -23,6 +23,8 @@ often while writing a big file or reading a big one in one go. What worked:
 
 - State the goal in Tema's words, then exact files, the worktree, what's already done
   (commit hashes) and what not to touch (files other agents are editing right now).
+- **At most 4 UE editors on the machine at once** (memory fills). Count before launching;
+  at 4, keep working on code and poll (bounded) until a slot frees; quit yours right after its check.
 - One editor per project folder. Give each agent its own worktree and branch for
   editor work; never two writers on one worktree.
 - New binary assets as new files; never modify an existing `.uasset`/`.umap` that
