@@ -151,12 +151,14 @@ def diffuse(a, iters):
 NS = diffuse(NRM, 6)
 NS /= np.linalg.norm(NS, axis=1, keepdims=True)
 
-ARMS = G("clavicle", "upperarm", "lowerarm", "hand", "thumb", "index", "middle", "ring", "pinky")
-UPPERARM = G("upperarm", "lowerarm", "hand", "thumb", "index", "middle", "ring", "pinky")
-HANDS = G("hand", "thumb", "index", "middle", "ring", "pinky")
+ARMS = G("clavicle", "upperarm", "lowerarm", "hand", "thumb", "index", "middle", "ring", "pinky") - G("toe_0")
+UPPERARM = G("upperarm", "lowerarm", "hand", "thumb", "index", "middle", "ring", "pinky") - G("toe_0")
+# toe bones (bigtoe_01_l, indextoe_02_r, ...) belong to the legs: "index", "middle" and "ring"
+# would otherwise count them as fingers, and without them the stocking was cut off the toes
+HANDS = G("hand", "thumb", "index", "middle", "ring", "pinky") - G("toe_0")
 HEAD = G("head", "neck")
 NECK = G("neck")
-LEGS = G("thigh", "calf", "foot", "ball")
+LEGS = G("thigh", "calf", "foot", "ball", "toe_0")
 wT, wTN, wTNT = G("pelvis", "spine", "clavicle"), G("pelvis", "spine", "clavicle", "neck"), G("pelvis", "spine", "clavicle", "neck", "thigh")
 wU = G("upperarm")
 

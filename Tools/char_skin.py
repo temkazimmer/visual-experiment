@@ -46,7 +46,23 @@ task.set_editor_property("automated", True)
 task.set_editor_property("replace_existing", True)
 task.set_editor_property("save", True)
 task.set_editor_property("options", ui)
-unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
+# Legacy FBX importer, as the outfits (char_outfit.py): the skin and its clothes must come in
+# the same way, or the toes land differently and the stocking's big toe shows skin through it.
+# A replace reuses the settings stored on the mesh, so stamp them on first.
+old = unreal.load_asset(DIR + "/" + NAME)
+data = old.get_editor_property("asset_import_data") if old else None
+if isinstance(data, unreal.FbxSkeletalMeshImportData):
+    for k in ("import_morph_targets", "normal_import_method", "update_skeleton_reference_pose",
+              "use_t0_as_ref_pose", "import_uniform_scale"):
+        data.set_editor_property(k, sk.get_editor_property(k))
+world = unreal.EditorLevelLibrary.get_editor_world()
+cvar = "Interchange.FeatureFlags.Import.FBX"
+was = unreal.SystemLibrary.get_console_variable_bool_value(cvar)
+unreal.SystemLibrary.execute_console_command(world, cvar + " 0")
+try:
+    unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
+finally:
+    unreal.SystemLibrary.execute_console_command(world, "%s %d" % (cvar, 1 if was else 0))
 
 skin = unreal.load_asset(DIR + "/" + NAME)
 if not skin:
