@@ -698,9 +698,9 @@ def catsuit():
     f = np.minimum(LM["shoulder"] + 5.0 - Z, (0.25 - HANDS) * 25.0)
     f = np.minimum(f, (0.5 - HEAD) * 30.0)
     f = np.minimum(f, Z - (LM["ankle"] + 5.0))            # ends above the ankle: her feet stay bare
-    for s in (1, -1):   # side waist ovals: big enough, and far enough forward, to read from the front
-        side_pt = surface_near(PEL + LEFT * s * 30 + UP * (LM["waist"] - PEL[2] + 1), LEFT * s)
-        r = np.sqrt(((Z - side_pt[2]) / 5.5) ** 2 + ((FW - (side_pt - PEL).dot(FWD) - 1.5) / 5.5) ** 2)   # from just under the belt to below the ribs
+    for s in (1, -1):   # hip cutouts: from below the ribs down over the hip bone, the belt bridging them (Tema: bigger)
+        side_pt = surface_near(PEL + LEFT * s * 30 + UP * (LM["waist"] - PEL[2] - 2), LEFT * s)
+        r = np.sqrt(((Z - side_pt[2]) / 9.0) ** 2 + ((FW - (side_pt - PEL).dot(FWD) - 1.5) / 7.5) ** 2)   # from just under the belt to below the ribs
         f = np.minimum(f, (np.where(((LAT * s) > 0) & (UPPERARM < 0.3), r, 9.0) - 1.0) * 5.0)   # torso only: not the arm beside it
     # keyhole between the breasts: a teardrop, round at the bottom, narrowing to a point at the top
     zc = LM["bust"] - 1.0
@@ -793,26 +793,25 @@ def fishnet():
 
 
 def catsuit_set():
-    """Glossy navy latex catsuit: a teardrop keyhole, side waist cutouts, every opening bound in
-    white, a front zip with a pull, torso panel seams, leg stripes, collar, cuffs and a belt.
-    Refreshed 2026-11-11 (Tema): bound edges instead of thin piping, a keyhole instead of the
-    diamond, cutouts that read from the front, a belt with a buckle you can see."""
+    """Glossy navy latex catsuit, all one colour: a teardrop keyhole, hip cutouts, every opening
+    bound in the same latex, a front zip with a steel pull, torso panel seams, collar, cuffs and
+    a belt with a steel buckle. Refreshed 2026-11-11 (Tema): bound edges instead of thin piping,
+    a keyhole instead of the diamond, then no white anywhere and bigger hip cutouts."""
     f = catsuit()
-    BIND = ("Trim", 0.7)
+    BIND = ("Latex", 0.7)                                                            # self-coloured bindings: the edge reads by its gloss
     region(f, 0.25, "Latex", bind=BIND, min_loop=6.0)
     top = LM["shoulder"] + 5.0
-    seam(torso_line(0, top - 1.0, LM["crotch"] + 1, 0.28), 0.3, "Trim", f)            # zip, stops at the keyhole
+    seam(torso_line(0, top - 1.0, LM["crotch"] + 1, 0.28), 0.3, "Latex", f)           # zip tape, stops at the keyhole
     pull = ray(TORSO_BVH, pel_v, top - 3.5, 0.0, 0.0)
     if pull:
         hardware(NP(pull), UP, (1.0, 2.4, 0.35), 0.5)                                  # zip pull under the collar
     bz = LM["hip_top"] + 5.0
     for th in (34, -34, 150, -150):
         seam(torso_line(th, LM["fold"] - 1, bz + 2.5, 0.28), 0.15, "Latex", f)       # panel seams end under the belt
-    for s in (1, -1):                                                                # leg stripes, ankle cuffs
-        seam(leg_line(s, 90 * s, LM["hip_top"] - 4, LM["ankle"] + 6, 0.28), 0.2, "Trim", f)
-        region(where(LEGMASK & (LEGS > 0.5), 1.6 - np.abs(Z - (LM["ankle"] + 7.5))), 0.5, "Latex", bind=("Trim", 0.5), min_loop=6.0)
+    for s in (1, -1):                                                                # ankle cuffs
+        region(where(LEGMASK & (LEGS > 0.5), 1.6 - np.abs(Z - (LM["ankle"] + 7.5))), 0.5, "Latex", bind=("Latex", 0.5), min_loop=6.0)
                                                                                      # belt, buckle front and centre
-    region(band(bz, 4.0, UPPERARM < 0.3), 0.6, "Latex", bind=("Trim", 0.5))       # a level cut all round
+    region(band(bz, 4.0, UPPERARM < 0.3), 0.6, "Latex", bind=("Latex", 0.5))       # a level cut all round
     # the buckle sits on the belly's front, square to it: a ray down the middle falls into the
     # navel (2.5 cm deep), and the skin's normal there tips inward, which buried it
     front = [q for q in (ray(TORSO_BVH, pel_v, bz, D(t), 0.0) for t in (-12, -8, -4, 4, 8, 12)) if q]
@@ -828,8 +827,8 @@ def catsuit_set():
                                 (Vector((0, 0, 0)), left_v, (0.3, W - bar, 0.35))):   # the prong across the middle
             clip(c + dv, fwd_v, along, size)
     wrist = np.minimum((0.62 - HANDS) * 25.0, (HANDS - 0.22) * 25.0)                 # cuff bands
-    region(where(UPPERARM > 0.5, wrist), 0.5, "Latex", bind=("Trim", 0.5), min_loop=6.0)
-    region(band(top - 1.5, 3.0, UPPERARM < 0.3), 0.5, "Latex", bind=("Trim", 0.5))    # collar
+    region(where(UPPERARM > 0.5, wrist), 0.5, "Latex", bind=("Latex", 0.5), min_loop=6.0)
+    region(band(top - 1.5, 3.0, UPPERARM < 0.3), 0.5, "Latex", bind=("Latex", 0.5))    # collar
 
 
 def sheer():

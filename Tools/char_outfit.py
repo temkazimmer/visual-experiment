@@ -34,7 +34,7 @@ WARDROBE = {
     # deep navy latex, smooth: long soft highlights. The ripple normal read as hammered metal, and a mirror coat
     # (0.025) showed every hard edge of the scene as jagged black shapes on her (2026-11-11)
     "Catsuit": dict(Latex=dict(Color=(0.006, 0.009, 0.032), Roughness=0.3, RoughnessVariation=0.04, CoatRoughness=0.12, CoatVariation=0.02, NormalStrength=0.0),
-                    Trim=dict(Color=(0.85, 0.85, 0.9), Roughness=0.22, RoughnessVariation=0.04, Metallic=0.0)),
+                    Trim=STEEL),   # only the buckle and the zip pull: no white on it (Tema, 2026-11-11)
     # the hero outfit: one piece of sheer nylon, heavier on the legs, with gold jewellery
     "Bodystocking": dict(Nylon=dict(Color=(0.006, 0.006, 0.008), CoverTorso=0.6, CoverLeg=0.84, StretchSheer=0.36, SeamStrength=1.0),
                          Sheer=dict(Color=(0.006, 0.006, 0.008), Opacity=0.5, EdgeExponent=1.6, SeamStrength=1.0),
