@@ -43,8 +43,8 @@ ARMS = glance_arms
 # the mermaid's legs (hips off to her left, shins swept to her right), body turned back
 ANKLE_L, TOE_L = (-25.8, 11.0, 5.5), (-0.95, -0.30, 0.0)
 ANKLE_R, TOE_R = (-33.3, -9.8, 5.6), (-0.70, -0.70, -0.05)
-for k in (STAND, HALF, KNEEL):
-    k.update(plant=(-20.0, 30.0, 6.0), hip=(13.0, -9.0, 7.0))
+for k in (STAND, STEP, HALF, KNEEL):
+    k.update(plant=(-20.0, 30.0, 6.0), hip=(16.0, -9.0, 7.0))     # 3 cm further out: the palm sat inside the thigh
 GLANCE = dict(KNEEL, pelvis=(14.0, -13.0, 16.0), roll=6.0, pitch=-8.0, yaw=-35.0,
               ball_l=ball_from("l", ANKLE_L, TOE_L), toe_l=TOE_L, sole_l=(0.3, -0.9, 0.3), knee_l=(13.0, 27.0, 5.5),
               ball_r=ball_from("r", ANKLE_R, TOE_R), toe_r=TOE_R, sole_r=(0.5, -0.6, 0.6), knee_r=(-8.0, 24.0, 9.0),
@@ -54,8 +54,8 @@ GLANCE.update(globals().get("TWEAK", {}))
 
 # the turn of the head comes last, a beat after she has settled
 SETTLE = dict(GLANCE, twist_left=10.0, head_left=10.0, head_down=4.0, head_tilt=0.0)
-IN_KEYS = [(0.0, STAND), (0.60, HALF), (1.10, KNEEL), (1.65, SETTLE), (2.15, GLANCE)]
-OUT_KEYS = [(0.0, GLANCE), (0.35, SETTLE), (0.95, KNEEL), (1.45, HALF), (2.05, STAND)]
+IN_KEYS = [(0.0, STAND), (0.55, STEP), (1.25, HALF), (1.85, KNEEL), (2.40, SETTLE), (2.90, GLANCE)]
+OUT_KEYS = [(0.0, GLANCE), (0.35, SETTLE), (0.95, KNEEL), (1.55, HALF), (2.20, STEP), (2.90, STAND)]
 
 lift = build(GLANCE)
 r_arm = length(sub(pos("lowerarm_r"), pos("upperarm_r"))) + length(sub(pos("hand_r"), pos("lowerarm_r")))

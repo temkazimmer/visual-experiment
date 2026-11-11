@@ -25,6 +25,11 @@ struct FVisexSkinProbe
 
 	int32 Count(ERegion Region) const { return Regions[Region].Num(); }
 
+	/** The skin's radius around a limb bone (thigh_*, calf_*, upperarm_*, lowerarm_*, head), from the
+	 *  reference mesh, at a point Along01 of the way from the bone to its child (0..1), in the direction
+	 *  OutWorld (world, from the bone's axis toward the point asked about). 0 if unknown. */
+	float Radius(const USkeletalMeshComponent* Component, FName Bone, float Along01, const FVector& OutWorld) const;
+
 private:
 	struct FVert
 	{
@@ -35,5 +40,8 @@ private:
 	};
 	TArray<FVert> Regions[Num];
 	TWeakObjectPtr<const USkeletalMesh> Mesh;
+	TMap<FName, TArray<float>> Radii;  // per bone, RadiusBins samples along it x 8 sectors around it
+	TMap<FName, FMatrix> Frames;       // per bone, the (along, U, V) frame the sectors were counted in
+	TMap<FName, FQuat> RefRots;        // per bone, its reference rotation in component space
 	bool bBuilt = false;
 };

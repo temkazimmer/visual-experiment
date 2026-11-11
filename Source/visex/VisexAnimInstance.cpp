@@ -24,6 +24,7 @@ static TAutoConsoleVariable<float> CVarCatwalkClear(TEXT("visex.Catwalk.Clear"),
 static TAutoConsoleVariable<float> CVarCatwalkSprint(TEXT("visex.Catwalk.Sprint"), 0.35f, TEXT("Share of the layer kept when sprinting (0..1)"));
 
 // Moving hold, from the Female Everyday idles (learning log 2026-11-10). Live: `visex.Hold.Breath 2`.
+static TAutoConsoleVariable<float> CVarLimits(TEXT("visex.Limits"), 1.f, TEXT("Human joint limits on every pose, applied last: 0 off, 1 on"));
 static TAutoConsoleVariable<float> CVarHold(TEXT("visex.Hold"), 1.f, TEXT("Moving-hold layer on held poses: 0 off, 1 full"));
 static TAutoConsoleVariable<float> CVarHoldBreath(TEXT("visex.Hold.Breath"), 2.4f, TEXT("Degrees the chest opens back on each breath in"));
 static TAutoConsoleVariable<float> CVarHoldBreathPeriod(TEXT("visex.Hold.BreathPeriod"), 4.f, TEXT("Seconds per breath"));
@@ -75,6 +76,7 @@ void FVisexAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSecond
 	Tune.ArmSwing = CVarCatwalkArmSwing.GetValueOnGameThread();
 	Tune.HeadLine = CVarCatwalkHeadLine.GetValueOnGameThread();
 	Tune.Clear = CVarCatwalkClear.GetValueOnGameThread();
+	bLimits = CVarLimits.GetValueOnGameThread() > 0.5f;
 	HoldTune.Breath = CVarHoldBreath.GetValueOnGameThread();
 	HoldTune.BreathPeriod = FMath::Max(CVarHoldBreathPeriod.GetValueOnGameThread(), 0.5f);
 	HoldTune.Collar = CVarHoldCollar.GetValueOnGameThread();
@@ -96,7 +98,8 @@ bool FVisexAnimProxy::Evaluate_WithRoot(FPoseContext& Output, FAnimNode_Base* In
 		{
 			Reshape(Output.Pose);
 		}
-		Contact(Output.Pose); // last: hands onto the surface, measured on the reshaped body
+		Contact(Output.Pose); // hands onto the surface, measured on the reshaped body
+		Limits(Output.Pose);  // last: nothing bends past human range of motion
 	}
 	return true;
 }
@@ -342,7 +345,11 @@ void FVisexAnimProxy::Catwalk(FCompactPose& Pose)
 	ChestLift = Tune.ChestLag > 0.f ? FMath::FInterpTo(ChestLift, Lift, Dt, Tune.ChestLag) : Lift;
 	const float ChestYaw = Tune.HipYaw * ChestStep * Gait, ChestRoll = Tune.HipRoll * ChestLift * Gait;
 	const FQuat Counter = Turn(Left, -Fwd, ChestYaw * Tune.Shoulders) * Turn(Left, Up, ChestRoll * Tune.Shoulders * 0.5f);
-	S.RotateCS(Chest, Counter);
+	// spread over three vertebrae: on one it reached 16 deg of twist, past what a segment can do (9)
+	const FQuat Third = FQuat::Slerp(FQuat::Identity, Counter, 1.f / 3.f);
+	S.RotateCS(Spine2, Third);
+	S.RotateCS(Chest, Third);
+	S.RotateCS(S.Find(TEXT("spine_04")), Third);
 	S.RotateCS(Neck, FQuat::Slerp(FQuat::Identity, Counter.Inverse(), Tune.Head));
 
 	// proud: the spine carries the chest a little back, the neck brings the gaze level again
@@ -547,5 +554,154 @@ void FVisexAnimProxy::Contact(FCompactPose& Pose)
 			const FTransform Was = S.Component(Hand);
 			S.Reach(Arm, Fore, Hand, Was.GetLocation() + HandFix[i], Was.GetRotation(), 1.f);
 		}
+	}
+}
+
+/**
+ * Human joint limits, applied last so no pose, reach, IK or layer can bend her past them.
+ * Each joint's turn away from the reference pose is split into twist about the bone (X) and a
+ * swing, and the swing into bend (about the local Z) and side (about Y). Each of the three is
+ * held inside its own asymmetric range with a soft shoulder over the last 10 degrees, so a pose
+ * that pushes too far settles instead of snapping. The ranges are the clinical goniometry
+ * norms (AAOS, as tabulated by Norkin & White and Physiopedia); the spine's totals are spread
+ * over its bones. visex.Limits 0 switches it off; LimitExcess / LimitReport on the instance
+ * say what asked to go past.
+ */
+namespace
+{
+	float SoftMax(float X, float Max, float S = 10.f)
+	{
+		return X <= Max - S ? X : Max - S + S * (1.f - FMath::Exp(-(X - (Max - S)) / S));
+	}
+	float SoftClamp(float X, float Min, float Max)
+	{
+		return -SoftMax(-SoftMax(X, Max), -Min);
+	}
+	struct FJointLimit
+	{
+		const TCHAR* Bone;
+		float BendMin, BendMax;   // about the local Z: + and - as the table says per joint
+		float SideMin, SideMax;   // about the local Y
+		float TwistMin, TwistMax; // about the bone's own axis, X
+	};
+	// the reference pose already bends these; limits are on the joint, so they shift by that much
+	constexpr float KNEE_REF = 5.f, ELBOW_REF = 39.f; // measured on SK_Mannequin's reference pose
+	// Signs were measured on this skeleton (a +15 degree local turn, where the limb's end went):
+	//   thigh  -Z flexion / +Z extension, +Y adduction / -Y abduction, +X inward / -X outward rotation
+	//   calf   +Z flexion, Y valgus-varus, +X inward / -X outward tibial rotation
+	//   foot   +Z plantar / -Z dorsiflexion, +Y toe in / -Y toe out, X inversion-eversion
+	//   upperarm +Z flexion / -Z extension, +Y adduction / -Y abduction, +X outward / -X inward
+	//   lowerarm +Z flexion, Y carrying angle, X forearm turn (shared with the hand)
+	//   hand   +Z extension / -Z flexion, +Y radial / -Y ulnar deviation, X forearm turn
+	//   neck, spine +Z flexion / -Z extension, Y side bend, X turn
+	// Left and right bones mirror, so one table serves both sides.
+	const FJointLimit JointLimits[] = {
+		// Clinical norms (Physiopedia, Norkin & White, AAOS) on anatomical axes, widened where the
+		// mannequin's bone axes aren't those: the 0.5-99.5% envelope of 157 mocap clips on this
+		// skeleton (Tools scratch envelope.py, 2026-11-10) plus a few degrees. Real people made
+		// those clips, so a number the mocap reaches is a number the joint can do on this rig.
+		// hip: flexion 120, extension 30, abduction 45, adduction 30 (45 with the hip flexed, as in crossed legs),
+		// rotation 45 each way (60 here: the mermaid sit folds both legs to one side, a flexible model's range)
+		{TEXT("thigh_l"), -120.f, 30.f, -45.f, 45.f, -60.f, 60.f}, {TEXT("thigh_r"), -120.f, 30.f, -45.f, 45.f, -60.f, 60.f},
+		// knee: flexion 135, hyperextension 5; varus-valgus 5 (mocap 9), tibial rotation 30 out / 10 in (mocap 16)
+		{TEXT("calf_l"), -KNEE_REF - 5.f, 135.f - KNEE_REF, -12.f, 5.f, -30.f, 20.f}, {TEXT("calf_r"), -KNEE_REF - 5.f, 135.f - KNEE_REF, -12.f, 5.f, -30.f, 20.f},
+		// ankle: plantar 50, dorsi 20 (mocap 28), forefoot in 20 / out 10 (mocap 13), inversion 35 / eversion 15 (mocap 22)
+		{TEXT("foot_l"), -30.f, 50.f, -15.f, 25.f, -25.f, 38.f}, {TEXT("foot_r"), -30.f, 50.f, -15.f, 25.f, -25.f, 38.f},
+		// shoulder: flexion 180, extension 60, adduction 45, abduction 180, rotation out 90 / in 70 (mocap 75)
+		{TEXT("upperarm_l"), -60.f, 180.f, -180.f, 45.f, -80.f, 90.f}, {TEXT("upperarm_r"), -60.f, 180.f, -180.f, 45.f, -80.f, 90.f},
+		// elbow: flexion 150, hyperextension 5; the bone's side axis isn't the carrying angle (mocap -27..17); forearm turn 80 each way
+		{TEXT("lowerarm_l"), -ELBOW_REF - 5.f, 150.f - ELBOW_REF, -30.f, 20.f, -80.f, 80.f}, {TEXT("lowerarm_r"), -ELBOW_REF - 5.f, 150.f - ELBOW_REF, -30.f, 20.f, -80.f, 80.f},
+		// wrist: flexion 80, extension 70 (mocap 74); deviation reads wide on this axis (mocap -39..51); the hand carries the
+		// forearm's 160 deg of turn, from 35 of supination to 135 of pronation off the reference (mocap -31..134)
+		{TEXT("hand_l"), -80.f, 75.f, -40.f, 50.f, -35.f, 135.f}, {TEXT("hand_r"), -80.f, 75.f, -40.f, 50.f, -35.f, 135.f},
+		// neck: flexion 50, extension 60, side 45, rotation 80, over two bones (mocap neck_01 bends to 37)
+		{TEXT("neck_01"), -30.f, 40.f, -25.f, 25.f, -40.f, 40.f}, {TEXT("head"), -30.f, 25.f, -23.f, 23.f, -40.f, 40.f},
+		// spine: flexion 80, extension 35, side 35, rotation 45 over five bones; the mocap puts most of it low
+		{TEXT("spine_01"), -15.f, 30.f, -12.f, 12.f, -13.f, 13.f}, {TEXT("spine_02"), -8.f, 20.f, -10.f, 10.f, -13.f, 13.f},
+		{TEXT("spine_03"), -8.f, 20.f, -10.f, 10.f, -13.f, 13.f}, {TEXT("spine_04"), -8.f, 20.f, -10.f, 10.f, -13.f, 13.f},
+		{TEXT("spine_05"), -6.f, 12.f, -6.f, 6.f, -10.f, 10.f},
+	};
+}
+
+void FVisexAnimProxy::Limits(FCompactPose& Pose)
+{
+	LimitWorst = 0.f;
+	LimitWorstBone = NAME_None;
+	LimitReportBuf.Reset();
+	if (!bLimits)
+	{
+		return;
+	}
+	const FBoneContainer& Bones = Pose.GetBoneContainer();
+	for (const FJointLimit& J : JointLimits)
+	{
+		const int32 MeshIndex = Bones.GetPoseBoneIndexForBoneName(J.Bone);
+		if (MeshIndex == INDEX_NONE)
+		{
+			continue;
+		}
+		const FCompactPoseBoneIndex Index = Bones.MakeCompactPoseIndex(FMeshPoseBoneIndex(MeshIndex));
+		if (!Index.IsValid())
+		{
+			continue;
+		}
+		FTransform& T = Pose[Index];
+		const FQuat Ref = Bones.GetRefPoseTransform(Index).GetRotation();
+		FQuat Delta = Ref.Inverse() * T.GetRotation();
+		Delta.Normalize();
+		if (Delta.W < 0.f)
+		{
+			Delta = FQuat(-Delta.X, -Delta.Y, -Delta.Z, -Delta.W);
+		}
+		FQuat Swing, Twist;
+		Delta.ToSwingTwist(FVector::XAxisVector, Swing, Twist);
+		// The wrist hinges in the forearm's turned frame: on this rig the hand bone carries the
+		// pronation, so its bend and side are read after the twist, not before (a hand pronated
+		// 100 deg and extended 60 otherwise reads as 100 of 'side').
+		const bool bHand = FCString::Strcmp(J.Bone, TEXT("hand_l")) == 0 || FCString::Strcmp(J.Bone, TEXT("hand_r")) == 0;
+		if (bHand)
+		{
+			Swing = Twist.Inverse() * Delta;
+			Swing.Normalize();
+		}
+		float TwistDeg = FMath::RadiansToDegrees(2.f * FMath::Atan2(Twist.X, Twist.W));
+		if (TwistDeg > 180.f) { TwistDeg -= 360.f; } else if (TwistDeg < -180.f) { TwistDeg += 360.f; }
+		if (Swing.W < 0.f)
+		{
+			Swing = FQuat(-Swing.X, -Swing.Y, -Swing.Z, -Swing.W);
+		}
+		FVector Axis; float Rad;
+		Swing.ToAxisAndAngle(Axis, Rad);
+		const float SwingDeg = FMath::RadiansToDegrees(Rad);
+		float Bend = SwingDeg * float(Axis.Z), Side = SwingDeg * float(Axis.Y);
+		const float NewBend = SoftClamp(Bend, J.BendMin, J.BendMax);
+		const float NewSide = SoftClamp(Side, J.SideMin, J.SideMax);
+		const float NewTwist = SoftClamp(TwistDeg, J.TwistMin, J.TwistMax);
+		LimitReportBuf += FString::Printf(TEXT("%s %.0f/%.0f/%.0f "), J.Bone, Bend, Side, TwistDeg);
+		const float Excess = FMath::Max3(FMath::Abs(Bend - NewBend), FMath::Abs(Side - NewSide), FMath::Abs(TwistDeg - NewTwist));
+		if (Excess > LimitWorst)
+		{
+			LimitWorst = Excess;
+			LimitWorstBone = J.Bone;
+		}
+		if (Excess < 0.02f)
+		{
+			continue;
+		}
+		const float NewAng = FMath::Sqrt(NewBend * NewBend + NewSide * NewSide);
+		const FQuat NewSwing = NewAng > 0.01f ? FQuat(FVector(0.f, NewSide, NewBend) / NewAng, FMath::DegreesToRadians(NewAng)) : FQuat::Identity;
+		const FQuat NewTwistQ(FVector::XAxisVector, FMath::DegreesToRadians(NewTwist));
+		T.SetRotation(Ref * (bHand ? NewTwistQ * NewSwing : NewSwing * NewTwistQ));
+	}
+}
+
+void FVisexAnimProxy::PostUpdate(UAnimInstance* InAnimInstance) const
+{
+	FAnimInstanceProxy::PostUpdate(InAnimInstance);
+	if (UVisexAnimInstance* Visex = Cast<UVisexAnimInstance>(InAnimInstance))
+	{
+		Visex->LimitExcess = LimitWorst;
+		Visex->LimitBone = LimitWorstBone;
+		Visex->LimitReport = LimitReportBuf;
 	}
 }

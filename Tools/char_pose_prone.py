@@ -41,7 +41,7 @@ def prone_arms(P):
             curl(s, fn, (6.0 * f, 14.0 * f, 8.0 * f))
 ARMS = prone_arms
 
-for k in (STAND, HALF, KNEEL):
+for k in (STAND, STEP, HALF, KNEEL):
     k.update(fore=0.0, inward=12.0, ahead=26.0)
 
 # 1. onto all fours: hands under the shoulders, knees under the hips, toes tucked
@@ -64,8 +64,8 @@ FEETUP = dict(BELLY, ball_l=ball_from("l", (-3.0, -38.0, 50.0), TOE_UP), toe_l=T
               head_left=22.0, head_tilt=-8.0, head_down=-40.0, floor=4.0)
 FEETUP.update(globals().get("TWEAK", {}))
 
-IN_KEYS = [(0.0, STAND), (0.60, HALF), (1.10, KNEEL), (1.75, ALLFOURS), (2.55, BELLY), (3.20, FEETUP)]
-OUT_KEYS = [(0.0, FEETUP), (0.60, BELLY), (1.40, ALLFOURS), (2.00, KNEEL), (2.50, HALF), (3.10, STAND)]
+IN_KEYS = [(0.0, STAND), (0.55, STEP), (1.25, HALF), (1.85, KNEEL), (2.50, ALLFOURS), (3.30, BELLY), (3.95, FEETUP)]
+OUT_KEYS = [(0.0, FEETUP), (0.60, BELLY), (1.40, ALLFOURS), (2.00, KNEEL), (2.60, HALF), (3.25, STEP), (3.95, STAND)]
 
 def report(name, P):
     lift = build(P)

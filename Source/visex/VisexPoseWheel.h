@@ -77,6 +77,11 @@ public:
 	float FeetEndGap = 999.f;
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Contact")
 	float PitchFixDeg = 0.f;
+	/** How far each hand is being pushed out of something it was inside (cm). */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Contact")
+	float ArmPushL = 0.f;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Contact")
+	float ArmPushR = 0.f;
 	/** Debug: the lowest palm point found on each hand and the surface point under it (world). */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Contact")
 	FVector ProbeLowL = FVector::ZeroVector;
@@ -138,6 +143,7 @@ private:
 	bool bMovementHeld = false;   // walking is switched off while she is on the ground
 	FVisexSkinProbe Probe;        // her skin, for contacts
 	TWeakObjectPtr<const class USkeletalMesh> ProbeFailedFor;
+	FVector ArmPush[2] = {FVector::ZeroVector, FVector::ZeroVector}; // world cm each hand is pushed out of walls, the column and her own body
 	float AppliedSeat = 0.f;      // the body offset the last frame was drawn with
 	float PitchFix = 0.f;         // degrees the lying body is tipped along its length, so both ends touch
 	FVector PitchAxis = FVector::ZeroVector; // that tip's axis, in the actor's frame

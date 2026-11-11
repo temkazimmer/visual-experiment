@@ -18,4 +18,9 @@ public:
 	 *  at runtime still uses the old positions. Marks the asset dirty; save it after. */
 	UFUNCTION(BlueprintCallable, Category = "Visex|Animation")
 	static bool ResampleBlendSpace(UBlendSpace* BlendSpace);
+
+	/** A bone's local rotation in the skeleton's reference pose (the one the joint limits in
+	 *  VisexAnimInstance measure from), for the audit scripts. Identity if the bone is unknown. */
+	UFUNCTION(BlueprintPure, Category = "Visex|Animation")
+	static FQuat RefPoseLocalRotation(USkeleton* Skeleton, FName Bone);
 };
