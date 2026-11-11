@@ -1087,7 +1087,14 @@ def tartan():
     for s in (1, -1):
         ti, zi = ang(low[s]["inner"])
         to, zo = ang(low[s]["outer"])
-        straps = np.maximum(straps, wrap([(ti, zi), (s * 13.0, LM["waist"] - 2.0), (s * 13.0, hb - 1.6)], 1.0))
+        # the slingshot V (Tema's source): from the middle of each cup's lower edge down the flank,
+        # converging onto the small front panel's top corner
+        tm, zm = ang((low[s]["inner"] + low[s]["outer"]) * 0.5)
+        corner = (s * 15.0, hb - 1.7)
+        straps = np.maximum(straps, wrap([(tm, zm), (s * 27.0, LM["waist"]), corner], 1.0))
+        # high-cut hip strings: from the panel's corner up over the hip bone, round to the side
+        # strap above the hip, which carries on to the thong at the back
+        straps = np.maximum(straps, wrap([corner, (s * 45.0, hb + 2.5), (s * 75.0, hb + 4.5), (s * 100.0, hb + 3.0)], 0.8))
         straps = np.maximum(straps, wrap([(to, zo), (s * 82.0, LM["waist"] + 1.0), (s * 100.0, hb + 3.0),
                                           (s * 150.0, hb + 0.5), (s * 176.0, hb - 0.8)], 1.0))
         # a thin band from the cup's outer corner round the back at the bra line (a level band cut
@@ -1103,7 +1110,7 @@ def tartan():
     cs = LM["crotch_skin"]
     top_f, top_b = hb - 1.5, hb - 0.8
     tf = np.clip((Z - cs) / (top_f - cs), 0, 1)
-    front = np.minimum(top_f - Z, 1.6 + 5.4 * tf ** 1.4 - ALAT)        # 7 cm wide at the top
+    front = np.minimum(top_f - Z, 1.3 + 3.4 * tf ** 1.3 - ALAT)        # small, as in the source: 9.4 cm across the top
     tb = np.clip((Z - cs) / (top_b - cs), 0, 1)
     rear = np.minimum(top_b - Z, 0.7 + 3.3 * tb ** 2.2 - ALAT)        # 1.4 cm low, 8 cm at the top
     panel = rear + (front - rear) * SIDE_BLEND
