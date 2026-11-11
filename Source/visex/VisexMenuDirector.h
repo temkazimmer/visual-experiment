@@ -305,7 +305,14 @@ public:
 
 	/** Hides the menu and opens the body page; the menu comes back when it closes. */
 	UFUNCTION(BlueprintCallable, Category = "Menu")
-	void OpenBody();
+	void OpenBody() { OpenCharacterPage(0); }
+
+	/** Hides the menu and opens the wardrobe (the dressing room). */
+	UFUNCTION(BlueprintCallable, Category = "Menu")
+	void OpenWardrobe() { OpenCharacterPage(1); }
+
+	/** The menu's rows: Start, Body, Wardrobe, Photo mode, Settings, Quit. */
+	enum : int32 { ItemStart = 0, ItemBody, ItemWardrobe, ItemPhoto, ItemSettings, ItemQuit };
 
 	UFUNCTION(BlueprintCallable, Category = "Menu")
 	void ShowMenu();
@@ -427,7 +434,9 @@ private:
 	class UAnimInstance* GetPawnAnim() const;
 	bool bLeaning = false;
 	bool bHaveLeaned = false;
+	void OpenCharacterPage(int32 InPage);
 	void OpenBodyNow();
+	int32 CharacterPage = 0;   // the page OpenBodyNow opens: 0 body, 1 wardrobe
 
 	// photo mode
 	void OpenPhoto();

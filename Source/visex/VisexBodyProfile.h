@@ -21,6 +21,8 @@ struct FVisexBodySlider
 	UPROPERTY(BlueprintReadOnly, Category = "Body") bool bSkinTone = false;
 	/** The abs: shown by name (flat .. six-pack). */
 	UPROPERTY(BlueprintReadOnly, Category = "Body") bool bAbs = false;
+	/** Which Body page tab lists it: 0 body, 1 face. */
+	UPROPERTY(BlueprintReadOnly, Category = "Body") int32 Group = 0;
 };
 
 /** One outfit she can wear: a skeletal mesh fitted to the skin (Tools/blender_outfits.py). */
@@ -35,6 +37,8 @@ struct FVisexOutfit
 	UPROPERTY(BlueprintReadOnly, Category = "Body") FString Mesh;
 	/** Optional Chaos cloth asset worn on top of Mesh (the skirt), empty for none. */
 	UPROPERTY(BlueprintReadOnly, Category = "Body") FString Cloth;
+	/** Shown in the wardrobe but not wearable yet (to be unlocked or bought later). */
+	UPROPERTY(BlueprintReadOnly, Category = "Body") bool bLocked = false;
 };
 
 /**
@@ -62,6 +66,10 @@ struct FVisexBodyProfile
 	/** The slider table, in menu order. */
 	static VISEX_API const TArray<FVisexBodySlider>& Sliders();
 	static VISEX_API const FVisexBodySlider* Find(FName Name);
+	/** The slider indices one Body page tab lists, in menu order (Group: 0 body, 1 face). */
+	static VISEX_API const TArray<int32>& SliderRows(int32 Group);
+	/** The hairstyles on the Body page's HAIR tab (only the one she has, for now). */
+	static VISEX_API const TArray<FText>& HairStyles();
 
 	/** Skin tone 0..1 across the named stops: the skin's base colour (linear) and its name. */
 	static VISEX_API FLinearColor SkinColor(float Tone);

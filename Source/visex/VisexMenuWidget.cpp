@@ -27,6 +27,7 @@ UVisexMenuWidget::UVisexMenuWidget(const FObjectInitializer& ObjectInitializer)
 	Items = {
 		FText::FromString(TEXT("Start")),
 		FText::FromString(TEXT("Body")),
+		FText::FromString(TEXT("Wardrobe")),
 		FText::FromString(TEXT("Photo mode")),
 		FText::FromString(TEXT("Settings")),
 		FText::FromString(TEXT("Quit")),

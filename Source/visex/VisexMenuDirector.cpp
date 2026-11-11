@@ -349,7 +349,7 @@ void AVisexMenuDirector::CloseSettings()
 	{
 		// back on the main menu, on the Settings item
 		const UVisexMenuWidget* Defaults = W->GetClass()->GetDefaultObject<UVisexMenuWidget>();
-		W->SetPage(Defaults->Title, {}, 0, Defaults->Items, {}, 3);
+		W->SetPage(Defaults->Title, {}, 0, Defaults->Items, {}, ItemSettings);
 	}
 }
 
@@ -388,16 +388,19 @@ void AVisexMenuDirector::OnItemChosen_Implementation(int32 Index)
 {
 	switch (Index)
 	{
-	case 1:
+	case ItemBody:
 		OpenBody();
 		break;
-	case 2:
+	case ItemWardrobe:
+		OpenWardrobe();
+		break;
+	case ItemPhoto:
 		OpenPhoto();
 		break;
-	case 3:
+	case ItemSettings:
 		OpenSettings();
 		break;
-	case 4:
+	case ItemQuit:
 		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
 		break;
 	default:
@@ -406,8 +409,9 @@ void AVisexMenuDirector::OnItemChosen_Implementation(int32 Index)
 	}
 }
 
-void AVisexMenuDirector::OpenBody()
+void AVisexMenuDirector::OpenCharacterPage(int32 InPage)
 {
+	CharacterPage = InPage;
 	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
 	if (!bOpen || !PC)
 	{
@@ -444,7 +448,7 @@ void AVisexMenuDirector::OpenBodyNow()
 	}
 	if (BodyEditor)
 	{
-		BodyEditor->Open();
+		BodyEditor->OpenPage(CharacterPage);
 	}
 	if (!BodyEditor || !BodyEditor->IsOpen())
 	{
@@ -573,13 +577,13 @@ void AVisexMenuDirector::HandlePhotoClosed()
 	// the scene returns; she walks back onto the column behind a quick dip to black
 	SetSceneStripped(false);
 	bStudio = false;
-	BackToMenu(PhotoMode ? PhotoMode->BlendTime : 0.f, 2);
+	BackToMenu(PhotoMode ? PhotoMode->BlendTime : 0.f, ItemPhoto);
 }
 
 void AVisexMenuDirector::HandleBodyClosed()
 {
 	bStudio = false;
-	BackToMenu(BodyEditor ? BodyEditor->BlendTime : 0.f, 1);
+	BackToMenu(BodyEditor ? BodyEditor->BlendTime : 0.f, CharacterPage == 1 ? ItemWardrobe : ItemBody);
 }
 
 void AVisexMenuDirector::BackToMenu(float BlendTime, int32 Select)

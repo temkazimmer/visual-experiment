@@ -117,7 +117,17 @@ UVisexBodyWidget* AVisexBodyEditor::Widget() const
 	return Panel ? Cast<UVisexBodyWidget>(Panel->GetUserWidgetObject()) : nullptr;
 }
 
-void AVisexBodyEditor::Open()
+int32 AVisexBodyEditor::SliderHere() const
+{
+	if (Page != 0 || Tab > 1)
+	{
+		return INDEX_NONE;
+	}
+	const TArray<int32>& Rows = FVisexBodyProfile::SliderRows(Tab);
+	return Rows.IsValidIndex(Selected) ? Rows[Selected] : INDEX_NONE;
+}
+
+void AVisexBodyEditor::OpenPage(int32 InPage)
 {
 	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
 	ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
@@ -130,14 +140,22 @@ void AVisexBodyEditor::Open()
 
 	Camera->FocusSettings.FocusMethod = ECameraFocusMethod::Manual;
 	bOpen = true;
+	Page = FMath::Clamp(InPage, 0, 1);
 	Tab = 0;
 	Selected = 0;
-	TabRow[0] = TabRow[1] = 0;
+	TabRow[0] = TabRow[1] = TabRow[2] = 0;
+	bUnderConstruction = false;
+	if (Page == 1)
+	{
+		// land on what she has on
+		Selected = FVisexBodyProfile::OutfitIndex(BodyOf()->Profile.Outfit);
+	}
 	Turn = SideYaw = TurnVelocity = 0.f;
 	bBack = bRecentre = false;
 	ShotRow = TEXT("?");
+	const int32 First = Selected;
 	Reframe(true);      // start on the full figure,
-	Selected = 0;
+	Selected = First;
 	Reframe(false);     // then ease in to the first row
 
 	Panel->SetRelativeLocation(PanelOffset);
@@ -205,6 +223,12 @@ void AVisexBodyEditor::Close()
 	{
 		return;
 	}
+	if (bUnderConstruction)
+	{
+		bUnderConstruction = false;
+		Refresh();
+		return;
+	}
 	bOpen = false;
 	if (UVisexBodyComponent* Body = BodyOf())
 	{
@@ -233,12 +257,19 @@ void AVisexBodyEditor::Close()
 
 void AVisexBodyEditor::Select(int32 Delta)
 {
-	const int32 N = UVisexBodyWidget::RowCount(Tab);
+	if (!bOpen || bUnderConstruction)
+	{
+		return;
+	}
+	const int32 N = UVisexBodyWidget::RowCount(Page, Tab);
 	Selected = ((Selected + Delta) % N + N) % N;
-	TabRow[Tab] = Selected;
-	// dress: moving onto an outfit tries it on
+	if (Page == 0)
+	{
+		TabRow[Tab] = Selected;
+	}
+	// wardrobe: moving onto a costume tries it on (a locked one stays as it is)
 	const TArray<FVisexOutfit>& Outfits = FVisexBodyProfile::Outfits();
-	if (Tab == 1 && Selected < Outfits.Num())
+	if (Page == 1 && Selected < Outfits.Num() && !Outfits[Selected].bLocked)
 	{
 		if (UVisexBodyComponent* Body = BodyOf())
 		{
@@ -251,21 +282,14 @@ void AVisexBodyEditor::Select(int32 Delta)
 
 void AVisexBodyEditor::SwitchTab(int32 Delta)
 {
-	if (!bOpen)
+	if (!bOpen || Page != 0 || bUnderConstruction)
 	{
 		return;
 	}
+	const int32 Tabs = UVisexBodyWidget::BodyTabs;
 	TabRow[Tab] = Selected;
-	Tab = ((Tab + Delta) % 2 + 2) % 2;
+	Tab = ((Tab + Delta) % Tabs + Tabs) % Tabs;
 	Selected = TabRow[Tab];
-	if (Tab == 1 && Selected == 0)
-	{
-		// land on what she has on
-		if (const UVisexBodyComponent* Body = BodyOf())
-		{
-			Selected = TabRow[1] = FVisexBodyProfile::OutfitIndex(Body->Profile.Outfit);
-		}
-	}
 	Reframe(false);
 	Refresh();
 }
@@ -273,12 +297,12 @@ void AVisexBodyEditor::SwitchTab(int32 Delta)
 void AVisexBodyEditor::Adjust(float Steps)
 {
 	UVisexBodyComponent* Body = BodyOf();
-	const TArray<FVisexBodySlider>& Sliders = FVisexBodyProfile::Sliders();
-	if (!bOpen || !Body || Tab != 0 || Selected >= Sliders.Num())
+	const int32 Here = SliderHere();
+	if (!bOpen || !Body || Here == INDEX_NONE || bUnderConstruction)
 	{
 		return;
 	}
-	const FVisexBodySlider& S = Sliders[Selected];
+	const FVisexBodySlider& S = FVisexBodyProfile::Sliders()[Here];
 	const float Step = (S.Max - S.Min) / 40.f;
 	Body->SetValue(S.Name, Body->GetValue(S.Name) + Step * Steps);
 	Refresh();
@@ -287,10 +311,10 @@ void AVisexBodyEditor::Adjust(float Steps)
 void AVisexBodyEditor::ResetSelected()
 {
 	UVisexBodyComponent* Body = BodyOf();
-	const TArray<FVisexBodySlider>& Sliders = FVisexBodyProfile::Sliders();
-	if (Body && Tab == 0 && Selected < Sliders.Num())
+	const int32 Here = SliderHere();
+	if (Body && Here != INDEX_NONE && !bUnderConstruction)
 	{
-		Body->ResetValue(Sliders[Selected].Name);
+		Body->ResetValue(FVisexBodyProfile::Sliders()[Here].Name);
 		Refresh();
 	}
 }
@@ -302,13 +326,30 @@ void AVisexBodyEditor::ApplyTab()
 	{
 		return;
 	}
-	if (Tab == 0)
+	if (bUnderConstruction)
 	{
-		Applied.Values = Body->Profile.Values;
+		bUnderConstruction = false;
+		Refresh();
+		return;
+	}
+	if (Page == 1)
+	{
+		const TArray<FVisexOutfit>& Outfits = FVisexBodyProfile::Outfits();
+		if (Outfits.IsValidIndex(Selected) && Outfits[Selected].bLocked)
+		{
+			bUnderConstruction = true;   // not in the wardrobe yet
+			Refresh();
+			return;
+		}
+		Applied.Outfit = Body->Profile.Outfit;   // CROSS on a costume or on APPLY wears it
+	}
+	else if (Tab == 2)
+	{
+		return;   // one hairstyle so far: nothing to apply
 	}
 	else
 	{
-		Applied.Outfit = Body->Profile.Outfit;
+		Applied.Values = Body->Profile.Values;
 	}
 	Body->SaveProfile(Applied);   // only what was applied is kept
 	Refresh();
@@ -320,7 +361,9 @@ void AVisexBodyEditor::Refresh()
 	if (UVisexBodyWidget* W = Widget(); W && Body)
 	{
 		FVisexCharacterView View;
+		View.Page = Page;
 		View.Tab = Tab;
+		View.bUnderConstruction = bUnderConstruction;
 		View.Selected = Selected;
 		View.Shown = &Body->Profile;
 		View.Applied = &Applied;
@@ -385,8 +428,11 @@ AVisexBodyEditor::FShot AVisexBodyEditor::ShotNow(bool& bOutBack) const
 
 void AVisexBodyEditor::Reframe(bool bSnap)
 {
-	const TArray<FVisexBodySlider>& Sliders = FVisexBodyProfile::Sliders();
-	const FName Row = (!bSnap && Tab == 0 && Selected < Sliders.Num()) ? Sliders[Selected].Name : NAME_None;
+	// a slider frames its part; the hair tab frames her head; costumes and APPLY the figure
+	const int32 Here = SliderHere();
+	const FName Row = bSnap ? NAME_None
+		: Here != INDEX_NONE ? FVisexBodyProfile::Sliders()[Here].Name
+		: (Page == 0 && Tab == 2) ? FName(TEXT("Head")) : NAME_None;
 	if (Row == ShotRow && !bSnap)
 	{
 		return;

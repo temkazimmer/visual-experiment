@@ -156,6 +156,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Photo")
 	void SetFreeView(FVector Location, FRotator Aim, float InRoll, float InFocal);
 
+	/** Show or hide the help overlay (scripts hide it for clean captures). */
+	UFUNCTION(BlueprintCallable, Category = "Photo")
+	void SetHudVisible(bool bShow) { if (bOpen) { ShowHud(bShow); } }
+
 	UPROPERTY(BlueprintAssignable, Category = "Photo")
 	FVisexPhotoModeClosed OnClosed;
 

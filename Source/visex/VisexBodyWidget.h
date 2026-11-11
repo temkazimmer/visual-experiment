@@ -10,22 +10,26 @@ class UHorizontalBox;
 class UBorder;
 class UVerticalBox;
 
-/** What the Character page shows right now. */
+/** What the Body or Wardrobe page shows right now. */
 struct FVisexCharacterView
 {
-	int32 Tab = 0;                      // 0 body, 1 dress
-	int32 Selected = 0;                 // row in the tab; the last row is APPLY
+	int32 Page = 0;                     // 0 the Body page, 1 the Wardrobe
+	int32 Tab = 0;                      // Body page: 0 body, 1 face, 2 hair
+	int32 Selected = 0;                 // row in the tab; the last row is APPLY (not on HAIR)
 	const FVisexBodyProfile* Shown = nullptr;     // what she wears now (previews included)
 	const FVisexBodyProfile* Applied = nullptr;   // what was last applied
 	bool bBodyDirty = false;
 	bool bDressDirty = false;
+	bool bUnderConstruction = false;    // the "under construction" window over the list
 };
 
 /**
- * The Character page: a title, BODY and DRESS tabs (left to right), and the tab's rows.
- * BODY: one row per slider (label, thin track, value). DRESS: one row per outfit, the
- * applied one marked. Each tab ends in its own APPLY row. Same type and colours as the
- * main menu panel. Builds its own tree; AVisexBodyEditor drives it.
+ * Two pages in one panel. BODY: a title, BODY / FACE / HAIR tabs (left to right) and the
+ * tab's rows: one per slider (label, thin track, value), or per hairstyle. WARDROBE: one row
+ * per costume, the worn one marked, the locked ones marked LOCKED; choosing a locked one
+ * opens a small "under construction" window. Slider and costume lists end in an APPLY row.
+ * Same type and colours as the main menu panel. Builds its own tree; AVisexBodyEditor
+ * drives it.
  */
 UCLASS(Blueprintable)
 class VISEX_API UVisexBodyWidget : public UUserWidget
@@ -37,6 +41,8 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Look") FText Title;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Look") FText Hint;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Look") FText WardrobeTitle;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Look") FText WardrobeHint;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Look") int32 TitleSize = 84;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Look") int32 TabSize = 34;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body|Look") int32 RowSize = 26;
@@ -47,8 +53,9 @@ public:
 
 	void Show(const FVisexCharacterView& View);
 
-	/** Rows in a tab, APPLY included. */
-	static int32 RowCount(int32 Tab);
+	/** Rows in a page's tab, APPLY included. */
+	static int32 RowCount(int32 Page, int32 Tab);
+	static constexpr int32 BodyTabs = 3;
 
 protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
@@ -68,11 +75,19 @@ private:
 	};
 	FRow MakeRow(const FText& Label, bool bTrack);
 
-	TArray<FRow> BodyRows;     // sliders, then APPLY
-	TArray<FRow> DressRows;    // outfits, then APPLY
-	UVerticalBox* BodyList = nullptr;
-	UVerticalBox* DressList = nullptr;
-	UTextBlock* TabText[2] = {nullptr, nullptr};
+	UTextBlock* MakeNote(const FText& Text);
+
+	TArray<FRow> BodyRows;     // body sliders, then APPLY
+	TArray<FRow> FaceRows;     // face sliders, then APPLY
+	TArray<FRow> HairRows;     // hairstyles
+	TArray<FRow> DressRows;    // costumes, then APPLY
+	UVerticalBox* Lists[4] = {nullptr, nullptr, nullptr, nullptr};   // body, face, hair, wardrobe
+	UVerticalBox* Popup = nullptr;
+	UTextBlock* TitleText = nullptr;
+	UTextBlock* HintText = nullptr;
+	UHorizontalBox* TabBar = nullptr;
+	class USpacer* TitleGap = nullptr;
+	UTextBlock* TabText[BodyTabs] = {nullptr, nullptr, nullptr};
 
 	UPROPERTY(Transient) TArray<TObjectPtr<UWidget>> Keep;   // keep row widgets referenced
 };

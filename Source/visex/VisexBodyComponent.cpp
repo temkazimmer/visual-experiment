@@ -244,6 +244,12 @@ void UVisexBodyComponent::ResetValue(FName Name)
 
 void UVisexBodyComponent::SetOutfit(FName Outfit)
 {
+	// a locked costume can be looked at in the wardrobe, not worn
+	const int32 I = FVisexBodyProfile::Outfits().IndexOfByPredicate([Outfit](const FVisexOutfit& O) { return O.Name == Outfit; });
+	if (I != INDEX_NONE && FVisexBodyProfile::Outfits()[I].bLocked)
+	{
+		return;
+	}
 	Profile.Outfit = Outfit;
 	ApplyOutfit();
 }
