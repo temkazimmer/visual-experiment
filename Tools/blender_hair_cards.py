@@ -46,7 +46,9 @@ LOOK = dict(
     wisps=0.16,            # share of fringe strands that run long, down between and past the eyes
     wisp_cut=-3.0,         # ...to here (cm from the head centre; the eyes sit at about -2)
     side_locks=55,         # long style; the elf style keeps one thin lock a side (elf_locks)
-    elf_locks=10,         # guides per face-framing lock
+    elf_locks=10,
+    baby_hairs=150,        # elf: short thin strands along the front hairline
+    card_w_baby=(0.5, 0.9),         # guides per face-framing lock
     side_az=(40.0, 66.0),  # where the locks grow, degrees round from the face
     stiff=(0.80, 0.50),    # how much a strand keeps its heading, root -> tip (low: falls straight)
     wave_amp=0.06,         # cm: straight, a hint of life
@@ -293,8 +295,9 @@ TIE = _pT + _nT * 1.4                  # the knot at the back of the head
 FALL = Vector((0.0, 0.35, -1.0)).normalized()
 
 
-def gathered(az, el, layer):
-    """Combed from the root along the head, over the ear, back to the tie; then it falls."""
+def gathered(az, el, layer, only=None):
+    """Combed from the root along the head, over the ear, back to the tie; then it falls.
+    only: stop after this many cm (baby hairs: the first few cm of the same sweep)."""
     a0 = signed_az(az)
     side = 1.0 if a0 >= 0 else -1.0
     a1 = side * 180.0
@@ -321,6 +324,16 @@ def gathered(az, el, layer):
             u = (t - 0.8) / 0.2
             q = q.lerp(TIE + Vector((side * 0.6, 0, 0)), u * u)
         pts.append(q)
+    if only is not None:
+        Pq = np.array([tuple(x) for x in pts])
+        seg = np.r_[0, np.cumsum(np.linalg.norm(np.diff(Pq, axis=0), axis=1))]
+        tt = np.linspace(0, min(only, seg[-1]), LOOK["steps"] + 1)
+        lift = np.linspace(0, 1, LOOK["steps"] + 1) ** 2 * 0.35       # the tips stand a little off the head
+        out = []
+        for k_, t_ in enumerate(tt):
+            q_ = Vector([float(np.interp(t_, seg, Pq[:, c])) for c in range(3)])
+            out.append(q_ + (q_ - C).normalized() * float(lift[k_]))
+        return out
     p = TIE + Vector((rng.uniform(-1.3, 1.3), rng.uniform(-0.3, 0.3), rng.uniform(-0.8, 0.8)))
     d = FALL.copy()
     L = rng.uniform(*LOOK["fall"])
@@ -373,6 +386,10 @@ if LOOK["style"] == "elf":
             el = rng.uniform(EAR_EL_TOP - 4, EAR_EL_TOP + 6)
             guides.append((grow(az, el, 2, "side"), 2, False, az, "side"))
     # no band round the knot: the loose back hair covers it, and a band only poked out behind
+    for k in range(LOOK["baby_hairs"]):               # baby hairs: short, thin, along the front hairline
+        az = rng.uniform(-82, 82) % 360
+        el = hairline(az) + rng.uniform(-0.5, 2.5)
+        guides.append((gathered(az, el, 2, only=rng.uniform(1.8, 4.2)), 2, False, az, "baby"))
 else:
     for k in range(LOOK["guides"]):                       # the main mass, combed behind the ears
         az = rng.uniform(0, 360)
@@ -406,49 +423,61 @@ print("guides", len(guides), "dropped (ran level round an ear)", dropped)
 
 # ---- cards -------------------------------------------------------------------------------
 TILES = 8
-V, F, UVs = [], [], []
+V, F, UVs, COL = [], [], [], []
 n = LOOK["steps"] + 1
 CARDS = []         # (first vertex, zone, az, path) per card, for the rig
+# occlusion baked per layer (vertex colour): inner layers and the roots are darker, so the mass
+# reads as layered instead of one flat colour (Docs/Research/HAIR.md)
+AO_LAYER = (0.6, 0.82, 1.0)        # colour (vertex R), also darker at the roots
+AO_SPEC = (0.8, 0.92, 1.0)         # highlight (vertex G): only a little, and not at the roots,
+                                   # which is where the highlight band sits
 for pts, layer, fly, az, zone in guides:
     P = [np.array(x) for x in pts]
-    CARDS.append((len(V), zone, az, np.array(P)))
     wkey = "card_w_elflock" if (zone == "side" and LOOK["style"] == "elf") else "card_w_" + zone
     w0 = rng.uniform(*LOOK[wkey]) * (0.45 if fly else 1.0)
     if zone == "fringe" and P[-1][2] < C.z - 0.5:
         w0 *= 0.5                                     # the long wisps are a few strands each
-    base = len(V)
-    prev_n = None
     # dense tiles under everything, and on the locks by her face and the fringe: on sparse tiles
     # those were mostly holes, and the sunlit skin behind showed through as beige (QA 0278)
     dense = layer == 0 or zone in ("side", "fringe", "tie", "gather")
-    tile = int(rng.integers(0, TILES // 2)) if dense else int(rng.integers(TILES // 2, TILES))
-    flip = rng.uniform() < 0.5
-    for i, p in enumerate(P):
-        t = P[min(i + 1, n - 1)] - P[max(i - 1, 0)]
-        t = t / (np.linalg.norm(t) + 1e-9)
-        out = p - np.array([C.x, C.y, min(p[2], C.z)])     # away from the head's axis
-        out = out / (np.linalg.norm(out) + 1e-9)
-        nn = out - t * out.dot(t)
-        if np.linalg.norm(nn) < 1e-4 and prev_n is not None:
-            nn = prev_n
-        nn = nn / (np.linalg.norm(nn) + 1e-9)
-        prev_n = nn
-        b = np.cross(t, nn)
-        b = b / (np.linalg.norm(b) + 1e-9)
-        s = i / (n - 1)
-        w = w0 * (1.0 - 0.22 * s) * (0.55 + 0.45 * min(1.0, s * 6))
-        _, _, de = ear_kd.find(Vector(p))
-        w *= min(1.0, max(0.25, de / 2.5))            # cards narrow beside an ear
-        for off in (-0.5, 0.0, 0.5):
-            q = p + b * off * w + nn * (LOOK["arch"] * w * (1 - (2 * off) ** 2) * 0.5)
-            V.append(tuple(q))
-            uu = (off + 0.5) if not flip else (0.5 - off)
-            UVs.append(((tile + 0.03 + 0.94 * uu) / TILES, s))
-    for i in range(n - 1):
-        for j in range(2):
-            a = base + i * 3 + j
-            F.append((a, a + 1, a + 4, a + 3))
-print("cards", len(guides), "verts", len(V), "quads", len(F))
+    # the locks by her face are two cards crossed, so a lock has thickness from every side
+    for cross in ((False, True) if zone == "side" else (False,)):
+        CARDS.append((len(V), zone, az, np.array(P)))
+        base = len(V)
+        prev_n = None
+        tile = int(rng.integers(0, TILES // 2)) if dense else int(rng.integers(TILES // 2, TILES))
+        flip = rng.uniform() < 0.5
+        for i, p in enumerate(P):
+            t = P[min(i + 1, n - 1)] - P[max(i - 1, 0)]
+            t = t / (np.linalg.norm(t) + 1e-9)
+            out = p - np.array([C.x, C.y, min(p[2], C.z)])     # away from the head's axis
+            out = out / (np.linalg.norm(out) + 1e-9)
+            nn = out - t * out.dot(t)
+            if np.linalg.norm(nn) < 1e-4 and prev_n is not None:
+                nn = prev_n
+            nn = nn / (np.linalg.norm(nn) + 1e-9)
+            prev_n = nn
+            b = np.cross(t, nn)
+            b = b / (np.linalg.norm(b) + 1e-9)
+            s = i / (n - 1)
+            w = w0 * (1.0 - 0.22 * s) * (0.55 + 0.45 * min(1.0, s * 6))
+            _, _, de = ear_kd.find(Vector(p))
+            w *= min(1.0, max(0.25, de / 2.5))            # cards narrow beside an ear
+            ao = (AO_LAYER[min(layer, 2)] * (0.75 + 0.25 * min(1.0, s * 5)), AO_SPEC[min(layer, 2)])
+            for off in (-0.5, 0.0, 0.5):
+                if cross:                                 # turned a quarter round the strand
+                    q = p + nn * off * w * 0.8
+                else:
+                    q = p + b * off * w + nn * (LOOK["arch"] * w * (1 - (2 * off) ** 2) * 0.5)
+                V.append(tuple(q))
+                COL.append(ao)
+                uu = (off + 0.5) if not flip else (0.5 - off)
+                UVs.append(((tile + 0.03 + 0.94 * uu) / TILES, s))
+        for i in range(n - 1):
+            for j in range(2):
+                a = base + i * 3 + j
+                F.append((a, a + 1, a + 4, a + 3))
+print("cards", len(CARDS), "from guides", len(guides), "verts", len(V), "quads", len(F))
 
 # ---- the cap --------------------------------------------------------------------------------
 # A shell on the scalp, hair-coloured, fading out at the hairline: the part and any gap between
@@ -476,6 +505,7 @@ _map = {int(v): N_CARD_VERTS + i for i, v in enumerate(_ids)}
 for v in _ids:
     V.append(tuple(co[v] + _vn[v] * LOOK["cap_lift"]))
     UVs.append((float(_fade[v]), 0.5))
+    COL.append((1.0, 1.0))
 for t in _keep:
     F.append(tuple(_map[int(v)] for v in t))
 CAP_VERTS = list(range(N_CARD_VERTS, len(V)))
@@ -490,6 +520,13 @@ for li, loop in enumerate(me.loops):
 for pg in me.polygons:
     pg.use_smooth = True
     pg.material_index = 1 if pg.index >= N_CARD_FACES else 0
+vc = me.color_attributes.new(name="Col", type="BYTE_COLOR", domain="CORNER")
+for li, loop in enumerate(me.loops):
+    k = COL[loop.vertex_index]
+    # the FBX export puts byte colours through a 2.2 gamma (0.45 came out as 0.17): undo it here
+    vc.data[li].color = (k[0] ** (1 / 2.2), k[1] ** (1 / 2.2), 1.0, 1.0)
+me.color_attributes.active_color = vc
+me.color_attributes.render_color_index = 0
 hair = bpy.data.objects.new("Hair", me)
 bpy.context.collection.objects.link(hair)
 
@@ -585,8 +622,8 @@ if "rig" in args:
             chains.append(dict(zone=zone, az=a, nb=nb, members=[],
                                name="hair_%s%d" % (zone[0], k)))
     for ci_card, (first, zone, az, P) in enumerate(CARDS):
-        if zone == "tie":
-            assign.append([])                       # the knot rides the head
+        if zone in ("tie", "baby"):
+            assign.append([])                       # rides the head
             continue
         cz = "back" if zone == "gather" else zone
         cand = [(az_diff(signed_az(az), c["az"]), i) for i, c in enumerate(chains) if c["zone"] == cz]
@@ -719,6 +756,7 @@ if "rig" in args:
     bpy.ops.export_scene.fbx(filepath=os.path.join(OUT, FBX_NAME), use_selection=True,
                              object_types={"ARMATURE", "MESH"}, add_leaf_bones=False,
                              use_armature_deform_only=False, mesh_smooth_type="FACE", bake_anim=False,
+                             colors_type="LINEAR",
                              axis_forward="-Z", axis_up="Y")
     print("wrote", os.path.join(OUT, FBX_NAME))
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, "hair_rig.blend"))

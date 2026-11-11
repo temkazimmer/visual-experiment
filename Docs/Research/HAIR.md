@@ -148,10 +148,13 @@ darker, so the mass reads as layered instead of as one flat colour.
 | Scalp darkened under the hair | none: every gap showed bright skin | a cap shell on the scalp in the hair mesh (`M_HairCap`), fading at the hairline |
 | Dense base, sparser on top | yes (dense tiles under, sparse on top) | unchanged |
 | Flyaways | 4% of the back cards | unchanged |
-| Baby hair | none | not done; next for the front hairline |
+| Baby hair | none | elf: 150 short thin cards along the front hairline, following the sweep |
 | Soft roots (depth offset) | none | not done: Python can't reach that material pin in 5.7 |
-| Baked occlusion per layer | none: the hair is one flat black | not done; the next thing to try for depth |
-| Crossed-card clumps | single ribbons, slightly arched | not done; matters most for the face locks |
+| Baked occlusion per layer | none: the hair is one flat black | vertex colour: R darkens colour by layer (0.6 / 0.82 / 1) and at the roots, G the highlight a little |
+| Crossed-card clumps | single ribbons, slightly arched | the locks by her face are two crossed cards; the rest are still single |
+
+Gotcha: Blender's FBX export puts byte vertex colours through a 2.2 gamma (0.45 arrives as 0.17).
+`blender_hair_cards.py` writes `value ** (1 / 2.2)` to undo it; check with a re-import if values look wrong.
 
 So the missing half is mostly at the scalp (cap, hairline, part) and in depth (occlusion,
 crossed clumps). Shape and motion were the half we had.
