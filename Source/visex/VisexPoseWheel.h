@@ -82,6 +82,9 @@ public:
 	float ArmPushL = 0.f;
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Contact")
 	float ArmPushR = 0.f;
+	/** A menu clip (A_Menu_*) is playing: its hands are authored on the drum, so the hand fixes rest. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Contact")
+	bool bMenuClip = false;
 	/** Debug: the lowest palm point found on each hand and the surface point under it (world). */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Contact")
 	FVector ProbeLowL = FVector::ZeroVector;
