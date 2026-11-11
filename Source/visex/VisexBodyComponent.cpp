@@ -11,6 +11,7 @@
 #include "UObject/UObjectIterator.h"
 #include "Misc/Paths.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "HAL/IConsoleManager.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -140,18 +141,27 @@ void UVisexBodyComponent::Apply()
 	// height: the whole figure
 	const float S = Profile.Get("Height") / ReferenceHeight;
 
-	// leg length lowers the feet below the root; lift the mesh and grow the capsule
+	// she grows from the soles: the reshape scales the hip-to-ankle line by Legs and the foot
+	// (ankle to sole) by Feet, so the soles drop that far below the root. Lift the mesh and grow
+	// the capsule by exactly that drop, measured on the reference pose (soles at Z 0).
 	float LegDelta = 0.f;
 	if (const USkeletalMesh* Asset = Mesh->GetSkeletalMeshAsset())
 	{
 		const FReferenceSkeleton& Ref = Asset->GetRefSkeleton();
-		const int32 Calf = Ref.FindBoneIndex(TEXT("calf_l"));
-		const int32 Foot = Ref.FindBoneIndex(TEXT("foot_l"));
-		if (Calf != INDEX_NONE && Foot != INDEX_NONE)
+		const auto RefZ = [&Ref](const TCHAR* Bone)
 		{
-			const float LegLength = Ref.GetRefBonePose()[Calf].GetTranslation().Size()
-				+ Ref.GetRefBonePose()[Foot].GetTranslation().Size();
-			LegDelta = LegLength * S * (Profile.Get("Legs") - 1.f);
+			FTransform T = FTransform::Identity;
+			for (int32 i = Ref.FindBoneIndex(Bone); i != INDEX_NONE; i = Ref.GetParentIndex(i))
+			{
+				T = T * Ref.GetRefBonePose()[i];
+			}
+			return float(T.GetLocation().Z);
+		};
+		if (Ref.FindBoneIndex(TEXT("thigh_l")) != INDEX_NONE && Ref.FindBoneIndex(TEXT("foot_l")) != INDEX_NONE)
+		{
+			const float Ankle = RefZ(TEXT("foot_l"));               // 8.1 cm on Quinn
+			const float HipToAnkle = RefZ(TEXT("thigh_l")) - Ankle; // 87.3 cm
+			LegDelta = S * ((Profile.Get("Legs") - 1.f) * HipToAnkle + (Profile.Get("Feet") - 1.f) * Ankle);
 		}
 	}
 
@@ -159,7 +169,17 @@ void UVisexBodyComponent::Apply()
 	Mesh->SetRelativeLocation(FVector(0.f, 0.f, ReferenceMeshZ * S + LegDelta * 0.5f));
 	if (UCapsuleComponent* Capsule = Char->GetCapsuleComponent())
 	{
-		Capsule->SetCapsuleSize(ReferenceCapsule.Y * S, ReferenceCapsule.X * S + LegDelta * 0.5f);
+		// the capsule grows about its middle: lift her by the change so its bottom stays on the
+		// ground and she grows up from her soles (live, while a slider moves)
+		const float OldHalf = Capsule->GetUnscaledCapsuleHalfHeight();
+		const float NewHalf = ReferenceCapsule.X * S + LegDelta * 0.5f;
+		Capsule->SetCapsuleSize(ReferenceCapsule.Y * S, NewHalf);
+		const UCharacterMovementComponent* Move = Char->GetCharacterMovement();
+		if (HasBegunPlay() && GetWorld() && GetWorld()->IsGameWorld() && Move && !Move->IsFalling()
+			&& !FMath::IsNearlyEqual(OldHalf, NewHalf, 0.01f))
+		{
+			Char->AddActorWorldOffset(FVector(0.f, 0.f, (NewHalf - OldHalf) * Capsule->GetComponentScale().Z), false, nullptr, ETeleportType::TeleportPhysics);
+		}
 	}
 
 	// shape morphs: 0 = the base body, 1 = the full sculpt (Tools/blender_skin.py)
