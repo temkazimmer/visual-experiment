@@ -7,6 +7,25 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-11 13:56 · VIS-EX-0307 Shipping (0dd50c9) · PASS, the 0298 lean crash is fixed
+
+- **Crash fix:** the tour now forces a full GC 0.3 s after ToggleMenu, while the lean-down is
+  still playing. I ran it twice from the mounted DMG. Both runs got through it and reached
+  `VisexQA: done`, with 41 shots each and exit 0. No new visex `.ips` in DiagnosticReports.
+  The only new reports are three `zen` ones from 13:44, which came from another worktree's
+  editor starting up, not from the game.
+- **Menu again** (`Tools/.bridge/shots/qa0307/04_menu_again.png`, `run2/04_menu_again.png`): after
+  the GC she leans on the column in the right pose, on the ground, holding the idle montage. It
+  matches 0305's shot.
+- **Against 0305:** no regression. Every screen and pose matches. In run 1 the turnaround shots
+  were a bit darker (body 5: luma 102 against 116). Run 2 matched 0305 exactly, so that's run-to-run
+  exposure, not a change. Only code changed between the two builds. Photo motion 3–7 report
+  `mode 0`, as in 0305. Quality 0/3/4: 16.7 / 21.1 / 44.8 ms. Load was about 4 with two other
+  editors open.
+- **Shots:** in `Saved/QA_0307ship{,_run2}/` and `Tools/.bridge/shots/qa0307/` (run 2 is in `run2/`).
+- **Saves:** I backed up `VisexBody.sav` and `GameUserSettings.ini` and restored them after each run.
+  Both md5s match the originals: `29ae709f…` and `0f8144b4…`. There's no `Game.ini`, before or after.
+
 ## 2026-11-11 13:41 · VIS-EX-0305 Shipping (5964443) · PASS, menu bokeh in, only the elf hair checked
 
 - **Tour:** no crash. She stays on the ground, with body, shell, hair and outfit present, and all 41 shots
