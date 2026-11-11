@@ -65,12 +65,25 @@ def lean_arms(P):
     for s, side in (("l", 1.0), ("r", -1.0)):
         up, lo, h = "upperarm_" + s, "lowerarm_" + s, "hand_" + s
         arm = (length(sub(pos(lo), pos(up))) + length(sub(pos(h), pos(lo)))) * ARM_SLACK
+        def over(d):                             # how far past a soft elbow's reach the spot at d is
+            pt, n = on_stone(side * P["hand_x"], d)
+            return length(sub(add(pt, mul(n, PALM_OFF)), pos(up))) - arm   # wrist: palm thickness off the stone
+        # Her trunk is turned: a spot one shoulder reaches with a soft elbow locks the other arm, so
+        # that hand slides along the stone toward its shoulder, just as far as it must. Solved, not
+        # stepped, so the slide is as smooth as the breath that causes it. The old 2-degree search
+        # walked away from the shoulder, never reached, and flung the arm straight at the far end
+        # of its range whenever a breath crossed the limit (a 7 cm hand pop, 12 cm at the elbow).
         deg = P["hand_deg"]
-        while True:                              # her trunk is turned: a spot one shoulder reaches with a soft
-            pt, n = on_stone(side * P["hand_x"], deg)   # elbow locks the other arm, so that hand slides toward her
-            wrist = add(pt, mul(n, PALM_OFF))   # the wrist bone sits this far off the stone: palm thickness
-            if length(sub(wrist, pos(up))) <= arm or deg >= P["hand_deg"] + 40.0: break
-            deg += 2.0
+        if over(deg) > 0.0:
+            far = deg + (40.0 if over(deg + 1.0) < over(deg - 1.0) else -40.0)
+            near = deg
+            for _ in range(30):                  # bisect: over(near) > 0 >= over(far)
+                mid = 0.5 * (near + far)
+                if over(mid) > 0.0: near = mid
+                else: far = mid
+            deg = far
+        pt, n = on_stone(side * P["hand_x"], deg)
+        wrist = add(pt, mul(n, PALM_OFF))
         back = norm(cross((1.0, 0.0, 0.0), n))           # along the stone, away from her
         if FINGER_YAW is None:
             fingers = norm(lerp(back, (0.0, 0.0, -1.0), FINGER_DIP))
