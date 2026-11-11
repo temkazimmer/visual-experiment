@@ -304,6 +304,37 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Menu|Settings") void SettingsStep(int32 Dir);
 	UFUNCTION(BlueprintCallable, Category = "Menu|Settings") void SettingsTab(int32 Dir);
 
+	/** While Settings is open she sits on the sand against the column, legs out, ankles crossed,
+	 *  soles to the lens (Tools/char_menu_sit.py), and the camera drops low onto her feet. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
+	bool bSitForSettings = true;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
+	TSoftObjectPtr<class UAnimSequence> SettingsSit = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Sit_Settings.A_Menu_Sit_Settings")));
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
+	TSoftObjectPtr<class UAnimSequence> SettingsSitDown = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Sit_Settings_Down.A_Menu_Sit_Settings_Down")));
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
+	TSoftObjectPtr<class UAnimSequence> SettingsSitUp = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Sit_Settings_Up.A_Menu_Sit_Settings_Up")));
+	/** Where her crossed feet rest in the sit, in her mesh space (X her left, Y forward, Z up, cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
+	FVector SettingsFeet = FVector(0.f, 95.f, 10.f);
+	/** The feet camera: distance from her feet, height over the sand there, the angle (deg) its line
+	 *  turns off her legs' line toward the menu camera's side, a look-up, a pan, the move's length (s). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
+	float SettingsCamDistance = 120.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
+	float SettingsCamHeight = 14.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
+	float SettingsCamYaw = 0.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
+	float SettingsCamLookUp = 6.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
+	float SettingsCamPan = -14.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings", meta = (ClampMin = "0.1"))
+	float SettingsCamTime = 2.6f;
+	/** 0 menu framing, 1 the feet framing; eased in Tick. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Menu|Settings")
+	float SettingsCamAlpha = 0.f;
+
 	/** On the menu she leans on a fallen column, spawned behind her at Play (no level edit). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
 	bool bLeanOnColumn = true;
@@ -549,6 +580,14 @@ private:
 	class UAnimInstance* GetPawnAnim() const;
 	bool bLeaning = false;
 	bool bHaveLeaned = false;
+	// sitting for Settings: down and up, the feet camera, and their own timer
+	void SitForSettings();
+	void StandFromSettings();
+	void PlayLoopLater(class UAnimSequence* Clip, float Delay, bool bThenBeats);
+	FTransform SettingsCameraTransform() const;
+	float SettingsCamEase() const { const float X = FMath::Clamp(SettingsCamAlpha, 0.f, 1.f); return X * X * X * (X * (6.f * X - 15.f) + 10.f); }
+	bool bSitting = false;
+	FTimerHandle SitTimer;
 	// idle beats: the rest timer, the beat's end, and the last one played
 	void ScheduleIdleBeat();
 	void EndIdleBeat();
