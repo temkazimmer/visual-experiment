@@ -97,6 +97,26 @@ The manual equivalent, for reference:
 4. Colliders: sphere on `head` (radius ~11), capsules on `neck_01`, both shoulders and `spine_05`, each 1 cm larger than the body.
 5. On the character: add a Skeletal Mesh component `Hair` under the body mesh, mesh `SKM_HairCards`, anim class `ABP_HairCards`, and hide the `Hair` section of `SKM_AndroidSkin`. This touches the character branch (`UVisexBodyComponent` or the skin chain), so it is that agent's change.
 
+## Hairstyles (added 2026-11-11)
+
+Two styles, each its own mesh and AnimBP; one skeleton (`SK_HairCards`), atlas and material for both.
+To put one on her: mesh + anim class, attached to the body mesh, as `ApplyHair` does.
+
+| Style | Mesh | AnimBP | Look |
+|---|---|---|---|
+| long | `SKM_HairCards` | `ABP_HairCards_C` | loose, straight, wispy fringe, face-framing locks |
+| elf | `SKM_HairElf` | `ABP_HairElf_C` | centre part, front and sides swept behind the ears and gathered at the back, one thin lock a side, no fringe |
+
+Build a style: `HAIR_STYLE=elf ... blender_hair_cards.py -- <out> rig`, copy the FBX and atlas to
+`SourceArt/Character/Hair/`, then in the editor run `char_hair_cards.py` and `char_hair_physics.py`
+with `STYLE='elf'` set first (see the scripts' headers).
+
+- The elf cut is Tema's fix for locks cutting into the body: whatever collided is tied back, and the
+  two face locks have their own chains (`hair_s0`, `hair_s1`) with colliders on the collarbones and bust.
+- A new style's bones must be a subset of the skeleton's, or the importer adds them to `SK_HairCards`
+  (fine, but then commit the skeleton too).
+- UE's importer puts a new style's mesh on the existing hair skeleton by itself; don't rename it.
+
 ## What I could not verify
 
 - **No named AA studio's hair method.** I searched for Black Myth: Wukong, Hellblade 2 and Stellar Blade. I found no source describing their hair, so none is claimed here. The studio-level information above is Epic's docs, 80.lv and blog posts.
