@@ -9,6 +9,7 @@
 #include "Animation/AnimInstance.h"
 #include "Engine/SkeletalMesh.h"
 #include "UObject/UObjectIterator.h"
+#include "Misc/Paths.h"
 #include "GameFramework/Character.h"
 #include "Kismet/GameplayStatics.h"
 #include "HAL/IConsoleManager.h"
@@ -301,7 +302,13 @@ void UVisexBodyComponent::ApplyFit()
 	}
 	// the body the outfits are built on (blender_outfit.py DESIGN): fit morphs take what is past it
 	static const TPair<const TCHAR*, float> Design[] = {{TEXT("BustUp"), 0.8f}, {TEXT("GlutesUp"), 0.5f}, {TEXT("Fat"), 0.38f}};
-	const FString O = WornOutfit.ToString();
+	// named after the mesh (SKM_Outfit_<O>), so rows sharing one (the bodystocking with or
+	// without the skirt) share its fit
+	FString O = I != INDEX_NONE ? FPaths::GetBaseFilename(FVisexBodyProfile::Outfits()[I].Mesh) : FString();
+	if (!O.RemoveFromStart(TEXT("SKM_Outfit_")))
+	{
+		return;
+	}
 	const FName Seat(*(TEXT("Fit_") + O));
 	Mesh->SetMorphTarget(Seat, 1.f, false);
 	FitMorphs.Add(Seat);
