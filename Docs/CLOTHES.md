@@ -17,13 +17,13 @@ skin, with thickness on opaque pieces, piping, raised seams, strap geometry and 
 ## The wardrobe
 
 **Wearable:** Nothing, the sheer bodystocking (her default), the bodystocking with the skirt,
-and the Catsuit (refreshed and unlocked 2026-11-11). Noir, Garter, Cocoa and Fishnet are listed
+the Catsuit and Noir (both refreshed and unlocked 2026-11-11). Garter, Cocoa and Fishnet are listed
 but locked, waiting for the same refresh one at a time (Tema: these are the chosen set, they
 are just outdated); Sheer is built but unlisted.
 
 | Name | What it is | Fabrics |
 |---|---|---|
-| Noir | Sheer bodysuit with boning, lace cups, satin band and straps, seamed thigh-highs | Sheer, Lace, Satin, Trim |
+| Noir | Nylon bodysuit whose lace cups are the neckline, satin underband and straps, boning into a satin waist cincher with a steel hook-and-eye front, seamed nylon thigh-highs with lace welts; every edge bound in glossy black | Nylon, Lace, Satin, Binding, Trim (steel) |
 | Garter | Lace balconette and briefs, wide lace garter belt, four straps, stockings | Lace, Sheer, Satin, Trim (gold) |
 | Cocoa | Brown satin bra and thong, slim belt, front straps to buckled thigh bands, choker | Satin, Trim (gold) |
 | Fishnet | Fishnet tights with a satin waistband, satin bra and high thong | Net, Satin, Trim |
