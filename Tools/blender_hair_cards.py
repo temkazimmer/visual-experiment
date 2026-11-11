@@ -63,6 +63,8 @@ LOOK = dict(
     face_halfw=8.6,        # cm: hair below the brow stays outside this, so the face shows
     ear_open=0.09,         # radians around each ear (seen from the head centre) hair goes round
     line_front=36.0, line_side=-14.0, line_back=-34.0,   # hairline elevation (deg)
+    cap_lift=0.05,         # cm the cap sits off the scalp (under the lowest cards)
+    cap_fade=7.0,          # degrees over which the cap fades in from the hairline
 )
 rng = np.random.default_rng(LOOK["seed"])
 FBX_NAME = "hair_elf.fbx" if LOOK["style"] == "elf" else "hair_cards.fbx"
@@ -448,6 +450,37 @@ for pts, layer, fly, az, zone in guides:
             F.append((a, a + 1, a + 4, a + 3))
 print("cards", len(guides), "verts", len(V), "quads", len(F))
 
+# ---- the cap --------------------------------------------------------------------------------
+# A shell on the scalp, hair-coloured, fading out at the hairline: the part and any gap between
+# cards show hair, not bright skin (studios darken the scalp under card hair; Docs/Research/HAIR.md).
+# Its UV.x carries the fade (0 at the hairline .. 1 inside); it gets its own material slot.
+N_CARD_VERTS, N_CARD_FACES = len(V), len(F)
+_tri = np.array([t.vertices[:] for t in me_.loop_triangles])
+_rel = co - np.array(C)
+_dist = np.linalg.norm(_rel, axis=1) + 1e-9
+_el = np.degrees(np.arcsin(np.clip(_rel[:, 2] / _dist, -1, 1)))
+_az = np.degrees(np.arctan2(_rel[:, 0], -_rel[:, 1]))
+_line = np.array([hairline(a) for a in _az])
+_fade = np.clip((_el - _line) / LOOK["cap_fade"], 0, 1)
+_in = (_el > _line) & (_dist < 14.0) & ~ear
+_keep = _tri[_in[_tri].all(axis=1)]
+_fn = np.cross(co[_keep[:, 1]] - co[_keep[:, 0]], co[_keep[:, 2]] - co[_keep[:, 0]])
+_vn = np.zeros_like(co)
+for k in range(3):
+    np.add.at(_vn, _keep[:, k], _fn)
+_vn /= np.linalg.norm(_vn, axis=1, keepdims=True) + 1e-9
+_out = (_vn * _rel).sum(1) < 0                       # normals out of the head
+_vn[_out] *= -1
+_ids = np.unique(_keep)
+_map = {int(v): N_CARD_VERTS + i for i, v in enumerate(_ids)}
+for v in _ids:
+    V.append(tuple(co[v] + _vn[v] * LOOK["cap_lift"]))
+    UVs.append((float(_fade[v]), 0.5))
+for t in _keep:
+    F.append(tuple(_map[int(v)] for v in t))
+CAP_VERTS = list(range(N_CARD_VERTS, len(V)))
+print("cap verts", len(CAP_VERTS), "tris", len(_keep))
+
 me = bpy.data.meshes.new("HairCards")
 me.from_pydata(V, [], F)
 me.update()
@@ -456,6 +489,7 @@ for li, loop in enumerate(me.loops):
     uv.data[li].uv = UVs[loop.vertex_index]
 for pg in me.polygons:
     pg.use_smooth = True
+    pg.material_index = 1 if pg.index >= N_CARD_FACES else 0
 hair = bpy.data.objects.new("Hair", me)
 bpy.context.collection.objects.link(hair)
 
@@ -503,6 +537,11 @@ nt.links.new(tex.outputs["Alpha"], bsdf.inputs["Alpha"])
 outn = nt.nodes.new("ShaderNodeOutputMaterial")
 nt.links.new(bsdf.outputs["BSDF"], outn.inputs["Surface"])
 hair.data.materials.append(m)
+capm = bpy.data.materials.new("HairCap")
+capm.use_nodes = True
+capm.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (0.008, 0.007, 0.006, 1)
+capm.node_tree.nodes["Principled BSDF"].inputs["Roughness"].default_value = 0.8
+hair.data.materials.append(capm)
 
 sm = bpy.data.materials.new("skinprev")
 sm.use_nodes = True
@@ -662,6 +701,7 @@ if "rig" in args:
             tot = sum(wts.values()) or 1.0
             for bn, w in wts.items():
                 groups[bn].add(idx, w / tot, "REPLACE")
+    groups["head"].add(CAP_VERTS, 1.0, "REPLACE")       # the cap rides the head
     hair.parent = rig_obj
     mod = hair.modifiers.new("Armature", "ARMATURE")
     mod.object = rig_obj
