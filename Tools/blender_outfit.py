@@ -294,7 +294,8 @@ TRIM_PROUD, HW_PROUD = 0.3, 0.6
 NO_SEAM = 9.0        # UVSeam value far from any edge or seam (the material's profile is flat there)
 
 
-def edge_loops(bm, min_len):
+def edge_loops(bm, min_len, srcof=None):
+    """Boundary loops of a piece: (points, closed, skin source per point or None)."""
     adj = {}
     for e in bm.edges:
         if e.is_boundary:
@@ -316,7 +317,7 @@ def edge_loops(bm, min_len):
             chain.append(cur)
         pts = [v.co.copy() for v in chain]
         if sum((a - b).length for a, b in zip(pts, pts[1:])) >= min_len:
-            loops.append((pts, start in adj[chain[-1]]))
+            loops.append((pts, start in adj[chain[-1]], [srcof[v] for v in chain] if srcof else None))
     return loops
 
 
@@ -364,7 +365,7 @@ def region(val, offset, slot, rim=None, pipe=None, pipe_r=0.18, min_loop=10.0, l
                 bm.faces.new(poly)
             except ValueError:
                 pass
-    loops = edge_loops(bm, min_loop) if (pipe or bind) else []
+    loops = edge_loops(bm, min_loop, srcof) if (pipe or bind) else []
     # true distance from every vertex to the cut edge, for the seam/piping normal (UVSeam.x)
     bpts = []
     for e in bm.edges:
@@ -391,13 +392,15 @@ def region(val, offset, slot, rim=None, pipe=None, pipe_r=0.18, min_loop=10.0, l
                     edist.append(0.0)
             bm.faces.new((a, b, inner[b], inner[a]))
     PIECES.append((bm, slot, src, edist))
-    for pts, closed in loops:
+    for pts, closed, esrc in loops:
+        # trims ride the skin their panel edge rides: by nearest skin vertex, a binding in a
+        # deep crease (Mermaid's hip) took the thigh's side of the fold and split off the edge
         if pipe:
-            tube(pts, pipe_r, pipe, closed, push=0.08)
+            tube(pts, pipe_r, pipe, closed, push=0.08, src_from=(pts, esrc))
         if bind:      # a rounded binding standing TRIM_PROUD off the panel edge it covers
             # 0.4 mm off the panel: flush, its flat underside z-fights with the panel and
             # flecks of a glossy panel show through a matte binding (Noir's cincher)
-            tube(pts, 0.0, bind[0], closed, flat=(bind[1], TRIM_PROUD), step=0.5, push=0.04)
+            tube(pts, 0.0, bind[0], closed, flat=(bind[1], TRIM_PROUD), step=0.5, push=0.04, src_from=(pts, esrc))
     return bm
 
 
@@ -426,7 +429,7 @@ def resample(pts, closed, step):
     return out
 
 
-def tube(pts, r, slot, closed=False, sides=6, push=0.0, step=0.8, flat=None, rigid=None):
+def tube(pts, r, slot, closed=False, sides=6, push=0.0, step=0.8, flat=None, rigid=None, src_from=None):
     """A round cord along a point list. flat=(width, height): a tape lying on the surface
     instead, its top rounded like a bound edge. rigid: one skin vertex the whole piece rides
     (jewellery)."""
@@ -440,9 +443,18 @@ def tube(pts, r, slot, closed=False, sides=6, push=0.0, step=0.8, flat=None, rig
         return
     bm = bmesh.new()
     rings, src = [], []
+    ekd = None
+    if src_from and src_from[1]:                            # src_from: (edge points, their skin sources)
+        ekd = KDTree(len(src_from[0]))
+        for k, q in enumerate(src_from[0]):
+            ekd.insert(q, k)
+        ekd.balance()
     for i, p in enumerate(pts):
-        j = rigid if rigid is not None else nearest(p)      # the whole ring rides this skin vertex
-        src += [(j, j, 0.0)] * sides
+        if ekd is not None:                                 # the ring rides the panel edge under it
+            src += [src_from[1][ekd.find(p)[1]]] * sides
+        else:
+            j = rigid if rigid is not None else nearest(p)  # the whole ring rides this skin vertex
+            src += [(j, j, 0.0)] * sides
         a_, b_ = (pts[i - 1], pts[(i + 1) % n]) if closed else (pts[max(i - 1, 0)], pts[min(i + 1, n - 1)])
         t = (b_ - a_).normalized()
         out = nearest_normal(p)

@@ -357,6 +357,17 @@ def sheer_opacity(m, base, y=200):
 
 
 def done(m):
+    # depth bias: every vertex pulled DepthBias cm toward the camera, along its view ray, so
+    # nothing moves on screen; it only wins the depth test. Cloth sits 2-3 mm off the skin,
+    # and where a deep bend folds the skin (Mermaid's hip) the skin overtook it and showed
+    # through in flecks, broke bindings and dashed the seam tapes
+    # (CameraVector is pixel-shader only: the view ray is camera position minus world position)
+    ray = op(m, unreal.MaterialExpressionSubtract, node(m, unreal.MaterialExpressionCameraPositionWS, -900, 1400),
+             node(m, unreal.MaterialExpressionWorldPosition, -900, 1440), 1400)
+    to_cam = node(m, unreal.MaterialExpressionNormalize, -300, 1400)
+    link(ray, to_cam, "VectorInput")
+    bias = op(m, unreal.MaterialExpressionMultiply, to_cam, scalar(m, "DepthBias", 0.5, 1480), 1460)
+    mel.connect_material_property(bias, "", MP.MP_WORLD_POSITION_OFFSET)
     mel.recompile_material(m)
     unreal.EditorAssetLibrary.save_loaded_asset(m)
     return m
