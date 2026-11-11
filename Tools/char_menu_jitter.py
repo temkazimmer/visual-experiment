@@ -19,6 +19,7 @@ world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_game_world
 pawn = unreal.GameplayStatics.get_player_pawn(world, 0)
 mesh = pawn.get_editor_property("mesh")
 wheel = pawn.get_component_by_class(unreal.VisexPoseWheelComponent)
+anim = mesh.get_anim_instance()
 unreal.SystemLibrary.execute_console_command(world, "t.MaxFPS %d" % FPS_CAP)
 rows, state = [], {"t": 0.0}
 
@@ -35,12 +36,15 @@ def tick(dt):
         p = mesh.get_socket_location(b)
         r += [p.x, p.y, p.z]
     r += [wheel.get_editor_property(k) for k in ("hand_fix_zl", "hand_fix_zr", "arm_push_l", "arm_push_r", "hand_gap_l", "hand_gap_r")]
+    r.append(1.0 if wheel.get_editor_property("menu_clip") else 0.0)
+    m = anim.get_current_active_montage()
+    r.append(float(len(m.get_name())) if m else 0.0)
     rows.append(r)
     if t - rows[0][0] >= SECONDS:
         unreal.unregister_slate_post_tick_callback(state["h"])
         unreal.SystemLibrary.execute_console_command(world, "t.MaxFPS 0")
         with open(OUT, "w") as f:
-            f.write("t," + ",".join("%s_%s" % (b, a) for b in BONES for a in "xyz") + ",fixl,fixr,pushl,pushr,gapl,gapr\n")
+            f.write("t," + ",".join("%s_%s" % (b, a) for b in BONES for a in "xyz") + ",fixl,fixr,pushl,pushr,gapl,gapr,menu,montage\n")
             for r2 in rows:
                 f.write(",".join("%.4f" % v for v in r2) + "\n")
 
