@@ -64,6 +64,7 @@ smd.set_editor_property("import_morph_targets", False)
 smd.set_editor_property("convert_scene", True)
 smd.set_editor_property("import_uniform_scale", 0.01)     # as Tools/char_skin.py: Blender writes metres
 smd.set_editor_property("normal_import_method", unreal.FBXNormalImportMethod.FBXNIM_IMPORT_NORMALS)
+smd.set_editor_property("vertex_color_import_option", unreal.VertexColorImportOption.REPLACE)   # baked occlusion
 task = unreal.AssetImportTask()
 task.set_editor_property("filename", os.path.join(SRC, FBX))
 task.set_editor_property("destination_path", DIR)
@@ -144,7 +145,12 @@ mel.connect_material_expressions(num("VariationBase", HAIR["variation"][0], -100
 base = mel.create_material_expression(m, unreal.MaterialExpressionMultiply, -450, -100)
 mel.connect_material_expressions(lerp, "", base, "A")
 mel.connect_material_expressions(vb, "", base, "B")
-mel.connect_material_property(base, "", MP.MP_BASE_COLOR)
+# occlusion baked into the vertex colour by blender_hair_cards.py: inner layers and roots darker
+vcol = mel.create_material_expression(m, unreal.MaterialExpressionVertexColor, -650, -420)
+occ = mel.create_material_expression(m, unreal.MaterialExpressionMultiply, -250, -100)
+mel.connect_material_expressions(base, "", occ, "A")
+mel.connect_material_expressions(vcol, "R", occ, "B")
+mel.connect_material_property(occ, "", MP.MP_BASE_COLOR)
 # soft strand edges: dithered coverage that TSR resolves, not a hard alpha cut
 gain = mel.create_material_expression(m, unreal.MaterialExpressionMultiply, -800, 440)
 mel.connect_material_expressions(ts, "A", gain, "A")
@@ -168,7 +174,10 @@ assert mel.connect_material_expressions(dith, "", pas, "Dithered")
 assert mel.connect_material_expressions(cov, "", pas, "Hard")
 mel.connect_material_property(pas, "", MP.MP_OPACITY_MASK)
 mel.connect_material_property(num("Roughness", HAIR["roughness"], -450, 200), "", MP.MP_ROUGHNESS)
-mel.connect_material_property(num("Specular", HAIR["specular"], -450, 280), "", MP.MP_SPECULAR)
+spec = mel.create_material_expression(m, unreal.MaterialExpressionMultiply, -250, 280)
+mel.connect_material_expressions(num("Specular", HAIR["specular"], -450, 280), "", spec, "A")
+mel.connect_material_expressions(vcol, "G", spec, "B")       # a little less highlight deep inside the mass
+mel.connect_material_property(spec, "", MP.MP_SPECULAR)
 if LIT:
     mel.connect_material_property(num("Anisotropy", HAIR["anisotropy"], -450, 360), "", MP.MP_ANISOTROPY)
 else:
