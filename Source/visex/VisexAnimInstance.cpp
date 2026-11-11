@@ -13,13 +13,14 @@ static TAutoConsoleVariable<float> CVarCatwalkHipYaw(TEXT("visex.Catwalk.HipYaw"
 static TAutoConsoleVariable<float> CVarCatwalkHipShift(TEXT("visex.Catwalk.HipShift"), 2.f, TEXT("Centimetres the pelvis moves over the standing leg"));
 static TAutoConsoleVariable<float> CVarCatwalkLine(TEXT("visex.Catwalk.Line"), 3.5f, TEXT("Degrees each leg angles inward, so the feet land near one line"));
 static TAutoConsoleVariable<float> CVarCatwalkShoulders(TEXT("visex.Catwalk.Shoulders"), 3.4f, TEXT("How much the chest counters the hips (1 = equal and opposite)"));
-static TAutoConsoleVariable<float> CVarCatwalkHead(TEXT("visex.Catwalk.Head"), 0.9f, TEXT("How steady the head stays against the chest's motion (0..1)"));
+static TAutoConsoleVariable<float> CVarCatwalkHead(TEXT("visex.Catwalk.Head"), 1.f, TEXT("How much the head keeps the walk clip's own aim against the chest's motion (0..1)"));
+static TAutoConsoleVariable<float> CVarCatwalkShoulderRoll(TEXT("visex.Catwalk.ShoulderRoll"), 0.4f, TEXT("How much the shoulders tilt against the hip drop (1 = equal and opposite)"));
 // from the Girl Walk&Run struts (Docs/Research, learning log 2026-11-10): spine 4 deg back, chest
 // 4-5 frames behind the hips, arms ~40 cm of swing, head within ~1 cm of its line
 static TAutoConsoleVariable<float> CVarCatwalkPosture(TEXT("visex.Catwalk.Posture"), 11.f, TEXT("Degrees the spine leans back while walking, head kept level (proud)"));
 static TAutoConsoleVariable<float> CVarCatwalkChestLag(TEXT("visex.Catwalk.ChestLag"), 4.5f, TEXT("How quickly the chest's counter-turn follows the hips (lower = later; 0 = no lag)"));
 static TAutoConsoleVariable<float> CVarCatwalkArmSwing(TEXT("visex.Catwalk.ArmSwing"), 0.3f, TEXT("Share of the clip's fore-aft arm swing kept (0..1)"));
-static TAutoConsoleVariable<float> CVarCatwalkHeadLine(TEXT("visex.Catwalk.HeadLine"), 1.0f, TEXT("How much the head's side-to-side sway is taken out (0..1)"));
+static TAutoConsoleVariable<float> CVarCatwalkHeadLine(TEXT("visex.Catwalk.HeadLine"), 1.0f, TEXT("How much of the head's side-to-side sway the neck takes out, back onto the walk clip's own line (0..1)"));
 static TAutoConsoleVariable<float> CVarCatwalkClear(TEXT("visex.Catwalk.Clear"), 20.f, TEXT("Centimetres the thigh axes keep apart as the legs cross: the swinging thigh turns out a little (8 degrees at most, eased) to pass beside the other (0 off)"));
 static TAutoConsoleVariable<float> CVarCatwalkSprint(TEXT("visex.Catwalk.Sprint"), 0.35f, TEXT("Share of the layer kept when sprinting (0..1)"));
 
@@ -75,6 +76,7 @@ void FVisexAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSecond
 	Tune.ChestLag = CVarCatwalkChestLag.GetValueOnGameThread();
 	Tune.ArmSwing = CVarCatwalkArmSwing.GetValueOnGameThread();
 	Tune.HeadLine = CVarCatwalkHeadLine.GetValueOnGameThread();
+	Tune.ShoulderRoll = CVarCatwalkShoulderRoll.GetValueOnGameThread();
 	Tune.Clear = CVarCatwalkClear.GetValueOnGameThread();
 	bLimits = CVarLimits.GetValueOnGameThread() > 0.5f;
 	HoldTune.Breath = CVarHoldBreath.GetValueOnGameThread();
@@ -99,7 +101,8 @@ bool FVisexAnimProxy::Evaluate_WithRoot(FPoseContext& Output, FAnimNode_Base* In
 			Reshape(Output.Pose);
 		}
 		Contact(Output.Pose); // hands onto the surface, measured on the reshaped body
-		Limits(Output.Pose);  // last: nothing bends past human range of motion
+		Limits(Output.Pose);  // nothing bends past human range of motion
+		SteadyHead(Output.Pose); // after the limits, which clamp the spine but not the neck's counter-turn
 	}
 	return true;
 }
@@ -296,6 +299,7 @@ void FVisexAnimProxy::Reshape(FCompactPose& Pose) const
 void FVisexAnimProxy::Catwalk(FCompactPose& Pose)
 {
 	Gait = FMath::FInterpTo(Gait, GaitTarget, Dt, 4.f);
+	bClipHead = false;
 	if (Gait < 0.005f)
 	{
 		Step = Lift = 0.f;
@@ -316,6 +320,14 @@ void FVisexAnimProxy::Catwalk(FCompactPose& Pose)
 
 	const FVector Up = FVector::ZAxisVector, Fwd = FVector::YAxisVector;
 	const FVector Left(S.Component(ThighL).GetLocation().X >= S.Component(ThighR).GetLocation().X ? 1.f : -1.f, 0.f, 0.f);
+	CatwalkLeft = Left;
+	if (const FCompactPoseBoneIndex ClipHead = S.Find(TEXT("head")); ClipHead.IsValid())
+	{
+		const FTransform T = S.Component(ClipHead);
+		ClipHeadAt = T.GetLocation();
+		ClipHeadRot = T.GetRotation();
+		bClipHead = true;
+	}
 
 	const FVector Feet = S.Component(FootL).GetLocation() - S.Component(FootR).GetLocation();
 	Step = FMath::FInterpTo(Step, FMath::Clamp((Feet | Fwd) / 30.f, -1.f, 1.f), Dt, 12.f);
@@ -344,7 +356,7 @@ void FVisexAnimProxy::Catwalk(FCompactPose& Pose)
 	ChestStep = Tune.ChestLag > 0.f ? FMath::FInterpTo(ChestStep, Step, Dt, Tune.ChestLag) : Step;
 	ChestLift = Tune.ChestLag > 0.f ? FMath::FInterpTo(ChestLift, Lift, Dt, Tune.ChestLag) : Lift;
 	const float ChestYaw = Tune.HipYaw * ChestStep * Gait, ChestRoll = Tune.HipRoll * ChestLift * Gait;
-	const FQuat Counter = Turn(Left, -Fwd, ChestYaw * Tune.Shoulders) * Turn(Left, Up, ChestRoll * Tune.Shoulders * 0.5f);
+	const FQuat Counter = Turn(Left, -Fwd, ChestYaw * Tune.Shoulders) * Turn(Left, Up, ChestRoll * Tune.ShoulderRoll);
 	// spread over three vertebrae: on one it reached 16 deg of twist, past what a segment can do (9)
 	const FQuat Third = FQuat::Slerp(FQuat::Identity, Counter, 1.f / 3.f);
 	S.RotateCS(Spine2, Third);
@@ -357,16 +369,6 @@ void FVisexAnimProxy::Catwalk(FCompactPose& Pose)
 	S.RotateCS(Spine2, Back);
 	S.RotateCS(Chest, Back);
 	S.RotateCS(Neck, (Back * Back).Inverse());
-
-	// the head on a steady line: its sideways drift from its own slow average is leaned out
-	const FCompactPoseBoneIndex Head = S.Find(TEXT("head"));
-	if (Head.IsValid() && Tune.HeadLine > 0.f)
-	{
-		const FVector HeadAt = S.Component(Head).GetLocation(), From = S.Component(Spine1).GetLocation();
-		HeadSide = FMath::FInterpTo(HeadSide, HeadAt | Left, Dt, 1.5f);
-		const float Off = (HeadAt | Left) - HeadSide, Height = FMath::Max((HeadAt - From) | Up, 30.f);
-		S.RotateCS(Spine1, Turn(Up, -Left, FMath::RadiansToDegrees(FMath::Atan2(Off, Height)) * Tune.HeadLine * Gait));
-	}
 
 	// smaller, looser arms: the fore-aft angle of each upper arm moves toward hanging
 	for (const TCHAR* Side : {TEXT("l"), TEXT("r")})
@@ -693,6 +695,50 @@ void FVisexAnimProxy::Limits(FCompactPose& Pose)
 		const FQuat NewTwistQ(FVector::XAxisVector, FMath::DegreesToRadians(NewTwist));
 		T.SetRotation(Ref * (bHand ? NewTwistQ * NewSwing : NewSwing * NewTwistQ));
 	}
+}
+
+/**
+ * The head rides the walk, it doesn't wobble on it. The catwalk drops the hips and tilts the
+ * shoulders against them; the joint limits then clamp part of that tilt in the spine, but not
+ * the neck's counter-turn, so the head was thrown side to side ~12 cm a stride (the walk clip's
+ * own head moves ~2). Last of all, with the body settled: the neck bends to bring the head back
+ * onto the clip's own line (sideways only), then the head takes back the clip's own aim.
+ */
+void FVisexAnimProxy::SteadyHead(FCompactPose& Pose)
+{
+	if (!bClipHead || Gait < 0.005f)
+	{
+		return;
+	}
+	FShaper S{Pose, Pose.GetBoneContainer()};
+	const FCompactPoseBoneIndex Neck1 = S.Find(TEXT("neck_01")), Neck2 = S.Find(TEXT("neck_02")), Head = S.Find(TEXT("head"));
+	if (!Neck1.IsValid() || !Head.IsValid())
+	{
+		return;
+	}
+
+	// sideways: each neck bone takes its share of the way back, at most 8 degrees a bone
+	const FCompactPoseBoneIndex Necks[2] = {Neck1, Neck2};
+	const int32 NumNecks = Neck2.IsValid() ? 2 : 1;
+	const double Start = S.Component(Head).GetLocation() | CatwalkLeft;
+	const double Line = FMath::Lerp(Start, ClipHeadAt | CatwalkLeft, double(FMath::Clamp(Tune.HeadLine, 0.f, 1.f) * Gait));
+	for (int32 n = 0; n < NumNecks; ++n)
+	{
+		const FVector Pivot = S.Component(Necks[n]).GetLocation(), At = S.Component(Head).GetLocation();
+		const float Off = float((At | CatwalkLeft) - Line) / float(NumNecks - n);
+		const FVector From = At - Pivot;
+		const float Len = float(From.Size());
+		if (Len < 1.f || FMath::Abs(Off) < 0.01f)
+		{
+			continue;
+		}
+		const FVector To = From - CatwalkLeft * FMath::Clamp(Off, -Len * 0.14f, Len * 0.14f); // ~8 degrees
+		S.RotateCS(Necks[n], FQuat::FindBetweenVectors(From, To));
+	}
+
+	// aim: the head looks where the clip's head looks
+	const FQuat Now = S.Component(Head).GetRotation();
+	S.RotateCS(Head, FQuat::Slerp(FQuat::Identity, ClipHeadRot * Now.Inverse(), FMath::Clamp(Tune.Head, 0.f, 1.f) * Gait));
 }
 
 void FVisexAnimProxy::PostUpdate(UAnimInstance* InAnimInstance) const
