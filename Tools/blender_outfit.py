@@ -960,7 +960,7 @@ def bodystocking():
             tube(ring, 0.1, "Trim", closed=True, sides=8, step=0.35, rigid=nearest(cv))
 
 
-def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.5, slot="Satin", skin_to=None, tight=False, rigid_from=None, follow=False):
+def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.5, slot="Satin", skin_to=None, tight=False, rigid_from=None, follow=False, cling=0.0):
     """A short satin A-line worn over the bodystocking (Docs/Research/DESIGN_SKIRT.md). Not cut
     from the skin: rings lofted from the waist down. Each ring follows her hull to the hip, then
     hangs straight from the widest point above it, flares out (A-line) and swings in broad
@@ -978,7 +978,11 @@ def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.
     of the skin straight in from it (waist, hip, glute, thigh), blurred round the ring and down, so
     it rides her legs when she sits, kneels or lies down. With one ring's weights from the crotch
     down it stayed with the pelvis, and in FEETUP, GLANCE and MERMAID her thighs went through the
-    front, her seat showed through the back and the hem sank into the sand."""
+    front, her seat showed through the back and the hem sank into the sand.
+    cling (0-1): how much of the hang below her widest point is taken back towards her body. A
+    skinned skirt has no gravity: in FEETUP (lying on her front) the part hanging straight down
+    from the glutes stood off her seat and thighs as a stiff ring (Tema's circle, 2026-11-11).
+    Clinging under the glutes, the hem lies on her thighs whichever way they point."""
     cr, hb = LM["crotch"], LM["hip_top"]
     top = LM["waist"] + 1.0 if top is None else top
     hem = cr - 6.0 if hem is None else hem
@@ -995,7 +999,8 @@ def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.
             hit = TORSO_BVH.ray_cast(o, -d, 80)
             R[i, k] = 80 - hit[3] if hit[0] else (R[i - 1, k] if i else 10.0)
             J[i, k] = nearest(hit[0]) if hit[0] else (J[i - 1, k] if i else 0)
-    R = np.maximum.accumulate(R, axis=0)                           # hangs from the widest point above
+    hang = np.maximum.accumulate(R, axis=0)                        # hangs from the widest point above
+    R = hang - cling * (hang - R)                                  # ... or clings back towards her
     hull = R.copy()
     for _ in range(3):                                             # soften round and down
         R[:, :-1] = (np.roll(R[:, :-1], 1, 1) + 2 * R[:, :-1] + np.roll(R[:, :-1], -1, 1)) / 4
@@ -1085,7 +1090,7 @@ def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.
 OUTFITS = {"Noir": noir, "Garter": garter_set, "Cocoa": cocoa, "Fishnet": fishnet,
            "Catsuit": catsuit_set, "Sheer": sheer, "Bodystocking": bodystocking,
            "BodystockingSkirt": lambda: (bodystocking(), skirt()),
-           "Skirt": lambda: skirt(off=1.0, flare=1.5, swing=0.0, skin_to=LM["crotch"] + 2.0, tight=True, follow=True)}   # the cloth skirt: follows her shape, only the hem moves (Tema 2026-11-10); 1 cm off at the top, 4 at the hem (the cloth gets no bounce morphs); skin weights to just above the crotch, so the hip front cannot push through
+           "Skirt": lambda: skirt(off=1.0, flare=1.5, swing=0.0, skin_to=LM["crotch"] + 2.0, tight=True, follow=True, cling=0.7)}   # the cloth skirt: follows her shape, only the hem moves (Tema 2026-11-10); 1 cm off at the top, 4 at the hem (the cloth gets no bounce morphs); skin weights to just above the crotch, so the hip front cannot push through
 CLOTH = {"Skirt"}                                # simulated in UE: the default body's morphs baked into the rest shape
 
 
