@@ -237,10 +237,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera", meta = (ClampMin = "1"))
 	float MenuSensorScale = 3.f;
 
-	/** Menu aperture (f-stop) on that sensor; 0 keeps the camera's own. f/8 keeps all of her sharp
-	 * (about ±40 cm around the focus at menu distance) while the far haze still goes soft. */
+	/** Menu aperture (f-stop) on that sensor; 0 keeps the camera's own. f/2.8 holds about ±14 cm
+	 * around the focus at menu distance, so she stays crisp while the steps and colonnade behind
+	 * her fall soft (f/8, about ±40 cm, kept the background too sharp). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
-	float MenuAperture = 8.f;
+	float MenuAperture = 2.8f;
 
 	/** Seconds the Start move blends into the play camera when it lands (0 = a cut). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera", meta = (ClampMin = "0"))
