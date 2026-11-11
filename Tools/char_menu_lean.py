@@ -41,13 +41,16 @@ PROPS = [("/Engine/BasicShapes/Cylinder", (0.0, CY, CZ), (1.0, 0.0, 0.0), (RADIU
 
 # hands near the top of the drum, where its collision matches the stone (the contact probe
 # traces against collision), with room for the palm under the wrist bone
-HAND_DEG = globals().get("HAND_DEG", -15.0)    # palm centre over the drum's far side: the hand tilts away, the wrist opens
-HAND_X = globals().get("HAND_X", 28.0)         # hands this far out from her centre; wider = the arms angle out, not hang
+HAND_DEG = globals().get("HAND_DEG", 48.0)     # on the drum's front, beside her hips, in MenuCam's view: at -15 (the far side)
+#   the low camera lost the hands behind the drum's edge (QA 0320 cmp_hand), and the game's shoulder limit
+#   pulled them 13 cm off it; at 20 the stone's own bulge still hid them
+HAND_X = globals().get("HAND_X", 34.0)         # hands this far out from her centre; wider = the arms angle out, not hang
 PALM_OFF = globals().get("PALM_OFF", 3.0)
 FINGER_DIP = globals().get("FINGER_DIP", 0.12)      # 0.25 put the fingertips into the stone, 0 lifted them
 FINGER_CURL = globals().get("FINGER_CURL", (10.0, 14.0, 6.0))   # draped over the drum's curve, not laid out
 FINGER_OUT = globals().get("FINGER_OUT", 0.6)        # fingers out along the drum: 0.8 folded the wrist back 90 deg
 FINGER_SPREAD = globals().get("FINGER_SPREAD", (-4.0, -1.0, 2.0, 6.0))   # a resting hand, fingers nearly together
+FINGER_YAW = globals().get("FINGER_YAW", -150.0)  # fingers down the drum's front, a little turned: a bench grip, every joint in range
 ARM_SLACK = globals().get("ARM_SLACK", 0.93)   # the arm reaches at most this much of its length: a soft elbow
 
 def lerp(a, b, t): return tuple(x + (y - x) * t for x, y in zip(a, b))
@@ -68,8 +71,12 @@ def lean_arms(P):
             wrist = add(pt, mul(n, PALM_OFF))   # the wrist bone sits this far off the stone: palm thickness
             if length(sub(wrist, pos(up))) <= arm or deg >= P["hand_deg"] + 40.0: break
             deg += 2.0
-        fingers = norm(lerp(cross((1.0, 0.0, 0.0), n), (0.0, 0.0, -1.0), FINGER_DIP))  # along the stone
-        fingers = norm(add(fingers, (side * FINGER_OUT, 0.0, 0.0)))   # fingers outward-back: the wrist rests at ~55 deg, not folded
+        back = norm(cross((1.0, 0.0, 0.0), n))           # along the stone, away from her
+        if FINGER_YAW is None:
+            fingers = norm(lerp(back, (0.0, 0.0, -1.0), FINGER_DIP))
+            fingers = norm(add(fingers, (side * FINGER_OUT, 0.0, 0.0)))   # fingers outward-back: the wrist rests at ~55 deg, not folded
+        else:                                            # turned on the stone from 'away from her', outward positive
+            fingers = norm(lerp(rot(axis_angle(n, -side * FINGER_YAW), back), (0.0, 0.0, -1.0), FINGER_DIP))
         reach(s, wrist, (side * 0.6, -1.0, 0.2))
         set_hand(s, fingers, neg(n))
         share_twist(s)
@@ -171,6 +178,8 @@ def walk_pose(T, W, opt):
     L = W.get_play_length()
     p = APE.get_anim_pose_at_time(W, T % L, opt)
     for b in bones:
+        if "toe_0" in b:
+            continue                                 # the walk has no toe tracks: keep Quinn's (char_pose_peace.py)
         x = APE.get_bone_pose(p, b, unreal.AnimPoseSpaces.LOCAL); r = x.rotation
         local[b] = [(x.translation.x, x.translation.y, x.translation.z), qnorm((r.x, r.y, r.z, r.w)),
                     (x.scale3d.x, x.scale3d.y, x.scale3d.z)]
@@ -298,13 +307,32 @@ def up_and_walk():
     print("lean up: %.2f s, walks %.0f cm" % (total, RF))
     return frames
 
-frames_up = up_and_walk()
+# The stand-up the menu plays when Body, Wardrobe, Photo or Start is picked. Tema (QA 0320): the
+# lazy walk-off (up_and_walk, 4.75 s) kept the page waiting 4 s after the click. Now one snappy
+# push: the hands press, the hips come off the stone, the right foot steps through and she is
+# up in her idle, in place, in 1 s. Every part still leads or follows (LEAD), on a third of
+# the clock, so it reads as a push and not as a pose sliding into another.
+SNAP_KEYS = [(0.0, LEAN), (0.28, PUSH), (0.55, STEP), (0.80, STAND)]
+SNAP_LEAD, SNAP_PAD = 1.0 / 3.0, 0.10
+
+def snap_up():
+    global LEAD, PAD
+    keep = LEAD, PAD
+    LEAD, PAD = {k: v * SNAP_LEAD for k, v in keep[0].items()}, SNAP_PAD
+    try:
+        return clip(SNAP_KEYS)
+    finally:
+        LEAD, PAD = keep
+
+frames_up = snap_up() if not globals().get("WALK_OFF") else up_and_walk()
+print("lean up: %.2f s" % ((len(frames_up) - 1) / float(FPS)))
 if BUILD:
     write("A_Menu_Lean", breathing(), MENU_DIR)
     up_seq = write("A_Menu_Lean_Up", frames_up, MENU_DIR, False)
-    up_seq.set_editor_property("enable_root_motion", True)   # she walks away from the column
+    walks = bool(globals().get("WALK_OFF"))
+    up_seq.set_editor_property("enable_root_motion", walks)  # the walk-off travels; the snap stands up in place
     up_seq.set_editor_property("force_root_lock", False)
     unreal.EditorAssetLibrary.save_loaded_asset(up_seq, only_if_is_dirty=False)
-    print("saved %s/A_Menu_Lean_Up %.2f s, root motion" % (MENU_DIR, up_seq.get_play_length()))
+    print("saved %s/A_Menu_Lean_Up %.2f s, root motion %s" % (MENU_DIR, up_seq.get_play_length(), walks))
     write("A_Menu_Lean_Down", clip(DOWN_KEYS), MENU_DIR)
 shoot("lean", frames_up, SHOTS, globals().get("VIEWS", ("front3qr", "right")))
