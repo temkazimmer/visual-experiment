@@ -69,6 +69,16 @@ private:
 	float Hold = 0.f;       // HoldTarget, eased
 	float HoldClock = 0.f;  // seconds of hold time; the breath and drift run on it
 
+	// toes at push-off (visex.Toes.*): the clips bend only the ball, so the toes moved as one block
+	void Toes(FCompactPose& Pose);
+	struct FToesTune
+	{
+		float Big = 0.f, Lift = 0.f, Grip = 0.f, Plant = 0.f, Spread = 0.f, Full = 25.f;
+	} ToesTune;
+	float ToesTarget = 0.f;           // 1 while she walks or runs
+	float ToesOn = 0.f;               // ToesTarget, eased
+	float ToesPush[2] = {0.f, 0.f};   // each foot's ball bend past rest (deg), eased: quick in, slower out
+
 	FVector HandFix[2] = {FVector::ZeroVector, FVector::ZeroVector}; // copied from the instance
 
 	// joint limits (visex.Limits): the worst excess this frame, reported to the instance
