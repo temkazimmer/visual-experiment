@@ -1067,41 +1067,35 @@ def tartan():
     # and a side strap from the cup's outer edge over the hip to the top of the thong
     cr, hb = LM["crotch"], LM["hip_top"]
     def wrap(keys, width):
-        """A strap on the skin through (angle from the front toward her left, deg; height, cm)
-        keys: each sample is found by a ray in toward the body axis, so it never cuts across."""
+        """A strap through (angle from the front toward her left, deg; height, cm) keys, laid as a
+        smooth flat tape: each sample is found by a ray in toward the body axis, lifted over the
+        hollows (BRIDGE), and the tape rides the skin beneath it. Cut from the skin as a field, the
+        thin straps went ragged on the flanks and the back band dipped in and out over the
+        shoulder blades (clothes-02, 2026-11-11). Samples under a cup are dropped, so a strap
+        starts tucked under the cup's binding."""
         pts = []
         for (t0, z0), (t1, z1) in zip(keys[:-1], keys[1:]):
-            for k in np.linspace(0, 1, 24, endpoint=False):
+            for k in np.linspace(0, 1, 64, endpoint=False):
                 q = ray(TORSO_BVH, pel_v, z0 + (z1 - z0) * k, D(t0 + (t1 - t0) * k), 0.0)
-                if q:
-                    pts.append(NP(q))
-        d = np.full(nv, 1e9)
-        for a, b in zip(pts[:-1], pts[1:]):
-            ab = b - a
-            t = np.clip(((X - a) @ ab) / max(ab @ ab, 1e-6), 0, 1)
-            d = np.minimum(d, np.linalg.norm(X - (a + t[:, None] * ab), axis=1))
-        return where((UPPERARM < 0.3) & (HEAD < 0.5), width * 0.5 - d)
+                if q and not (cup[nearest(q)] > -0.25 and len(pts) == 0):
+                    j = nearest(q)
+                    pts.append(q + NV[j] * (0.2 + float(BRIDGE[j])))
+        tube(pts, 0.0, "Binding", flat=(width, 0.14), step=0.35)
 
     ang = lambda p: (math.degrees(math.atan2((p - PEL) @ LEFT, (p - PEL) @ FWD)), float(p[2]))
-    straps = np.full(nv, NEG)
     for s in (1, -1):
-        ti, zi = ang(low[s]["inner"])
         to, zo = ang(low[s]["outer"])
         # the slingshot V (Tema's source): from the middle of each cup's lower edge down the flank,
         # converging onto the small front panel's top corner
         tm, zm = ang((low[s]["inner"] + low[s]["outer"]) * 0.5)
         corner = (s * 15.0, hb - 1.7)
-        straps = np.maximum(straps, wrap([(tm, zm), (s * 27.0, LM["waist"]), corner], 1.0))
+        wrap([(tm, zm), (s * 27.0, LM["waist"]), corner], 1.0)
         # high-cut hip strings: from the panel's corner up over the hip bone, round to the side
         # strap above the hip, which carries on to the thong at the back
-        straps = np.maximum(straps, wrap([corner, (s * 45.0, hb + 2.5), (s * 75.0, hb + 4.5), (s * 100.0, hb + 3.0)], 0.8))
-        straps = np.maximum(straps, wrap([(to, zo), (s * 82.0, LM["waist"] + 1.0), (s * 100.0, hb + 3.0),
-                                          (s * 150.0, hb + 0.5), (s * 176.0, hb - 0.8)], 1.0))
-        # a thin band from the cup's outer corner round the back at the bra line (a level band cut
-        # off at her side left a ragged stub hanging under each cup)
-        straps = np.maximum(straps, wrap([(to, zo), (s * 105.0, LM["fold"] + 3.0), (s * 180.0, LM["fold"] + 3.0)], 0.9))
-    straps = np.minimum(straps, 0.3 - cup)            # no strap over a cup: it ends under the cup's binding
-    region(straps, 0.36, "Binding", min_loop=4.0)
+        wrap([corner, (s * 45.0, hb + 2.5), (s * 75.0, hb + 4.5), (s * 100.0, hb + 3.0)], 0.8)
+        wrap([(to, zo), (s * 82.0, LM["waist"] + 1.0), (s * 100.0, hb + 3.0), (s * 150.0, hb + 0.5), (s * 176.0, hb - 0.8)], 1.0)
+        # a thin band from the cup's outer corner round the back at the bra line
+        wrap([(to, zo), (s * 105.0, LM["fold"] + 3.0), (s * 186.0, LM["fold"] + 3.0)], 0.9)   # the halves overlap at the spine
 
     # a small tartan front and a thong behind (the sheer tanga's cut, opaque and bound)
     # string_tanga()'s rear is cut against the leg weights, which aren't symmetric at the crease:
