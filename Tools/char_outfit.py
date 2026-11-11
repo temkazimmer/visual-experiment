@@ -57,8 +57,14 @@ WARDROBE = {
                    Sheer=dict(Color=(0.8, 0.8, 0.78), Opacity=0.3, EdgeOpacity=0.8, EdgeExponent=1.8, Roughness=0.55),
                    Lace=dict(Color=(0.85, 0.85, 0.83), Opacity=0.35, Cell=3.0)),
     "Sheer": dict(Sheer=dict(Color=BLACK, Opacity=0.66, EdgeExponent=1.5), Latex=dict(Color=(0.012, 0.013, 0.02), Roughness=0.34, CoatRoughness=0.06, CoatVariation=0.07, NormalStrength=0.6), Trim=STEEL),
+    # bundle 02 (Tema's references, 2026-11-11): matte black elastic straps joined by steel rings,
+    # opaque jersey chap stockings with a soft sheen, matte bound edges
+    "Harness": dict(Satin=dict(Color=(0.008, 0.008, 0.01), Roughness=0.4, RoughnessVariation=0.12, NormalStrength=0.6, SeamStrength=1.0),
+                    Jersey=dict(_base="Satin", Color=(0.01, 0.01, 0.012), Roughness=0.52, RoughnessVariation=0.1, NormalStrength=0.35, SeamStrength=1.0),
+                    Binding=dict(_base="Satin", Color=(0.006, 0.006, 0.008), Roughness=0.7, RoughnessVariation=0.1, NormalStrength=0.5),
+                    Trim=dict(Color=(0.8, 0.8, 0.82), Roughness=0.22, RoughnessVariation=0.06, Metallic=1.0)),
 }
-MESH_DIR = {"Sheer": "/Game/Character/Clothes", "Bodystocking": "/Game/Character/Clothes", "BodystockingSkirt": "/Game/Character/Clothes", "Skirt": "/Game/Character/Clothes", "Tartan": "/Game/Character/Clothes"}       # the rest: /Game/Character/Outfits
+MESH_DIR = {"Sheer": "/Game/Character/Clothes", "Bodystocking": "/Game/Character/Clothes", "BodystockingSkirt": "/Game/Character/Clothes", "Skirt": "/Game/Character/Clothes", "Tartan": "/Game/Character/Clothes", "Harness": "/Game/Character/Clothes"}       # the rest: /Game/Character/Outfits
 DIR = "/Game/Character/Clothes"
 SKELETON = "/Game/Characters/Mannequins/Meshes/SK_Mannequin"
 ONLY = globals().get("ONLY")

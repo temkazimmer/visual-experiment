@@ -41,7 +41,7 @@ PREVIEW = args[2] if len(args) > 2 and not args[2].startswith("--") else None
 ONLY = next((a.split("=", 1)[1].split(",") for a in args if a.startswith("--only=")), None)
 os.makedirs(OUT_DIR, exist_ok=True)
 
-SLOTS = ["Sheer", "Lace", "Net", "Satin", "Latex", "Trim", "Nylon", "Binding", "Tartan"]
+SLOTS = ["Sheer", "Lace", "Net", "Satin", "Latex", "Trim", "Nylon", "Binding", "Tartan", "Jersey"]
 OPAQUE = ("Satin", "Latex", "Trim", "Tartan")
 CL, CP, PERIOD = 48.0, 96.0, 24.0     # nominal leg and torso girth (cm), pattern period
 
@@ -1419,6 +1419,7 @@ MATS = dict(Sheer=pmat("Sheer", (0.01, 0.01, 0.012), 0.6, alpha=0.4), Lace=pmat(
             Latex=pmat("Latex", (0.012, 0.013, 0.02), 0.3, coat=1.0), Trim=pmat("Trim", (0.75, 0.78, 0.82), 0.25, metal=1.0),
             Nylon=pmat("Nylon", (0.006, 0.006, 0.008), 0.5, alpha=0.5), Binding=pmat("Binding", (0.006, 0.006, 0.008), 0.7),
             Tartan=pmat("Tartan", (0.45, 0.02, 0.02), 0.55))
+MATS["Jersey"] = pmat("Jersey", (0.01, 0.01, 0.012), 0.5)      # bundle 02: opaque matte stretch jersey
 scn = bpy.context.scene
 if PREVIEW:
     os.makedirs(PREVIEW, exist_ok=True)

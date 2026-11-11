@@ -184,6 +184,8 @@ const TArray<FVisexOutfit>& FVisexBodyProfile::Outfits()
 		O(TEXT("Catsuit"), LOCTEXT("OutfitCatsuit", "Latex catsuit"), TEXT("/Game/Character/Outfits/SKM_Outfit_Catsuit.SKM_Outfit_Catsuit")),
 		// bundle 03 (Tema's references, 2026-11-11): red tartan slingshot, collar and tie, white thigh-highs
 		O(TEXT("Tartan"), LOCTEXT("OutfitTartan", "Tartan"), TEXT("/Game/Character/Clothes/SKM_Outfit_Tartan.SKM_Outfit_Tartan")),
+		// bundle 02 (Tema's references, 2026-11-11): black strap harness, ring-joined, opaque chap stockings
+		O(TEXT("Harness"), LOCTEXT("OutfitHarness", "Harness"), TEXT("/Game/Character/Clothes/SKM_Outfit_Harness.SKM_Outfit_Harness")),
 		// the dressing room's locked costumes: listed, not wearable yet (unlocked in play or
 		// bought, later; Tema, 2026-11-11). Choosing one shows "under construction".
 		L(TEXT("Noir"),    LOCTEXT("OutfitNoir", "Noir lace")),
