@@ -97,6 +97,83 @@ The manual equivalent, for reference:
 4. Colliders: sphere on `head` (radius ~11), capsules on `neck_01`, both shoulders and `spine_05`, each 1 cm larger than the body.
 5. On the character: add a Skeletal Mesh component `Hair` under the body mesh, mesh `SKM_HairCards`, anim class `ABP_HairCards`, and hide the `Hair` section of `SKM_AndroidSkin`. This touches the character branch (`UVisexBodyComponent` or the skin chain), so it is that agent's change.
 
+## Hairlines, partings and what "finished" card hair has (added 2026-11-11)
+
+Tema: the hair "looks halfway there". Asked: how do others build the hairline. What the
+breakdowns agree on, and where ours differs.
+
+**1. Cards go on in layers, and each layer has a job.** The clearest breakdown
+([80.lv, real-time Chinese hairstyle in Blender](https://80.lv/articles/designing-a-real-time-traditional-chinese-hairstyle-in-blender))
+uses six, in this order:
+
+| Layer | Cards | Job |
+|---|---|---|
+| Hairline | dense, opaque, snapped onto the scalp around the hairline **and at the part** | softens where skin becomes hair |
+| Base shape | the densest, opaque, side by side or just overlapping | blocks the scalp |
+| Volume and breakup | semi-sparse crossed with sparse | body; sparse cards can overlap without showing edges |
+| Sparse strands | two sparse cards crossed, some against the flow | irregularity |
+| Flyaways | loose single strands | breaks the silhouette |
+| Baby hair | very thin, short, soft, at the front and the nape | the last softening of the hairline |
+
+Others say the same in fewer words: an opaque base for scalp coverage, then 1 or 2 more passes of
+less opaque cards, and the final layers "work out the transition areas along the hairline"
+([80.lv, tips on hair for games](https://80.lv/articles/tips-tricks-on-hair-for-games/)); card
+type 1 is "dense, nearly white alpha" and covers the scalp, types 2 to 6 get sparser, placed
+from the scalp outward ([80.lv, hair for real-time characters](https://80.lv/articles/creating-hair-for-real-time-game-characters/)).
+
+**2. The scalp is never left as bare skin under the hair.** Two mechanisms:
+- The dense base layer (above).
+- The skin itself is darkened where hair grows. Epic's groom tools generate a *follicle mask*, "a
+  small distance field of the hair roots", so the head's material can blend hair into its surface
+  ([Epic, generating groom textures](https://dev.epicgames.com/documentation/unreal-engine/generating-groom-textures-in-unreal-engine)).
+  Card-hair packs ship a separate *cap* mesh with its own UVs and alpha for the same purpose
+  (seen in marketplace listings; I found no studio write-up that explains the cap, so the
+  explanation is mine: a shell on the scalp, hair-coloured, fading out at the hairline).
+
+**3. Roots are softened in the shader.** The Paragon hair material's "eyebrow option" adds pixel
+depth offset at the roots "for a softer blend into the scalp" (same Chinese-hairstyle article).
+
+**4. Depth comes from baked occlusion, not only from lighting.** "Ambient occlusion is baked into
+the vertices of the hair cards on a layer-by-layer basis" (80.lv tips article). Inner layers are
+darker, so the mass reads as layered instead of as one flat colour.
+
+**5. Clumps are 2 to 3 crossed cards**, not single ribbons, so a lock has thickness from every angle
+(80.lv tips article; the Chinese-hairstyle article crosses one opaque card with two semi-sparse).
+
+### Ours against that list
+
+| Practice | Ours before today | Now |
+|---|---|---|
+| Hairline layer, cards at the part | none: the part was a 1.5 cm stripe of bare scalp | not done as cards; the cap closes the part, and strand roots are less ragged |
+| Scalp darkened under the hair | none: every gap showed bright skin | a cap shell on the scalp in the hair mesh (`M_HairCap`), fading at the hairline |
+| Dense base, sparser on top | yes (dense tiles under, sparse on top) | unchanged |
+| Flyaways | 4% of the back cards | unchanged |
+| Baby hair | none | not done; next for the front hairline |
+| Soft roots (depth offset) | none | not done: Python can't reach that material pin in 5.7 |
+| Baked occlusion per layer | none: the hair is one flat black | not done; the next thing to try for depth |
+| Crossed-card clumps | single ribbons, slightly arched | not done; matters most for the face locks |
+
+So the missing half is mostly at the scalp (cap, hairline, part) and in depth (occlusion,
+crossed clumps). Shape and motion were the half we had.
+
+### Why black hair went white in backlight (found 2026-11-11)
+
+Every QA round reported pale or white strands at the hair's edge against the haze, and Tema's
+first Body-page shot had white card edges. Reproduced in the editor: sun in front of her, camera
+behind. Sun off: gone. Sky light off: still there. Specular 0, a quarter of the base colour, the
+Backlit pin at 0: no change. Only a pure black base colour removed it.
+
+The engine source explains all of it (`Engine/Shaders/Private/HairBsdf.ush`,
+`HairShadingCommon.ush`): the Hair shading model always adds the TT lobe, light transmitted
+through the fibre, when light and viewer are on opposite sides. For card hair
+`bUseBacklit` is false, so the material's Backlit pin is ignored (it only works for strand
+grooms), Specular doesn't scale that lobe, and its tint is `pow(BaseColor, small exponent)`, so
+near-black hair still transmits a lot.
+
+Fix: `M_HairCards` is now Default Lit with Anisotropy -0.8 and the tangent along the strands (a
+highlight band across the hair, no transmission). Roughness 0.58, specular 0.12. On this model the
+cards' normals matter, which the Hair model hid: flat cards can show as facets in a hard light.
+
 ## Hairstyles (added 2026-11-11)
 
 Two styles, each its own mesh and AnimBP; one skeleton (`SK_HairCards`), atlas and material for both.

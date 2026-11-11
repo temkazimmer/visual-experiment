@@ -29,7 +29,8 @@ def _tile(rng, w, h, nstrands=26):
         d = np.abs(u - xc)
         a = np.clip(1.0 - (d - half * 0.35) / (half * 0.65 + 1e-6), 0, 1)
         a *= (v <= length)
-        a *= (v >= rng.uniform(0.0, 0.035))                  # ragged roots: no straight card edge at the hairline
+        a *= (v >= rng.uniform(0.0, 0.012))                  # ragged roots: no straight card edge at the hairline
+        # (0.035 opened the elf cut's part into a 1.5 cm bald stripe: its cards are ~85 cm long)
         bright = rng.uniform(0.35, 1.0)
         m = a > alpha
         var = np.where(m, bright, var)
