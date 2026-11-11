@@ -1295,9 +1295,17 @@ def harness():
     straps = np.full(nv, NEG)
 
     # ---- the halter collar and the bust ----
+    # the reference: a halter collar widening at the front into a bib that ends in a point over
+    # the sternum; a short strap from the point to a ring between the cup tops; halter straps
+    # from the collar's sides down to each cup's outer top, a teardrop of skin between them; full
+    # cups with their inner-lower quarter cut away (one wide opening under the ring); an
+    # underwire band that rises between the cups
     zn = LM["neck"] + 1.0
     region(where((G("head") < 0.5) & (UPPERARM < 0.3), np.minimum(zn + 2.4 - Z, Z - zn)), 0.4, "Satin", bind=BIND, min_loop=6.0)
-    zr = LM["bust"] + 1.5                                          # the bra ring, between the cups
+    zb = zn - 8.0                                                  # the bib's point
+    wb = 0.5 + 5.5 * np.clip((Z - zb) / (zn - zb), 0, 1) ** 1.2     # half-width: 5 cm under the collar, a point below
+    region(where((G("head") < 0.5) & (UPPERARM < 0.3) & (FW > 0), np.minimum.reduce([zn + 1.2 - Z, Z - zb, wb - ALAT])), 0.42, "Satin", bind=BIND, min_loop=4.0)
+    zr = LM["bust"] + 2.0                                          # the bra ring, between the cup tops
     ring_c = ray(TORSO_BVH, pel_v, zr, 0.0, 0.0)
     cup = np.full(nv, NEG)
     tops = {}
@@ -1306,50 +1314,66 @@ def harness():
         Dv = X - ANCHOR[s]
         x, y = Dv @ l, Dv @ u
         c_ = CUP[s]
-        rx = np.where(x > 0, c_["out"], c_["inn"]) * 1.08
-        ry = np.where(y > 0, c_["up"], c_["dn"]) * 1.08
+        rx = np.where(x > 0, c_["out"], c_["inn"]) * 1.1
+        ry = np.where(y > 0, c_["up"], c_["dn"]) * 1.1
         r = np.sqrt((x / rx) ** 2 + (y / ry) ** 2)
-        c = np.minimum((1.0 - r) * 7.0, (0.2 + 0.45 * np.clip(x / c_["out"], 0, 1)) * c_["up"] - y)   # top rises outward; the upper inner pole open
-        # a crescent opening under the cup, from the inner side round toward the apex
-        cx, cy = -0.35 * c_["inn"], -0.55 * c_["dn"]
-        hole = np.sqrt(((x - cx) / (0.55 * c_["inn"])) ** 2 + ((y - cy) / (0.32 * c_["dn"])) ** 2)
-        c = np.minimum(c, (hole - 1.0) * 6.0)
+        # top edge from the ring outward, rising a little to where the halter strap joins
+        k = np.clip((x + c_["inn"]) / (c_["inn"] + c_["out"]), 0, 1)
+        top_ = 1.6 + 1.6 * k - y
+        # the inner-lower quarter cut away: an ellipse round the cup's inner bottom corner
+        hole = np.sqrt(((x + c_["inn"] * 1.05) / (c_["inn"] * 1.25)) ** 2 + ((y + c_["dn"] * 1.1) / (c_["dn"] * 0.95)) ** 2)
+        c = np.minimum.reduce([(1.0 - r) * 7.0, top_, (hole - 1.0) * 6.0])
         cup = np.maximum(cup, where(TORSO & (NS @ FWD > -0.2) & (Dv @ f > -8), c))
-        tops[s] = dict(inner=ANCHOR[s] + l * (-0.55 * c_["inn"]) + u * (0.45 * c_["up"] - 0.6),
-                       outer=ANCHOR[s] + l * (0.8 * c_["out"]) + u * (0.3 * c_["up"] - 0.6))
+        tops[s] = ANCHOR[s] + l * (0.75 * c_["out"]) + u * (3.0 - 0.5)
     region(cup, 0.32, "Satin", bind=BIND, min_loop=6.0)
-    region(underband(1.4), 0.46, "Satin", bind=BIND, min_loop=6.0)
-    # back: two level bands from side to side, no panel
-    back = TORSO & (FW < (ANCHOR[1] - PEL) @ FWD - 6.0)
-    for dz in (0.7, 6.2):
+    # underwire band: level round the back, rising 2.5 cm between the cups
+    zc = LM["fold"] - 0.7 + 2.5 * (1 - smooth01(1.5, 8.0, ALAT)) * SIDE_BLEND
+    region(where(TORSO, 0.7 - np.abs(Z - zc)), 0.46, "Satin", bind=BIND, min_loop=6.0)
+    # back: two level bands with sliders, no panel; the halves overlap at the spine
+    for dz in (0.0, 5.5):
         for s in (1, -1):
-            strap(line([(s * 70.0, LM["fold"] + dz), (s * 179.0, LM["fold"] + dz)]))
-    # collar to ring, ring to each cup's inner top; collar to each cup's outer top (halter)
-    neck_f = surface_near(Bn["neck_01"] + FWD * 6.0 + UP * (zn - Bn["neck_01"][2]), FWD)
+            pts = line([(s * 70.0, LM["fold"] - 0.7 + dz), (s * 187.0, LM["fold"] - 0.7 + dz)])
+            if dz:
+                strap(pts)
+            if len(pts) > 10:
+                k = int(len(pts) * 0.6)
+                slider(V3(pts[k]), V3(pts[k + 1] - pts[k - 1]))
     lift = lambda q: V3(q) + nearest_normal(V3(q)) * 0.3
-    if ring_c:
-        strap(taut(lift(neck_f), ring_c + nearest_normal(ring_c) * 0.3, 0.3))
+    # bib point to the ring: a short strap with a slider
+    tip = ray(TORSO_BVH, pel_v, zb + 0.4, 0.0, 0.3)
+    if ring_c and tip:
+        pts = taut(tip, ring_c + nearest_normal(ring_c) * 0.3, 0.3)
+        strap(pts)
+        slider(pts[len(pts) // 2], pts[-1] - pts[0], 0.8)
     for s in (1, -1):
-        ci = surface_near(tops[s]["inner"], FWD)
-        co = surface_near(tops[s]["outer"], FWD)
-        if ring_c:
-            strap(taut(ring_c + nearest_normal(ring_c) * 0.3, lift(ci), 0.3))
-        nk = surface_near(Bn["neck_01"] + LEFT * s * 5.0 + FWD * 3.0 + UP * (zn - Bn["neck_01"][2]), LEFT * s + FWD)
-        strap(taut(lift(nk), lift(co), 0.3))
+        co = surface_near(tops[s], FWD)
+        nk = surface_near(Bn["neck_01"] + LEFT * s * 5.5 + FWD * 3.0 + UP * (zn + 0.5 - Bn["neck_01"][2]), LEFT * s + FWD)
+        pts = taut(lift(nk), lift(co), 0.3)
+        strap(pts)
+        slider(pts[len(pts) // 3], pts[-1] - pts[0])
 
     # ---- the thong, its ring and the hip straps ----
-    zt = hb - 2.0                                                  # top of the front panel
-    tv = np.clip((Z - cr) / (zt - cr), 0, 1)
-    front = np.minimum(zt - Z, 1.6 + 7.0 * tv ** 1.5 - ALAT)       # a V narrowing to the gusset
-    tb = np.clip((Z - cr) / (hb - cr), 0, 1)
-    rear = np.minimum(hb - 1.0 - Z, 0.6 + 3.0 * tb ** 2 + 1.4 * (1 - smooth01(cr + 1.0, cr + 6.0, Z)) - ALAT)
-    reg = TORSO & (Z > cr - 4) & (Z < hb + 2) & ~((LEGS > 0.9) & (Z < cr - 1))
-    region(where(reg, rear + (front - rear) * SIDE_BLEND), 0.3, "Satin", bind=BIND, min_loop=4.0)
-    ring_t = ray(TORSO_BVH, pel_v, zt + 1.0, 0.0, 0.0)
+    # one field in (height, distance from the centre plane), as Tartan's: cut against the leg
+    # weights the thong came out lopsided behind
+    cs = LM["crotch_skin"]
+    zt = hb - 2.5                                                  # top of the front panel
+    tv = np.clip((Z - cs) / (zt - cs), 0, 1)
+    front = np.minimum(zt - Z, 1.4 + 5.2 * tv ** 1.5 - ALAT)       # a V narrowing to the gusset, 13 cm across the top
+    tb = np.clip((Z - cs) / (hb - 1.0 - cs), 0, 1)
+    rear = np.minimum(hb - 1.0 - Z, 0.6 + 2.6 * tb ** 2.2 - ALAT)
+    region(where((UPPERARM < 0.3) & (Z > cs - 6.0) & (Z < hb + 4.0) & (ALAT < 10.0), rear + (front - rear) * SIDE_BLEND),
+           0.3, "Satin", bind=BIND, min_loop=4.0)
+    ring_t = ray(TORSO_BVH, pel_v, zt + 2.0, 0.0, 0.0)
+    if ring_t:                                                     # a short tab from the panel up to the ring
+        bot = ray(TORSO_BVH, pel_v, zt - 0.3, 0.0, 0.0)
+        if bot:
+            strap([bot, ring_t])
     for s in (1, -1):
-        hi = line([(s * 3.0, zt + 1.6), (s * 45.0, LM["waist"] - 1.0), (s * 95.0, LM["waist"] + 0.5),
-                   (s * 150.0, hb + 3.0), (s * 178.0, hb - 0.5)])
-        lo = line([(s * 3.0, zt + 0.6), (s * 40.0, hb - 2.0), (s * 90.0, hb - 1.0), (s * 150.0, hb - 1.0), (s * 178.0, hb - 0.5)])
+        # upper: ring up over the hip bone to the side at the waist; lower: the panel's top
+        # corner out and up over the hip; both round the back to the top of the thong
+        hi = line([(s * 3.0, zt + 2.4), (s * 45.0, LM["waist"] - 1.0), (s * 95.0, LM["waist"] + 0.5),
+                   (s * 150.0, hb + 3.0), (s * 178.0, hb - 1.0)])
+        lo = line([(s * 24.0, zt - 0.2), (s * 55.0, hb + 0.5), (s * 95.0, hb + 0.5), (s * 150.0, hb - 0.5), (s * 178.0, hb - 1.0)])
         strap(hi)
         strap(lo)
         for pts in (hi, lo):
@@ -1363,7 +1387,9 @@ def harness():
     zs = cr - 5.0                                                  # thigh strap height (front)
     chap = np.full(nv, NEG)
     for s in (1, -1):
-        legm = LEGMASK & (LEGS > 0.5) & ((LAT > 0) == (s == 1)) & (Z < cr + 2)
+        # by side and height, not by leg weight: at the front of the thigh near the groin the leg
+        # weights fade and the stocking's point was cut off 4 cm short of its ring
+        legm = LEGMASK & ((LAT > 0) == (s == 1)) & (Z < LM["crotch_skin"] - 0.5)
         a_, b_ = Bn["thigh_" + SIDE[s]], Bn["foot_" + SIDE[s]]
         d = X - (a_ + (b_ - a_) * ((a_[2] - Z) / (a_[2] - b_[2]))[:, None])
         phi = np.degrees(np.arctan2(d @ (LEFT * s), d @ FWD))     # 0 front, 90 outer, 180 back
@@ -1378,8 +1404,9 @@ def harness():
                 loop.append(q)
         tube(loop, 0.0, "Binding", closed=True, flat=(0.9, 0.22), step=0.4)
         # stocking top: a point at the front and back rings, a deep scallop at each side
-        dip = 15.0 * np.abs(np.sin(np.radians(phi))) ** 1.3 + 3.0 * (np.abs(phi) > 90)
-        top = zline - 1.2 - dip
+        # (deeper on the outer side, as in the reference); the points reach the rings' lower edge
+        dip = np.where(phi > 0, 15.0, 9.0) * np.abs(np.sin(np.radians(phi))) ** 1.2
+        top = zline - 0.45 - dip
         chap = np.maximum(chap, where(legm, top - Z))
         for th in (0.0, 180.0):
             zz = zs - 1.5 * (1 - math.cos(math.radians(th))) * 0.5
