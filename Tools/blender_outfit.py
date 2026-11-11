@@ -1022,8 +1022,10 @@ def tartan():
         tri = np.minimum(-side(bi, ap), side(bo, ap))               # inside both sides: positive
         c = np.minimum.reduce([(1.0 - r) * 7.0, tri, y + cut - 0.45 * np.clip(x / c_["out"], 0, 1) * cut])
         cup = np.maximum(cup, where(TORSO & (NS @ FWD > -0.2) & (Dv @ f > -8), c))
-        low[s] = dict(inner=ANCHOR[s] + l * bi[0] * 0.8 + u * (bi[1] - 0.3),
-                      outer=ANCHOR[s] + l * bo[0] * 0.9 + u * (bo[1] - 0.3),
+        # the straps start 0.25 cm up, under the cup's bound edge, so they read as sewn to it
+        # (from below the edge they left a loose dash under each cup)
+        low[s] = dict(inner=ANCHOR[s] + l * bi[0] * 0.8 + u * (bi[1] + 0.25),
+                      outer=ANCHOR[s] + l * bo[0] * 0.9 + u * (bo[1] + 0.25),
                       top=ANCHOR[s] + l * ap[0] + u * (ap[1] - 1.2))
     region(cup, 0.30, "Tartan", bind=BIND, min_loop=6.0)
 
@@ -1088,12 +1090,25 @@ def tartan():
         straps = np.maximum(straps, wrap([(ti, zi), (s * 13.0, LM["waist"] - 2.0), (s * 13.0, hb - 1.6)], 1.0))
         straps = np.maximum(straps, wrap([(to, zo), (s * 82.0, LM["waist"] + 1.0), (s * 100.0, hb + 3.0),
                                           (s * 150.0, hb + 0.5), (s * 176.0, hb - 0.8)], 1.0))
-    # a thin band round the back at the bra line, from cup to cup
-    straps = np.maximum(straps, where(TORSO & (FW < (ANCHOR[1] - PEL) @ FWD - 7.0), 0.45 - np.abs(Z - (LM["fold"] + 2.5))))
+        # a thin band from the cup's outer corner round the back at the bra line (a level band cut
+        # off at her side left a ragged stub hanging under each cup)
+        straps = np.maximum(straps, wrap([(to, zo), (s * 105.0, LM["fold"] + 3.0), (s * 180.0, LM["fold"] + 3.0)], 0.9))
+    straps = np.minimum(straps, 0.3 - cup)            # no strap over a cup: it ends under the cup's binding
     region(straps, 0.36, "Binding", min_loop=4.0)
 
     # a small tartan front and a thong behind (the sheer tanga's cut, opaque and bound)
-    region(string_tanga(), 0.30, "Tartan", bind=("Binding", 0.45), min_loop=4.0)
+    # string_tanga()'s rear is cut against the leg weights, which aren't symmetric at the crease:
+    # opaque, the back came out lopsided with a ragged foot. Here both halves are one field in
+    # (height, distance from the centre plane), a thong narrowing evenly into the gusset.
+    cs = LM["crotch_skin"]
+    top_f, top_b = hb - 1.5, hb - 0.8
+    tf = np.clip((Z - cs) / (top_f - cs), 0, 1)
+    front = np.minimum(top_f - Z, 1.6 + 5.4 * tf ** 1.4 - ALAT)        # 7 cm wide at the top
+    tb = np.clip((Z - cs) / (top_b - cs), 0, 1)
+    rear = np.minimum(top_b - Z, 0.7 + 3.3 * tb ** 2.2 - ALAT)        # 1.4 cm low, 8 cm at the top
+    panel = rear + (front - rear) * SIDE_BLEND
+    region(where((UPPERARM < 0.3) & (Z > cs - 6.0) & (Z < hb + 4.0) & (ALAT < 10.0), panel),
+           0.30, "Tartan", bind=("Binding", 0.45), min_loop=4.0)
 
     # white sheer thigh-highs with a wide lace top, no back seam
     st_top = ST_TOP + 1.0

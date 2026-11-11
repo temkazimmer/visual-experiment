@@ -234,9 +234,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
 	float FloorCameraHeight = 14.f;
 
-	/** From her feet to the camera, along the ground (cm). */
+	/** From her feet to the camera, along the ground (cm). At 160 the 15 mm lens couldn't hold
+	 *  her from toes to head: her feet fell under the frame's bottom edge. 200 keeps her whole,
+	 *  toes included, with about a tenth of the frame to spare above and below. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
-	float FloorCameraDistance = 160.f;
+	float FloorCameraDistance = 200.f;
 
 	/** Swings the floor camera round her from the level camera's side (deg). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
@@ -246,9 +248,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
 	float FloorCameraPan = -16.f;
 
-	/** Where the floor camera points, above her feet (cm). */
+	/** Where the floor camera points, above her feet (cm): 70 centres her, feet to head, at 16:9.
+	 *  Wider windows keep the same height of view and narrower ones show more, so the feet stay in. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
-	float FloorCameraLookHeight = 80.f;
+	float FloorCameraLookHeight = 70.f;
 
 	/** Menu lens focal length (mm): wide, low by her feet; 0 keeps the camera's own. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
