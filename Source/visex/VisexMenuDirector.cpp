@@ -296,12 +296,9 @@ float AVisexMenuDirector::MenuLensFocal() const
 	{
 		const float Shot = MenuFilmback.SensorWidth / MenuFilmback.SensorHeight;
 		const float Window = ViewAspect();
-		if (Window > Shot)
-		{
-			// wider than the shot: widen to keep her whole height
-			Focal *= Shot / Window;
-		}
-		else if (Window < Shot)
+		// wider than the shot needs nothing: the engine keeps the vertical field
+		// (BaseEngine.ini AspectRatio_MaintainYFOV), so her whole height stays and the sides grow
+		if (Window < Shot)
 		{
 			// narrower than the shot: unboxed, the engine keeps the lens's vertical field
 			// (LocalPlayer MaintainYFOV), so a 4:3 window cropped the sides and cut the panel's
