@@ -41,10 +41,14 @@ PROPS = [("/Engine/BasicShapes/Cylinder", (0.0, CY, CZ), (1.0, 0.0, 0.0), (RADIU
 
 # hands near the top of the drum, where its collision matches the stone (the contact probe
 # traces against collision), with room for the palm under the wrist bone
-HAND_DEG = globals().get("HAND_DEG", 12.0)
-PALM_OFF = globals().get("PALM_OFF", 4.5)
+HAND_DEG = globals().get("HAND_DEG", -15.0)    # palm centre over the drum's far side: the hand tilts away, the wrist opens
+HAND_X = globals().get("HAND_X", 28.0)         # hands this far out from her centre; wider = the arms angle out, not hang
+PALM_OFF = globals().get("PALM_OFF", 3.0)
 FINGER_DIP = globals().get("FINGER_DIP", 0.12)      # 0.25 put the fingertips into the stone, 0 lifted them
-FINGER_CURL = globals().get("FINGER_CURL", (6.0, 9.0, 5.0))
+FINGER_CURL = globals().get("FINGER_CURL", (10.0, 14.0, 6.0))   # draped over the drum's curve, not laid out
+FINGER_OUT = globals().get("FINGER_OUT", 0.6)        # fingers out along the drum: 0.8 folded the wrist back 90 deg
+FINGER_SPREAD = globals().get("FINGER_SPREAD", (-4.0, -1.0, 2.0, 6.0))   # a resting hand, fingers nearly together
+ARM_SLACK = globals().get("ARM_SLACK", 0.93)   # the arm reaches at most this much of its length: a soft elbow
 
 def lerp(a, b, t): return tuple(x + (y - x) * t for x, y in zip(a, b))
 
@@ -56,14 +60,20 @@ def on_stone(x, deg):
 def lean_arms(P):
     """Hands flat on the stone beside the hips, fingers over the front edge."""
     for s, side in (("l", 1.0), ("r", -1.0)):
-        pt, n = on_stone(side * P["hand_x"], P["hand_deg"])
-        wrist = add(pt, mul(n, PALM_OFF))       # the wrist bone sits this far off the stone: palm thickness
+        up, lo, h = "upperarm_" + s, "lowerarm_" + s, "hand_" + s
+        arm = (length(sub(pos(lo), pos(up))) + length(sub(pos(h), pos(lo)))) * ARM_SLACK
+        deg = P["hand_deg"]
+        while True:                              # her trunk is turned: a spot one shoulder reaches with a soft
+            pt, n = on_stone(side * P["hand_x"], deg)   # elbow locks the other arm, so that hand slides toward her
+            wrist = add(pt, mul(n, PALM_OFF))   # the wrist bone sits this far off the stone: palm thickness
+            if length(sub(wrist, pos(up))) <= arm or deg >= P["hand_deg"] + 40.0: break
+            deg += 2.0
         fingers = norm(lerp(cross((1.0, 0.0, 0.0), n), (0.0, 0.0, -1.0), FINGER_DIP))  # along the stone
-        fingers = norm(add(fingers, (side * 0.8, 0.0, 0.0)))     # fingers forward-outward: straight ahead needed 96 deg at the wrist
+        fingers = norm(add(fingers, (side * FINGER_OUT, 0.0, 0.0)))   # fingers outward-back: the wrist rests at ~55 deg, not folded
         reach(s, wrist, (side * 0.6, -1.0, 0.2))
         set_hand(s, fingers, neg(n))
         share_twist(s)
-        spread = (-9.0, -2.0, 5.0, 13.0) if s == "l" else (9.0, 2.0, -5.0, -13.0)
+        spread = FINGER_SPREAD if s == "l" else tuple(-v for v in FINGER_SPREAD)
         for fn, sp in zip(("index", "middle", "ring", "pinky"), spread):
             straighten(s, fn, sp)
         for fn in ("index", "middle", "ring", "pinky"):
@@ -71,7 +81,7 @@ def lean_arms(P):
 ARMS = lean_arms
 
 for k in (STAND, HALF, KNEEL):
-    k.update(hand_x=24.0, hand_deg=HAND_DEG)
+    k.update(hand_x=HAND_X, hand_deg=HAND_DEG)
 
 def foot(side, ankle, toe, sole_hint=(0.0, 0.0, -1.0)):
     toe = norm(toe)
