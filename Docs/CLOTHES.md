@@ -27,7 +27,7 @@ are just outdated); Sheer is built but unlisted.
 | Garter | Lace balconette and briefs, wide lace garter belt, four straps, stockings | Lace, Sheer, Satin, Trim (gold) |
 | Cocoa | Brown satin bra and thong, slim belt, front straps to buckled thigh bands, choker | Satin, Trim (gold) |
 | Fishnet | Fishnet tights with a satin waistband, satin bra and high thong | Net, Satin, Trim |
-| Catsuit | Smooth deep-navy latex suit: teardrop keyhole, side waist cutouts, every opening bound in white, front zip with a pull, leg stripes, collar, cuffs, belt with a rectangular buckle. Coat roughness 0.12, no ripple normal: a mirror coat showed the scene's hard edges as jagged black shapes on her | Latex, Trim (white) |
+| Catsuit | Smooth deep-navy latex suit, all one colour (no white: Tema, 2026-11-11): teardrop keyhole, big hip cutouts bridged by the belt, every opening bound in the same latex, front zip with a steel pull, collar, cuffs, belt with a steel buckle frame. Coat roughness 0.12, no ripple normal: a mirror coat showed the scene's hard edges as jagged black shapes on her | Latex, Trim (steel) |
 | Sheer | High-neck sheer bodysuit, latex yoke, bands and garter belt, six straps, opera gloves | Sheer, Latex, Trim |
 | **Bodystocking** | The hero outfit: one piece of sheer black nylon. Scoop tank, deep V back, open hips, open gusset with a sheer string tanga underneath, strap-held stocking legs, gold chain and bangles | Nylon, Sheer (tanga), Binding, Trim (gold) |
 | **BodystockingSkirt** | The bodystocking with a short black satin skirt over it that follows her hips and hangs straight, with a double waistband and a bound top. The skirt is **Chaos cloth** (see below): only the hem moves, a little | + Satin (cloth) |
