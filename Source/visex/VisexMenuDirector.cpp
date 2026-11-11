@@ -292,15 +292,23 @@ float AVisexMenuDirector::ViewAspect() const
 float AVisexMenuDirector::MenuLensFocal() const
 {
 	float Focal = (MenuFocalLength > 0.f ? MenuFocalLength : MenuFocal) * FMath::Max(1.f, MenuSensorScale);
-	// unboxed, the view keeps the lens's horizontal field (as the play camera does), so a
-	// window wider than the shot would crop her head and feet: widen to keep its height
 	if (bMenuFillsWindow && MenuFilmback.SensorHeight > 0.f)
 	{
 		const float Shot = MenuFilmback.SensorWidth / MenuFilmback.SensorHeight;
 		const float Window = ViewAspect();
 		if (Window > Shot)
 		{
+			// wider than the shot: widen to keep her whole height
 			Focal *= Shot / Window;
+		}
+		else if (Window < Shot)
+		{
+			// narrower than the shot: unboxed, the engine keeps the lens's vertical field
+			// (LocalPlayer MaintainYFOV), so a 4:3 window cropped the sides and cut the panel's
+			// text off ("tart", "ody", QA 0320). Shorten the lens by Window / Shot so the view's
+			// horizontal field is the 16:9 shot's (tan of the half-angle grows by Shot / Window):
+			// the whole composition, panel included, stays in, with more sky and ground.
+			Focal *= Window / Shot;
 		}
 	}
 	return Focal;
@@ -1159,7 +1167,8 @@ void AVisexMenuDirector::TickOrbit(float DeltaSeconds)
 	MenuCamera->SetActorLocationAndRotation(Loc, Rot);
 
 	// lens: from the menu's cine lens to the play camera's field of view, depth of field
-	// opening out, so the cut at the end is invisible
+	// opening out, so the cut at the end is invisible. It starts from the window-fitted menu
+	// lens and ends on the play camera's own field, so it lands exactly at any window shape
 	if (UCineCameraComponent* Lens = GetLens())
 	{
 		const float HalfW = Lens->Filmback.SensorWidth * 0.5f;

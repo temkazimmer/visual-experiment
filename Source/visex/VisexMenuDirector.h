@@ -238,8 +238,9 @@ public:
 	float MenuSensorScale = 3.f;
 
 	/** The menu fills the window like the play camera, with no letterbox, so the Start move lands
-	 * without the bars snapping off. A narrower window than the shot shows more above and below;
-	 * a wider one widens the lens to keep her whole height and shows more at the sides. Off: the
+	 * without the bars snapping off. A narrower window than the shot shortens the lens to keep the
+	 * shot's full width, panel included, and shows more above and below; a wider one widens the
+	 * lens to keep her whole height and shows more at the sides. Off: the
 	 * cine camera's own 16:9 frame, letterboxed on any other window. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
 	bool bMenuFillsWindow = true;
