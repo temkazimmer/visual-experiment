@@ -172,7 +172,7 @@ const TArray<FVisexOutfit>& FVisexBodyProfile::Outfits()
 		return Out;
 	};
 	// The bodystocking, alone or with a satin skirt over it (Tema, 2026-11-10). Meshes: Tools/blender_outfit.py, imported by
-	// Tools/char_outfit.py. The other six (Noir, Garter, Cocoa, Fishnet, Catsuit, Sheer) are
+	// Tools/char_outfit.py. The others (Noir, Garter, Cocoa, Fishnet, Sheer) are
 	// still on disk under /Game/Character/Outfits and /Game/Character/Clothes; add a row to
 	// list one again. A saved profile naming an unlisted outfit falls back to "None".
 	static const TArray<FVisexOutfit> Table = {
@@ -180,13 +180,14 @@ const TArray<FVisexOutfit>& FVisexBodyProfile::Outfits()
 		O(TEXT("Bodystocking"), LOCTEXT("OutfitBodystocking", "Sheer bodystocking"), TEXT("/Game/Character/Clothes/SKM_Outfit_Bodystocking.SKM_Outfit_Bodystocking")),
 		O(TEXT("BodystockingSkirt"), LOCTEXT("OutfitBodystockingSkirt", "Bodystocking and skirt"), TEXT("/Game/Character/Clothes/SKM_Outfit_Bodystocking.SKM_Outfit_Bodystocking"),
 			TEXT("/Game/Character/Clothes/CA_Skirt.CA_Skirt")),   // the skirt is Chaos cloth (Docs/Research/STUDY_SKIRT_SIM.md)
+		// refreshed and unlocked 2026-11-11 (Tema): smooth navy latex, keyhole, bound edges, belt and buckle
+		O(TEXT("Catsuit"), LOCTEXT("OutfitCatsuit", "Latex catsuit"), TEXT("/Game/Character/Outfits/SKM_Outfit_Catsuit.SKM_Outfit_Catsuit")),
 		// the dressing room's locked costumes: listed, not wearable yet (unlocked in play or
 		// bought, later; Tema, 2026-11-11). Choosing one shows "under construction".
 		L(TEXT("Noir"),    LOCTEXT("OutfitNoir", "Noir lace")),
 		L(TEXT("Garter"),  LOCTEXT("OutfitGarter", "Garter set")),
 		L(TEXT("Cocoa"),   LOCTEXT("OutfitCocoa", "Cocoa satin")),
 		L(TEXT("Fishnet"), LOCTEXT("OutfitFishnet", "Fishnet")),
-		L(TEXT("Catsuit"), LOCTEXT("OutfitCatsuit", "Latex catsuit")),
 	};
 	return Table;
 }

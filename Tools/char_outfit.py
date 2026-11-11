@@ -31,7 +31,10 @@ WARDROBE = {
                    Satin=dict(Color=BLACK, Roughness=0.42, RoughnessVariation=0.2), Trim=GOLD),
     "Cocoa": dict(Satin=dict(Color=(0.14, 0.05, 0.025), Roughness=0.26, RoughnessVariation=0.18, NormalStrength=0.9), Trim=GOLD),
     "Fishnet": dict(Net=dict(Color=BLACK, Cell=3.0, Width=0.16), Satin=dict(Color=BLACK, Roughness=0.34, RoughnessVariation=0.16), Trim=STEEL),
-    "Catsuit": dict(Latex=dict(Color=(0.01, 0.014, 0.05), Roughness=0.24, CoatRoughness=0.04, CoatVariation=0.04), Trim=dict(Color=(0.85, 0.85, 0.9), Roughness=0.25, Metallic=0.0)),
+    # deep navy latex, smooth: long soft highlights. The ripple normal read as hammered metal, and a mirror coat
+    # (0.025) showed every hard edge of the scene as jagged black shapes on her (2026-11-11)
+    "Catsuit": dict(Latex=dict(Color=(0.006, 0.009, 0.032), Roughness=0.3, RoughnessVariation=0.04, CoatRoughness=0.12, CoatVariation=0.02, NormalStrength=0.0),
+                    Trim=dict(Color=(0.85, 0.85, 0.9), Roughness=0.22, RoughnessVariation=0.04, Metallic=0.0)),
     # the hero outfit: one piece of sheer nylon, heavier on the legs, with gold jewellery
     "Bodystocking": dict(Nylon=dict(Color=(0.006, 0.006, 0.008), CoverTorso=0.6, CoverLeg=0.84, StretchSheer=0.36, SeamStrength=1.0),
                          Sheer=dict(Color=(0.006, 0.006, 0.008), Opacity=0.5, EdgeExponent=1.6, SeamStrength=1.0),

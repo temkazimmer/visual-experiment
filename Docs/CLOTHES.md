@@ -16,10 +16,10 @@ skin, with thickness on opaque pieces, piping, raised seams, strap geometry and 
 
 ## The wardrobe
 
-**One outfit for now** (Tema, 2026-11-09): the DRESS tab lists only "Nothing" and "Sheer
-bodystocking", and the bodystocking is her default. The other six below are still built,
-imported and on disk, but unlisted; add a row in `FVisexBodyProfile::Outfits()` to bring
-one back.
+**Wearable:** Nothing, the sheer bodystocking (her default), the bodystocking with the skirt,
+and the Catsuit (refreshed and unlocked 2026-11-11). Noir, Garter, Cocoa and Fishnet are listed
+but locked, waiting for the same refresh one at a time (Tema: these are the chosen set, they
+are just outdated); Sheer is built but unlisted.
 
 | Name | What it is | Fabrics |
 |---|---|---|
@@ -27,7 +27,7 @@ one back.
 | Garter | Lace balconette and briefs, wide lace garter belt, four straps, stockings | Lace, Sheer, Satin, Trim (gold) |
 | Cocoa | Brown satin bra and thong, slim belt, front straps to buckled thigh bands, choker | Satin, Trim (gold) |
 | Fishnet | Fishnet tights with a satin waistband, satin bra and high thong | Net, Satin, Trim |
-| Catsuit | Navy latex suit with waist and chest cutouts, white piping, stripes, collar, cuffs, belt | Latex, Trim (white) |
+| Catsuit | Smooth deep-navy latex suit: teardrop keyhole, side waist cutouts, every opening bound in white, front zip with a pull, leg stripes, collar, cuffs, belt with a rectangular buckle. Coat roughness 0.12, no ripple normal: a mirror coat showed the scene's hard edges as jagged black shapes on her | Latex, Trim (white) |
 | Sheer | High-neck sheer bodysuit, latex yoke, bands and garter belt, six straps, opera gloves | Sheer, Latex, Trim |
 | **Bodystocking** | The hero outfit: one piece of sheer black nylon. Scoop tank, deep V back, open hips, open gusset with a sheer string tanga underneath, strap-held stocking legs, gold chain and bangles | Nylon, Sheer (tanga), Binding, Trim (gold) |
 | **BodystockingSkirt** | The bodystocking with a short black satin skirt over it that follows her hips and hangs straight, with a double waistband and a bound top. The skirt is **Chaos cloth** (see below): only the hem moves, a little | + Satin (cloth) |
