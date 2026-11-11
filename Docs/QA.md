@@ -7,6 +7,41 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-11 14:15 · VIS-EX-0320 Shipping (8a90666) · PASS, but her big toe pokes through the stocking and 4:3 clips the menu
+
+- **Tour:** one run from the mounted DMG. No crash: it reached `VisexQA: done`, took 45 shots and exited 0.
+  She stays on the ground throughout, with body, shell, hair and outfit present. No new visex `.ips`;
+  the only one is 0298's, from 13:25. Shots are in `Saved/QA_0320ship/` and `Tools/.bridge/shots/qa0320/`,
+  with crops and comparisons against 0307 in `crops/`.
+- **GC (fede9ad):** both forced GCs pass: one during the lean-down (`04_menu_again`, right pose), and one in photo mode.
+- **Layout SAVE AS DEFAULT (bd53e33):** `layout save PASS, on disk` in GameUserSettings.ini. The tour
+  removes the key again afterwards. **Surviving a relaunch isn't checked**, because the tour doesn't test it.
+- **Menu fills the window (491932e):** every 4:3 check reports `fills the window`: menu, mid-move, landing
+  and play. With no bars at any of those four points, there are none to snap off. Back at 16:9, it fills too.
+  At 4:3 her full height still fits, head to toes (`05_menu_4x3`). **But the 4:3 view crops the sides, so the menu
+  panel is cut off on the left:** it reads "tart", "ody" and "IS/EX". Her raised arm leaves the frame on the right.
+- **Toes (merge):** **regression.** In the bodystocking, her big toe pokes through the stocking foot. It shows as
+  a pale skin patch with a hard dark rim (`crops/cmp_menu_foot.png`: 0307 above, 0320 below;
+  `crops/toes_front_zoom.png`, `crops/feet_turn1.png`). The other toes and her footprints look right. The walk
+  (`03_walked`) is too far away to see toes.
+- **Outfits (merge):** both wearable outfits fit her at the right size, and she's clothed in both
+  (`crops/outfits.png`: None, Bodystocking, BodystockingSkirt). The locked one in the wardrobe (`18`) fits too.
+- **Knit moiré (merge):** fixed. The chevron hatching on the knit at her right shoulder, which 0305 and 0307 showed
+  in the back view, is gone (`crops/cmp_shoulder_patch.png`). The back body view is clean too (`crops/cmp_back_knit.png`).
+  The hair's stair-stepped edge next to it is still there.
+- **Drum lean (merge):** her arm now reaches back to the drum, instead of a folded wrist at her hip
+  (`crops/cmp_hand.png`). From the low menu camera, the hand itself is hidden behind the drum's edge, so
+  "resting on it" isn't directly visible. Only one hand is in view.
+- **Body and Wardrobe arrive late:** 4 s after opening, `14_body_tab_body` and `17_wardrobe` still show a
+  motion-blurred move away from the column, with no UI. In 0307, the page was up by then. Face and hair (`15`, `16`)
+  are fine, so the page does open; it just takes longer than 4 s now. This is probably the slower leave-the-column
+  walk (70fd14b). Either the tour's wait or the move needs a look.
+- **Against 0307:** otherwise no regression. There's no HUD in the turnaround shots. Photo motions 3–7 report `mode 0`, as before.
+  Quality 0/3/4: 16.7 / 16.7 / 34.7 ms, with load 3.6–5.8 and the character editor open.
+- **Saves:** I backed up `VisexBody.sav` and `GameUserSettings.ini` and restored them after the run. Both md5s
+  match the originals, `29ae709f…` and `0f8144b4…`. Without the restore, GameUserSettings.ini would have stayed
+  changed (`2eb25b4b…`). There's no `Game.ini`, before or after.
+
 ## 2026-11-11 13:56 · VIS-EX-0307 Shipping (0dd50c9) · PASS, the 0298 lean crash is fixed
 
 - **Crash fix:** the tour now forces a full GC 0.3 s after ToggleMenu, while the lean-down is
