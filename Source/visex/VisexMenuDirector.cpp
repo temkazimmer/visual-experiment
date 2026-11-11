@@ -761,7 +761,7 @@ void AVisexMenuDirector::StartGame()
 	// her own; walking and the camera move overlap, both timed off the stand-up clip
 	const float Up = StandUp();
 	GetWorldTimerManager().SetTimer(HandBackTimer, this, &AVisexMenuDirector::BeginWalkOff,
-		FMath::Max(0.02f, Up * StandUpHandOver), false);
+		FMath::Clamp(Up * StandUpHandOver, 0.02f, FMath::Max(0.02f, WalkOffMaxDelay)), false);
 	// tick between the player's input and her movement: the director reads the stick she was
 	// given this frame and adds her own walk before the movement component spends it
 	AddTickPrerequisiteActor(PC);
@@ -856,6 +856,8 @@ void AVisexMenuDirector::TickFocus()
 			break;
 		}
 	}
+	// the bones are last frame's (she animates after the director ticks): lead by her velocity
+	Target += Char->GetVelocity() * GetWorld()->GetDeltaSeconds();
 	// depth of field is sharp on a plane, so focus on her depth along the lens, not the
 	// straight-line distance: she sits off-centre in the menu frame
 	const FTransform View = Lens->GetComponentTransform();

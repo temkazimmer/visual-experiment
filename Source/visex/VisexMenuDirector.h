@@ -106,6 +106,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Start", meta = (ClampMin = "0", ClampMax = "1"))
 	float StandUpHandOver = 0.35f;
 
+	/** Longest wait before she steps off (s), whatever the stand-up clip's length. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Start", meta = (ClampMin = "0"))
+	float WalkOffMaxDelay = 0.5f;
+
 	/** Her own pace walking off the column after Start (cm/s): slow and weighty. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Start", meta = (ClampMin = "0"))
 	float WalkOffSpeed = 140.f;
