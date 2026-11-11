@@ -939,6 +939,8 @@ void AVisexMenuDirector::Lean(bool bFromStanding)
 	bLeaning = true;
 	static const FName Slot(TEXT("DefaultSlot"));
 	UAnimSequence* Down = bFromStanding ? LeanDown.LoadSynchronous() : nullptr;
+	LoadedLean.AddUnique(Idle);
+	if (Down) { LoadedLean.AddUnique(Down); }
 	if (Down)
 	{
 		Anim->PlaySlotAnimationAsDynamicMontage(Down, Slot, 0.25f, 0.f, 1.f, 1);
@@ -972,6 +974,7 @@ float AVisexMenuDirector::StandUp()
 	static const FName Slot(TEXT("DefaultSlot"));
 	if (UAnimSequence* Up = LeanUp.LoadSynchronous())
 	{
+		LoadedLean.AddUnique(Up);
 		Anim->PlaySlotAnimationAsDynamicMontage(Up, Slot, 0.15f, 0.35f, 1.f, 1);
 		return Up->GetPlayLength();
 	}

@@ -182,7 +182,9 @@ void AVisexQATour::Build()
 		FVisexSettings::ApplyBetweenFrames();
 	});
 	Add(0.5f, [D] { D->ToggleMenu(); });
-	Add(5.f, [this] { Report(TEXT("menu again")); Shot(TEXT("menu_again")); });
+	// GC while the lean-down plays: the idle clip waiting in its timer must survive (0298 crash)
+	Add(0.3f, [] { CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS, true); });
+	Add(4.7f, [this] { Report(TEXT("menu again")); Shot(TEXT("menu_again")); });
 
 	// the Settings page: open, both tabs, step a value there and back, close
 	Add(0.5f, [D] { D->OpenSettings(); });

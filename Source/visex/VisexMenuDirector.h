@@ -309,6 +309,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
 	TSoftObjectPtr<class UAnimSequence> LeanDown = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Lean_Down.A_Menu_Lean_Down")));
 
+	/** The lean clips once loaded, held so GC can't free one while a timer waits to play it
+	 * (a raw pointer caught in the lean-down timer crashed Shipping 0298). */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<class UAnimSequence>> LoadedLean;
+
 	/** Hides the menu and opens the body page; the menu comes back when it closes. */
 	UFUNCTION(BlueprintCallable, Category = "Menu")
 	void OpenBody() { OpenCharacterPage(0); }
