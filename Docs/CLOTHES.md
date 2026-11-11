@@ -52,6 +52,29 @@ black open-hip bodystocking. What it has that the others do not:
 - Not done: the references' heels (needs a foot pose, which is the animation lane), and
   hair or a face to hang earrings on.
 
+## Tartan, bundle 03 (2026-11-11)
+
+From Tema's lingerie references (personal use; design rights to settle before any store).
+A red tartan slingshot one-piece: triangle cups cut high with the lower third open, a black
+satin shirt collar with two points and a tartan tie down the sternum, straps in a deep V from
+the cups to a small tartan front, side straps over the hips to a thong, a thin band round the
+back, every tartan edge bound in black, white sheer thigh-highs with an 8 cm lace top. Barefoot
+(Tema): the references' stilettos wait for a heel stance in the animation lane.
+
+- Mesh: `tartan()` in `Tools/blender_outfit.py`; straps are traced by rays round her body
+  (`wrap`), so they lie on the skin instead of cutting across the belly.
+- Fabric: a new slot and base, `M_OutfitTartan`. The weave is computed per pixel from UV0:
+  one sett (red, broad dark band, thin dark line, white overcheck, 6 cm repeat) in warp and
+  weft, a 2/2 twill per 0.5 mm thread, each stripe box-filtered so the white line doesn't
+  shimmer at full-body distance. Colours: `WARDROBE["Tartan"]`.
+- `char_outfit.py` takes `KEEP_BASES = True`: it loads the shared base materials and textures
+  instead of re-saving them, so a branch that adds one outfit only adds files.
+- Pose: `A_Pose_Bookend` (`Tools/char_pose_bookend.py`), her weight on the left leg, pelvis
+  tipped into an arch, the right knee folded back with the foot pointed, chest turned left,
+  fingers at the tie knot, right hand on the hip.
+- In an editor (non-Play) capture the torso pieces vanish under the skin shell; check in Play.
+- Frames: `Docs/clothes-2k/Tartan_full.jpg`, `Tartan_close.jpg`.
+
 ## The skirt is cloth (2026-11-10)
 
 **Reshaped the same day (Tema):** the first cloth skirt flared and read as stiff. It now follows

@@ -48,12 +48,23 @@ WARDROBE = {
                               Trim=dict(Color=(1.0, 0.72, 0.36), Roughness=0.2, RoughnessVariation=0.08, Metallic=1.0)),
     # the skirt alone, the source mesh of the skirt cloth asset (Docs/Research/STUDY_SKIRT_SIM.md)
     "Skirt": dict(Satin=dict(Color=(0.008, 0.008, 0.01), Roughness=0.38, RoughnessVariation=0.1, NormalStrength=0.5, SeamStrength=1.0, _two_sided=True)),
+    # bundle 03 (Tema's references, 2026-11-11): red tartan slingshot, black satin collar, black
+    # bindings and straps, white sheer thigh-highs with a white lace top
+    "Tartan": dict(Tartan=dict(Red=(0.30, 0.014, 0.012), Dark=(0.012, 0.008, 0.01), Line=(0.62, 0.6, 0.55),
+                               Roughness=0.5, RoughnessVariation=0.12, NormalStrength=0.5, SeamStrength=1.0),
+                   Satin=dict(Color=(0.008, 0.008, 0.01), Roughness=0.3, RoughnessVariation=0.12, NormalStrength=0.6, SeamStrength=1.0),
+                   Binding=dict(_base="Satin", Color=(0.006, 0.006, 0.008), Roughness=0.5, RoughnessVariation=0.1, NormalStrength=0.5),
+                   Sheer=dict(Color=(0.8, 0.8, 0.78), Opacity=0.3, EdgeOpacity=0.8, EdgeExponent=1.8, Roughness=0.55),
+                   Lace=dict(Color=(0.85, 0.85, 0.83), Opacity=0.35, Cell=3.0)),
     "Sheer": dict(Sheer=dict(Color=BLACK, Opacity=0.66, EdgeExponent=1.5), Latex=dict(Color=(0.012, 0.013, 0.02), Roughness=0.34, CoatRoughness=0.06, CoatVariation=0.07, NormalStrength=0.6), Trim=STEEL),
 }
-MESH_DIR = {"Sheer": "/Game/Character/Clothes", "Bodystocking": "/Game/Character/Clothes", "BodystockingSkirt": "/Game/Character/Clothes", "Skirt": "/Game/Character/Clothes"}       # the rest: /Game/Character/Outfits
+MESH_DIR = {"Sheer": "/Game/Character/Clothes", "Bodystocking": "/Game/Character/Clothes", "BodystockingSkirt": "/Game/Character/Clothes", "Skirt": "/Game/Character/Clothes", "Tartan": "/Game/Character/Clothes"}       # the rest: /Game/Character/Outfits
 DIR = "/Game/Character/Clothes"
 SKELETON = "/Game/Characters/Mannequins/Meshes/SK_Mannequin"
 ONLY = globals().get("ONLY")
+# KEEP_BASES = True: load the shared base materials and textures as they are and build only the
+# tartan base, so a branch adding one outfit does not re-save binaries other branches also touch
+KEEP_BASES = globals().get("KEEP_BASES", False)
 SRC = os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir()), "SourceArt", "Character", "Outfits")
 
 if unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).is_in_play_in_editor():
@@ -168,11 +179,45 @@ float3 nt = mul(Parameters.TangentToWorld, normalize(N - Strength * g));
 return normalize(float3(nt.xy + Detail.xy, nt.z * Detail.z));
 """
 
+# Tartan, woven: the same sett of stripes runs in warp (along UV.x) and weft (along UV.y), each
+# mirrored about its half-period, and a 2/2 twill decides per thread which one shows. Each
+# stripe is box-filtered over the pixel's footprint and the twill fades to its average, so
+# a 0.6 mm white line neither aliases nor shimmers at full-body distance.
+TARTAN_HLSL = """
+float2 p = float2(UV.x, 1.0 - UV.y);
+float P = Period;
+// half sett (cm, of P / 2 = 3): red, broad dark, red, thin dark, red, white line, red
+float e[8] = {0.0, 1.10, 1.70, 1.85, 1.95, 2.70, 2.76, 3.0};
+float k[7] = {0, 1, 0, 1, 0, 2, 0};
+float3 cw = 0, cf = 0;
+float2 fw = max(fwidth(p), 1e-4);
+for (int axis = 0; axis < 2; axis++)
+{
+    float t = axis == 0 ? p.x : p.y;
+    float w = axis == 0 ? fw.x : fw.y;
+    float tm = P * 0.5 - abs(frac(t / P) * P - P * 0.5);
+    float3 c = 0;
+    for (int i = 0; i < 7; i++)
+    {
+        float cover = saturate((min(tm + w * 0.5, e[i + 1]) - max(tm - w * 0.5, e[i])) / w);
+        float3 col = k[i] == 0 ? Red : (k[i] == 1 ? Dark : Line);
+        c += col * cover;
+    }
+    if (axis == 0) cw = c; else cf = c;
+}
+float2 th = p / Thread;
+float tw = frac((floor(th.x) + floor(th.y)) * 0.25) < 0.5 ? 1.0 : 0.0;
+tw = lerp(tw, 0.5, saturate(max(fwidth(th.x), fwidth(th.y)) * 0.7));
+return lerp(cf, cw, tw);
+"""
+
 TEX_DIR = DIR + "/Textures"
 
 
 def texture(name, normal):
     """Import a detail texture: linear, normal or masks compression, never streamed."""
+    if KEEP_BASES and unreal.EditorAssetLibrary.does_asset_exist(TEX_DIR + "/" + name):
+        return unreal.load_asset(TEX_DIR + "/" + name)
     task = unreal.AssetImportTask()
     task.set_editor_property("filename", os.path.join(SRC, "Textures", name + ".png"))
     task.set_editor_property("destination_path", TEX_DIR)
@@ -311,10 +356,28 @@ def done(m):
     return m
 
 
+def build_tartan(weave, detail):
+    m = material("M_OutfitTartan", unreal.BlendMode.BLEND_OPAQUE)
+    uv = node(m, unreal.MaterialExpressionTextureCoordinate, -900, -400)
+    mel.connect_material_property(custom(m, TARTAN_HLSL, "Tartan", [
+        ("UV", uv), ("Period", scalar(m, "Period", 6.0, -340)), ("Thread", scalar(m, "Thread", 0.05, -280)),
+        ("Red", color(m, "Red", (0.30, 0.014, 0.012), -220)), ("Dark", color(m, "Dark", (0.012, 0.008, 0.01), -160)),
+        ("Line", color(m, "Line", (0.62, 0.6, 0.55), -100))], -300, unreal.CustomMaterialOutputType.CMOT_FLOAT3), "", MP.MP_BASE_COLOR)
+    mask = sample(m, "DetailMask", detail, False, 24.0, 300)
+    mel.connect_material_property(varied(m, scalar(m, "Roughness", 0.5, -40), mask, "R", "RoughnessVariation", 0.12, 0), "", MP.MP_ROUGHNESS)
+    mel.connect_material_property(seam_normal(m, 1000, detail_normal(m, weave, 1.5, 0.5, 600)), "", MP.MP_NORMAL)
+    return done(m)
+
+
 def build_materials():
     T = unreal.BlendMode.BLEND_TRANSLUCENT
     weave, latex_n, detail = texture("T_Outfit_Weave_N", True), texture("T_Outfit_Latex_N", True), texture("T_Outfit_Detail_M", False)
     base = {}
+    if KEEP_BASES:
+        for n in ("Sheer", "Nylon", "Lace", "Net", "Satin", "Latex", "Trim"):
+            base[n] = unreal.load_asset(DIR + "/M_Outfit" + n)
+        base["Tartan"] = build_tartan(weave, detail)
+        return base
 
     m = material("M_OutfitSheer", T)
     mel.connect_material_property(color(m, "Color", BLACK, -200), "", MP.MP_BASE_COLOR)
@@ -385,6 +448,7 @@ def build_materials():
     mel.connect_material_property(varied(m, scalar(m, "Roughness", 0.28, -80), mask, "G", "RoughnessVariation", 0.12, 0), "", MP.MP_ROUGHNESS)
     mel.connect_material_property(scalar(m, "Metallic", 1.0, 160), "", MP.MP_METALLIC)
     base["Trim"] = done(m)
+    base["Tartan"] = build_tartan(weave, detail)
     return base
 
 

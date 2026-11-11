@@ -41,8 +41,8 @@ PREVIEW = args[2] if len(args) > 2 and not args[2].startswith("--") else None
 ONLY = next((a.split("=", 1)[1].split(",") for a in args if a.startswith("--only=")), None)
 os.makedirs(OUT_DIR, exist_ok=True)
 
-SLOTS = ["Sheer", "Lace", "Net", "Satin", "Latex", "Trim", "Nylon", "Binding"]
-OPAQUE = ("Satin", "Latex", "Trim")
+SLOTS = ["Sheer", "Lace", "Net", "Satin", "Latex", "Trim", "Nylon", "Binding", "Tartan"]
+OPAQUE = ("Satin", "Latex", "Trim", "Tartan")
 CL, CP, PERIOD = 48.0, 96.0, 24.0     # nominal leg and torso girth (cm), pattern period
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -960,6 +960,112 @@ def bodystocking():
             tube(ring, 0.1, "Trim", closed=True, sides=8, step=0.35, rigid=nearest(cv))
 
 
+def tartan():
+    """Bundle 03 (Tema's references, 2026-11-11): a red tartan slingshot one-piece. Cups cut
+    high over the bust with the lower pole open, a black satin shirt collar with a tartan tie
+    down the sternum, straps in a deep V from the cups to a small tartan front, side straps
+    over the hips to a thong, and white sheer thigh-highs with a wide lace top. Every tartan
+    edge is bound in black."""
+    BIND = ("Binding", 0.55)
+    zn = LM["neck"] + 1.5                                          # collar line at the base of the neck
+    # cups: high and full on top, the lower third open (underbust showing)
+    cup = np.full(nv, NEG)
+    low = {}
+    for s in (1, -1):
+        f, u, l = frame(FWD, s, 12, 6)
+        Dv = X - ANCHOR[s]
+        x, y = Dv @ l, Dv @ u
+        c_ = CUP[s]
+        rx = np.where(x > 0, c_["out"], c_["inn"]) * 1.12
+        ry = np.where(y > 0, c_["up"], c_["dn"]) * 1.12
+        r = np.sqrt((x / rx) ** 2 + (y / ry) ** 2)
+        cut = 0.42 * c_["dn"]                                       # bottom edge, below the apex
+        # a triangle cup: wide under the apex, its sides closing to a point at the halter strap
+        bi, bo = np.array((-c_["inn"] * 0.78, -cut)), np.array((c_["out"] * 1.05, -cut * 0.55))
+        ap = np.array((c_["out"] * 0.1, c_["up"] * 1.55))
+        side = lambda p0, p1: ((p1[0] - p0[0]) * (y - p0[1]) - (p1[1] - p0[1]) * (x - p0[0])) / np.linalg.norm(p1 - p0)
+        tri = np.minimum(-side(bi, ap), side(bo, ap))               # inside both sides: positive
+        c = np.minimum.reduce([(1.0 - r) * 7.0, tri, y + cut - 0.45 * np.clip(x / c_["out"], 0, 1) * cut])
+        cup = np.maximum(cup, where(TORSO & (NS @ FWD > -0.2) & (Dv @ f > -8), c))
+        low[s] = dict(inner=ANCHOR[s] + l * bi[0] * 0.8 + u * (bi[1] - 0.3),
+                      outer=ANCHOR[s] + l * bo[0] * 0.9 + u * (bo[1] - 0.3),
+                      top=ANCHOR[s] + l * ap[0] + u * (ap[1] - 1.2))
+    region(cup, 0.30, "Tartan", bind=BIND, min_loop=6.0)
+
+    # the tie: from a knot under the collar down the sternum to a point between the cups
+    zt, zb = zn - 3.0, LM["bust"] - 3.5
+    t_ = np.clip((zt - Z) / (zt - zb), 0, 1)
+    w = 1.3 + 1.0 * t_                                             # half-width, wider toward the tip
+    tip = (Z - zb) * 1.1                                           # a pointed end
+    tie = np.minimum.reduce([w - ALAT, zt - Z, tip + 2.2 - ALAT])
+    region(where(TORSO & (FW > 0), tie), 0.42, "Tartan", bind=BIND, min_loop=4.0)
+    knot = np.sqrt((ALAT / 1.6) ** 2 + ((Z - (zt + 0.6)) / 1.6) ** 2)
+    region(where((FW > 0) & (HEAD < 0.6), (1.0 - knot) * 3.0), 0.75, "Tartan", bind=BIND, min_loop=3.0)
+
+    # the collar: a black satin band round the neck and two points lying on the collarbones
+    region(where((G("head") < 0.5) & (UPPERARM < 0.3), np.minimum(zn + 2.6 - Z, Z - (zn - 0.2))), 0.5, "Satin", bind=BIND, min_loop=6.0)
+    pts_ = np.full(nv, NEG)
+    for s in (1, -1):
+        a, b, c = np.array((1.0, zn)), np.array((7.5, zn + 0.5)), np.array((5.0, zn - 6.5))   # (lateral, z): a collar point
+        q = np.stack([LAT * s, Z], 1)
+        d = np.full(nv, 1e9)
+        inside = np.ones(nv, bool)
+        for p0, p1 in ((a, b), (b, c), (c, a)):
+            e = p1 - p0
+            t = np.clip(((q - p0) @ e) / (e @ e), 0, 1)
+            d = np.minimum(d, np.linalg.norm(q - (p0 + t[:, None] * e), axis=1))
+            inside &= (e[0] * (q[:, 1] - p0[1]) - e[1] * (q[:, 0] - p0[0])) <= 0
+        pts_ = np.maximum(pts_, where(TORSO & (FW > 0) & (LAT * s > 0), np.where(inside, d, -d)))
+    region(pts_, 0.62, "Satin", bind=BIND, min_loop=4.0)
+
+    # halter straps: cup top, up over the collarbone, round the back of the collar
+    for s in (1, -1):
+        top = V3(surface_near(low[s]["top"], FWD))
+        neck = V3(surface_near(Bn["neck_01"] + LEFT * s * 5.0 + UP * 1.0 - FWD * 2.0, LEFT * s))
+        a = top + nearest_normal(top) * 0.4
+        b = neck + nearest_normal(neck) * 0.6
+        ribbon(taut(a, b, 0.45), 0.9, 0.2, "Binding")
+
+    # body straps on the skin: a deep V from each cup's inner bottom to the front of the tanga,
+    # and a side strap from the cup's outer edge over the hip to the top of the thong
+    cr, hb = LM["crotch"], LM["hip_top"]
+    def wrap(keys, width):
+        """A strap on the skin through (angle from the front toward her left, deg; height, cm)
+        keys: each sample is found by a ray in toward the body axis, so it never cuts across."""
+        pts = []
+        for (t0, z0), (t1, z1) in zip(keys[:-1], keys[1:]):
+            for k in np.linspace(0, 1, 24, endpoint=False):
+                q = ray(TORSO_BVH, pel_v, z0 + (z1 - z0) * k, D(t0 + (t1 - t0) * k), 0.0)
+                if q:
+                    pts.append(NP(q))
+        d = np.full(nv, 1e9)
+        for a, b in zip(pts[:-1], pts[1:]):
+            ab = b - a
+            t = np.clip(((X - a) @ ab) / max(ab @ ab, 1e-6), 0, 1)
+            d = np.minimum(d, np.linalg.norm(X - (a + t[:, None] * ab), axis=1))
+        return where((UPPERARM < 0.3) & (HEAD < 0.5), width * 0.5 - d)
+
+    ang = lambda p: (math.degrees(math.atan2((p - PEL) @ LEFT, (p - PEL) @ FWD)), float(p[2]))
+    straps = np.full(nv, NEG)
+    for s in (1, -1):
+        ti, zi = ang(low[s]["inner"])
+        to, zo = ang(low[s]["outer"])
+        straps = np.maximum(straps, wrap([(ti, zi), (s * 13.0, LM["waist"] - 2.0), (s * 13.0, hb - 1.6)], 1.0))
+        straps = np.maximum(straps, wrap([(to, zo), (s * 82.0, LM["waist"] + 1.0), (s * 100.0, hb + 3.0),
+                                          (s * 150.0, hb + 0.5), (s * 176.0, hb - 0.8)], 1.0))
+    # a thin band round the back at the bra line, from cup to cup
+    straps = np.maximum(straps, where(TORSO & (FW < (ANCHOR[1] - PEL) @ FWD - 7.0), 0.45 - np.abs(Z - (LM["fold"] + 2.5))))
+    region(straps, 0.36, "Binding", min_loop=4.0)
+
+    # a small tartan front and a thong behind (the sheer tanga's cut, opaque and bound)
+    region(string_tanga(), 0.30, "Tartan", bind=("Binding", 0.45), min_loop=4.0)
+
+    # white sheer thigh-highs with a wide lace top, no back seam
+    st_top = ST_TOP + 1.0
+    region(where(LEGMASK & (Z < LM["crotch"]), st_top - 7.5 - Z + 0.4), 0.24, "Sheer")
+    region(band(st_top - 4.0, 8.0, LEGMASK & (Z < LM["crotch"])), 0.30, "Lace")
+
+
 def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.5, slot="Satin", skin_to=None, tight=False, rigid_from=None, follow=False, cling=0.0):
     """A short satin A-line worn over the bodystocking (Docs/Research/DESIGN_SKIRT.md). Not cut
     from the skin: rings lofted from the waist down. Each ring follows her hull to the hip, then
@@ -1089,7 +1195,7 @@ def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.
 
 OUTFITS = {"Noir": noir, "Garter": garter_set, "Cocoa": cocoa, "Fishnet": fishnet,
            "Catsuit": catsuit_set, "Sheer": sheer, "Bodystocking": bodystocking,
-           "BodystockingSkirt": lambda: (bodystocking(), skirt()),
+           "BodystockingSkirt": lambda: (bodystocking(), skirt()), "Tartan": tartan,
            "Skirt": lambda: skirt(off=1.0, flare=1.5, swing=0.0, skin_to=LM["crotch"] + 2.0, tight=True, follow=True, cling=0.7)}   # the cloth skirt: follows her shape, only the hem moves (Tema 2026-11-10); 1 cm off at the top, 4 at the hem (the cloth gets no bounce morphs); skin weights to just above the crotch, so the hip front cannot push through
 CLOTH = {"Skirt"}                                # simulated in UE: the default body's morphs baked into the rest shape
 
@@ -1311,7 +1417,8 @@ def pmat(name, col, rough, coat=0.0, alpha=None, metal=0.0):
 MATS = dict(Sheer=pmat("Sheer", (0.01, 0.01, 0.012), 0.6, alpha=0.4), Lace=pmat("Lace", (0.01, 0.01, 0.012), 0.7, alpha=0.75),
             Net=pmat("Net", (0.01, 0.01, 0.012), 0.6, alpha=0.3), Satin=pmat("Satin", (0.02, 0.02, 0.025), 0.35),
             Latex=pmat("Latex", (0.012, 0.013, 0.02), 0.3, coat=1.0), Trim=pmat("Trim", (0.75, 0.78, 0.82), 0.25, metal=1.0),
-            Nylon=pmat("Nylon", (0.006, 0.006, 0.008), 0.5, alpha=0.5), Binding=pmat("Binding", (0.006, 0.006, 0.008), 0.7))
+            Nylon=pmat("Nylon", (0.006, 0.006, 0.008), 0.5, alpha=0.5), Binding=pmat("Binding", (0.006, 0.006, 0.008), 0.7),
+            Tartan=pmat("Tartan", (0.45, 0.02, 0.02), 0.55))
 scn = bpy.context.scene
 if PREVIEW:
     os.makedirs(PREVIEW, exist_ok=True)
