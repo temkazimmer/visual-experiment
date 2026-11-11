@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "CineCameraSettings.h"
+#include "VisexMenuLayout.h"
 #include "VisexMenuDirector.generated.h"
 
 class ACameraActor;
@@ -60,6 +61,10 @@ public:
 	 * on a diagonal (Persona-style perspective). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
 	float PanelRoll = 4.f;
+
+	/** Tips the panel back (+) or forward (-), degrees. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
+	float PanelPitch = 0.f;
 
 	/** World cm per panel pixel. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
@@ -311,6 +316,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Menu")
 	void OpenWardrobe() { OpenCharacterPage(1); }
 
+	/** The block's place, perspective, spacing and logo, as the layout editor (§) sets them. */
+	const FVisexMenuLayout& GetLayout() const { return Layout; }
+	/** The layout as built (the class's own values, before any save): Reset goes back to it. */
+	const FVisexMenuLayout& GetBuiltInLayout() const { return BuiltInLayout; }
+	void ApplyLayout(const FVisexMenuLayout& InLayout);
+
+	/** Open or close the menu layout editor (§, start menu only). */
+	UFUNCTION(BlueprintCallable, Category = "Menu")
+	void ToggleLayoutEditor();
+
 	/** The menu's rows: Start, Body, Wardrobe, Photo mode, Settings, Quit. */
 	enum : int32 { ItemStart = 0, ItemBody, ItemWardrobe, ItemPhoto, ItemSettings, ItemQuit };
 
@@ -435,6 +450,12 @@ private:
 	bool bLeaning = false;
 	bool bHaveLeaned = false;
 	void OpenCharacterPage(int32 InPage);
+	void PlacePanel();
+	void PushLayoutToWidget();
+	FVisexMenuLayout Layout;
+	FVisexMenuLayout BuiltInLayout;
+	bool bHaveLayout = false;
+	UPROPERTY(Transient) TObjectPtr<class AVisexMenuLayoutEditor> LayoutEditor;
 	void OpenBodyNow();
 	int32 CharacterPage = 0;   // the page OpenBodyNow opens: 0 body, 1 wardrobe
 

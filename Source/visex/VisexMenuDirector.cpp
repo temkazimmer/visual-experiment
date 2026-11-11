@@ -2,6 +2,7 @@
 
 #include "VisexMenuWidget.h"
 #include "VisexBodyEditor.h"
+#include "VisexMenuLayoutEditor.h"
 #include "VisexPhotoMode.h"
 #include "VisexQATour.h"
 #include "VisexSettings.h"
@@ -208,19 +209,7 @@ void AVisexMenuDirector::ShowMenu()
 
 	// the panel rides with the camera, turned toward the figure on the right
 	Panel->AttachToComponent(MenuCamera->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
-	// PanelOffset is set for the camera's own lens: a wider menu lens brings the panel in to keep its size on screen
-	const float LensScale = (MenuFocalLength > 0.f && MenuFocal > 0.f) ? MenuFocalLength / MenuFocal : 1.f;
-	Panel->SetRelativeLocation(PanelOffset * LensScale);
-	Panel->SetRelativeRotation(FRotator(0.f, 180.f + PanelYaw, 0.f) + FRotator(0.f, 0.f, PanelRoll));
-	// draw the panel's texture larger and shrink it back to the same size on screen
-	const UVisexMenuWidget* MenuDefaults = Panel->GetWidgetClass()
-		? Cast<UVisexMenuWidget>(Panel->GetWidgetClass()->GetDefaultObject()) : nullptr;
-	const float SS = GetMenuWidget() ? FMath::Max(1.f, GetMenuWidget()->Supersample)
-		: MenuDefaults ? FMath::Max(1.f, MenuDefaults->Supersample) : 1.f;
-	// the widget pads its text for the shade to fade out in: grow the panel to match
-	const float Pad = GetMenuWidget() ? GetMenuWidget()->ShadePadding : MenuDefaults ? MenuDefaults->ShadePadding : 0.f;
-	Panel->SetDrawSize((FVector2D(1100.f, 1000.f) + FVector2D(2.f * Pad)) * SS);
-	Panel->SetRelativeScale3D(FVector(PanelScale * LensScale / SS));
+	PlacePanel();
 	if (UMaterialInterface* Mat = PanelMaterial.LoadSynchronous())
 	{
 		if (Panel->GetMaterial(0) != Mat)
@@ -270,6 +259,8 @@ void AVisexMenuDirector::ShowMenu()
 		for (const FKey& K : BackKeys) { InputComponent->BindKey(K, IE_Pressed, this, &AVisexMenuDirector::Back).bConsumeInput = false; }
 		// the director's input stays on through play, so these work from the game too;
 		// they don't consume, so the pawn still sees its own keys
+		// § (the key left of 1): the menu layout editor
+		InputComponent->BindKey(EKeys::Section, IE_Pressed, this, &AVisexMenuDirector::ToggleLayoutEditor).bConsumeInput = false;
 		for (const FKey& K : MenuKeys)
 		{
 			InputComponent->BindKey(K, IE_Pressed, this, &AVisexMenuDirector::ToggleMenu).bConsumeInput = false;
@@ -289,6 +280,99 @@ UCineCameraComponent* AVisexMenuDirector::GetLens() const
 UVisexMenuWidget* AVisexMenuDirector::GetMenuWidget() const
 {
 	return Panel ? Cast<UVisexMenuWidget>(Panel->GetUserWidgetObject()) : nullptr;
+}
+
+void AVisexMenuDirector::PlacePanel()
+{
+	if (!bHaveLayout)
+	{
+		// the class's own values are the built-in layout; a saved one goes over them
+		const UVisexMenuWidget* D = Panel && Panel->GetWidgetClass()
+			? Cast<UVisexMenuWidget>(Panel->GetWidgetClass()->GetDefaultObject()) : nullptr;
+		D = D ? D : GetDefault<UVisexMenuWidget>();
+		Layout.Offset = PanelOffset;
+		Layout.Yaw = PanelYaw;
+		Layout.Pitch = PanelPitch;
+		Layout.Roll = PanelRoll;
+		Layout.Scale = PanelScale;
+		Layout.LogoSize = D->TitleSize;
+		Layout.LogoSpacing = D->TitleLetterSpacing;
+		Layout.LogoGap = D->LogoGap;
+		Layout.ItemSize = D->ItemSize;
+		Layout.ItemGap = D->ItemGap;
+		BuiltInLayout = Layout;
+		FVisexMenuLayout::Load(Layout);
+		bHaveLayout = true;
+		PanelOffset = Layout.Offset;
+		PanelYaw = Layout.Yaw;
+		PanelPitch = Layout.Pitch;
+		PanelRoll = Layout.Roll;
+		PanelScale = Layout.Scale;
+	}
+	PushLayoutToWidget();
+	// PanelOffset is set for the camera's own lens: a wider menu lens brings the panel in to keep its size on screen
+	const float LensScale = (MenuFocalLength > 0.f && MenuFocal > 0.f) ? MenuFocalLength / MenuFocal : 1.f;
+	Panel->SetRelativeLocation(PanelOffset * LensScale);
+	Panel->SetRelativeRotation(FRotator(PanelPitch, 180.f + PanelYaw, PanelRoll));
+	// draw the panel's texture larger and shrink it back to the same size on screen
+	const UVisexMenuWidget* MenuDefaults = Panel->GetWidgetClass()
+		? Cast<UVisexMenuWidget>(Panel->GetWidgetClass()->GetDefaultObject()) : nullptr;
+	const float SS = GetMenuWidget() ? FMath::Max(1.f, GetMenuWidget()->Supersample)
+		: MenuDefaults ? FMath::Max(1.f, MenuDefaults->Supersample) : 1.f;
+	// the widget pads its text for the shade to fade out in: grow the panel to match
+	const float Pad = GetMenuWidget() ? GetMenuWidget()->ShadePadding : MenuDefaults ? MenuDefaults->ShadePadding : 0.f;
+	Panel->SetDrawSize((FVector2D(1100.f, 1000.f) + FVector2D(2.f * Pad)) * SS);
+	Panel->SetRelativeScale3D(FVector(PanelScale * LensScale / SS));
+}
+
+void AVisexMenuDirector::PushLayoutToWidget()
+{
+	if (UVisexMenuWidget* W = GetMenuWidget())
+	{
+		W->TitleSize = Layout.LogoSize;
+		W->TitleLetterSpacing = Layout.LogoSpacing;
+		W->LogoGap = Layout.LogoGap;
+		W->ItemSize = Layout.ItemSize;
+		W->ItemGap = Layout.ItemGap;
+		if (Page == 0)
+		{
+			W->Title = FText::FromString(Layout.LogoText());
+			W->Refresh();
+		}
+		MarkPanel();
+	}
+}
+
+void AVisexMenuDirector::ApplyLayout(const FVisexMenuLayout& InLayout)
+{
+	Layout = InLayout;
+	bHaveLayout = true;
+	PanelOffset = Layout.Offset;
+	PanelYaw = Layout.Yaw;
+	PanelPitch = Layout.Pitch;
+	PanelRoll = Layout.Roll;
+	PanelScale = Layout.Scale;
+	if (Panel && MenuCamera)
+	{
+		PlacePanel();
+	}
+}
+
+void AVisexMenuDirector::ToggleLayoutEditor()
+{
+	// the start menu's own page only: not settings, not the body page, not in play
+	if (!LayoutEditor && (!bOpen || Page > 0))
+	{
+		return;
+	}
+	if (!LayoutEditor)
+	{
+		LayoutEditor = GetWorld()->SpawnActor<AVisexMenuLayoutEditor>();
+	}
+	if (LayoutEditor)
+	{
+		LayoutEditor->Toggle(this);
+	}
 }
 
 void AVisexMenuDirector::MoveSelection(int32 Delta)
@@ -349,7 +433,7 @@ void AVisexMenuDirector::CloseSettings()
 	{
 		// back on the main menu, on the Settings item
 		const UVisexMenuWidget* Defaults = W->GetClass()->GetDefaultObject<UVisexMenuWidget>();
-		W->SetPage(Defaults->Title, {}, 0, Defaults->Items, {}, ItemSettings);
+		W->SetPage(FText::FromString(Layout.LogoText()), {}, 0, Defaults->Items, {}, ItemSettings);
 	}
 }
 

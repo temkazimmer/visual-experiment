@@ -125,7 +125,7 @@ void UVisexMenuWidget::BuildContent()
 
 	const bool bValues = HasValues();
 	USpacer* Gap = WidgetTree->ConstructWidget<USpacer>(USpacer::StaticClass());
-	Gap->SetSize(FVector2D(1.f, Tabs.Num() > 0 ? 50.f : 110.f));
+	Gap->SetSize(FVector2D(1.f, Tabs.Num() > 0 ? 50.f : LogoGap));
 	Root->AddChildToVerticalBox(Gap);
 
 	if (Tabs.Num() > 0)
@@ -167,7 +167,7 @@ void UVisexMenuWidget::BuildContent()
 			Row = Line;
 		}
 		UVerticalBoxSlot* RowSlot = Root->AddChildToVerticalBox(Row);
-		RowSlot->SetPadding(FMargin(0.f, 0.f, 0.f, bValues ? 10.f : 18.f));
+		RowSlot->SetPadding(FMargin(0.f, 0.f, 0.f, bValues ? 10.f : ItemGap));
 	}
 	SetSelected(Selected);
 }
