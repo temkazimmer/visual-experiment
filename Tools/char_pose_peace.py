@@ -109,6 +109,20 @@ worst = max(length(sub(pos(b), (lambda v: (v.x, v.y, v.z))(APE.get_bone_pose(src
             for b in bones)
 print("FK check, worst error cm:", round(worst, 3))
 
+# The toes come from Quinn's own reference, not the idle's: MM_Idle has no toe tracks, so it
+# evaluates them against the skeleton's copy, which lags when char_toes.py moves Quinn's toe
+# bones onto a re-weighted skin (character-toes e55d62a: up to 0.8 cm off). Every clip keys
+# them, so a stale copy would pull her toes off the skin's joints in every pose.
+_quinn = unreal.SkeletonModifier()
+_quinn.set_skeletal_mesh(unreal.load_asset("/Game/Characters/Mannequins/Meshes/SKM_Quinn_Simple"))
+for b in bones:
+    if "toe_0" in b:
+        t = _quinn.get_bone_transform(b, False)
+        local[b] = [(t.translation.x, t.translation.y, t.translation.z),
+                    qnorm((t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w)),
+                    (t.scale3d.x, t.scale3d.y, t.scale3d.z)]
+_cache.clear()
+
 # ---- hand helpers ----
 def palm_normal_local(side):
     """Palm-facing direction in the hand's own frame, read off the idle pose (palms face the thighs)."""
@@ -300,6 +314,14 @@ if BUILD:
         factory = unreal.AnimSequenceFactory()
         factory.set_editor_property("target_skeleton", idle.get_editor_property("skeleton"))
         seq = unreal.AssetToolsHelpers.get_asset_tools().create_asset(OUT_NAME, OUT_DIR, unreal.AnimSequence, factory)
+    # ik_foot_l/r on her own feet: the Anim Blueprint's foot IK solves the legs to those bones,
+    # so left at the idle's stance they pulled her feet back to it (as write() does for the clips)
+    if "ik_foot_root" in local:
+        RP, RQ = world("ik_foot_root")
+        for s in "lr":
+            FP, FQ = world("foot_" + s)
+            local["ik_foot_" + s] = [rot(qinv(RQ), sub(FP, RP)), qnorm(qmul(qinv(RQ), FQ)), local["ik_foot_" + s][2]]
+        _cache.clear()
     c = seq.controller
     c.open_bracket(unreal.Text("Peace pose"), False)
     c.remove_all_bone_tracks(False)

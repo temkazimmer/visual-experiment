@@ -98,6 +98,81 @@ def ankle_limit(s, toe, sole):
     n0 = norm(cross(toe, H))
     return toe, add(mul(n0, math.cos(twist)), mul(cross(toe, n0), math.sin(twist)))
 
+# ---- the game's joint limits ----
+# VisexAnimInstance clamps every joint to human range last (FVisexAnimProxy::Limits, the same
+# table and maths as here). A key that asks for more is bent back in game, and the hand or head
+# ends up somewhere other than where the script put it, so poses are checked against it here.
+LIMITS = {
+    "thigh": (-120, 30, -45, 45, -60, 60), "calf": (-10, 130, -12, 5, -30, 20), "foot": (-30, 50, -15, 25, -25, 38),
+    "upperarm": (-60, 180, -180, 45, -80, 90), "lowerarm": (-44, 111, -30, 20, -80, 80), "hand": (-80, 75, -40, 50, -35, 135),
+    "neck_01": (-30, 40, -25, 25, -40, 40), "head": (-30, 25, -23, 23, -40, 40),
+    "spine_01": (-15, 30, -12, 12, -13, 13), "spine_02": (-8, 20, -10, 10, -13, 13), "spine_03": (-8, 20, -10, 10, -13, 13),
+    "spine_04": (-8, 20, -10, 10, -13, 13), "spine_05": (-6, 12, -6, 6, -10, 10)}
+REF_ROT = {}
+for _b in bones:
+    _k = _b[:-2] if _b[-2:] in ("_l", "_r") else _b
+    if _k in LIMITS:
+        _r = _quinn.get_bone_transform(_b, False).rotation
+        REF_ROT[_b] = (_k, qnorm((_r.x, _r.y, _r.z, _r.w)))
+
+def joint_angles(b):
+    """(bend, side, twist) degrees of bone b off its reference, read as the game reads them."""
+    d = qmul(qinv(REF_ROT[b][1]), local[b][1])
+    if d[3] < 0:
+        d = tuple(-v for v in d)
+    n = math.sqrt(d[0] ** 2 + d[3] ** 2)
+    tw = (d[0] / n, 0.0, 0.0, d[3] / n) if n > 1e-9 else (0.0, 0.0, 0.0, 1.0)
+    sw = qmul(qinv(tw), d) if REF_ROT[b][0] == "hand" else qmul(d, qinv(tw))
+    if sw[3] < 0:
+        sw = tuple(-v for v in sw)
+    twist = math.degrees(2 * math.atan2(tw[0], tw[3]))
+    twist = twist - 360 if twist > 180 else twist + 360 if twist < -180 else twist
+    ang = 2 * math.acos(max(-1.0, min(1.0, sw[3])))
+    s = math.sin(ang / 2)
+    ax = (sw[0] / s, sw[1] / s, sw[2] / s) if s > 1e-9 else (0.0, 0.0, 0.0)
+    deg = math.degrees(ang)
+    return deg * ax[2], deg * ax[1], twist
+
+def _soft_max(x, hi, s=10.0):
+    return x if x <= hi - s else hi - s + s * (1.0 - math.exp(-(x - (hi - s)) / s))
+def soft_clamp(x, lo, hi):
+    """The game's clamp: it starts giving 10 degrees before a limit, so a joint near one is pulled in too."""
+    return -_soft_max(-_soft_max(x, hi), -lo)
+
+def over_limits(slack=0.0):
+    """[(bone, degrees the game moves it, (bend, side, twist))] for every joint the game will move, worst first."""
+    out = []
+    for b, (k, _) in REF_ROT.items():
+        a = joint_angles(b)
+        r = LIMITS[k]
+        ex = max(abs(a[i] - soft_clamp(a[i], r[2 * i], r[2 * i + 1])) for i in range(3))
+        if ex > slack:
+            out.append((b, round(ex, 1), tuple(round(v) for v in a)))
+    return sorted(out, key=lambda x: -x[1])
+
+def game_limits(kinds):
+    """Clamp these joints (LIMITS keys) as the game will, so what is solved after them, the
+    hands on the ground or the head in a hand, lands where the game will draw it. Returns the
+    rotations it replaced, to put back before the clip is written."""
+    raw = {}
+    for b, (k, ref) in REF_ROT.items():
+        if k not in kinds:
+            continue
+        a = joint_angles(b)
+        r = LIMITS[k]
+        n = [soft_clamp(a[i], r[2 * i], r[2 * i + 1]) for i in range(3)]
+        if max(abs(x - y) for x, y in zip(a, n)) < 0.02:
+            continue
+        ang = math.sqrt(n[0] ** 2 + n[1] ** 2)
+        sw = axis_angle((0.0, n[1] / ang, n[0] / ang), ang) if ang > 0.01 else (0.0, 0.0, 0.0, 1.0)
+        tw = axis_angle(X, n[2])
+        raw[b] = tuple(local[b][1])
+        local[b][1] = qnorm(qmul(ref, qmul(tw, sw) if k == "hand" else qmul(sw, tw)))
+    _cache.clear()
+    return raw
+GAME_LIMITS = globals().get("GAME_LIMITS", True)
+LEGS_J, TRUNK_J, ARMS_J = ("thigh", "calf", "foot"), ("spine_01", "spine_02", "spine_03", "spine_04", "spine_05", "neck_01", "head"), ("upperarm", "lowerarm", "hand")
+
 # ---- one frame from its numbers ----
 def legs(P, lift):
     reset()
@@ -110,6 +185,24 @@ def legs(P, lift):
         f = "foot_" + s
         toe, sole = ankle_limit(s, toe, norm(P["sole_" + s]))
         rotate(f, align2(toe_dir(s), rot(world(f)[1], SOLE[s]), toe, sole))
+    if GAME_LIMITS:
+        # The legs as the game will bend them. A thigh past range (the mermaid's crossed left thigh,
+        # 49 deg of adduction) is held back there and swings the foot ~7 cm into the sand, and the
+        # contact pass then lifts her whole body, hands and all, off the ground. So the shin is
+        # re-aimed at the ankle's mark from the clamped knee and the foot set again; what the clip
+        # keeps is these re-aimed rotations, which the game leaves alone.
+        RAW.clear()
+        held = game_limits(("thigh",))
+        for s in "lr":
+            if "thigh_" + s in held:
+                toe = norm(P["toe_" + s])
+                aim_at("calf_" + s, "foot_" + s, sub(P["ball_" + s], mul(toe, FOOT[s])))
+                toe, sole = ankle_limit(s, toe, norm(P["sole_" + s]))
+                f = "foot_" + s
+                rotate(f, align2(toe_dir(s), rot(world(f)[1], SOLE[s]), toe, sole))
+        for b in held:                                     # the thigh as asked: the game clamps it, once
+            RAW[b] = held[b]
+        RAW.update(game_limits(("calf", "foot")))
     return min(pos("calf_l")[2], pos("calf_r")[2])
 
 def peace_arms(P):
@@ -155,13 +248,30 @@ def build(P):
         rotate(b, turn(Z, neg(X), P["head_tilt"] * share))  # toward the V
         rotate(b, turn(Y, neg(Z), P["head_down"] * share))
         rotate(b, turn(Y, X, P["head_left"] * share))
+    if GAME_LIMITS:
+        RAW.update(game_limits(TRUNK_J))                   # the trunk first: the hands are solved onto it as drawn
     w = P["arms"]
     if w > 0.001:
         ARMS(P)
         for b in ARM:
             local[b][1] = slerp(BASE[b][1], local[b][1], w)
         _cache.clear()
+    if GAME_LIMITS:
+        want = {s: pos("middle_01_" + s) for s in "lr"}
+        OVER[:] = over_limits(0.5)
+        arms = game_limits(ARMS_J)
+        for s in "lr":                                     # how far the game's limits move each hand off its mark
+            ARM_MISS[s] = length(sub(pos("middle_01_" + s), want[s]))
+        GAME_POSE.clear()
+        GAME_POSE.update({b: tuple(local[b][1]) for b in bones})
+        # The clip keeps the asked-for rotations: the game clamps them itself, once. Clamped here
+        # too, they would be softened twice. The arms were solved onto the clamped trunk, so in
+        # game, where the trunk is clamped the same way, the hands land where they were put.
+        for b, q in list(arms.items()) + list(RAW.items()):
+            local[b][1] = q
+        _cache.clear()
     return lift
+OVER, ARM_MISS, RAW, GAME_POSE = [], {"l": 0.0, "r": 0.0}, {}, {}
 
 # Lead and follow. Between two keys every number used to move on the same clock, which reads
 # as a figure being posed. In a real move the hands and the gaze go first, the trunk next, and

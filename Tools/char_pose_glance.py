@@ -41,15 +41,23 @@ def glance_arms(P):
 ARMS = glance_arms
 
 # the mermaid's legs (hips off to her left, shins swept to her right), body turned back
-ANKLE_L, TOE_L = (-25.8, 11.0, 5.5), (-0.95, -0.30, 0.0)
-ANKLE_R, TOE_R = (-33.3, -9.8, 5.6), (-0.70, -0.70, -0.05)
+# The ankles 4 cm higher than the mermaid's: the ankle's range tips each foot's toes down, and at
+# 5.5 the left little toe sat 4 cm in the sand, so the game lifted her whole body 5 cm off it
+ANKLE_L, TOE_L = (-25.8, 11.0, 9.5), (-0.95, -0.30, 0.0)
+ANKLE_R, TOE_R = (-33.3, -9.8, 9.0), (-0.70, -0.70, -0.05)
 for k in (STAND, STEP, HALF, KNEEL):
     k.update(plant=(-20.0, 30.0, 6.0), hip=(16.0, -9.0, 7.0))     # 3 cm further out: the palm sat inside the thigh
 GLANCE = dict(KNEEL, pelvis=(14.0, -13.0, 16.0), roll=6.0, pitch=-8.0, yaw=-35.0,
               ball_l=ball_from("l", ANKLE_L, TOE_L), toe_l=TOE_L, sole_l=(0.3, -0.9, 0.3), knee_l=(13.0, 27.0, 5.5),
               ball_r=ball_from("r", ANKLE_R, TOE_R), toe_r=TOE_R, sole_r=(0.5, -0.6, 0.6), knee_r=(-8.0, 24.0, 9.0),
-              lean_left=-40.0, lean_fwd=12.0, twist_left=35.0, plant=(-30.0, 30.0, 6.0),
-              head_tilt=-6.0, head_down=-14.0, head_left=75.0, arms=1.0, floor=0.0)
+              # the planted hand a little nearer and the trunk over it: from (-30, 30) the arm fell
+              # short once the game's joint limits held her trunk's twist and side bend back, and the
+              # hand hung over the sand. The wrist is aimed 2 cm into it: her body sliders change her
+              # reach by a few cm, and the game's contact pass sets a hand onto the sand only from
+              # within 6 cm above it (or from inside it), so the plant errs low
+              lean_left=-40.0, lean_fwd=14.0, twist_left=35.0, plant=(-24.0, 30.0, -2.0),
+              head_tilt=-6.0, head_down=-14.0, head_left=75.0, arms=1.0,
+              floor=globals().get("FLOOR", 3.0))   # knee bones 3 cm up: at 0 the knee skin sat in the sand and the game lifted her, planted hand and all
 GLANCE.update(globals().get("TWEAK", {}))
 
 # the turn of the head comes last, a beat after she has settled
