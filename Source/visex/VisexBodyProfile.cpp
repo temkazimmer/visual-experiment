@@ -180,7 +180,7 @@ const TArray<FVisexOutfit>& FVisexBodyProfile::Outfits()
 		O(TEXT("None"),    LOCTEXT("OutfitNone", "Nothing"),          TEXT("")),
 		O(TEXT("Bodystocking"), LOCTEXT("OutfitBodystocking", "Sheer bodystocking"), TEXT("/Game/Character/Clothes/SKM_Outfit_Bodystocking.SKM_Outfit_Bodystocking"), TEXT(""), 0.15f),
 		O(TEXT("BodystockingSkirt"), LOCTEXT("OutfitBodystockingSkirt", "Bodystocking and skirt"), TEXT("/Game/Character/Clothes/SKM_Outfit_Bodystocking.SKM_Outfit_Bodystocking"),
-			TEXT("/Game/Character/Clothes/CA_Skirt.CA_Skirt")),   // the skirt is Chaos cloth (Docs/Research/STUDY_SKIRT_SIM.md)
+			TEXT("/Game/Character/Clothes/CA_Skirt.CA_Skirt"), 0.15f),   // the skirt is Chaos cloth (Docs/Research/STUDY_SKIRT_SIM.md)
 		// refreshed and unlocked 2026-11-11 (Tema): smooth navy latex, keyhole, bound edges, belt and buckle
 		O(TEXT("Catsuit"), LOCTEXT("OutfitCatsuit", "Latex catsuit"), TEXT("/Game/Character/Outfits/SKM_Outfit_Catsuit.SKM_Outfit_Catsuit"), TEXT(""), 0.7f),
 		// refreshed and unlocked 2026-11-11 (Tema): nylon bodysuit, lace cups as the neckline, satin cincher, seamed thigh-highs
@@ -188,7 +188,7 @@ const TArray<FVisexOutfit>& FVisexBodyProfile::Outfits()
 		// bundle 03 (Tema's references, 2026-11-11): red tartan slingshot, collar and tie, white thigh-highs
 		O(TEXT("Tartan"), LOCTEXT("OutfitTartan", "Tartan"), TEXT("/Game/Character/Clothes/SKM_Outfit_Tartan.SKM_Outfit_Tartan"), TEXT(""), 0.25f),   // a triangle top: little support
 		// bundle 02 (Tema's references, 2026-11-11): black strap harness, ring-joined, opaque chap stockings
-		O(TEXT("Harness"), LOCTEXT("OutfitHarness", "Harness"), TEXT("/Game/Character/Clothes/SKM_Outfit_Harness.SKM_Outfit_Harness")),
+		O(TEXT("Harness"), LOCTEXT("OutfitHarness", "Harness"), TEXT("/Game/Character/Clothes/SKM_Outfit_Harness.SKM_Outfit_Harness"), TEXT(""), 0.45f),
 		// the dressing room's locked costumes: listed, not wearable yet (unlocked in play or
 		// bought, later; Tema, 2026-11-11). Choosing one shows "under construction".
 		L(TEXT("Garter"),  LOCTEXT("OutfitGarter", "Garter set")),

@@ -1176,7 +1176,8 @@ def tartan():
         b_ = ray(TORSO_BVH, pel_v, corner[1], D(corner[0]), 0.0)
         if a_ and b_:
             a_, b_ = a_ + nearest_normal(a_) * 0.2, b_ + nearest_normal(b_) * 0.2
-            tube(taut(a_, b_, 0.2, n=80), 0.0, "Binding", flat=(1.0, 0.14), step=0.35, turn=40)
+            # smoothed: where taut() leaves the skin it bends at a corner, and the tape twisted there
+            tube(smooth_pts(taut(a_, b_, 0.2, n=80), False, 40), 0.0, "Binding", flat=(1.0, 0.14), step=0.35, turn=120)
         # high-cut hip strings: from the panel's corner up over the hip bone, round to the side
         # strap above the hip, which carries on to the thong at the back
         wrap([corner, (s * 45.0, hb + 2.5), (s * 75.0, hb + 4.5), (s * 100.0, hb + 3.0)], 0.8)
@@ -1731,6 +1732,9 @@ def fit_outfit(name, fit, oc, idx3, w3, dl, fab):
         ps = _blur(p, 14)
         ring = _blur(p, 200) * (1.0 - COV) ** 2
         spill = ring * (SPILL * ps.sum() / max(ring.sum(), 1e-9))
+        # a garment that covers nearly all of her (the catsuit) leaves only small openings: the
+        # roll past an edge never stands taller than the press at that edge
+        spill = np.minimum(spill, 1.2 * _blur(p, 40) * (1.0 - COV))
         return (spill - ps)[:, None] * NRM, ps
 
     morphs = {}
