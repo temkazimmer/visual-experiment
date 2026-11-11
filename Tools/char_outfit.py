@@ -69,8 +69,13 @@ WARDROBE = {
                     Jersey=dict(_base="Satin", Color=(0.012, 0.012, 0.014), Roughness=0.72, RoughnessVariation=0.08, NormalStrength=0.3, SeamStrength=1.0),
                     Binding=dict(_base="Satin", Color=(0.006, 0.006, 0.008), Roughness=0.7, RoughnessVariation=0.1, NormalStrength=0.5),
                     Trim=dict(Color=(0.8, 0.8, 0.82), Roughness=0.22, RoughnessVariation=0.06, Metallic=1.0)),
+    # premium bundle 01 (Tema's references, 2026-11-11): sheer black mesh bodysuit and opera gloves, a matte
+    # jersey bandeau, collar and brief with a soft sheen, fine matte boning and bound edges
+    "Mirror": dict(Sheer=dict(Color=(0.006, 0.006, 0.008), Opacity=0.58, EdgeExponent=1.6, SeamStrength=1.0),
+                   Satin=dict(Color=(0.008, 0.008, 0.01), Roughness=0.55, RoughnessVariation=0.1, NormalStrength=0.4, SeamStrength=1.0),
+                   Binding=dict(_base="Satin", Color=(0.006, 0.006, 0.008), Roughness=0.7, RoughnessVariation=0.1, NormalStrength=0.5)),
 }
-MESH_DIR = {"Sheer": "/Game/Character/Clothes", "Bodystocking": "/Game/Character/Clothes", "BodystockingSkirt": "/Game/Character/Clothes", "Skirt": "/Game/Character/Clothes", "Tartan": "/Game/Character/Clothes", "Harness": "/Game/Character/Clothes"}       # the rest: /Game/Character/Outfits
+MESH_DIR = {"Sheer": "/Game/Character/Clothes", "Bodystocking": "/Game/Character/Clothes", "BodystockingSkirt": "/Game/Character/Clothes", "Skirt": "/Game/Character/Clothes", "Tartan": "/Game/Character/Clothes", "Harness": "/Game/Character/Clothes", "Mirror": "/Game/Character/Clothes"}       # the rest: /Game/Character/Outfits
 DIR = "/Game/Character/Clothes"
 SKELETON = "/Game/Characters/Mannequins/Meshes/SK_Mannequin"
 ONLY = globals().get("ONLY")

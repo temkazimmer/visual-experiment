@@ -189,6 +189,8 @@ const TArray<FVisexOutfit>& FVisexBodyProfile::Outfits()
 		O(TEXT("Tartan"), LOCTEXT("OutfitTartan", "Tartan"), TEXT("/Game/Character/Clothes/SKM_Outfit_Tartan.SKM_Outfit_Tartan"), TEXT(""), 0.25f),   // a triangle top: little support
 		// bundle 02 (Tema's references, 2026-11-11): black strap harness, ring-joined, opaque chap stockings
 		O(TEXT("Harness"), LOCTEXT("OutfitHarness", "Harness"), TEXT("/Game/Character/Clothes/SKM_Outfit_Harness.SKM_Outfit_Harness"), TEXT(""), 0.45f),
+		// premium bundle 01: sheer mesh bodysuit, bandeau, curved boning, opera gloves
+		O(TEXT("Mirror"), LOCTEXT("OutfitMirror", "Mirror"), TEXT("/Game/Character/Clothes/SKM_Outfit_Mirror.SKM_Outfit_Mirror"), TEXT(""), 0.4f),
 		// the dressing room's locked costumes: listed, not wearable yet (unlocked in play or
 		// bought, later; Tema, 2026-11-11). Choosing one shows "under construction".
 		L(TEXT("Garter"),  LOCTEXT("OutfitGarter", "Garter set")),

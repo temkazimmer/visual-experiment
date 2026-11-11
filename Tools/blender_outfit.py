@@ -1504,9 +1504,92 @@ def harness():
     region(chap, 0.3, "Jersey", rim=True, bind=("Jersey", 0.5), min_loop=6.0)
 
 
+def mirror():
+    """Bundle 01 (Tema's references, 2026-11-11): a sheer black mesh bodysuit. Mock neck with an
+    opaque collar, halter armholes (shoulders bare), an opaque bandeau over the bust that wraps
+    round the back, curved hourglass boning front and back, an opaque high-cut brief with a thong
+    back, and sheer opera gloves to mid upper arm with a stripe down the outside. Legs bare."""
+    BIND = ("Binding", 0.45)
+    cs = LM["crotch_skin"]
+    zn = LM["neck"] + 4.5                                          # top of the mock neck
+    # halter armholes: from the side of the neck down to the side seam under the arm
+    cx, cz = abs((Bn["upperarm_l"] - PEL).dot(LEFT)), LM["shoulder"] + 2.0
+    neck_w = 5.2                                                   # half-width of the strap at the neck
+    zh = LM["fold"] - 1.0                                          # armhole meets the side seam here
+    t = np.clip((cz - Z) / (cz - zh), 0, 1)
+    edge = neck_w + (cx + 6.0 - neck_w) * t ** 1.7                 # lateral edge, widening down
+    f_arm = np.where(Z > zh, edge - ALAT, 9.0)
+    # leg line: high cut to above the hip bone, thong behind
+    a = np.clip(ALAT / LM["hip_half"], 0, 1)
+    top = LM["hip_top"] + 6.5
+    z_leg = LM["crotch"] + (top - LM["crotch"]) * a ** 1.05
+    tb = np.clip((Z - LM["crotch"]) / (top - LM["crotch"]), 0, 1)
+    f_front = Z - z_leg
+    f_rear = 0.7 + 6.0 * tb ** 2.2 - ALAT
+    f_rear = np.maximum(f_rear, np.minimum(Z - (top - 1.2), 30.0))   # back stays whole above the thong
+    f_leg = f_rear + (f_front - f_rear) * SIDE_BLEND
+    body = np.minimum.reduce([zn - Z, f_arm, f_leg, (0.3 - UPPERARM) * 25.0, (0.6 - G("head")) * 30.0])
+    body = where(Z > LM["crotch"] - 4, body)
+    fit = BRIDGE
+    region(body, 0.12, "Sheer", lift=fit, bind=BIND, min_loop=6.0)
+
+    # opaque collar: the top 2.4 cm of the neck
+    region(where((G("head") < 0.6) & (UPPERARM < 0.3), np.minimum(zn - Z, Z - (zn - 2.4))), 0.34, "Satin", lift=fit, bind=BIND, min_loop=6.0)
+    # bandeau: covers the bust, straight top, gentle smile below, a narrower band round the back
+    b_top = LM["bust"] + CUP[1]["up"] * 0.55
+    b_bot = LM["fold"] - 0.8
+    front = smooth01(-6.0, 2.0, FW - (ANCHOR[1] - PEL) @ FWD + 9.0)
+    lo = b_bot + (LM["fold"] + 3.0 - b_bot) * (1 - front) - 1.2 * np.clip(1 - ALAT / 9.0, 0, 1) * front
+    hi = b_top + (LM["fold"] + 8.0 - b_top) * (1 - front)
+    region(where(TORSO, np.minimum(np.minimum(hi - Z, Z - lo), f_arm)), 0.34, "Satin", lift=fit, bind=BIND, min_loop=6.0)
+    # brief: opaque front from a soft U at the top, through the thong behind
+    u_top = LM["hip_top"] + 1.0 + 4.0 * np.clip(ALAT / LM["hip_half"], 0, 1) ** 1.5
+    u_top = u_top + (top - 3.0 - u_top) * (1 - SIDE_BLEND)
+    region(where(TORSO | (LEGS > 0), np.minimum(f_leg, u_top - Z)), 0.30, "Satin", lift=fit, bind=BIND, min_loop=5.0)
+
+    # boning: hourglass curves from under the bandeau to the brief, front and back
+    def curve(th0, th_w, th1, z0, z1, off=0.18):
+        n = max(3, int((z0 - z1) / 0.6))
+        pts = []
+        for k in range(n + 1):
+            u = k / n
+            th = th0 + (th_w - th0) * math.sin(math.pi * min(u / 0.55, 1.0) / 2) if u < 0.55 else \
+                th_w + (th1 - th_w) * (1 - math.cos(math.pi * (u - 0.55) / 0.45)) / 2
+            q = ray(TORSO_BVH, pel_v, z0 + (z1 - z0) * u, D(th), off)
+            if q:
+                pts.append(q + nearest_normal(q) * float(fit[nearest(q)]))
+        return pts
+    z_lo = LM["hip_top"] - 1.0
+    for s in (1, -1):
+        seam(curve(s * 14, s * 6, s * 18, b_bot - 0.5, z_lo), 0.1, "Binding", body)        # inner pair, pinched at the navel
+        seam(curve(s * 42, s * 26, s * 52, b_bot - 0.5, z_lo + 2.5), 0.1, "Binding", body)  # outer, hourglass
+        seam(curve(s * 160, s * 168, s * 150, LM["fold"] + 2.0, PEL[2] + 5.0), 0.1, "Binding", body)   # back pair
+    # opera gloves: sheer from the fingertips to mid upper arm, a band at the top, a stripe outside
+    along = np.zeros(nv)
+    for s in (1, -1):
+        a_, b_ = Bn["upperarm_" + SIDE[s]], Bn["hand_" + SIDE[s]]
+        along = np.where((LAT > 0) == (s == 1), ((X - a_) @ (b_ - a_)) / ((b_ - a_) @ (b_ - a_)), along)
+    arm_f = (UPPERARM - 0.5) * 20.0
+    glove = np.minimum(arm_f, (along - 0.30) * 30)
+    region(glove, 0.12, "Sheer", lift=fit, bind=BIND, min_loop=6.0)
+    region(np.minimum(arm_f, np.minimum((along - 0.30) * 30, (0.36 - along) * 30)), 0.3, "Satin", lift=fit, bind=BIND, min_loop=6.0)
+    for s in (1, -1):
+        sh, el, wr = Bn["upperarm_" + SIDE[s]], Bn["lowerarm_" + SIDE[s]], Bn["hand_" + SIDE[s]]
+        pts = []
+        for k in range(61):
+            u = k / 60
+            c = sh + (el - sh) * (0.36 + 0.64 * u * 2) if u < 0.5 else el + (wr - el) * ((u - 0.5) * 2)
+            out = LEFT * s * 0.6 + UP * 0.8                         # the outside of the arm
+            hit = BODY_BVH.ray_cast(V3(c + out / np.linalg.norm(out) * 12), V3(-out / np.linalg.norm(out)), 14)
+            if hit[0]:
+                pts.append(hit[0] + hit[1] * 0.16)
+        seam(pts, 0.1, "Binding", glove)
+
+
 OUTFITS = {"Noir": noir, "Garter": garter_set, "Cocoa": cocoa, "Fishnet": fishnet,
            "Catsuit": catsuit_set, "Sheer": sheer, "Bodystocking": bodystocking,
            "BodystockingSkirt": lambda: (bodystocking(), skirt()), "Tartan": tartan, "Harness": harness,
+           "Mirror": mirror,   # premium bundle 01
            "Skirt": lambda: skirt(off=1.0, flare=1.5, swing=0.0, skin_to=LM["crotch"] + 2.0, tight=True, follow=True, cling=0.7)}   # the cloth skirt: follows her shape, only the hem moves (Tema 2026-11-10); 1 cm off at the top, 4 at the hem (the cloth gets no bounce morphs); skin weights to just above the crotch, so the hip front cannot push through
 CLOTH = {"Skirt"}                                # simulated in UE: the default body's morphs baked into the rest shape
 
