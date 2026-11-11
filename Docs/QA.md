@@ -7,6 +7,40 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-11 16:50 · VIS-EX-0351 Shipping (81546fe) · PASS, she steps off on her own, Body and Wardrobe now inside 4 s
+
+- **Tour:** two runs from the mounted DMG, clean cook. Both reached `VisexQA: done` with 46 shots (the Catsuit adds
+  one) and exit 0. She plays as the character, not a spectator, on ground at every step. Body, shell, hair and
+  outfit are present throughout. No new visex `.ips` (one `zen` report only). Shots are in
+  `Saved/QA_0351ship{,_run2}/` and `Tools/.bridge/shots/qa0351/` (run 2 in `run2/`, crops in `crops/`).
+- **Cook:** `0 error(s), 0 warning(s)`, 801 packages in the IoStore.
+- **GC and layout:** both forced GCs pass in both runs. `layout save PASS, on disk`.
+- **Start move (abd10ac, eb286e6):** good. 4 s after Start, before the tour pushes any input, she's already 4.4 m
+  from the menu spot and mid-stride (`02_play`), so she steps off on her own. No frozen stand. The 4:3 mid-move
+  frame shows her walking away, sharp (`06_start_4x3_mid`); the landing reports the third-person camera at fov 90
+  (`07_start_4x3_landing`). Both runs match. **The 0.6 s step-off time itself isn't measurable**: the first
+  sample is at the orbit's half-way point.
+- **Stand-up 1.0 s:** Body and Wardrobe now report `open` with her standing in the page at the 4 s shot
+  (`15_body_tab_body`, `18_wardrobe`). In 0320/0333 they arrived after it. The exact delay needs a clip.
+- **Menu lean:** she leans on the drum, her right hand on its front and in view (`01_menu`, `14_outfit_Catsuit`).
+- **Photo poses:** FeetUp, Glance, LegLift, Mermaid, Peace all run. **The tour shoots 2.5 s after each switch,
+  which catches the floor-to-floor flows in transit** (same as 0333, `crops/photo_grid_0333_0351.png`), so
+  LegLift's head-in-hand end pose isn't seen. Glance has both hands planted on the sand (`26_photo_04`). LegLift's
+  head stays above the sand in both runs. No hand through a limb in any frame. Mermaid shows a ragged
+  bodystocking edge at her right hip (`28_photo_06`).
+- **Catsuit (577b9a3, 2fe615f):** wearable from the outfit row ("Latex catsuit", not locked), glossy black, fitted
+  at her size (`14_outfit_Catsuit`). A thin skin-coloured strip may show at the back of the waist above the belt
+  (`crops/cat_waist.png`), worth a closer look.
+- **Toes (2f5d00a, 4735035):** no breakage in any shot. The menu camera now crops her feet, and in the other
+  shots the toes sink into the sand, so the 0333 pale sliver can't be confirmed gone (`crops/toes_zoom.png`).
+- **Bounds ×2 (1fcba70):** she's drawn in all 8 head-and-shoulders turnaround frames (`crops/turn_grid.png`). No
+  HUD in the turnaround.
+- **Frame times:** quality 0/3/4: 16.7 / 23.0 / 51.0 ms (run 2: 14.3 / 42.6 / 82.2), with load around 20 from
+  a C++ build in another worktree, so not comparable.
+- **Saves:** backed up `VisexBody.sav` (`7ac129aa…`, changed since 0333) and `GameUserSettings.ini`
+  (`0f8144b4…`) and restored them after each run; both md5s match. No `[VisexMenuLayout]` before, no `Game.ini`
+  before or after.
+
 ## 2026-11-11 15:43 · VIS-EX-0333 Shipping (31f4903) · STABLE PASS, 4:3 menu fixed, toe tips still show a pale sliver
 
 - **Tour:** two runs from the mounted DMG, clean cook. Both reached `VisexQA: done` with 45 shots and exit 0,

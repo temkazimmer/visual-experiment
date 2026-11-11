@@ -182,6 +182,8 @@ const TArray<FVisexOutfit>& FVisexBodyProfile::Outfits()
 			TEXT("/Game/Character/Clothes/CA_Skirt.CA_Skirt")),   // the skirt is Chaos cloth (Docs/Research/STUDY_SKIRT_SIM.md)
 		// refreshed and unlocked 2026-11-11 (Tema): smooth navy latex, keyhole, bound edges, belt and buckle
 		O(TEXT("Catsuit"), LOCTEXT("OutfitCatsuit", "Latex catsuit"), TEXT("/Game/Character/Outfits/SKM_Outfit_Catsuit.SKM_Outfit_Catsuit")),
+		// bundle 03 (Tema's references, 2026-11-11): red tartan slingshot, collar and tie, white thigh-highs
+		O(TEXT("Tartan"), LOCTEXT("OutfitTartan", "Tartan"), TEXT("/Game/Character/Clothes/SKM_Outfit_Tartan.SKM_Outfit_Tartan")),
 		// the dressing room's locked costumes: listed, not wearable yet (unlocked in play or
 		// bought, later; Tema, 2026-11-11). Choosing one shows "under construction".
 		L(TEXT("Noir"),    LOCTEXT("OutfitNoir", "Noir lace")),
