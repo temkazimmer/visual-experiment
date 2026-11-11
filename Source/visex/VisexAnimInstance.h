@@ -29,6 +29,7 @@ private:
 	void Alive(FCompactPose& Pose);
 	void Contact(FCompactPose& Pose);
 	void Limits(FCompactPose& Pose);
+	void SteadyHead(FCompactPose& Pose);
 
 public:
 	virtual void PostUpdate(UAnimInstance* InAnimInstance) const override;
@@ -42,7 +43,7 @@ private:
 	struct FCatwalkTune
 	{
 		float HipRoll = 0.f, HipYaw = 0.f, HipShift = 0.f, Line = 0.f, Shoulders = 0.f, Head = 0.f;
-		float Posture = 0.f, ChestLag = 0.f, ArmSwing = 1.f, HeadLine = 0.f;
+		float Posture = 0.f, ChestLag = 0.f, ArmSwing = 1.f, HeadLine = 0.f, ShoulderRoll = 0.f;
 		float Clear = 0.f; // cm the thigh axes keep apart at the crossing (the swing knee turns out)
 	} Tune;
 	float GaitTarget = 0.f; // 0 standing or airborne, 1 walking, less when sprinting
@@ -51,7 +52,11 @@ private:
 	float Step = 0.f;       // -1..1: which foot is ahead (+ left)
 	float Lift = 0.f;       // -1..1: which foot is in the air (+ left)
 	float ChestStep = 0.f, ChestLift = 0.f; // Step and Lift as the chest feels them, a few frames late
-	float HeadSide = 0.f;   // the head's slow average sideways position, its line
+	// the walk clip's own head, before any layer: the catwalk keeps the head on this line and aim
+	FVector ClipHeadAt = FVector::ZeroVector;
+	FQuat ClipHeadRot = FQuat::Identity;
+	FVector CatwalkLeft = FVector::XAxisVector;
+	bool bClipHead = false;
 	float KneeOut[2] = {0.f, 0.f}; // degrees each thigh (L, R) is turned out to clear the other, eased
 	float Dt = 0.f;
 
