@@ -16,10 +16,10 @@ skin, with thickness on opaque pieces, piping, raised seams, strap geometry and 
 
 ## The wardrobe
 
-**One outfit for now** (Tema, 2026-11-09): the DRESS tab lists only "Nothing" and "Sheer
-bodystocking", and the bodystocking is her default. The other six below are still built,
-imported and on disk, but unlisted; add a row in `FVisexBodyProfile::Outfits()` to bring
-one back.
+**Wearable:** Nothing, the sheer bodystocking (her default), the bodystocking with the skirt,
+and the Catsuit (refreshed and unlocked 2026-11-11). Noir, Garter, Cocoa and Fishnet are listed
+but locked, waiting for the same refresh one at a time (Tema: these are the chosen set, they
+are just outdated); Sheer is built but unlisted.
 
 | Name | What it is | Fabrics |
 |---|---|---|
@@ -27,7 +27,7 @@ one back.
 | Garter | Lace balconette and briefs, wide lace garter belt, four straps, stockings | Lace, Sheer, Satin, Trim (gold) |
 | Cocoa | Brown satin bra and thong, slim belt, front straps to buckled thigh bands, choker | Satin, Trim (gold) |
 | Fishnet | Fishnet tights with a satin waistband, satin bra and high thong | Net, Satin, Trim |
-| Catsuit | Navy latex suit with waist and chest cutouts, white piping, stripes, collar, cuffs, belt | Latex, Trim (white) |
+| Catsuit | Smooth deep-navy latex suit, all one colour (no white: Tema, 2026-11-11): teardrop keyhole, big hip cutouts bridged by the belt, every opening bound in the same latex, front zip with a steel pull, collar, cuffs, belt with a steel buckle frame. Coat roughness 0.12, no ripple normal: a mirror coat showed the scene's hard edges as jagged black shapes on her | Latex, Trim (steel) |
 | Sheer | High-neck sheer bodysuit, latex yoke, bands and garter belt, six straps, opera gloves | Sheer, Latex, Trim |
 | **Bodystocking** | The hero outfit: one piece of sheer black nylon. Scoop tank, deep V back, open hips, open gusset with a sheer string tanga underneath, strap-held stocking legs, gold chain and bangles | Nylon, Sheer (tanga), Binding, Trim (gold) |
 | **BodystockingSkirt** | The bodystocking with a short black satin skirt over it that follows her hips and hangs straight, with a double waistband and a bound top. The skirt is **Chaos cloth** (see below): only the hem moves, a little | + Satin (cloth) |
@@ -69,8 +69,12 @@ the skirt is skinned to her pose by the leader pose. That is the shipping look, 
   (PhysicsParallelFor, waits in `HandleExistingParallelSimulation`).
 
 The mesh for the skinned look: no flare or folds; 1 cm off at the top, easing out as u squared
-to about 4 cm at the hem; the skin's weights down to 2 cm above the crotch, then each column keeps
-the weights of that ring, with no thigh pull (`skirt(..., tight=True)`).
+to about 4 cm at the hem (`skirt(..., tight=True)`). **Weights follow her legs (2026-11-11,
+`follow=True`):** every ring takes the weights of the skin straight in from it (hip, glute, thigh),
+blurred about 4.5 cm round and 1.4 cm down. Before, each column kept the crotch ring's weights all
+the way down, so in FEETUP, GLANCE and MERMAID the skirt stayed with her pelvis: her seat showed
+through a crack at the back and her thighs passed through the front. With the sim switched on, the
+leg-following weights may bring the idle ridge back (untested).
 
 The outfit row names a cloth asset beside its mesh: "BodystockingSkirt" wears
 `SKM_Outfit_Bodystocking` plus `CA_Skirt`, a `UChaosClothComponent` that follows the body's

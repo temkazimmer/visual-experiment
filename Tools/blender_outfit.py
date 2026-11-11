@@ -133,6 +133,7 @@ ALAT = np.abs(LAT)
 D = math.radians
 SIDE = {1: "l", -1: "r"}
 fwd_v, left_v = V3(FWD), V3(LEFT)
+UP_V = Vector((0.0, 0.0, 1.0))
 
 
 def diffuse(a, iters):
@@ -697,12 +698,17 @@ def catsuit():
     f = np.minimum(LM["shoulder"] + 5.0 - Z, (0.25 - HANDS) * 25.0)
     f = np.minimum(f, (0.5 - HEAD) * 30.0)
     f = np.minimum(f, Z - (LM["ankle"] + 5.0))            # ends above the ankle: her feet stay bare
-    for s in (1, -1):   # side waist ovals
-        side_pt = surface_near(PEL + LEFT * s * 30 + UP * (LM["waist"] - PEL[2] + 1), LEFT * s)
-        r = np.sqrt(((Z - side_pt[2]) / 7.5) ** 2 + ((FW - (side_pt - PEL).dot(FWD)) / 4.0) ** 2)
-        f = np.minimum(f, (np.where(((LAT * s) > 0) & (UPPERARM < 0.3), r, 9.0) - 1.0) * 4.0)   # torso only: not the arm beside it
-    rw = ALAT / 4.0 + np.abs(Z - (LM["bust"] + 1.0)) / 7.0   # window between the breasts
-    return np.minimum(f, (np.where(FW > 0, rw, 9.0) - 1.0) * 4.0)
+    for s in (1, -1):   # hip cutouts: from below the ribs down over the hip bone, the belt bridging them (Tema: bigger)
+        side_pt = surface_near(PEL + LEFT * s * 30 + UP * (LM["waist"] - PEL[2] - 2), LEFT * s)
+        r = np.sqrt(((Z - side_pt[2]) / 9.0) ** 2 + ((FW - (side_pt - PEL).dot(FWD) - 1.5) / 7.5) ** 2)   # from just under the belt to below the ribs
+        f = np.minimum(f, (np.where(((LAT * s) > 0) & (UPPERARM < 0.3), r, 9.0) - 1.0) * 5.0)   # torso only: not the arm beside it
+    # keyhole between the breasts: a teardrop, round at the bottom, narrowing to a point at the top
+    zc = LM["bust"] - 1.0
+    dz = Z - zc
+    up_ = np.clip(dz / 7.0, 0.0, 1.0)
+    w = 3.0 * (1.0 - 0.8 * up_ ** 1.3)
+    e = np.sqrt((ALAT / w) ** 2 + (dz / np.where(dz > 0, 7.0, 4.5)) ** 2)
+    return np.minimum(f, (np.where(FW > 0, e, 9.0) - 1.0) * 3.5)
 
 
 LEGMASK = UPPERARM < 0.3
@@ -787,22 +793,42 @@ def fishnet():
 
 
 def catsuit_set():
-    """Glossy catsuit with waist and chest cutouts, piped openings, stripes, collar and belt."""
+    """Glossy navy latex catsuit, all one colour: a teardrop keyhole, hip cutouts, every opening
+    bound in the same latex, a front zip with a steel pull, torso panel seams, collar, cuffs and
+    a belt with a steel buckle. Refreshed 2026-11-11 (Tema): bound edges instead of thin piping,
+    a keyhole instead of the diamond, then no white anywhere and bigger hip cutouts."""
     f = catsuit()
-    region(f, 0.25, "Latex", pipe="Trim", pipe_r=0.22)
+    BIND = ("Latex", 0.7)                                                            # self-coloured bindings: the edge reads by its gloss
+    region(f, 0.25, "Latex", bind=BIND, min_loop=6.0)
     top = LM["shoulder"] + 5.0
-    seam(torso_line(0, top - 1.0, LM["crotch"] + 1, 0.28), 0.16, "Trim", f)          # zip line
-    for th in (34, -34, 150, -150):
-        seam(torso_line(th, LM["fold"] - 1, LM["crotch"] + 6, 0.28), 0.15, "Latex", f)
-    for s in (1, -1):                                                                # leg stripes, ankle cuffs
-        seam(leg_line(s, 90 * s, LM["hip_top"] - 4, LM["ankle"] + 6, 0.28), 0.2, "Trim", f)
-        region(where(LEGMASK & (LEGS > 0.5), 1.6 - np.abs(Z - (LM["ankle"] + 7.5))), 0.5, "Latex", pipe="Trim", pipe_r=0.14)
+    seam(torso_line(0, top - 1.0, LM["crotch"] + 1, 0.28), 0.3, "Latex", f)           # zip tape, stops at the keyhole
+    pull = ray(TORSO_BVH, pel_v, top - 3.5, 0.0, 0.0)
+    if pull:
+        hardware(NP(pull), UP, (1.0, 2.4, 0.35), 0.5)                                  # zip pull under the collar
     bz = LM["hip_top"] + 5.0
-    region(band(bz, 3.0), 0.55, "Latex", pipe="Trim", pipe_r=0.14)
-    hardware(NP(ray(TORSO_BVH, pel_v, bz, 0.0, 0.0)), LEFT, (3.4, 2.6, 0.6), 0.85)
+    for th in (34, -34, 150, -150):
+        seam(torso_line(th, LM["fold"] - 1, bz + 2.5, 0.28), 0.15, "Latex", f)       # panel seams end under the belt
+    for s in (1, -1):                                                                # ankle cuffs
+        region(where(LEGMASK & (LEGS > 0.5), 1.6 - np.abs(Z - (LM["ankle"] + 7.5))), 0.5, "Latex", bind=("Latex", 0.5), min_loop=6.0)
+                                                                                     # belt, buckle front and centre
+    region(band(bz, 4.0, UPPERARM < 0.3), 0.6, "Latex", bind=("Latex", 0.5))       # a level cut all round
+    # the buckle sits on the belly's front, square to it: a ray down the middle falls into the
+    # navel (2.5 cm deep), and the skin's normal there tips inward, which buried it
+    front = [q for q in (ray(TORSO_BVH, pel_v, bz, D(t), 0.0) for t in (-12, -8, -4, 4, 8, 12)) if q]
+    if front:
+        depth = max((q - pel_v).dot(fwd_v) for q in front)
+        buckle = Vector((pel_v.x, pel_v.y, bz)) + fwd_v * depth
+        c = buckle + fwd_v * 1.0
+        W, H, bar = 4.8, 3.6, 0.6                                                     # a rectangular frame, the belt showing through
+        side_v = left_v * (W - bar) * 0.5
+        up_v = Vector((0, 0, (H - bar) * 0.5))
+        for dv, along, size in ((side_v, UP_V, (bar, H, 0.5)), (-side_v, UP_V, (bar, H, 0.5)),
+                                (up_v, left_v, (bar, W, 0.5)), (-up_v, left_v, (bar, W, 0.5)),
+                                (Vector((0, 0, 0)), left_v, (0.3, W - bar, 0.35))):   # the prong across the middle
+            clip(c + dv, fwd_v, along, size)
     wrist = np.minimum((0.62 - HANDS) * 25.0, (HANDS - 0.22) * 25.0)                 # cuff bands
-    region(where(UPPERARM > 0.5, wrist), 0.5, "Latex", pipe="Trim", pipe_r=0.12)
-    region(band(top - 1.5, 3.0, UPPERARM < 0.3), 0.5, "Latex")                       # collar
+    region(where(UPPERARM > 0.5, wrist), 0.5, "Latex", bind=("Latex", 0.5), min_loop=6.0)
+    region(band(top - 1.5, 3.0, UPPERARM < 0.3), 0.5, "Latex", bind=("Latex", 0.5))    # collar
 
 
 def sheer():
@@ -934,7 +960,7 @@ def bodystocking():
             tube(ring, 0.1, "Trim", closed=True, sides=8, step=0.35, rigid=nearest(cv))
 
 
-def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.5, slot="Satin", skin_to=None, tight=False, rigid_from=None):
+def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.5, slot="Satin", skin_to=None, tight=False, rigid_from=None, follow=False):
     """A short satin A-line worn over the bodystocking (Docs/Research/DESIGN_SKIRT.md). Not cut
     from the skin: rings lofted from the waist down. Each ring follows her hull to the hip, then
     hangs straight from the widest point above it, flares out (A-line) and swings in broad
@@ -947,7 +973,12 @@ def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.
     the skin at skin_to, with no thigh pull.
     rigid_from (cm): from here down the weights blend to the pelvis alone, so the ring keeps its
     length round her: the cloth's rest ring is the reference pose's, and where the legs pulled the
-    ring shorter in idle the free cloth bulged out into a ridge."""
+    ring shorter in idle the free cloth bulged out into a ridge.
+    follow: for the skinned skirt (the cloth sim is off by default): every ring takes the weights
+    of the skin straight in from it (waist, hip, glute, thigh), blurred round the ring and down, so
+    it rides her legs when she sits, kneels or lies down. With one ring's weights from the crotch
+    down it stayed with the pelvis, and in FEETUP, GLANCE and MERMAID her thighs went through the
+    front, her seat showed through the back and the hem sank into the sand."""
     cr, hb = LM["crotch"], LM["hip_top"]
     top = LM["waist"] + 1.0 if top is None else top
     hem = cr - 6.0 if hem is None else hem
@@ -985,6 +1016,18 @@ def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.
     PELVIS_W = np.zeros(nb)
     PELVIS_W[gnames.index("pelvis")] = 1.0
     kl, kr = nt // 4, 3 * nt // 4                                  # columns straight out over her left and right leg
+    if follow:
+        WF = WM[J[:, :-1]].astype(float)                               # rows, columns (the last repeats the first), bones
+        sc, sr = 6.0, 2.0                                              # blur sigma: 6 columns (~4.5 cm) round, 2 rows (1.4 cm) down
+        f = np.fft.fftfreq(nt)
+        WF = np.real(np.fft.ifft(np.fft.fft(WF, axis=1) * np.exp(-2 * (math.pi * f * sc) ** 2)[None, :, None], axis=1))
+        g = np.exp(-0.5 * (np.arange(-6, 7) / sr) ** 2)
+        g /= g.sum()
+        pad = np.concatenate([np.repeat(WF[:1], 6, 0), WF, np.repeat(WF[-1:], 6, 0)], 0)
+        WF = sum(pad[o:o + len(zs)] * g[o] for o in range(13))
+        WF = np.clip(WF, 0.0, None)
+        WF /= np.maximum(WF.sum(2, keepdims=True), 1e-9)
+        WF = np.concatenate([WF, WF[:, :1]], 1)
 
     def sheet(rr, z0, z1, piece_slot, own_uv=True):
         rows = [i for i, z in enumerate(zs) if z1 - 1e-6 <= z <= z0 + 1e-6]
@@ -1007,6 +1050,10 @@ def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.
                 # pelvis = the hip ring's skin weights; each thigh pulls the part of the skirt
                 # that hangs over it, more towards the hem (stand-in for cloth, see the doc)
                 uu = float(uw[i])
+                if follow:
+                    ws.append(WF[i, k])
+                    ms.append(1.0 - float(u[i, 0]))
+                    continue
                 # tight (cloth): no thigh pull. Each column keeps one set of weights below the
                 # hand-over, so it keeps its length when the thighs move; a pull that grew down the
                 # skirt shortened the front in idle and the sim folded it (the ridge). Colliders do the legs.
@@ -1038,7 +1085,7 @@ def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.
 OUTFITS = {"Noir": noir, "Garter": garter_set, "Cocoa": cocoa, "Fishnet": fishnet,
            "Catsuit": catsuit_set, "Sheer": sheer, "Bodystocking": bodystocking,
            "BodystockingSkirt": lambda: (bodystocking(), skirt()),
-           "Skirt": lambda: skirt(off=1.0, flare=1.5, swing=0.0, skin_to=LM["crotch"] + 2.0, tight=True)}   # the cloth skirt: follows her shape, only the hem moves (Tema 2026-11-10); 1 cm off at the top, 4 at the hem (the cloth gets no bounce morphs); skin weights to just above the crotch, so the hip front cannot push through
+           "Skirt": lambda: skirt(off=1.0, flare=1.5, swing=0.0, skin_to=LM["crotch"] + 2.0, tight=True, follow=True)}   # the cloth skirt: follows her shape, only the hem moves (Tema 2026-11-10); 1 cm off at the top, 4 at the hem (the cloth gets no bounce morphs); skin weights to just above the crotch, so the hip front cannot push through
 CLOTH = {"Skirt"}                                # simulated in UE: the default body's morphs baked into the rest shape
 
 

@@ -101,9 +101,31 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
 	float ReturnFadeTime = 0.3f;
 
-	/** Share of the stand-up after which the player can walk; the camera keeps circling meanwhile. */
+	/** Share of the stand-up after which she steps off the column and walks on her own, and the
+	 *  stick reaches her; the camera is already circling. Timed off the stand-up clip's length. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Start", meta = (ClampMin = "0", ClampMax = "1"))
-	float StandUpHandOver = 0.6f;
+	float StandUpHandOver = 0.35f;
+
+	/** Longest wait before she steps off (s), whatever the stand-up clip's length. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Start", meta = (ClampMin = "0"))
+	float WalkOffMaxDelay = 0.5f;
+
+	/** Her own pace walking off the column after Start (cm/s): slow and weighty. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Start", meta = (ClampMin = "0"))
+	float WalkOffSpeed = 140.f;
+
+	/** Seconds she takes to come up to that pace. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Start", meta = (ClampMin = "0"))
+	float WalkOffRamp = 0.9f;
+
+	/** Seconds she keeps walking on her own once the camera has landed, easing to a stop
+	 *  unless the player takes her. The stick takes over at any point without a pop. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Start", meta = (ClampMin = "0"))
+	float WalkOffCoast = 1.5f;
+
+	/** Bones the menu lens keeps in focus, first one found on her mesh wins. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
+	TArray<FName> FocusBones = {FName(TEXT("head")), FName(TEXT("spine_05"))};
 
 	/** Which way round her the camera circles: 1 or -1. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Start")
@@ -473,7 +495,16 @@ private:
 	bool bInputBound = false;
 	bool bStickHeld = false;
 	bool bPlaying = false;   // handed back to the player after Start
-	bool bWalkOffArmed = false;   // player has her mid stand-up: first stick push ends the clip
+	// Start: she walks off the column on her own until the player takes her
+	void BeginWalkOff();
+	void TickWalkOff(float DeltaSeconds);
+	float WalkOffClock = -1.f;    // seconds since she stepped off; <0 when not walking off
+	float WalkOffWeight = 0.f;    // her own walk's share, falls as the stick takes over
+	float LandedFor = -1.f;       // seconds since the camera landed; <0 before
+	FVector WalkOffDir = FVector::ForwardVector;
+	// focus: on her head every frame while the menu camera is the view
+	void TickFocus();
+	FQuat OrbitAim0 = FQuat::Identity;   // the menu's framing offset at Start, faded out early
 	FVector MenuAim = FVector::ZeroVector;
 
 	// leaning on the column
