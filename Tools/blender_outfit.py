@@ -1062,7 +1062,18 @@ def tartan():
     region(straps, 0.36, "Binding", min_loop=4.0)
 
     # a small tartan front and a thong behind (the sheer tanga's cut, opaque and bound)
-    region(string_tanga(), 0.30, "Tartan", bind=("Binding", 0.45), min_loop=4.0)
+    # string_tanga()'s rear is cut against the leg weights, which aren't symmetric at the crease:
+    # opaque, the back came out lopsided with a ragged foot. Here both halves are one field in
+    # (height, distance from the centre plane), a thong narrowing evenly into the gusset.
+    cs = LM["crotch_skin"]
+    top_f, top_b = hb - 1.5, hb - 0.8
+    tf = np.clip((Z - cs) / (top_f - cs), 0, 1)
+    front = np.minimum(top_f - Z, 1.6 + 5.4 * tf ** 1.4 - ALAT)        # 7 cm wide at the top
+    tb = np.clip((Z - cs) / (top_b - cs), 0, 1)
+    rear = np.minimum(top_b - Z, 0.7 + 3.3 * tb ** 2.2 - ALAT)        # 1.4 cm low, 8 cm at the top
+    panel = rear + (front - rear) * SIDE_BLEND
+    region(where((UPPERARM < 0.3) & (Z > cs - 6.0) & (Z < hb + 4.0) & (ALAT < 10.0), panel),
+           0.30, "Tartan", bind=("Binding", 0.45), min_loop=4.0)
 
     # white sheer thigh-highs with a wide lace top, no back seam
     st_top = ST_TOP + 1.0
