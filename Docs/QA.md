@@ -7,6 +7,41 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-11 17:49 · VIS-EX-0370 Shipping (ce9b744) · STABLE PASS, the photo sequence runs end to end, Noir wearable, jump framing cuts her head
+
+- **Tour (updated in 43f3455):** two runs from the mounted DMG, clean cook. Both reached `VisexQA: done` with 55 shots
+  and exit 0. She plays as the character, on ground at every step, body, shell, hair and outfit present
+  throughout. No new visex `.ips`. Shots are in `Saved/QA_0370ship{,_run2}/` and `Tools/.bridge/shots/qa0370/`
+  (run 2 in `run2/`, sheets in `crops/`). A dry run on VIS-EX-0365 (43f3455, before Noir) is in `qa0365/` and
+  serves as the outfit baseline.
+- **Cook:** `0 error(s), 0 warning(s)`, 817 packages in the IoStore.
+- **GC and layout:** both forced GCs pass in both runs. `layout save PASS, on disk`.
+- **Photo sequence (7048985):** opens seated against the stone (`25_photo_sit_open`). From choosing to +4 s one
+  sit-down montage plays, so the sit doesn't restart. Before it, she pushes off the menu lean and is put 11 cm away
+  at the sit spot. Slow walk, walk, run and dash keep her whole body in frame (`crops/photo_seq.png`). The return
+  walks her back, she stops and sits (`38_photo_return_sit`), in both runs.
+- **Feet on the move:** the tour now measures the planted foot over 0.1 s. Walk and slow walk are planted in both
+  runs (0.1 to 2.3 cm while she moves 7 to 15 cm). Run and dash read mixed, but at those speeds both feet leave
+  the ground, so a still frame can't separate slide from flight. That needs a clip.
+- **Jump: the camera cuts her head at the apex** in both runs and in the dry run (`30_photo_jump_apex`). The tour
+  shoots as her vertical speed turns, about 1.4 m up. It lands clean, on ground.
+- **Poses:** shot 5 s after each switch, all six now show the end pose, not the flow (`crops/photo_poses.png`):
+  Bookend's kick, FeetUp, Glance, LegLift with head in hand, Mermaid, Peace. No limb through the sand.
+- **Menu feet (620fd62):** heels, balls and toe tips project inside the frame at 16:9 and 4:3 in both runs
+  (`menu 16:9 feet IN FRAME`, toes at 87 % and 77 % of the height). Visible in `02_menu_feet` and `06_menu_4x3`.
+- **Noir (0723040, 7d8adee):** wearable ("Noir lace"), fitted at her size: lace cups, cincher with boning, glossy
+  bindings, dark stockings (`crops/tartan_noir_torso.png`).
+- **Outfit materials after the shared bases were re-saved:** no regression. Bodystocking, Bodystocking + skirt,
+  Catsuit and Tartan look the same as on 0365 (`crops/outfits_0365_vs_0370.png`).
+- **Tartan (c77501d):** wearable, fitted: red tartan cups with black bound edges, collar and tie, lace thigh-high top.
+  At menu distance the weave reads as plain dark red.
+- **FeetUp skirt hem (b9878e4): not checked.** Photo mode runs in Tema's saved Bodystocking, with no skirt.
+- **Regressions:** none. Start move good: 4:3 menu, mid-move, landing and play all `fills the window`, landing at
+  fov 90. Body and Wardrobe report `open` at the 4 s shot. Catsuit is unchanged. No HUD in the turnaround.
+- **Frame times:** quality 0/3/4: 16.7 / 24.1 / 52.9 ms (run 2: 16.7 / 23.3 / 50.9). Load was around 7, not idle.
+- **Saves:** backed up `VisexBody.sav` (`7ac129aa…`) and `GameUserSettings.ini` (`0f8144b4…`) and restored them
+  after each run. Both md5s match. No `[VisexMenuLayout]` before, and no `Game.ini` before or after.
+
 ## 2026-11-11 16:50 · VIS-EX-0351 Shipping (81546fe) · PASS, she steps off on her own, Body and Wardrobe now inside 4 s
 
 - **Tour:** two runs from the mounted DMG, clean cook. Both reached `VisexQA: done` with 46 shots (the Catsuit adds
