@@ -267,6 +267,14 @@ void AVisexBodyEditor::Select(int32 Delta)
 	{
 		TabRow[Tab] = Selected;
 	}
+	// hair tab: moving onto a style tries it on
+	if (Page == 0 && Tab == 2 && Selected < FVisexBodyProfile::HairStyles().Num())
+	{
+		if (UVisexBodyComponent* Body = BodyOf())
+		{
+			Body->SetHair(FVisexBodyProfile::HairStyles()[Selected].Name);
+		}
+	}
 	// wardrobe: moving onto a costume tries it on (a locked one stays as it is)
 	const TArray<FVisexOutfit>& Outfits = FVisexBodyProfile::Outfits();
 	if (Page == 1 && Selected < Outfits.Num() && !Outfits[Selected].bLocked)
@@ -345,7 +353,7 @@ void AVisexBodyEditor::ApplyTab()
 	}
 	else if (Tab == 2)
 	{
-		return;   // one hairstyle so far: nothing to apply
+		Applied.Hair = Body->Profile.Hair;   // CROSS on a style or on APPLY wears it
 	}
 	else
 	{
@@ -369,6 +377,7 @@ void AVisexBodyEditor::Refresh()
 		View.Applied = &Applied;
 		View.bBodyDirty = !Body->Profile.Values.OrderIndependentCompareEqual(Applied.Values);
 		View.bDressDirty = Body->Profile.Outfit != Applied.Outfit;
+		View.bHairDirty = Body->Profile.Hair != Applied.Hair;
 		W->Show(View);
 	}
 }

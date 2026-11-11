@@ -113,6 +113,8 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Body")
 	void SetOutfit(FName Outfit);
+	/** Put a hairstyle on her (a name from FVisexBodyProfile::HairStyles()). */
+	void SetHair(FName Hair);
 
 	UFUNCTION(BlueprintCallable, Category = "Body")
 	bool Save() const;
@@ -153,6 +155,7 @@ private:
 	UPROPERTY(Transient) TObjectPtr<class UMaterialInstanceDynamic> SkinMaterial;
 	void ApplySkin();
 	FName WornOutfit = NAME_None;
+	FName WornHair = NAME_None;
 	FVisexJiggleState Jiggle[4];   // bust L, bust R, glute L, glute R
 	FVisexJiggleState Sway[4];     // bust L, bust R sideways (her left +); bust L, bust R forward
 	FVector SwayLast[2] = {FVector::ZeroVector, FVector::ZeroVector};

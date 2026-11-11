@@ -61,10 +61,23 @@ const TArray<int32>& FVisexBodyProfile::SliderRows(int32 Group)
 	return Rows[FMath::Clamp(Group, 0, 1)];
 }
 
-const TArray<FText>& FVisexBodyProfile::HairStyles()
+const TArray<FVisexHairStyle>& FVisexBodyProfile::HairStyles()
 {
-	static const TArray<FText> Styles = {LOCTEXT("HairLong", "Long, straight")};
+	// both share the card atlas and material; elf: swept behind the ears, gathered at the
+	// back, a thin lock each side with its own physics (research e3555b4, Tema 2026-11-10)
+	static const TArray<FVisexHairStyle> Styles = {
+		{TEXT("Long"), LOCTEXT("HairLong", "Long, straight"),
+			TEXT("/Game/Character/Hair/SKM_HairCards.SKM_HairCards"), TEXT("/Game/Character/Hair/ABP_HairCards.ABP_HairCards_C")},
+		{TEXT("Elf"), LOCTEXT("HairElf", "Elven, swept back"),
+			TEXT("/Game/Character/Hair/SKM_HairElf.SKM_HairElf"), TEXT("/Game/Character/Hair/ABP_HairElf.ABP_HairElf_C")},
+	};
 	return Styles;
+}
+
+int32 FVisexBodyProfile::HairIndex(FName Name)
+{
+	const int32 I = HairStyles().IndexOfByPredicate([Name](const FVisexHairStyle& S) { return S.Name == Name; });
+	return I == INDEX_NONE ? 0 : I;
 }
 
 FText FVisexBodyProfile::AbsName(float Abs)

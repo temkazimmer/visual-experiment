@@ -41,6 +41,15 @@ struct FVisexOutfit
 	UPROPERTY(BlueprintReadOnly, Category = "Body") bool bLocked = false;
 };
 
+/** One hairstyle: card hair and its physics AnimBP (Docs/Research/HAIR.md). */
+struct FVisexHairStyle
+{
+	FName Name;
+	FText Label;
+	const TCHAR* Mesh = nullptr;
+	const TCHAR* Anim = nullptr;
+};
+
 /**
  * The character: every body slider value by name, and the outfit she wears. Bone sliders
  * are multipliers (1 = Quinn's proportions), Bust and Glutes are morph weights (0 = the base
@@ -60,6 +69,10 @@ struct FVisexBodyProfile
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body")
 	FName Outfit = TEXT("Bodystocking");
 
+	/** Her hairstyle (a name from HairStyles()). Saves from before styles load as Long. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body")
+	FName Hair = TEXT("Long");
+
 	float Get(FName Name) const;
 	void Set(FName Name, float Value);
 
@@ -68,8 +81,9 @@ struct FVisexBodyProfile
 	static VISEX_API const FVisexBodySlider* Find(FName Name);
 	/** The slider indices one Body page tab lists, in menu order (Group: 0 body, 1 face). */
 	static VISEX_API const TArray<int32>& SliderRows(int32 Group);
-	/** The hairstyles on the Body page's HAIR tab (only the one she has, for now). */
-	static VISEX_API const TArray<FText>& HairStyles();
+	/** The hairstyles on the Body page's HAIR tab, in menu order. */
+	static VISEX_API const TArray<FVisexHairStyle>& HairStyles();
+	static VISEX_API int32 HairIndex(FName Name);
 
 	/** Skin tone 0..1 across the named stops: the skin's base colour (linear) and its name. */
 	static VISEX_API FLinearColor SkinColor(float Tone);

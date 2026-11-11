@@ -28,7 +28,7 @@ int32 UVisexBodyWidget::RowCount(int32 Page, int32 Tab)
 	{
 		return FVisexBodyProfile::Outfits().Num() + 1;
 	}
-	return Tab == 2 ? FVisexBodyProfile::HairStyles().Num() : FVisexBodyProfile::SliderRows(Tab).Num() + 1;
+	return (Tab == 2 ? FVisexBodyProfile::HairStyles().Num() : FVisexBodyProfile::SliderRows(Tab).Num()) + 1;
 }
 
 UTextBlock* UVisexBodyWidget::MakeNote(const FText& Text)
@@ -146,11 +146,11 @@ void UVisexBodyWidget::Build()
 	BodyRows.Reset(); FaceRows.Reset(); HairRows.Reset(); DressRows.Reset();
 	for (const int32 i : FVisexBodyProfile::SliderRows(0)) { BodyRows.Add(MakeRow(FVisexBodyProfile::Sliders()[i].Label, true)); }
 	for (const int32 i : FVisexBodyProfile::SliderRows(1)) { FaceRows.Add(MakeRow(FVisexBodyProfile::Sliders()[i].Label, true)); }
-	for (const FText& Style : FVisexBodyProfile::HairStyles()) { HairRows.Add(MakeRow(Style, false)); }
+	for (const FVisexHairStyle& Style : FVisexBodyProfile::HairStyles()) { HairRows.Add(MakeRow(Style.Label, false)); }
 	for (const FVisexOutfit& O : FVisexBodyProfile::Outfits()) { DressRows.Add(MakeRow(O.Label, false)); }
 	Fill(BodyRows, Lists[0], 4.f, 14.f, true);
 	Fill(FaceRows, Lists[1], 4.f, 14.f, true);
-	Fill(HairRows, Lists[2], 14.f, 0.f, false);
+	Fill(HairRows, Lists[2], 14.f, 22.f, true);
 	Fill(DressRows, Lists[3], 14.f, 22.f, true);
 	// room to grow: the face and hair tabs say what comes next
 	Lists[1]->AddChildToVerticalBox(MakeNote(LOCTEXT("FaceSoon", "More face shaping is on its way.")))->SetPadding(FMargin(40.f, 30.f, 0.f, 0.f));
@@ -260,10 +260,12 @@ void UVisexBodyWidget::Show(const FVisexCharacterView& View)
 		}
 	}
 
-	// hairstyles: one for now, the one she has
-	for (int32 i = 0; i < HairRows.Num(); ++i)
+	// hairstyles, like the costumes: the worn one, the one being tried on
+	const int32 HairWorn = FVisexBodyProfile::HairIndex(View.Applied->Hair);
+	const int32 HairTrying = FVisexBodyProfile::HairIndex(View.Shown->Hair);
+	for (int32 i = 0; i < FVisexBodyProfile::HairStyles().Num(); ++i)
 	{
-		HairRows[i].Value->SetText(i == 0 ? LOCTEXT("Worn", "WORN") : FText::GetEmpty());
+		HairRows[i].Value->SetText(i == HairWorn ? LOCTEXT("Worn", "WORN") : (i == HairTrying ? LOCTEXT("Trying", "TRYING ON") : FText::GetEmpty()));
 		Mark(HairRows[i], !bWardrobe && View.Tab == 2 && Here == i);
 	}
 
@@ -285,13 +287,14 @@ void UVisexBodyWidget::Show(const FVisexCharacterView& View)
 	}
 
 	// APPLY rows: lit when there is something to apply
-	FRow* Apply[3] = {&BodyRows.Last(), &FaceRows.Last(), &DressRows.Last()};
-	const bool bDirty[3] = {View.bBodyDirty, View.bBodyDirty, View.bDressDirty};
-	const bool bHere[3] = {
+	FRow* Apply[4] = {&BodyRows.Last(), &FaceRows.Last(), &HairRows.Last(), &DressRows.Last()};
+	const bool bDirty[4] = {View.bBodyDirty, View.bBodyDirty, View.bHairDirty, View.bDressDirty};
+	const bool bHere[4] = {
 		!bWardrobe && View.Tab == 0 && Here == BodyRows.Num() - 1,
 		!bWardrobe && View.Tab == 1 && Here == FaceRows.Num() - 1,
+		!bWardrobe && View.Tab == 2 && Here == HairRows.Num() - 1,
 		bWardrobe && Here == DressRows.Num() - 1};
-	for (int32 t = 0; t < 3; ++t)
+	for (int32 t = 0; t < 4; ++t)
 	{
 		Apply[t]->Label->SetColorAndOpacity(FSlateColor(bDirty[t] ? AccentColor : TextColor));
 		Apply[t]->Value->SetText(bDirty[t] ? FText::GetEmpty() : LOCTEXT("Applied", "applied"));

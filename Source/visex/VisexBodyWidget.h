@@ -20,6 +20,7 @@ struct FVisexCharacterView
 	const FVisexBodyProfile* Applied = nullptr;   // what was last applied
 	bool bBodyDirty = false;
 	bool bDressDirty = false;
+	bool bHairDirty = false;
 	bool bUnderConstruction = false;    // the "under construction" window over the list
 };
 
@@ -79,7 +80,7 @@ private:
 
 	TArray<FRow> BodyRows;     // body sliders, then APPLY
 	TArray<FRow> FaceRows;     // face sliders, then APPLY
-	TArray<FRow> HairRows;     // hairstyles
+	TArray<FRow> HairRows;     // hairstyles, then APPLY
 	TArray<FRow> DressRows;    // costumes, then APPLY
 	UVerticalBox* Lists[4] = {nullptr, nullptr, nullptr, nullptr};   // body, face, hair, wardrobe
 	UVerticalBox* Popup = nullptr;

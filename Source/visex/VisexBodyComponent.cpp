@@ -177,14 +177,23 @@ void UVisexBodyComponent::ApplyHair()
 	// game worlds only, like the outfit: a runtime component, never saved with the level
 	USkeletalMeshComponent* Mesh = Body();
 	const UWorld* World = GetWorld();
-	if (HairMesh || !Mesh || !World || !World->IsGameWorld() || !GetOwner())
+	if ((HairMesh && WornHair == Profile.Hair) || !Mesh || !World || !World->IsGameWorld() || !GetOwner())
 	{
 		return;
 	}
-	USkeletalMesh* Asset = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/Character/Hair/SKM_HairCards.SKM_HairCards"));
-	UClass* Anim = LoadClass<UAnimInstance>(nullptr, TEXT("/Game/Character/Hair/ABP_HairCards.ABP_HairCards_C"));
+	const FVisexHairStyle& Style = FVisexBodyProfile::HairStyles()[FVisexBodyProfile::HairIndex(Profile.Hair)];
+	USkeletalMesh* Asset = LoadObject<USkeletalMesh>(nullptr, Style.Mesh);
+	UClass* Anim = LoadClass<UAnimInstance>(nullptr, Style.Anim);
 	if (!Asset || !Anim)
 	{
+		return;
+	}
+	WornHair = Profile.Hair;
+	if (HairMesh)
+	{
+		// another style: same component, new cards and their own physics
+		HairMesh->SetSkeletalMeshAsset(Asset);
+		HairMesh->SetAnimInstanceClass(Anim);
 		return;
 	}
 	// on the body mesh: the hair's AnimBP copies the pose from its attached parent, then
@@ -252,6 +261,12 @@ void UVisexBodyComponent::SetOutfit(FName Outfit)
 	}
 	Profile.Outfit = Outfit;
 	ApplyOutfit();
+}
+
+void UVisexBodyComponent::SetHair(FName Hair)
+{
+	Profile.Hair = Hair;
+	ApplyHair();
 }
 
 void UVisexBodyComponent::ApplyOutfit()
