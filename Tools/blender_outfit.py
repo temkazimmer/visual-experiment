@@ -288,6 +288,8 @@ SRC_OF = {}          # outfit object name -> per-vertex (skin a, skin b, t), a =
 SEAM_OF = {}         # outfit object name -> per-vertex (edge distance, signed seam distance), cm
 SEAMS = []           # seam centre lines of the outfit being built (lists of Vectors)
 EXTRA_OF = {}        # outfit object name -> per-vertex overrides (weights, morph scale, UV0, seam y)
+META = {}            # id(piece bmesh) -> how it sits on the body (the fit solve, fit_outfit())
+FIT_OF = {}          # outfit object name -> per-vertex fit data gathered in assemble()
 # depth from stacked pieces (Docs/Research/STUDY_SKIRT_CORSET.md): structural trim stands 0.3 cm
 # proud of the panel under it, hardware 0.5-0.8 cm; flat seams stay low and live in the normal
 TRIM_PROUD, HW_PROUD = 0.3, 0.6
@@ -392,6 +394,7 @@ def region(val, offset, slot, rim=None, pipe=None, pipe_r=0.18, min_loop=10.0, l
                     edist.append(0.0)
             bm.faces.new((a, b, inner[b], inner[a]))
     PIECES.append((bm, slot, src, edist))
+    META[id(bm)] = dict(kind="panel", cover=val)
     for pts, closed, esrc in loops:
         # trims ride the skin their panel edge rides: by nearest skin vertex, a binding in a
         # deep crease (Mermaid's hip) took the thigh's side of the fold and split off the edge
@@ -478,6 +481,53 @@ def tube(pts, r, slot, closed=False, sides=6, push=0.0, step=0.8, flat=None, rig
         bm.faces.new(rings[0][::-1])
         bm.faces.new(rings[-1])
     PIECES.append((bm, slot, src))
+    # fit: a free strap pulls taut over the body; an edge trim rides its panel; jewellery is rigid
+    META[id(bm)] = dict(kind="edge" if ekd is not None else ("rigid" if rigid is not None else "strap"),
+                        line=np.array([NP(p) for p in pts]), per=sides, width=flat[0] if flat else 2 * r)
+
+
+def hanging_tie(zt, zb, over=(), slot="Tartan", off=0.42, bind=("Binding", 0.55), step=0.5, cols=9):
+    """A tie hanging from zt down to a point at zb, in front of her centre line. Row by row from
+    the top it lies on whatever is furthest forward under it (skin, or the points in over); once
+    the body falls away under the bust it hangs straight down. Each row rides the skin it last
+    touched, so the hanging end swings with the chest, not the belly."""
+    rows = np.arange(zt, zb - 1e-6, -step)
+    hw = 1.3 + 1.0 * np.clip((zt - rows) / (0.8 * (zt - zb)), 0, 1)        # half-width, wider down
+    hw = np.where(rows < zb + 2.6, hw * np.clip((rows - zb) / 2.6, 0.04, 1.0), hw)   # pointed end
+    cand = np.nonzero(TORSO & (FW > 0) & (HEAD < 0.6))[0]
+    obst = [NP(p) for p in over]
+    depth, src_j, prev, prev_j = [], [], -1e9, None
+    for z, w in zip(rows, hw):
+        sel = cand[(np.abs(Z[cand] - z) < 0.4) & (ALAT[cand] < w + 0.3)]
+        c, j = (FW[sel].max(), int(sel[np.argmax(FW[sel])])) if len(sel) else (-1e9, None)
+        for q in obst:
+            if abs(q[2] - z) < 0.6 and abs((q - PEL) @ LEFT) < w + 0.3:
+                c = max(c, (q - PEL) @ FWD + 0.2)
+        if c >= prev:                       # touching here: rides this skin
+            prev, prev_j = c, (j if j is not None else prev_j)
+        depth.append(prev)
+        src_j.append(prev_j if prev_j is not None else nearest(V3(PEL + UP * (z - PEL[2]))))
+    bm = bmesh.new()
+    grid, src, ed = [], [], []
+    for r, (z, w, d, j) in enumerate(zip(rows, hw, depth, src_j)):
+        row = []
+        for k in range(cols):
+            x = (k / (cols - 1) * 2 - 1) * w
+            p = PEL + LEFT * x + FWD * (d + off - 0.04 * x * x) + UP * (z - PEL[2])   # a slight curve across
+            row.append(bm.verts.new(V3(p)))
+            src.append((j, j, 0.0))
+            ed.append(min(w - abs(x), zt - z, NO_SEAM - 0.01))
+        grid.append(row)
+    for r0, r1 in zip(grid, grid[1:]):
+        for k in range(cols - 1):
+            bm.faces.new((r0[k], r0[k + 1], r1[k + 1], r1[k]))
+    PIECES.append((bm, slot, src, ed))
+    centre = np.array([NP(r_[cols // 2].co) for r_ in grid])
+    META[id(bm)] = dict(kind="strap", line=centre, per=cols, width=2.0 * float(hw.mean()))
+    if bind:
+        loop = [r_[0].co.copy() for r_ in grid] + [r_[-1].co.copy() for r_ in grid[::-1]]
+        lsrc = [s_ for s_ in src[::cols]] + [s_ for s_ in src[::cols][::-1]]
+        tube(loop, 0.0, bind[0], closed=True, flat=(bind[1], TRIM_PROUD), step=0.4, push=0.04, src_from=(loop, lsrc))
 
 
 def seam(pts, r, slot, field=None):
@@ -528,6 +578,7 @@ def ribbon(pts, w, thick, slot):
     bm.faces.new(rows[0][::-1])
     bm.faces.new(rows[-1])
     PIECES.append((bm, slot, src))
+    META[id(bm)] = dict(kind="strap", line=np.array([NP(p) for p in pts]), per=4, width=w)
     return pts
 
 
@@ -545,6 +596,7 @@ def clip(center, n, t, size, slot="Trim"):
     bmesh.ops.bevel(bm, geom=bm.edges[:], offset=min(size) * 0.22, segments=2, affect="EDGES")
     j = nearest(center)                     # rigid: the whole piece rides one skin vertex
     PIECES.append((bm, slot, [(j, j, 0.0)] * len(bm.verts)))
+    META[id(bm)] = dict(kind="rigid")
 
 
 def hardware(point, along, size, lift=0.5):
@@ -1029,13 +1081,16 @@ def tartan():
                       top=ANCHOR[s] + l * ap[0] + u * (ap[1] - 1.2))
     region(cup, 0.30, "Tartan", bind=BIND, min_loop=6.0)
 
-    # the tie: from a knot under the collar down the sternum to a point between the cups
-    zt, zb = zn - 3.0, LM["bust"] - 3.5
-    t_ = np.clip((zt - Z) / (zt - zb), 0, 1)
-    w = 1.3 + 1.0 * t_                                             # half-width, wider toward the tip
-    tip = (Z - zb) * 1.1                                           # a pointed end
-    tie = np.minimum.reduce([w - ALAT, zt - Z, tip + 2.2 - ALAT])
-    region(where(TORSO & (FW > 0), tie), 0.42, "Tartan", bind=BIND, min_loop=4.0)
+    # the bridge (Tema's sketch, 2026-11-11): a strap between the cups' inner bottom corners,
+    # pulled straight across the cleavage
+    ends = [V3(surface_near(low[s]["inner"], FWD)) for s in (1, -1)]
+    bridge = taut(*(e + nearest_normal(e) * 0.35 for e in ends), 0.35)
+    tube(bridge, 0.0, "Binding", flat=(0.9, 0.16), step=0.35)
+    # the tie hangs from the knot under the collar: on the chest it lies on the skin, past the
+    # bust it falls straight down in front of her, over the cleavage and the bridge, to a point
+    # below the cups (Tema's sketch: it hangs, it does not follow her in)
+    zt = zn - 3.0
+    hanging_tie(zt, LM["bust"] - 10.0, bridge, bind=BIND)
     knot = np.sqrt((ALAT / 1.6) ** 2 + ((Z - (zt + 0.6)) / 1.6) ** 2)
     region(where((FW > 0) & (HEAD < 0.6), (1.0 - knot) * 3.0), 0.75, "Tartan", bind=BIND, min_loop=3.0)
 
@@ -1089,7 +1144,13 @@ def tartan():
         # converging onto the small front panel's top corner
         tm, zm = ang((low[s]["inner"] + low[s]["outer"]) * 0.5)
         corner = (s * 15.0, hb - 1.7)
-        wrap([(tm, zm), (s * 27.0, LM["waist"]), corner], 1.0)
+        # pulled straight from the cup to the corner (Tema's sketch): it spans the waist's hollow
+        # instead of following it in
+        a_ = ray(TORSO_BVH, pel_v, zm, D(tm), 0.0)
+        b_ = ray(TORSO_BVH, pel_v, corner[1], D(corner[0]), 0.0)
+        if a_ and b_:
+            a_, b_ = a_ + nearest_normal(a_) * 0.2, b_ + nearest_normal(b_) * 0.2
+            tube(taut(a_, b_, 0.2, n=80), 0.0, "Binding", flat=(1.0, 0.14), step=0.35)
         # high-cut hip strings: from the panel's corner up over the hip bone, round to the side
         # strap above the hip, which carries on to the thong at the back
         wrap([corner, (s * 45.0, hb + 2.5), (s * 75.0, hb + 4.5), (s * 100.0, hb + 3.0)], 0.8)
@@ -1255,8 +1316,21 @@ CLOTH = {"Skirt"}                                # simulated in UE: the default 
 def assemble(name):
     out_bm = bmesh.new()
     srcs, edist, extras = [], [], []
+    fit = dict(kind=[], slot=[], strap=[], ring=[], straps=[], covers=[])
     for bm, slot, src, *ed in PIECES:
         n_ = len(bm.verts)
+        mt = META.pop(id(bm), dict(kind="loose"))
+        fit["kind"] += [mt["kind"]] * n_
+        fit["slot"] += [slot] * n_
+        if mt["kind"] == "strap":
+            fit["strap"] += [len(fit["straps"])] * n_
+            fit["ring"] += [k // mt["per"] for k in range(n_)]
+            fit["straps"].append(dict(line=mt["line"], width=mt["width"], slot=slot))
+        else:
+            fit["strap"] += [-1] * n_
+            fit["ring"] += [0] * n_
+        if mt["kind"] == "panel":
+            fit["covers"].append((mt["cover"], slot))
         srcs += src if src is not None else [(-1, -1, 0.0)] * n_
         assert src is None or len(src) == n_
         edist += ed[0] if ed and ed[0] is not None else [NO_SEAM] * n_   # cords and tapes: shape is geometry
@@ -1308,6 +1382,7 @@ def assemble(name):
     sd = np.where(np.isnan(ex["y"]), sd, ex["y"])
     EXTRA_OF[ob.name] = ex
     SEAM_OF[ob.name] = np.stack([ed, sd], 1)
+    FIT_OF[ob.name] = fit
     return ob
 
 
@@ -1372,6 +1447,126 @@ def clear_skin(oc, idx3, w3, fab, dl):
     return oc
 
 
+# ---- fit: the clothes and the body push on each other (--fit) ------------------------------------
+# Each fabric holds its shape against the body growing under it (hold: 0 follows the skin, 1 does
+# not give) and seats into soft tissue at rest (seat, cm). What a garment holds back presses the
+# skin under it in and spills out past its edge; a free strap pulls taut, so it spans hollows
+# (between the breasts) instead of following the skin into them. Morphs, per outfit O:
+#   Fit_O        the seat, on while O is worn
+#   Fit_O_<Key>  growth past the design body for Key (BustUp, GlutesUp, Fat), weight max(0, w - design)
+# The skin gets the same names (Tools/blender_skin_fit.py), so one curve drives both meshes.
+FIT = "--fit" in args or os.environ.get("OUTFIT_FIT") == "1"
+HOLD = dict(Sheer=(0.10, 0.03), Net=(0.0, 0.0), Nylon=(0.25, 0.05), Lace=(0.45, 0.07), Satin=(0.75, 0.14),
+            Latex=(0.55, 0.08), Binding=(0.85, 0.16), Tartan=(0.65, 0.10), Trim=(1.0, 0.0))
+FIT_KEYS = [k for k in ("BustUp", "GlutesUp", "Fat") if k in DELTAS]
+EDGE_HOLD = 0.85     # a bound edge barely gives
+MID_GIVE = 0.4       # share of its hold a garment keeps away from its edges
+SPILL = 0.6          # share of the volume pressed in that swells out past the edge (the rest is taken up)
+_E0, _E1 = EDGES[:, 0], EDGES[:, 1]
+_DEG = np.maximum(np.bincount(_E0, minlength=nv) + np.bincount(_E1, minlength=nv), 1).astype(float)
+
+
+def _blur(a, iters):
+    """diffuse(), fast enough for the hundreds of passes a 2-3 cm spread takes on this mesh
+    (vertices are ~0.27 cm apart)."""
+    a = np.asarray(a, float)
+    for _ in range(iters):
+        acc = np.bincount(_E0, a[_E1], nv) + np.bincount(_E1, a[_E0], nv)
+        a = 0.5 * a + 0.5 * acc / _DEG
+    return a
+
+
+_soft = sum(np.linalg.norm(DELTAS[k], axis=1) / max(np.linalg.norm(DELTAS[k], axis=1).max(), 1e-6) * g
+            for k, g in (("BustUp", 1.6), ("GlutesUp", 1.6), ("Fat", 1.0)) if k in DELTAS)
+SOFT = np.clip(_blur(np.clip(_soft, 0, 1), 30), 0, 1)      # 1 on breast, glute and belly tissue, 0 on bone
+SKIN_FIT = {}        # outfit name -> {morph: per-skin-vertex delta, world cm}
+
+
+def _strap_cover(line, width):
+    """Per skin vertex: (width/2 - distance to the strap's centre line), NEG far from it."""
+    out = np.full(nv, NEG)
+    for p in line[::2]:
+        for _, j, d in kd.find_range(V3(p), width * 0.5 + 0.6):
+            out[j] = max(out[j], width * 0.5 - d)
+    return out
+
+
+def _majorant(s, a):
+    """The least concave function over a(s) with the same ends: a string pulled over bumps."""
+    hull = []
+    for i in range(len(s)):
+        while len(hull) >= 2:
+            i0, i1 = hull[-2], hull[-1]
+            if (a[i1] - a[i0]) * (s[i] - s[i0]) <= (a[i] - a[i0]) * (s[i1] - s[i0]):
+                hull.pop()
+            else:
+                break
+        hull.append(i)
+    return np.interp(s, s[hull], a[hull])
+
+
+def fit_outfit(name, fit, oc, idx3, w3, dl, fab):
+    kind, slot = np.array(fit["kind"]), np.array(fit["slot"])
+    hold_v = np.array([HOLD.get(s, (0.0, 0.0))[0] for s in slot])
+    # skin side: how hard and how deep the garment holds each skin vertex
+    H, SEAT = np.zeros(nv), np.zeros(nv)
+    covers = list(fit["covers"]) + [(_strap_cover(st["line"], st["width"]), st["slot"]) for st in fit["straps"]]
+    for val, sl in covers:
+        h, se = HOLD.get(sl, (0.0, 0.0))
+        inside = np.asarray(val) >= 0
+        H = np.where(inside, np.maximum(H, h), H)
+        SEAT = np.where(inside, np.maximum(SEAT, se), SEAT)
+    C = H > 0
+    # a garment holds hardest at its bound edges; its middle stretches over the body (a cup
+    # gives, its binding does not), so the press is the edge's, fading in over ~1.5 cm
+    EDGE = np.where(C, np.clip((1.0 - _blur(C.astype(float), 40)) * 3.0, 0, 1), 0.0)
+    H = H * MID_GIVE + (np.maximum(H, EDGE_HOLD) - H * MID_GIVE) * EDGE
+    interp = lambda f: sum(f[idx3[:, k]] * w3[:, k, None] for k in range(3)) if f.ndim == 2 else \
+        sum(f[idx3[:, k]] * w3[:, k] for k in range(3))
+
+    COV = _blur(C.astype(float), 10)                       # coverage with a ~0.8 cm soft edge
+
+    def skin_delta(p):
+        """Press p (cm, >= 0) in under the garment, and spill part of what it displaces out
+        past the edge as a soft roll (~2.5 cm wide), the way tissue swells over a band."""
+        p = np.where(C, p, 0.0)
+        ps = _blur(p, 14)
+        ring = _blur(p, 200) * (1.0 - COV) ** 2
+        spill = ring * (SPILL * ps.sum() / max(ring.sum(), 1e-9))
+        return (spill - ps)[:, None] * NRM, ps
+
+    morphs = {}
+    # the seat: soft tissue under tight fabric and straps sinks in a little
+    sd, p0 = skin_delta(SEAT * SOFT)
+    morphs["Fit_" + name] = (sd, -interp(p0)[:, None] * interp(NRM))
+    for k in FIT_KEYS:
+        a = np.clip(np.einsum("ij,ij->i", DELTAS[k], NRM), 0, None)        # outward growth per unit
+        sd, p = skin_delta(H * a)
+        g = -interp(p)[:, None] * interp(NRM)                              # panels sit on the pressed skin
+        g[kind == "rigid"] = 0.0
+        # straps: taut over the grown body, lifted off the hollows they span
+        strap, ring = np.array(fit["strap"]), np.array(fit["ring"])
+        for si, st in enumerate(fit["straps"]):
+            line = st["line"]
+            j = np.array([nearest(V3(q)) for q in line])
+            grown = a[j] + np.einsum("ij,ij->i", sd[j], NRM[j])
+            s_ = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(line, axis=0), axis=1))])
+            lift = _majorant(s_, grown) - a[j]                             # dl[k] already carries a
+            m = strap == si
+            g[m] = (lift[np.clip(ring[m], 0, len(line) - 1)])[:, None] * NRM[j][np.clip(ring[m], 0, len(line) - 1)]
+        morphs["Fit_%s_%s" % (name, k)] = (sd, g)
+    # nothing of the skin through the cloth at full strength
+    for mk, (sd, g) in morphs.items():
+        base = DELTAS.get(mk.rsplit("_", 1)[-1], 0.0) if mk.count("_") > 1 else 0.0
+        push, n = _smooth_push(_shortfall(X + base + sd, oc + (dl.get(mk.rsplit("_", 1)[-1], 0.0) if mk.count("_") > 1 else 0.0) + g,
+                                          np.nonzero(fab)[0]), idx3, w3, fab)
+        dl[mk] = g + push
+        print("fit", mk, "skin moved max %.2f cm, cloth %.2f cm, cleared %d" %
+              (np.abs(sd).max(), np.linalg.norm(g, axis=1).max(), n))
+    SKIN_FIT[name] = {mk: sd for mk, (sd, g) in morphs.items()}
+    np.savez_compressed(os.path.join(OUT_DIR, "skinfit_%s.npz" % name.lower()), **SKIN_FIT[name])
+
+
 def finalize(ob):
     """Weights, the rest shape with every body morph, and garment UVs."""
     om, name = ob.data, ob.name[len("SKM_Outfit_"):]
@@ -1410,6 +1605,9 @@ def finalize(ob):
 
     dl = {kname: sum(DL[idx3[:, k]] * w3[:, k, None] for k in range(3)) * ex["m"][:, None] for kname, DL in DELTAS.items()}
     oc = clear_skin(oc, idx3, w3, SEAM_OF[ob.name][:, 0] < NO_SEAM, dl)     # fabric panels only
+    fit = FIT_OF.pop(ob.name, None)
+    if FIT and fit and name not in CLOTH:
+        fit_outfit(name, fit, oc, idx3, w3, dl, SEAM_OF[ob.name][:, 0] < NO_SEAM)
     if name in CLOTH:                                          # a cloth sim gets no body morphs:
         om.vertices.foreach_set("co", oc.ravel())              # keep the default body baked in
         dl = {}

@@ -39,6 +39,8 @@ struct FVisexOutfit
 	UPROPERTY(BlueprintReadOnly, Category = "Body") FString Cloth;
 	/** Shown in the wardrobe but not wearable yet (to be unlocked or bought later). */
 	UPROPERTY(BlueprintReadOnly, Category = "Body") bool bLocked = false;
+	/** How much it holds the bust still against the jiggle: 0 = bare, 1 = a sports bra. */
+	UPROPERTY(BlueprintReadOnly, Category = "Body") float BustSupport = 0.f;
 };
 
 /** One hairstyle: card hair and its physics AnimBP (Docs/Research/HAIR.md). */

@@ -8,6 +8,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Engine/SkeletalMesh.h"
+#include "UObject/UObjectIterator.h"
 #include "GameFramework/Character.h"
 #include "Kismet/GameplayStatics.h"
 #include "HAL/IConsoleManager.h"
@@ -19,6 +20,21 @@
 static TAutoConsoleVariable<bool> CVarVisexClothSim(
 	TEXT("visex.ClothSim"), false,
 	TEXT("Simulate outfit cloth (the skirt). Off: the cloth piece is skinned to her pose. Takes effect on the next outfit change."));
+
+// Clothes and body push on each other: off shows the outfit copying the skin's shape one-for-one.
+static TAutoConsoleVariable<bool> CVarVisexClothesFit(
+	TEXT("visex.ClothesFit"), true,
+	TEXT("Outfit fit morphs: tight fabric presses the skin in, tissue swells past its edges, straps pull taut."),
+	FConsoleVariableDelegate::CreateLambda([](IConsoleVariable*)
+	{
+		for (TObjectIterator<UVisexBodyComponent> It; It; ++It)
+		{
+			if (It->GetWorld() && It->GetWorld()->IsGameWorld())
+			{
+				It->Apply();
+			}
+		}
+	}));
 
 UVisexBodyComponent::UVisexBodyComponent()
 {
@@ -169,6 +185,7 @@ void UVisexBodyComponent::Apply()
 	ApplySkin();
 	ApplyHair();
 	ApplyOutfit();
+	ApplyFit();
 	PushToAnim();
 }
 
@@ -261,6 +278,39 @@ void UVisexBodyComponent::SetOutfit(FName Outfit)
 	}
 	Profile.Outfit = Outfit;
 	ApplyOutfit();
+	ApplyFit();
+}
+
+void UVisexBodyComponent::ApplyFit()
+{
+	USkeletalMeshComponent* Mesh = Body();
+	if (!Mesh)
+	{
+		return;
+	}
+	for (const FName& M : FitMorphs)
+	{
+		Mesh->SetMorphTarget(M, 0.f, false);
+	}
+	FitMorphs.Reset();
+	const int32 I = FVisexBodyProfile::OutfitIndex(WornOutfit);
+	BustSupport = I != INDEX_NONE ? FVisexBodyProfile::Outfits()[I].BustSupport : 0.f;
+	if (WornOutfit.IsNone() || !CVarVisexClothesFit.GetValueOnGameThread())
+	{
+		return;
+	}
+	// the body the outfits are built on (blender_outfit.py DESIGN): fit morphs take what is past it
+	static const TPair<const TCHAR*, float> Design[] = {{TEXT("BustUp"), 0.8f}, {TEXT("GlutesUp"), 0.5f}, {TEXT("Fat"), 0.38f}};
+	const FString O = WornOutfit.ToString();
+	const FName Seat(*(TEXT("Fit_") + O));
+	Mesh->SetMorphTarget(Seat, 1.f, false);
+	FitMorphs.Add(Seat);
+	for (const TPair<const TCHAR*, float>& D : Design)
+	{
+		const FName M(*FString::Printf(TEXT("Fit_%s_%s"), *O, D.Key));
+		Mesh->SetMorphTarget(M, FMath::Max(0.f, Mesh->GetMorphTarget(D.Key) - D.Value), false);
+		FitMorphs.Add(M);
+	}
 }
 
 void UVisexBodyComponent::SetHair(FName Hair)
@@ -399,11 +449,12 @@ void UVisexBodyComponent::TickJiggle(float DeltaTime)
 		const float Spread = bBust ? BustDetune : GluteDetune;
 		const float Detune = (i % 2 == 0) ? 1.f - Spread : 1.f + Spread;
 		const float Travel = bBust ? BustTravel : GluteTravel;
-		StepSpring(J, Z, DeltaTime, (bBust ? BustFrequency : GluteFrequency) * Detune, (bBust ? BustDamping : GluteDamping) + Settle,
+		const float Firm = bBust ? 1.f + 0.5f * BustSupport : 1.f;
+		StepSpring(J, Z, DeltaTime, (bBust ? BustFrequency : GluteFrequency) * Detune * Firm, (bBust ? BustDamping : GluteDamping) + Settle,
 			SoftLimit * Travel);
 		// bigger is heavier: a small bust barely moves
 		const float Size = Profile.Get(bBust ? FName("Bust") : FName("Glutes"));
-		const float Raw = J.Offset / Travel * (bBust ? BustStrength : JiggleStrength) * (0.25f + Size);
+		const float Raw = J.Offset / Travel * (bBust ? BustStrength * (1.f - 0.6f * BustSupport) : JiggleStrength) * (0.25f + Size);
 		// soft tissue eases into its limit instead of hitting a stop, so each side rolls on
 		// its own rather than both slamming the end together
 		float Weight = FMath::Tanh(Raw * (bBust ? 1.f : 0.8f));
@@ -429,7 +480,7 @@ void UVisexBodyComponent::TickJiggle(float DeltaTime)
 	static const FName SwayIn[2] = {TEXT("BustSwayL_In"), TEXT("BustSwayR_In")};
 	static const FName SwayFwd[2] = {TEXT("BustSwayL_Fwd"), TEXT("BustSwayR_Fwd")};
 	static const FName SwayBack[2] = {TEXT("BustSwayL_Back"), TEXT("BustSwayR_Back")};
-	const float Gain = BustSwayStrength * (0.25f + Profile.Get("Bust")) / FMath::Max(BustSwayTravel, 0.01f);
+	const float Gain = BustSwayStrength * (1.f - 0.6f * BustSupport) * (0.25f + Profile.Get("Bust")) / FMath::Max(BustSwayTravel, 0.01f);
 	for (int32 i = 0; i < 2; ++i)
 	{
 		const FVector P = FMath::Lerp(Mesh->GetBoneLocation(Chest), Mesh->GetBoneLocation(Hangers[i]), BustSideFollow)
