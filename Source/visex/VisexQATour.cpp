@@ -249,6 +249,35 @@ void AVisexQATour::Build()
 	Add(1.f, [] { CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS, true); QA_LOG(TEXT("VisexQA: forced GC")); });
 	Add(1.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetMotion(1); } });
 	Add(2.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetMotion(2); } Report(TEXT("photo after GC")); });
+	// hair turnaround: idle, 8 angles 45 deg apart, full body on the orbit camera, then head and
+	// shoulders on the free camera. No keypresses, so it runs on any keyboard layout (QA 0281)
+	Add(1.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetMotion(0); } });
+	for (int32 K = 0; K < 8; ++K)
+	{
+		Add(1.5f, [this, K]
+		{
+			AVisexPhotoMode* P = Photo();
+			ACharacter* C = Her();
+			if (!P || !P->IsOpen() || !C) { return; }
+			if (P->IsFree()) { P->ToggleFree(); }
+			P->SetView(C->GetActorRotation().Yaw + 45.f * K, 300.f, 130.f);
+		});
+		Add(1.5f, [this, K] { Shot(FString::Printf(TEXT("turn_body_%d"), K)); });
+	}
+	for (int32 K = 0; K < 8; ++K)
+	{
+		Add(1.f, [this, K]
+		{
+			AVisexPhotoMode* P = Photo();
+			ACharacter* C = Her();
+			if (!P || !P->IsOpen() || !C || !C->GetMesh()) { return; }
+			const FVector Head = C->GetMesh()->GetSocketLocation(TEXT("head")) + FVector(0.f, 0.f, -6.f);
+			const float A = FMath::DegreesToRadians(C->GetActorRotation().Yaw + 45.f * K);
+			const FVector Loc = Head + FVector(FMath::Cos(A), FMath::Sin(A), 0.12f) * 95.f;
+			P->SetFreeView(Loc, (Head - Loc).Rotation(), 0.f, 50.f);
+		});
+		Add(1.5f, [this, K] { Shot(FString::Printf(TEXT("turn_head_%d"), K)); });
+	}
 	Add(1.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->Close(); } });
 	Add(5.f, [this] { Report(TEXT("after photo")); Shot(TEXT("after_photo")); });
 	Add(1.f, [this]

@@ -303,7 +303,10 @@ for pts, layer, fly, az, zone in guides:
         w0 *= 0.5                                     # the long wisps are a few strands each
     base = len(V)
     prev_n = None
-    tile = int(rng.integers(0, TILES // 2)) if layer == 0 else int(rng.integers(TILES // 2, TILES))
+    # dense tiles under everything, and on the locks by her face and the fringe: on sparse tiles
+    # those were mostly holes, and the sunlit skin behind showed through as beige (QA 0278)
+    dense = layer == 0 or zone in ("side", "fringe")
+    tile = int(rng.integers(0, TILES // 2)) if dense else int(rng.integers(TILES // 2, TILES))
     flip = rng.uniform() < 0.5
     for i, p in enumerate(P):
         t = P[min(i + 1, n - 1)] - P[max(i - 1, 0)]
