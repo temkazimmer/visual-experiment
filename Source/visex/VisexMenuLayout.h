@@ -8,9 +8,9 @@
  * relative to the menu camera, its size, the spacing of its lines, and the logo. Edited
  * live with the menu layout editor (§ on the start menu, AVisexMenuLayoutEditor).
  *
- * Saved as one line in Game.ini, section [VisexMenuLayout]. Saved from the editor (PIE) it
- * goes to the project's Config/DefaultGame.ini, so it ships as the default; saved from a
- * packaged game it goes to that player's own Saved/Config.
+ * Saved as one line, section [VisexMenuLayout]. Saved from the editor (PIE) it goes to the
+ * project's Config/DefaultGame.ini, so it ships as the default; saved from a packaged game it
+ * goes to that player's own Saved/Config/<Platform>/GameUserSettings.ini, read before the default.
  */
 USTRUCT(BlueprintType)
 struct FVisexMenuLayout
@@ -44,4 +44,8 @@ struct FVisexMenuLayout
 	static bool Load(FVisexMenuLayout& InOut);
 	/** Save as the default (see above). Returns where it went. */
 	static FString Save(const FVisexMenuLayout& Layout);
+	/** The file Save writes. */
+	static FString SavedFile();
+	/** Whether that file on disk holds a saved layout (the QA tour's check). */
+	static bool IsSavedOnDisk();
 };

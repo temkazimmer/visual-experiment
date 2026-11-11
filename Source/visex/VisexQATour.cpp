@@ -24,6 +24,7 @@
 #include "RenderCore.h"
 #include "GameFramework/GameUserSettings.h"
 #include "VisexSettings.h"
+#include "VisexMenuLayout.h"
 #include "Engine/GameViewportClient.h"
 #include "UnrealEngine.h"
 
@@ -206,6 +207,23 @@ void AVisexQATour::Build()
 	// GC while the lean-down plays: the idle clip waiting in its timer must survive (0298 crash)
 	Add(0.3f, [] { CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS, true); });
 	Add(4.7f, [this] { Report(TEXT("menu again")); Shot(TEXT("menu_again")); });
+
+#if !WITH_EDITOR
+	// the layout editor's SAVE AS DEFAULT must reach the player's own ini on disk (packaged, it
+	// used to stay in memory: a saved Game.ini drops sections it doesn't list). Saves the layout
+	// as it is, checks the file, then puts the file back the way it was
+	Add(0.5f, [D]
+	{
+		static const TCHAR* Section = TEXT("VisexMenuLayout");
+		FString Before;
+		const bool bHad = GConfig->GetString(Section, TEXT("Layout"), Before, GGameUserSettingsIni);
+		const FString Where = FVisexMenuLayout::Save(D->GetLayout());
+		QA_LOG(TEXT("VisexQA: layout save %s: %s"), FVisexMenuLayout::IsSavedOnDisk() ? TEXT("PASS, on disk") : TEXT("FAIL, not in the file"), *Where);
+		if (bHad) { GConfig->SetString(Section, TEXT("Layout"), *Before, GGameUserSettingsIni); }
+		else { GConfig->RemoveKeyFromSection(Section, TEXT("Layout"), GGameUserSettingsIni); }
+		GConfig->Flush(false, GGameUserSettingsIni);
+	});
+#endif
 
 	// a 4:3 window: the menu, the Start move and its landing fill it, no letterbox (the menu's
 	// cine camera used to box to 16:9 and the bars snapped off as the move landed)
