@@ -26,6 +26,13 @@ HAIR = dict(
     clip=0.5,                       # opacity mask clip, after the temporal dither
 )
 DIR = "/Game/Character/Hair"
+# hairstyles, each its own mesh and AnimBP (the Body page's Hair tab lists them); one skeleton,
+# atlas and material for all. The skeleton holds every style's chains (UE's importer puts a new
+# style's mesh on the existing hair skeleton by itself); each mesh only has its own.  python3 Tools/ue.py -c "STYLE='elf'\nexec(open('<abs path>/Tools/char_hair_cards.py').read())"
+STYLES = dict(long=("hair_cards.fbx", "SKM_HairCards", "SK_HairCards"),
+              elf=("hair_elf.fbx", "SKM_HairElf", "SK_HairCards"))
+STYLE = globals().get("STYLE", "long")
+FBX, MESH, SKEL = STYLES[STYLE]
 SRC = os.path.join(unreal.Paths.project_dir(), "SourceArt/Character/Hair")
 
 les = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
@@ -43,24 +50,23 @@ ui.set_editor_property("import_materials", False)
 ui.set_editor_property("import_textures", False)
 ui.set_editor_property("import_animations", False)
 ui.set_editor_property("create_physics_asset", False)
-sk_path = DIR + "/SK_HairCards"
-if eal.does_asset_exist(sk_path):
-    ui.set_editor_property("skeleton", unreal.load_asset(sk_path))
+sk_path = DIR + "/" + SKEL
+ui.set_editor_property("skeleton", unreal.load_asset(sk_path) if eal.does_asset_exist(sk_path) else None)
 smd = ui.get_editor_property("skeletal_mesh_import_data")
 smd.set_editor_property("import_morph_targets", False)
 smd.set_editor_property("convert_scene", True)
 smd.set_editor_property("import_uniform_scale", 0.01)     # as Tools/char_skin.py: Blender writes metres
 smd.set_editor_property("normal_import_method", unreal.FBXNormalImportMethod.FBXNIM_IMPORT_NORMALS)
 task = unreal.AssetImportTask()
-task.set_editor_property("filename", os.path.join(SRC, "hair_cards.fbx"))
+task.set_editor_property("filename", os.path.join(SRC, FBX))
 task.set_editor_property("destination_path", DIR)
-task.set_editor_property("destination_name", "SKM_HairCards")
+task.set_editor_property("destination_name", MESH)
 task.set_editor_property("replace_existing", True)
 task.set_editor_property("automated", True)
 task.set_editor_property("save", False)
 task.set_editor_property("options", ui)
 tools.import_asset_tasks([task])
-mesh = unreal.load_asset(DIR + "/SKM_HairCards")
+mesh = unreal.load_asset(DIR + "/" + MESH)
 assert mesh, "hair mesh did not import"
 skel = mesh.get_editor_property("skeleton")
 if skel.get_path_name().split(".")[0] != sk_path:
@@ -78,6 +84,7 @@ tex = unreal.load_asset(DIR + "/T_HairAtlas")
 tex.set_editor_property("srgb", False)
 tex.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_DEFAULT)
 tex.set_editor_property("mip_gen_settings", unreal.TextureMipGenSettings.TMGS_SHARPEN4)
+tex.set_editor_property("address_y", unreal.TextureAddress.TA_CLAMP)   # tips never wrap onto roots
 # keep the strands' coverage in the small mips, or the hair thins out and gaps open at a distance
 tex.set_editor_property("do_scale_mips_for_alpha_coverage", True)
 tex.set_editor_property("alpha_coverage_thresholds", unreal.Vector4(0, 0, 0, 0.5))
