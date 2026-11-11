@@ -63,7 +63,12 @@ RISE = 55.0                                                   # the raised leg's
 _c, _s = math.cos(math.radians(RISE)), math.sin(math.radians(RISE))
 TOE_UP, SOLE_UP = norm((0.0, -_c, _s)), norm((0.0, _s, _c))
 LEDGE = dict(DOWN, ball_r=ball_from("r", (-10.0, -4.0 - 86.0 * _c, 50.0 + 86.0 * _s), TOE_UP), toe_r=TOE_UP, sole_r=SOLE_UP,
-             knee_r=(-10.0, -35.0, -5.0), head_left=40.0, head_tilt=-8.0, head_down=-60.0, lean_fwd=-22.0, floor=4.0)
+             knee_r=(-10.0, -35.0, -5.0), head_left=40.0, head_tilt=-8.0, head_down=-60.0, floor=4.0,
+             # the back arched and the trunk tipped further down, so the chest stays on the forearms
+             # while the head lifts clear of her hands (in Play her hair hid her face). Kept inside
+             # the game's spine limits: a deeper arch is folded back in game and lifts her elbows
+             pitch=-128.0, lean_fwd=-40.0,
+             ball_l=ball_from("l", (9.0, -48.0, 18.5), TOE_FLAT))     # the steeper pelvis sank the kneeling toes
 LEDGE.update(globals().get("TWEAK", {}))
 
 IN_KEYS = [(0.0, STAND), (0.55, STEP), (1.25, HALF), (1.85, KNEEL), (2.50, ALLFOURS), (3.20, DOWN), (3.95, LEDGE)]
