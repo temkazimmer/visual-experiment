@@ -89,7 +89,13 @@ def foot(side, ankle, toe, sole_hint=(0.0, 0.0, -1.0)):
 
 # the lean: weight on the left leg, the right knee forward and in, on the ball of the foot
 SEAT = globals().get("SEAT", -4.0)          # pelvis bone height against the drum's top (skin on stone)
-LEAN = dict(STAND, pelvis=(1.0, CY + 36.0, TOP + SEAT), roll=4.0, pitch=12.0, yaw=-18.0,
+# The pelvis rides the drum's curve at SEAT_R from its axis (the old seat: 36 out, SEAT down
+# from the top, skin on stone). At 38 deg from vertical her ankles sat 2-6 cm out of reach:
+# straight legs, feet hanging above the sand. At 46 every key reaches, knees softly bent.
+SEAT_R = math.hypot(36.0, RADIUS + SEAT)
+SEAT_ANGLE = math.radians(globals().get("SEAT_ANGLE", 46.0))
+LEAN = dict(STAND, pelvis=(1.0, CY + SEAT_R * math.sin(SEAT_ANGLE), CZ + SEAT_R * math.cos(SEAT_ANGLE)),
+            roll=4.0, pitch=12.0, yaw=-18.0,
             knee_l=(18.0, 60.0, 50.0), knee_r=(-2.0, 70.0, 55.0),
             lean_left=2.0, lean_fwd=-11.0, twist_left=6.0, head_tilt=5.0, head_down=-2.0, head_left=10.0,
             arms=1.0, floor=5.5)
