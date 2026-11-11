@@ -119,6 +119,31 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Motion")
 	TSoftObjectPtr<UAnimSequence> RunLoop;
 
+	/** The sequence (Tools/char_photoseq_*.py): sit by the column, get up, walk, jog, run. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Sequence")
+	TSoftObjectPtr<UAnimSequence> SitLoop;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Sequence")
+	TSoftObjectPtr<UAnimSequence> SitDownClip;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Sequence")
+	TSoftObjectPtr<UAnimSequence> StandUpClip;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Sequence")
+	TSoftObjectPtr<UAnimSequence> SeqWalk;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Sequence")
+	TSoftObjectPtr<UAnimSequence> SeqJog;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Sequence")
+	TSoftObjectPtr<UAnimSequence> SeqRun;
+	/** Her root to the column's axis while she sits (cm, world): the sit clip's COLUMN_Y. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Sequence")
+	float SitGap = 80.f;
+	/** She roams freely this far from the column, then curves back round it (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Sequence")
+	float Leash = 900.f;
+	/** Seconds between jumps, and the launch (cm/s up). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Sequence")
+	float JumpEvery = 3.5f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Sequence")
+	float JumpSpeed = 520.f;
+
 	UFUNCTION(BlueprintCallable, Category = "Photo")
 	void Open();
 
@@ -169,13 +194,30 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 
 private:
+	enum class EKind : uint8 { Loop, Pose, Sit, Move, Jump, Return };
+	enum class EPhase : uint8 { None, SitDown, Seated, StandUp, Moving, Air, Approach, Turn };
 	struct FMotion
 	{
 		FString Name;
 		TWeakObjectPtr<UAnimSequence> Loop;   // played on DefaultSlot; LoadedLoops keeps it alive
 		int32 Pose = INDEX_NONE;         // or handed to the pose wheel
 		float Gait = -1.f;               // catwalk strength for an in-place loop
+		EKind Kind = EKind::Loop;
+		float Rate = 1.f;                // play rate of a moving clip (the slow walk is the walk at half)
 	};
+	void FindColumn();
+	void PlayClip(UAnimSequence* Clip, float Rate, bool bLoop, bool bRootMotion, float Blend = 0.35f);
+	void StartMoving(const FMotion& M);
+	void TickSequence(float DeltaSeconds);
+	void SteerTo(const FVector& Dir, float DegPerSec, float DeltaSeconds);
+	UAnimSequence* Clip(const TSoftObjectPtr<UAnimSequence>& Soft) const;
+	EPhase Phase = EPhase::None;
+	float PhaseTime = 0.f;
+	float JumpClock = 0.f;
+	float SavedAirBrake = -1.f;            // her falling braking, lifted for a leap
+	TWeakObjectPtr<AActor> Column;
+	FVector SitSpot = FVector::ZeroVector;   // her actor location when seated
+	FVector Away = FVector::ForwardVector;   // from the column out, flat: she faces it seated
 	void BuildMotions();
 	void Next() { SetMotion(Motion + 1); }
 	void Prev() { SetMotion(Motion - 1); }
