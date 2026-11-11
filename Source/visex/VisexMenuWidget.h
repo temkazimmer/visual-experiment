@@ -56,6 +56,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
 	int32 ItemSize = 40;
 
+	/** Space under the logo (before the items), and under each item (main page). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
+	float LogoGap = 110.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
+	float ItemGap = 18.f;
+
+	/** Rebuild the panel's contents (after a look property changed). */
+	void Refresh() { BuildContent(); }
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
 	FLinearColor TextColor = FLinearColor::White;
 

@@ -17,18 +17,24 @@ PHYS = dict(
     limit_angle=25.0,       # max bend per bone, degrees
     gravity=(0, 0, -980),   # cm/s^2, on top of the rest shape
 )
-ROOTS = ["hair_b%d_01" % i for i in range(6)] + ["hair_s0_01", "hair_s1_01"] + ["hair_f%d_01" % i for i in range(3)]
-# Colliders in component space (cm, UE axes: -Y is her front), measured off SKM_AndroidSkin with
-# ~1 cm to spare (the clothes clearance). The script converts them to offsets on the driving bone.
+# Colliders in component space (cm, UE = Blender (x, -y, z): +Y is her front), measured off
+# SKM_AndroidSkin with ~1 cm to spare (the clothes clearance). The script converts them to
+# offsets on the driving bone.
 # (bone, centre, radius) and (bone, centre, axis "Z" vertical / "X" across, radius, length)
 SPHERES = [("head", (0, 0.5, 168.5), 8.0)]
 CAPSULES = [
     ("neck_01", (0, -1.5, 155), "Z", 5.5, 10.0),
     ("spine_05", (0, -1.0, 141), "X", 9.5, 24.0),     # shoulders and upper back, across
     ("spine_04", (0, 0.0, 129), "Z", 9.3, 10.0),      # lower back
+    # the face locks hang in front of her: keep them off the upper chest and the bust
+    ("spine_05", (0, 4.5, 145), "X", 4.5, 18.0),      # collarbones, across
+    ("spine_04", (0, 8.5, 133), "X", 6.0, 12.0),      # bust, across
 ]
 DIR = "/Game/Character/Hair"
-NAME = "ABP_HairCards"
+# per hairstyle (see Tools/char_hair_cards.py): STYLE='elf' builds ABP_HairElf on SKM_HairElf
+STYLE = globals().get("STYLE", "long")
+MESH, SKEL, NAME = dict(long=("SKM_HairCards", "SK_HairCards", "ABP_HairCards"),
+                        elf=("SKM_HairElf", "SK_HairCards", "ABP_HairElf"))[STYLE]
 
 assert not unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).is_in_play_in_editor(), "stop Play first"
 T = unreal.VisexAnimGraphTools
@@ -38,11 +44,14 @@ if eal.does_asset_exist(path):
     abp = unreal.load_asset(path)
 else:
     f = unreal.AnimBlueprintFactory()
-    f.set_editor_property("target_skeleton", unreal.load_asset(DIR + "/SK_HairCards"))
-    f.set_editor_property("preview_skeletal_mesh", unreal.load_asset(DIR + "/SKM_HairCards"))
+    f.set_editor_property("target_skeleton", unreal.load_asset(DIR + "/" + SKEL))
+    f.set_editor_property("preview_skeletal_mesh", unreal.load_asset(DIR + "/" + MESH))
     f.set_editor_property("parent_class", unreal.AnimInstance)
     abp = unreal.AssetToolsHelpers.get_asset_tools().create_asset(NAME, DIR, unreal.AnimBlueprint, f)
 assert abp, "could not create " + path
+if not abp.get_editor_property("target_skeleton"):      # left over from a failed build
+    assert T.set_object_value(abp, "TargetSkeleton", "/Script/Engine.Skeleton'%s/%s.%s'" % (DIR, SKEL, SKEL))
+assert abp.get_editor_property("target_skeleton"), NAME + " has no skeleton"
 
 T.clear_anim_graph(abp)
 out = T.get_output_node(abp)
@@ -67,8 +76,11 @@ def rot(r):          # (pitch, yaw, roll)
 eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
 probe = eas.spawn_actor_from_class(unreal.SkeletalMeshActor, unreal.Vector(0, 0, -50000))
 pc = probe.skeletal_mesh_component
-pc.set_skeletal_mesh_asset(unreal.load_asset(DIR + "/SKM_HairCards"))
+pc.set_skeletal_mesh_asset(unreal.load_asset(DIR + "/" + MESH))
 CS = unreal.RelativeTransformSpace.RTS_COMPONENT
+# every chain the mesh has (the elf cut: back and face-lock chains, no fringe)
+ROOTS = sorted(str(n) for n in pc.get_all_socket_names() if str(n).startswith("hair_") and str(n).endswith("_01"))
+assert ROOTS, "no hair chains in the mesh"
 
 
 def qmul(a, b):

@@ -211,10 +211,11 @@ void AVisexPhotoMode::SetMotion(int32 Index)
 	ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
 	UAnimInstance* Anim = Char && Char->GetMesh() ? Char->GetMesh()->GetAnimInstance() : nullptr;
 	const FMotion& M = Motions[Motion];
+	UAnimSequence* Loop = M.Loop.Get();
 	// her catwalk layer follows speed; standing in place it needs telling how hard she walks
 	if (UVisexAnimInstance* Visex = Cast<UVisexAnimInstance>(Anim))
 	{
-		Visex->PhotoGait = M.Loop ? M.Gait : -1.f;
+		Visex->PhotoGait = Loop ? M.Gait : -1.f;
 	}
 	if (M.Pose != INDEX_NONE)
 	{
@@ -248,10 +249,10 @@ void AVisexPhotoMode::SetMotion(int32 Index)
 		if (Anim)
 		{
 			// walk and run carry root motion: keep it in the clip so she treads in place
-			Anim->SetRootMotionMode(M.Loop ? ERootMotionMode::IgnoreRootMotion : SavedRootMotion.GetValue());
-			if (M.Loop)
+			Anim->SetRootMotionMode(Loop ? ERootMotionMode::IgnoreRootMotion : SavedRootMotion.GetValue());
+			if (Loop)
 			{
-				Anim->PlaySlotAnimationAsDynamicMontage(M.Loop, Slot, 0.35f, 0.35f, 1.f, 1000000);
+				Anim->PlaySlotAnimationAsDynamicMontage(Loop, Slot, 0.35f, 0.35f, 1.f, 1000000);
 			}
 			else
 			{

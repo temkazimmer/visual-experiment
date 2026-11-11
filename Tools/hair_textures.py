@@ -29,6 +29,8 @@ def _tile(rng, w, h, nstrands=26):
         d = np.abs(u - xc)
         a = np.clip(1.0 - (d - half * 0.35) / (half * 0.65 + 1e-6), 0, 1)
         a *= (v <= length)
+        a *= (v >= rng.uniform(0.0, 0.012))                  # ragged roots: no straight card edge at the hairline
+        # (0.035 opened the elf cut's part into a 1.5 cm bald stripe: its cards are ~85 cm long)
         bright = rng.uniform(0.35, 1.0)
         m = a > alpha
         var = np.where(m, bright, var)
@@ -45,6 +47,14 @@ def make_atlas(path, tiles=8, w=256, h=1024, seed=3):
     for t in range(tiles):
         dense = t < tiles // 2                      # first half: coverage tiles, packed
         a, var, sid = _tile(rng, w, h, nstrands=int(rng.integers(64, 80) if dense else rng.integers(34, 44)))
+        # card borders: coverage fades to nothing at the tile's sides and is cut before the tip
+        # row, or the card's rectangle shows as a pale outline (mip bleed across tiles, and the
+        # tip row wrapping onto the root row; QA 0286)
+        uu = (np.arange(w) + 0.5) / w
+        side = np.clip(np.minimum(uu - 0.04, 0.96 - uu) / 0.08, 0, 1)
+        side = side * side * (3 - 2 * side)
+        tip = (np.linspace(0, 1, h) < 0.985)[:, None]
+        a = a * side[None, :] * tip
         sl = slice(t * w, (t + 1) * w)
         out[:, sl, 0] = var
         out[:, sl, 1] = sid

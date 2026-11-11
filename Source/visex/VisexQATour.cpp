@@ -1,6 +1,7 @@
 #include "VisexQATour.h"
 #include "VisexMenuDirector.h"
 #include "VisexPhotoMode.h"
+#include "VisexBodyEditor.h"
 #include "VisexBodyComponent.h"
 #include "VisexBodyProfile.h"
 #include "VisexShellComponent.h"
@@ -23,6 +24,9 @@
 #include "RenderCore.h"
 #include "GameFramework/GameUserSettings.h"
 #include "VisexSettings.h"
+#include "VisexMenuLayout.h"
+#include "Engine/GameViewportClient.h"
+#include "UnrealEngine.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogVisexQA, Log, All);
 
@@ -121,6 +125,25 @@ void AVisexQATour::Report(const FString& Where) const
 	QA_LOG(TEXT("VisexQA: %s: %s"), *Where, *Body);
 }
 
+void AVisexQATour::ViewCheck(const FString& Where) const
+{
+	FVector2D Size(0.f);
+	if (UGameViewportClient* Viewport = GetWorld()->GetGameViewport())
+	{
+		Viewport->GetViewportSize(Size);
+	}
+	const APlayerCameraManager* Cam = UGameplayStatics::GetPlayerCameraManager(this, 0);
+	if (!Cam)
+	{
+		QA_LOG(TEXT("VisexQA: %s: no camera"), *Where);
+		return;
+	}
+	const FMinimalViewInfo& View = Cam->GetCameraCacheView();
+	QA_LOG(TEXT("VisexQA: %s: window %.0fx%.0f (%.3f), view %s, fov %.1f, %s"), *Where, Size.X, Size.Y,
+		Size.Y > 0.f ? Size.X / Size.Y : 0.f, *GetNameSafe(Cam->GetViewTarget()), View.FOV,
+		View.bConstrainAspectRatio ? *FString::Printf(TEXT("LETTERBOXED to %.3f"), View.AspectRatio) : TEXT("fills the window"));
+}
+
 void AVisexQATour::Build()
 {
 	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
@@ -181,7 +204,50 @@ void AVisexQATour::Build()
 		FVisexSettings::ApplyBetweenFrames();
 	});
 	Add(0.5f, [D] { D->ToggleMenu(); });
-	Add(5.f, [this] { Report(TEXT("menu again")); Shot(TEXT("menu_again")); });
+	// GC while the lean-down plays: the idle clip waiting in its timer must survive (0298 crash)
+	Add(0.3f, [] { CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS, true); });
+	Add(4.7f, [this] { Report(TEXT("menu again")); Shot(TEXT("menu_again")); });
+
+#if !WITH_EDITOR
+	// the layout editor's SAVE AS DEFAULT must reach the player's own ini on disk (packaged, it
+	// used to stay in memory: a saved Game.ini drops sections it doesn't list). Saves the layout
+	// as it is, checks the file, then puts the file back the way it was
+	Add(0.5f, [D]
+	{
+		static const TCHAR* Section = TEXT("VisexMenuLayout");
+		FString Before;
+		const bool bHad = GConfig->GetString(Section, TEXT("Layout"), Before, GGameUserSettingsIni);
+		const FString Where = FVisexMenuLayout::Save(D->GetLayout());
+		QA_LOG(TEXT("VisexQA: layout save %s: %s"), FVisexMenuLayout::IsSavedOnDisk() ? TEXT("PASS, on disk") : TEXT("FAIL, not in the file"), *Where);
+		if (bHad) { GConfig->SetString(Section, TEXT("Layout"), *Before, GGameUserSettingsIni); }
+		else { GConfig->RemoveKeyFromSection(Section, TEXT("Layout"), GGameUserSettingsIni); }
+		GConfig->Flush(false, GGameUserSettingsIni);
+	});
+#endif
+
+	// a 4:3 window: the menu, the Start move and its landing fill it, no letterbox (the menu's
+	// cine camera used to box to 16:9 and the bars snapped off as the move landed)
+	{
+		struct FRes { int32 X = 0, Y = 0; EWindowMode::Type Mode = EWindowMode::Windowed; };
+		TSharedRef<FRes> Was = MakeShared<FRes>();
+		const float Orbit = D->BlendToPlayTime;
+		const float Landing = D->LandingBlendTime;
+		Add(0.5f, [Was]
+		{
+			Was->X = GSystemResolution.ResX;
+			Was->Y = GSystemResolution.ResY;
+			Was->Mode = GSystemResolution.WindowMode;
+			FSystemResolution::RequestResolutionChange(1440, 1080, EWindowMode::Windowed);
+		});
+		Add(3.f, [this] { ViewCheck(TEXT("4:3 menu")); Shot(TEXT("menu_4x3")); });
+		Add(0.1f, [D] { D->StartGame(); });
+		Add(Orbit * 0.5f, [this] { ViewCheck(TEXT("4:3 mid-move")); Shot(TEXT("start_4x3_mid")); });
+		Add(Orbit * 0.5f + Landing * 0.5f, [this] { ViewCheck(TEXT("4:3 landing")); Shot(TEXT("start_4x3_landing")); });
+		Add(Landing + 0.5f, [this] { ViewCheck(TEXT("4:3 play")); Shot(TEXT("play_4x3")); });
+		Add(0.5f, [D] { D->ToggleMenu(); });
+		Add(3.f, [Was] { FSystemResolution::RequestResolutionChange(Was->X, Was->Y, Was->Mode); });
+		Add(3.f, [this] { ViewCheck(TEXT("menu, window back")); Report(TEXT("menu after 4:3")); });
+	}
 
 	// the Settings page: open, both tabs, step a value there and back, close
 	Add(0.5f, [D] { D->OpenSettings(); });
@@ -193,6 +259,7 @@ void AVisexQATour::Build()
 	// each outfit on her, seen from the menu camera
 	for (const FVisexOutfit& O : FVisexBodyProfile::Outfits())
 	{
+		if (O.bLocked) { continue; }   // not wearable: the wardrobe stop below shows them
 		const FName Name = O.Name;
 		Add(0.5f, [this, Name]
 		{
@@ -211,8 +278,32 @@ void AVisexQATour::Build()
 		}
 	});
 
+	// the Body page's three tabs, then the wardrobe and a locked costume's window
+	auto Editor = [this]() -> AVisexBodyEditor* { for (TActorIterator<AVisexBodyEditor> It(GetWorld()); It; ++It) { return *It; } return nullptr; };
+	Add(0.5f, [D] { D->OpenBody(); });
+	Add(4.f, [this, Editor] { AVisexBodyEditor* E = Editor(); QA_LOG(TEXT("VisexQA: body page %s"), E && E->IsOpen() ? TEXT("open") : TEXT("DID NOT OPEN")); Shot(TEXT("body_tab_body")); });
+	Add(0.2f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->SwitchTab(1); } });
+	Add(2.f, [this] { Shot(TEXT("body_tab_face")); });
+	Add(0.2f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->SwitchTab(1); } });
+	Add(2.f, [this] { Shot(TEXT("body_tab_hair")); });
+	Add(0.2f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
+	Add(4.f, [this] { Report(TEXT("after body page")); });
+	Add(0.5f, [D] { D->OpenWardrobe(); });
+	Add(4.f, [this, Editor] { AVisexBodyEditor* E = Editor(); QA_LOG(TEXT("VisexQA: wardrobe %s"), E && E->IsOpen() && E->GetPage() == 1 ? TEXT("open") : TEXT("DID NOT OPEN")); Shot(TEXT("wardrobe")); });
+	Add(0.2f, [Editor]
+	{
+		AVisexBodyEditor* E = Editor();
+		const int32 Locked = FVisexBodyProfile::Outfits().IndexOfByPredicate([](const FVisexOutfit& O) { return O.bLocked; });
+		if (E && Locked != INDEX_NONE) { E->SelectRow(Locked); E->ApplyTab(); }
+	});
+	Add(1.5f, [this] { Shot(TEXT("wardrobe_locked")); });
+	Add(0.2f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Close(); } });   // closes the window
+	Add(1.f, [this] { Shot(TEXT("wardrobe_after_window")); });
+	Add(0.2f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Close(); } });   // leaves the page
+	Add(4.f, [this] { Report(TEXT("after wardrobe")); Shot(TEXT("menu_after_wardrobe")); });
+
 	// photo mode, through every motion and pose
-	Add(0.5f, [this, D] { Report(TEXT("before photo")); D->OnItemChosen(2); });
+	Add(0.5f, [this, D] { Report(TEXT("before photo")); D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
 	// when does she start to drop: just after choosing, through the stand-up, as the camera takes over
 	float Since = 0.f;
 	for (const float Wait : {0.1f, 0.3f, 0.4f, 0.7f, 1.5f})
@@ -251,7 +342,7 @@ void AVisexQATour::Build()
 	Add(2.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetMotion(2); } Report(TEXT("photo after GC")); });
 	// hair turnaround: idle, 8 angles 45 deg apart, full body on the orbit camera, then head and
 	// shoulders on the free camera. No keypresses, so it runs on any keyboard layout (QA 0281)
-	Add(1.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetMotion(0); } });
+	Add(1.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetMotion(0); P->SetHudVisible(false); } });
 	for (int32 K = 0; K < 8; ++K)
 	{
 		Add(1.5f, [this, K]
@@ -260,7 +351,7 @@ void AVisexQATour::Build()
 			ACharacter* C = Her();
 			if (!P || !P->IsOpen() || !C) { return; }
 			if (P->IsFree()) { P->ToggleFree(); }
-			P->SetView(C->GetActorRotation().Yaw + 45.f * K, 300.f, 130.f);
+			P->SetView(C->GetActorRotation().Yaw + 45.f * K, 380.f, 120.f);   // head to toe (QA 0286: 300 cut her head)
 		});
 		Add(1.5f, [this, K] { Shot(FString::Printf(TEXT("turn_body_%d"), K)); });
 	}
@@ -271,13 +362,16 @@ void AVisexQATour::Build()
 			AVisexPhotoMode* P = Photo();
 			ACharacter* C = Her();
 			if (!P || !P->IsOpen() || !C || !C->GetMesh()) { return; }
-			const FVector Head = C->GetMesh()->GetSocketLocation(TEXT("head")) + FVector(0.f, 0.f, -6.f);
+			// a little in front of the head bone, so side views keep her face, not just hair on sky
+			const FVector Head = C->GetMesh()->GetSocketLocation(TEXT("head")) + FVector(0.f, 0.f, -6.f)
+				+ C->GetActorForwardVector() * 8.f;
 			const float A = FMath::DegreesToRadians(C->GetActorRotation().Yaw + 45.f * K);
 			const FVector Loc = Head + FVector(FMath::Cos(A), FMath::Sin(A), 0.12f) * 95.f;
 			P->SetFreeView(Loc, (Head - Loc).Rotation(), 0.f, 50.f);
 		});
 		Add(1.5f, [this, K] { Shot(FString::Printf(TEXT("turn_head_%d"), K)); });
 	}
+	Add(0.1f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetHudVisible(true); } });
 	Add(1.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->Close(); } });
 	Add(5.f, [this] { Report(TEXT("after photo")); Shot(TEXT("after_photo")); });
 	Add(1.f, [this]

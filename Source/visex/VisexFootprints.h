@@ -70,10 +70,9 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Footprints")
 	bool bDebug = false;
 
-	/** Sand mounds under standing feet. Off until they match the dune shading (they
-	 *  rendered as pale smooth pads with a hard rim in Shipping 0244). */
+	/** Sand mounds under standing feet: they hide the small gap between sole and sand. */
 	UPROPERTY(EditAnywhere, Category = "Mounds")
-	bool bMounds = false;
+	bool bMounds = true;
 
 	/** A unit mound: 100 cm across, 100 cm high, zero slope at its rim. */
 	UPROPERTY(EditAnywhere, Category = "Mounds")
@@ -90,7 +89,7 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mounds")
 	float MoundCover = 2.0f;
 	UPROPERTY(EditAnywhere, Category = "Mounds")
-	FVector2D MoundHeightRange = FVector2D(1.5f, 8.f);
+	FVector2D MoundHeightRange = FVector2D(1.5f, 6.f);
 
 	/** cm: mound length (along the foot) and width. */
 	UPROPERTY(EditAnywhere, Category = "Mounds")

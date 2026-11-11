@@ -7,6 +7,76 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-11 13:56 · VIS-EX-0307 Shipping (0dd50c9) · PASS, the 0298 lean crash is fixed
+
+- **Crash fix:** the tour now forces a full GC 0.3 s after ToggleMenu, while the lean-down is
+  still playing. I ran it twice from the mounted DMG. Both runs got through it and reached
+  `VisexQA: done`, with 41 shots each and exit 0. No new visex `.ips` in DiagnosticReports.
+  The only new reports are three `zen` ones from 13:44, which came from another worktree's
+  editor starting up, not from the game.
+- **Menu again** (`Tools/.bridge/shots/qa0307/04_menu_again.png`, `run2/04_menu_again.png`): after
+  the GC she leans on the column in the right pose, on the ground, holding the idle montage. It
+  matches 0305's shot.
+- **Against 0305:** no regression. Every screen and pose matches. In run 1 the turnaround shots
+  were a bit darker (body 5: luma 102 against 116). Run 2 matched 0305 exactly, so that's run-to-run
+  exposure, not a change. Only code changed between the two builds. Photo motion 3–7 report
+  `mode 0`, as in 0305. Quality 0/3/4: 16.7 / 21.1 / 44.8 ms. Load was about 4 with two other
+  editors open.
+- **Shots:** in `Saved/QA_0307ship{,_run2}/` and `Tools/.bridge/shots/qa0307/` (run 2 is in `run2/`).
+- **Saves:** I backed up `VisexBody.sav` and `GameUserSettings.ini` and restored them after each run.
+  Both md5s match the originals: `29ae709f…` and `0f8144b4…`. There's no `Game.ini`, before or after.
+
+## 2026-11-11 13:41 · VIS-EX-0305 Shipping (5964443) · PASS, menu bokeh in, only the elf hair checked
+
+- **Tour:** no crash. She stays on the ground, with body, shell, hair and outfit present, and all 41 shots
+  were taken. Shots are now 1920×1080; 0291's were 1600×900. They're in `Saved/QA_0305ship/` and
+  `Tools/.bridge/shots/qa0305/`, with crops in `crops/`.
+- **Menu (f/2.8):** she's sharp: face, hands and the front foot (`crops/menu_head.png`,
+  `crops/menu_feet.png`). The colonnade behind her is clearly softer than in 0291's `01_menu`,
+  where the brickwork was crisp. Here it's a smooth orange wash. Start move: the tour takes no frames
+  between Menu and Play, so a focus pop at landing isn't checked.
+- **Hair:** Tema's save wears **Elven**, so every shot is the elf style. **The long style isn't
+  checked** (layered strands, darker roots).
+  - Face locks have body from the side, with strand lines (`35_turn_head_2`, `36_turn_head_3`).
+    From the front and in the menu they read as flat black ribbons with a pale rim.
+  - Hairline (`crops/elf_hairline.png`): no bald parting. **No baby hairs visible**: the edge is hard,
+    with a red-brown rim along the forehead. The turnaround head shots cut off her hairline.
+  - No white strands against the haze, from the back or in the walk.
+  - Back (`37_turn_head_4`): solid strands, but there's a smeared grey sheen at the crown, and a pale,
+    see-through, chevron-striped patch at her right shoulder (`crops/head4_shoulder_patch.png`).
+  - Side (`35_turn_head_2`): a hard stair-stepped edge on the hair above the ear
+    (`crops/head2_top_step.png`).
+  - Physics: nothing through the body in play, walk or the 8 poses. Popping needs motion and isn't
+    checked.
+- **Skirt rings:** not checked. The skirt only shows in `09_outfit_BodystockingSkirt` (menu camera,
+  front); photo mode runs in the Bodystocking.
+- **Sand:** prints behind her in `03_walked` and `29_turn_body_4`, feet set in the sand. There's no
+  HUD in the turnaround shots.
+- **Frame times:** these aren't comparable. Load was 4.5 at the start, with other editors and Blender
+  running, and the hair is elf, not long. Quality 0/3/4: 8.3 / 16.3 / 37.2 ms. 0291 had 17.3 / 17.0 /
+  27.5. Photo poses ran 52–63 ms against 0291's 44–61.
+- **Saves:** both files were restored from backup and their md5s match. During the tour,
+  `VisexBody.sav` was replaced by an older 11:17 copy without the elf hair, with its mtime kept. That
+  looks like another session's restore, not the game. Tema's 13:24 save is back.
+
+## 2026-11-11 · VIS-EX-0291 Shipping (e5a260b) · PASS
+
+- **Tour:** no crash, on ground, all 41 shots. Orbit landing smooth (0.656 → 0.543 → 0.427 → 0.397 → 0.388).
+- **Body page:** BODY / FACE / HAIR tabs, with E and Q stepping both ways. FACE shows Head plus its note,
+  HAIR shows "Long, straight" WORN. Escape returns to the menu with Body selected.
+- **Wardrobe:**
+  - It opens on the worn costume. Down tries on the next one, so the skirt appears; nothing is skipped.
+  - Locked rows leave her as she is, and Enter opens UNDER CONSTRUCTION. Enter or Escape closes it.
+  - Escape returns to the menu with Wardrobe selected.
+- **Saves:** Tema's `VisexBody.sav` is unchanged (same md5). `GameUserSettings.ini` was restored from a
+  backup after the tour.
+- **Mounds:** her feet sit in soft sand with mounds shaded like the dunes, and prints show behind her.
+  No pale pads or rims.
+- **Turnaround:** body shots now frame her whole, with no HUD. Head 2 (side) is still mostly a hair
+  silhouette against the sky. Shots are still 1600×900.
+- **Low-camera wind:** no horizontal streaks in the play and walk shots. A real grazing-angle check
+  needs a lower camera than the tour has.
+
 ## 2026-11-10 21:45 · VIS-EX-0286 Shipping (ab61ef3 + QA.md) · PASS, close-ups show hair-card edges
 
 - **Automated turnaround (new):** 8 body and 8 head shots at 1600×900 (window clamped), no keys.

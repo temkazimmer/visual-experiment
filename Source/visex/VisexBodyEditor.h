@@ -17,9 +17,11 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FVisexBodyEditorClosed);
  * with the panel on the left. Picking a body row eases the camera to a close-up of that part
  * (longer lens, shallow focus, framed from her bones so it follows the sliders); rows about
  * her back turn her round. The right stick (or a mouse drag) turns her on the spot.
- * Two tabs, left to right: BODY (sliders) and DRESS (outfits). L1/R1 (Q/E, Tab) switch
- * tabs, up/down picks a row, left/right shapes her (body), picking an outfit tries it on.
- * Every change shows on her at once; CROSS (Enter, Space) applies that tab and saves it.
+ * Two pages. The Body page (Open) has BODY, FACE and HAIR tabs; L1/R1 (Q/E, Tab) switch
+ * them, up/down picks a row, left/right shapes her. The Wardrobe (OpenWardrobe) lists the
+ * costumes: moving onto one tries it on, CROSS wears it; a locked costume only opens an
+ * "under construction" window. Every change shows on her at once; CROSS (Enter, Space)
+ * on APPLY applies that tab and saves it.
  * TRIANGLE resets a slider. CIRCLE goes back: what was not applied is undone, OnClosed
  * fires and the menu shows itself again.
  *
@@ -76,7 +78,11 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Body")
 	FVisexBodyEditorClosed OnClosed;
 
-	UFUNCTION(BlueprintCallable, Category = "Body") void Open();
+	UFUNCTION(BlueprintCallable, Category = "Body") void Open() { OpenPage(0); }
+	UFUNCTION(BlueprintCallable, Category = "Body") void OpenWardrobe() { OpenPage(1); }
+	/** 0 the Body page, 1 the Wardrobe. */
+	UFUNCTION(BlueprintCallable, Category = "Body") void OpenPage(int32 InPage);
+	UFUNCTION(BlueprintPure, Category = "Body") int32 GetPage() const { return Page; }
 	UFUNCTION(BlueprintCallable, Category = "Body") void Close();
 	UFUNCTION(BlueprintPure, Category = "Body") bool IsOpen() const { return bOpen; }
 
@@ -129,9 +135,13 @@ private:
 	int32 StickDir = 0;       // left stick held: 0 none, 1 up, 2 right, 3 down, 4 left
 	float StickHeld = 0.f;
 	float StickNext = 0.f;
-	int32 Tab = 0;
+	int32 Page = 0;            // 0 Body, 1 Wardrobe
+	int32 Tab = 0;             // Body page tab: 0 body, 1 face, 2 hair
 	int32 Selected = 0;
-	int32 TabRow[2] = {0, 0};
+	int32 TabRow[3] = {0, 0, 0};
+	bool bUnderConstruction = false;   // the locked-costume window is up
+	/** The slider the selected row shapes, or INDEX_NONE (hair, costumes, APPLY). */
+	int32 SliderHere() const;
 	FVisexBodyProfile Applied;
 	FRotator StartRotation;
 	FShot From;

@@ -156,6 +156,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Photo")
 	void SetFreeView(FVector Location, FRotator Aim, float InRoll, float InFocal);
 
+	/** Show or hide the help overlay (scripts hide it for clean captures). */
+	UFUNCTION(BlueprintCallable, Category = "Photo")
+	void SetHudVisible(bool bShow) { if (bOpen) { ShowHud(bShow); } }
+
 	UPROPERTY(BlueprintAssignable, Category = "Photo")
 	FVisexPhotoModeClosed OnClosed;
 
@@ -168,7 +172,7 @@ private:
 	struct FMotion
 	{
 		FString Name;
-		UAnimSequence* Loop = nullptr;   // played on DefaultSlot
+		TWeakObjectPtr<UAnimSequence> Loop;   // played on DefaultSlot; LoadedLoops keeps it alive
 		int32 Pose = INDEX_NONE;         // or handed to the pose wheel
 		float Gait = -1.f;               // catwalk strength for an in-place loop
 	};
@@ -184,8 +188,8 @@ private:
 	void ClearMotion();
 
 	TArray<FMotion> Motions;
-	/** Keeps the walk/run clips alive: FMotion's raw pointers are invisible to GC, and a
-	 * collected clip crashed SetMotion a few minutes into a session (Shipping 0240). */
+	/** Keeps the walk/run clips alive: FMotion only holds them weakly (it isn't seen by GC), and
+	 * a collected clip behind a raw pointer crashed SetMotion (Shipping 0240). */
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UAnimSequence>> LoadedLoops;
 	int32 Motion = 0;

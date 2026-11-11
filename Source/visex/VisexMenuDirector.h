@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "CineCameraSettings.h"
+#include "VisexMenuLayout.h"
 #include "VisexMenuDirector.generated.h"
 
 class ACameraActor;
@@ -60,6 +61,10 @@ public:
 	 * on a diagonal (Persona-style perspective). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
 	float PanelRoll = 4.f;
+
+	/** Tips the panel back (+) or forward (-), degrees. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
+	float PanelPitch = 0.f;
 
 	/** World cm per panel pixel. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Panel")
@@ -232,10 +237,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera", meta = (ClampMin = "1"))
 	float MenuSensorScale = 3.f;
 
-	/** Menu aperture (f-stop) on that sensor; 0 keeps the camera's own. f/8 keeps all of her sharp
-	 * (about ±40 cm around the focus at menu distance) while the far haze still goes soft. */
+	/** The menu fills the window like the play camera, with no letterbox, so the Start move lands
+	 * without the bars snapping off. A narrower window than the shot shows more above and below;
+	 * a wider one widens the lens to keep her whole height and shows more at the sides. Off: the
+	 * cine camera's own 16:9 frame, letterboxed on any other window. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
-	float MenuAperture = 8.f;
+	bool bMenuFillsWindow = true;
+
+	/** Menu aperture (f-stop) on that sensor; 0 keeps the camera's own. f/2.8 holds about ±14 cm
+	 * around the focus at menu distance, so she stays crisp while the steps and colonnade behind
+	 * her fall soft (f/8, about ±40 cm, kept the background too sharp). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
+	float MenuAperture = 2.8f;
 
 	/** Seconds the Start move blends into the play camera when it lands (0 = a cut). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera", meta = (ClampMin = "0"))
@@ -303,9 +316,31 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
 	TSoftObjectPtr<class UAnimSequence> LeanDown = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Lean_Down.A_Menu_Lean_Down")));
 
+	/** The lean clips once loaded, held so GC can't free one while a timer waits to play it
+	 * (a raw pointer caught in the lean-down timer crashed Shipping 0298). */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<class UAnimSequence>> LoadedLean;
+
 	/** Hides the menu and opens the body page; the menu comes back when it closes. */
 	UFUNCTION(BlueprintCallable, Category = "Menu")
-	void OpenBody();
+	void OpenBody() { OpenCharacterPage(0); }
+
+	/** Hides the menu and opens the wardrobe (the dressing room). */
+	UFUNCTION(BlueprintCallable, Category = "Menu")
+	void OpenWardrobe() { OpenCharacterPage(1); }
+
+	/** The block's place, perspective, spacing and logo, as the layout editor (§) sets them. */
+	const FVisexMenuLayout& GetLayout() const { return Layout; }
+	/** The layout as built (the class's own values, before any save): Reset goes back to it. */
+	const FVisexMenuLayout& GetBuiltInLayout() const { return BuiltInLayout; }
+	void ApplyLayout(const FVisexMenuLayout& InLayout);
+
+	/** Open or close the menu layout editor (§, start menu only). */
+	UFUNCTION(BlueprintCallable, Category = "Menu")
+	void ToggleLayoutEditor();
+
+	/** The menu's rows: Start, Body, Wardrobe, Photo mode, Settings, Quit. */
+	enum : int32 { ItemStart = 0, ItemBody, ItemWardrobe, ItemPhoto, ItemSettings, ItemQuit };
 
 	UFUNCTION(BlueprintCallable, Category = "Menu")
 	void ShowMenu();
@@ -410,7 +445,13 @@ private:
 	float OrbitA0 = 0.f, OrbitR0 = 0.f, OrbitZ0 = 0.f;
 	float MenuFocal = 0.f, MenuFStop = 0.f;
 	FCameraFilmbackSettings MenuFilmback;
+	bool bMenuConstrain = true;   // the cine camera's own aspect-ratio setting
+	float MenuViewAspect = 0.f;   // the window shape the menu lens was last set for
 	bool bHaveLens = false;
+	/** The menu's focal length on the scaled sensor, widened for a window wider than the shot. */
+	float MenuLensFocal() const;
+	void SetMenuFocal(class UCineCameraComponent* Lens, float Focal);
+	float ViewAspect() const;
 	bool bOpen = false;
 	bool bInputBound = false;
 	bool bStickHeld = false;
@@ -427,7 +468,15 @@ private:
 	class UAnimInstance* GetPawnAnim() const;
 	bool bLeaning = false;
 	bool bHaveLeaned = false;
+	void OpenCharacterPage(int32 InPage);
+	void PlacePanel();
+	void PushLayoutToWidget();
+	FVisexMenuLayout Layout;
+	FVisexMenuLayout BuiltInLayout;
+	bool bHaveLayout = false;
+	UPROPERTY(Transient) TObjectPtr<class AVisexMenuLayoutEditor> LayoutEditor;
 	void OpenBodyNow();
+	int32 CharacterPage = 0;   // the page OpenBodyNow opens: 0 body, 1 wardrobe
 
 	// photo mode
 	void OpenPhoto();

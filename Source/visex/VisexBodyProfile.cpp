@@ -42,8 +42,42 @@ const TArray<FVisexBodySlider>& FVisexBodyProfile::Sliders()
 		S(TEXT("Hands"),     LOCTEXT("Hands", "Hands"),         0.85f, 1.15f, 0.85f),
 		S(TEXT("Feet"),      LOCTEXT("Feet", "Feet"),           0.85f, 1.15f, 0.955f),
 	};
-	static const bool bMarked = [] { for (FVisexBodySlider& Row : Table) { Row.bAbs = Row.Name == TEXT("Abs"); } return true; }();
+	static const bool bMarked = [] {
+		for (FVisexBodySlider& Row : Table)
+		{
+			Row.bAbs = Row.Name == TEXT("Abs");
+			Row.Group = Row.Name == TEXT("Head") ? 1 : 0;   // the FACE tab
+		}
+		return true; }();
 	return Table;
+}
+
+const TArray<int32>& FVisexBodyProfile::SliderRows(int32 Group)
+{
+	static const TArray<int32> Rows[2] = {
+		[] { TArray<int32> R; for (int32 i = 0; i < Sliders().Num(); ++i) { if (Sliders()[i].Group == 0) { R.Add(i); } } return R; }(),
+		[] { TArray<int32> R; for (int32 i = 0; i < Sliders().Num(); ++i) { if (Sliders()[i].Group == 1) { R.Add(i); } } return R; }(),
+	};
+	return Rows[FMath::Clamp(Group, 0, 1)];
+}
+
+const TArray<FVisexHairStyle>& FVisexBodyProfile::HairStyles()
+{
+	// both share the card atlas and material; elf: swept behind the ears, gathered at the
+	// back, a thin lock each side with its own physics (research e3555b4, Tema 2026-11-10)
+	static const TArray<FVisexHairStyle> Styles = {
+		{TEXT("Long"), LOCTEXT("HairLong", "Long, straight"),
+			TEXT("/Game/Character/Hair/SKM_HairCards.SKM_HairCards"), TEXT("/Game/Character/Hair/ABP_HairCards.ABP_HairCards_C")},
+		{TEXT("Elf"), LOCTEXT("HairElf", "Elven, swept back"),
+			TEXT("/Game/Character/Hair/SKM_HairElf.SKM_HairElf"), TEXT("/Game/Character/Hair/ABP_HairElf.ABP_HairElf_C")},
+	};
+	return Styles;
+}
+
+int32 FVisexBodyProfile::HairIndex(FName Name)
+{
+	const int32 I = HairStyles().IndexOfByPredicate([Name](const FVisexHairStyle& S) { return S.Name == Name; });
+	return I == INDEX_NONE ? 0 : I;
 }
 
 FText FVisexBodyProfile::AbsName(float Abs)
@@ -129,6 +163,14 @@ const TArray<FVisexOutfit>& FVisexBodyProfile::Outfits()
 		Out.Cloth = Cloth;
 		return Out;
 	};
+	auto L = [](const TCHAR* Name, const FText& Label)
+	{
+		FVisexOutfit Out;
+		Out.Name = Name;
+		Out.Label = Label;
+		Out.bLocked = true;
+		return Out;
+	};
 	// The bodystocking, alone or with a satin skirt over it (Tema, 2026-11-10). Meshes: Tools/blender_outfit.py, imported by
 	// Tools/char_outfit.py. The other six (Noir, Garter, Cocoa, Fishnet, Catsuit, Sheer) are
 	// still on disk under /Game/Character/Outfits and /Game/Character/Clothes; add a row to
@@ -138,6 +180,13 @@ const TArray<FVisexOutfit>& FVisexBodyProfile::Outfits()
 		O(TEXT("Bodystocking"), LOCTEXT("OutfitBodystocking", "Sheer bodystocking"), TEXT("/Game/Character/Clothes/SKM_Outfit_Bodystocking.SKM_Outfit_Bodystocking")),
 		O(TEXT("BodystockingSkirt"), LOCTEXT("OutfitBodystockingSkirt", "Bodystocking and skirt"), TEXT("/Game/Character/Clothes/SKM_Outfit_Bodystocking.SKM_Outfit_Bodystocking"),
 			TEXT("/Game/Character/Clothes/CA_Skirt.CA_Skirt")),   // the skirt is Chaos cloth (Docs/Research/STUDY_SKIRT_SIM.md)
+		// the dressing room's locked costumes: listed, not wearable yet (unlocked in play or
+		// bought, later; Tema, 2026-11-11). Choosing one shows "under construction".
+		L(TEXT("Noir"),    LOCTEXT("OutfitNoir", "Noir lace")),
+		L(TEXT("Garter"),  LOCTEXT("OutfitGarter", "Garter set")),
+		L(TEXT("Cocoa"),   LOCTEXT("OutfitCocoa", "Cocoa satin")),
+		L(TEXT("Fishnet"), LOCTEXT("OutfitFishnet", "Fishnet")),
+		L(TEXT("Catsuit"), LOCTEXT("OutfitCatsuit", "Latex catsuit")),
 	};
 	return Table;
 }
@@ -145,7 +194,7 @@ const TArray<FVisexOutfit>& FVisexBodyProfile::Outfits()
 int32 FVisexBodyProfile::OutfitIndex(FName Name)
 {
 	const int32 I = Outfits().IndexOfByPredicate([Name](const FVisexOutfit& O) { return O.Name == Name; });
-	return I == INDEX_NONE ? 0 : I;
+	return I == INDEX_NONE || Outfits()[I].bLocked ? 0 : I;
 }
 
 #undef LOCTEXT_NAMESPACE

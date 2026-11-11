@@ -2,6 +2,7 @@
 
 #include "VisexMenuWidget.h"
 #include "VisexBodyEditor.h"
+#include "VisexMenuLayoutEditor.h"
 #include "VisexPhotoMode.h"
 #include "VisexQATour.h"
 #include "VisexSettings.h"
@@ -15,6 +16,7 @@
 #include "Components/SkyLightComponent.h"
 #include "Components/SpotLightComponent.h"
 #include "Engine/DirectionalLight.h"
+#include "Engine/GameViewportClient.h"
 #include "Engine/RectLight.h"
 #include "Engine/SpotLight.h"
 #include "Engine/PostProcessVolume.h"
@@ -179,20 +181,21 @@ void AVisexMenuDirector::ShowMenu()
 			MenuFocal = Lens->CurrentFocalLength;
 			MenuFStop = Lens->CurrentAperture;
 			MenuFilmback = Lens->Filmback;
+			bMenuConstrain = Lens->bConstrainAspectRatio;
 			bHaveLens = true;
 		}
+		// a cine camera letterboxes to its sensor's 16:9 by default, the play camera fills the
+		// window: on any other window the bars snapped off where the Start move lands (QA 4:3)
+		Lens->bConstrainAspectRatio = bMenuFillsWindow ? false : bMenuConstrain;
 		// a bigger sensor with a matching focal length frames the same and blurs more
 		const float Scale = FMath::Max(1.f, MenuSensorScale);
 		Lens->Filmback = MenuFilmback;
 		Lens->Filmback.SensorWidth *= Scale;
 		Lens->Filmback.SensorHeight *= Scale;
-		const float Focal = (MenuFocalLength > 0.f ? MenuFocalLength : MenuFocal) * Scale;
 		const float Stop = MenuAperture > 0.f ? MenuAperture : MenuFStop;
 		// the lens preset's range would clamp these
-		Lens->LensSettings.MinFocalLength = FMath::Min(Lens->LensSettings.MinFocalLength, Focal);
-		Lens->LensSettings.MaxFocalLength = FMath::Max(Lens->LensSettings.MaxFocalLength, Focal);
 		Lens->LensSettings.MinFStop = FMath::Min(Lens->LensSettings.MinFStop, Stop);
-		Lens->SetCurrentFocalLength(Focal);
+		SetMenuFocal(Lens, MenuLensFocal());
 		Lens->SetCurrentAperture(Stop);
 		FCameraFocusSettings Focus = Lens->FocusSettings;
 		Focus.ManualFocusDistance = FVector::Dist(CameraBase.GetLocation(), MenuAim);
@@ -208,19 +211,7 @@ void AVisexMenuDirector::ShowMenu()
 
 	// the panel rides with the camera, turned toward the figure on the right
 	Panel->AttachToComponent(MenuCamera->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
-	// PanelOffset is set for the camera's own lens: a wider menu lens brings the panel in to keep its size on screen
-	const float LensScale = (MenuFocalLength > 0.f && MenuFocal > 0.f) ? MenuFocalLength / MenuFocal : 1.f;
-	Panel->SetRelativeLocation(PanelOffset * LensScale);
-	Panel->SetRelativeRotation(FRotator(0.f, 180.f + PanelYaw, 0.f) + FRotator(0.f, 0.f, PanelRoll));
-	// draw the panel's texture larger and shrink it back to the same size on screen
-	const UVisexMenuWidget* MenuDefaults = Panel->GetWidgetClass()
-		? Cast<UVisexMenuWidget>(Panel->GetWidgetClass()->GetDefaultObject()) : nullptr;
-	const float SS = GetMenuWidget() ? FMath::Max(1.f, GetMenuWidget()->Supersample)
-		: MenuDefaults ? FMath::Max(1.f, MenuDefaults->Supersample) : 1.f;
-	// the widget pads its text for the shade to fade out in: grow the panel to match
-	const float Pad = GetMenuWidget() ? GetMenuWidget()->ShadePadding : MenuDefaults ? MenuDefaults->ShadePadding : 0.f;
-	Panel->SetDrawSize((FVector2D(1100.f, 1000.f) + FVector2D(2.f * Pad)) * SS);
-	Panel->SetRelativeScale3D(FVector(PanelScale * LensScale / SS));
+	PlacePanel();
 	if (UMaterialInterface* Mat = PanelMaterial.LoadSynchronous())
 	{
 		if (Panel->GetMaterial(0) != Mat)
@@ -270,6 +261,8 @@ void AVisexMenuDirector::ShowMenu()
 		for (const FKey& K : BackKeys) { InputComponent->BindKey(K, IE_Pressed, this, &AVisexMenuDirector::Back).bConsumeInput = false; }
 		// the director's input stays on through play, so these work from the game too;
 		// they don't consume, so the pawn still sees its own keys
+		// § (the key left of 1): the menu layout editor
+		InputComponent->BindKey(EKeys::Section, IE_Pressed, this, &AVisexMenuDirector::ToggleLayoutEditor).bConsumeInput = false;
 		for (const FKey& K : MenuKeys)
 		{
 			InputComponent->BindKey(K, IE_Pressed, this, &AVisexMenuDirector::ToggleMenu).bConsumeInput = false;
@@ -286,9 +279,138 @@ UCineCameraComponent* AVisexMenuDirector::GetLens() const
 	return Cine ? Cine->GetCineCameraComponent() : nullptr;
 }
 
+float AVisexMenuDirector::ViewAspect() const
+{
+	FVector2D Size(0.f);
+	if (UGameViewportClient* Viewport = GetWorld() ? GetWorld()->GetGameViewport() : nullptr)
+	{
+		Viewport->GetViewportSize(Size);
+	}
+	return Size.Y > 0.f ? Size.X / Size.Y : 16.f / 9.f;
+}
+
+float AVisexMenuDirector::MenuLensFocal() const
+{
+	float Focal = (MenuFocalLength > 0.f ? MenuFocalLength : MenuFocal) * FMath::Max(1.f, MenuSensorScale);
+	// unboxed, the view keeps the lens's horizontal field (as the play camera does), so a
+	// window wider than the shot would crop her head and feet: widen to keep its height
+	if (bMenuFillsWindow && MenuFilmback.SensorHeight > 0.f)
+	{
+		const float Shot = MenuFilmback.SensorWidth / MenuFilmback.SensorHeight;
+		const float Window = ViewAspect();
+		if (Window > Shot)
+		{
+			Focal *= Shot / Window;
+		}
+	}
+	return Focal;
+}
+
+void AVisexMenuDirector::SetMenuFocal(UCineCameraComponent* Lens, float Focal)
+{
+	// the lens preset's range would clamp it
+	Lens->LensSettings.MinFocalLength = FMath::Min(Lens->LensSettings.MinFocalLength, Focal);
+	Lens->LensSettings.MaxFocalLength = FMath::Max(Lens->LensSettings.MaxFocalLength, Focal);
+	Lens->SetCurrentFocalLength(Focal);
+	MenuViewAspect = ViewAspect();
+}
+
 UVisexMenuWidget* AVisexMenuDirector::GetMenuWidget() const
 {
 	return Panel ? Cast<UVisexMenuWidget>(Panel->GetUserWidgetObject()) : nullptr;
+}
+
+void AVisexMenuDirector::PlacePanel()
+{
+	if (!bHaveLayout)
+	{
+		// the class's own values are the built-in layout; a saved one goes over them
+		const UVisexMenuWidget* D = Panel && Panel->GetWidgetClass()
+			? Cast<UVisexMenuWidget>(Panel->GetWidgetClass()->GetDefaultObject()) : nullptr;
+		D = D ? D : GetDefault<UVisexMenuWidget>();
+		Layout.Offset = PanelOffset;
+		Layout.Yaw = PanelYaw;
+		Layout.Pitch = PanelPitch;
+		Layout.Roll = PanelRoll;
+		Layout.Scale = PanelScale;
+		Layout.LogoSize = D->TitleSize;
+		Layout.LogoSpacing = D->TitleLetterSpacing;
+		Layout.LogoGap = D->LogoGap;
+		Layout.ItemSize = D->ItemSize;
+		Layout.ItemGap = D->ItemGap;
+		BuiltInLayout = Layout;
+		FVisexMenuLayout::Load(Layout);
+		bHaveLayout = true;
+		PanelOffset = Layout.Offset;
+		PanelYaw = Layout.Yaw;
+		PanelPitch = Layout.Pitch;
+		PanelRoll = Layout.Roll;
+		PanelScale = Layout.Scale;
+	}
+	PushLayoutToWidget();
+	// PanelOffset is set for the camera's own lens: a wider menu lens brings the panel in to keep its size on screen
+	const float LensScale = (MenuFocalLength > 0.f && MenuFocal > 0.f) ? MenuFocalLength / MenuFocal : 1.f;
+	Panel->SetRelativeLocation(PanelOffset * LensScale);
+	Panel->SetRelativeRotation(FRotator(PanelPitch, 180.f + PanelYaw, PanelRoll));
+	// draw the panel's texture larger and shrink it back to the same size on screen
+	const UVisexMenuWidget* MenuDefaults = Panel->GetWidgetClass()
+		? Cast<UVisexMenuWidget>(Panel->GetWidgetClass()->GetDefaultObject()) : nullptr;
+	const float SS = GetMenuWidget() ? FMath::Max(1.f, GetMenuWidget()->Supersample)
+		: MenuDefaults ? FMath::Max(1.f, MenuDefaults->Supersample) : 1.f;
+	// the widget pads its text for the shade to fade out in: grow the panel to match
+	const float Pad = GetMenuWidget() ? GetMenuWidget()->ShadePadding : MenuDefaults ? MenuDefaults->ShadePadding : 0.f;
+	Panel->SetDrawSize((FVector2D(1100.f, 1000.f) + FVector2D(2.f * Pad)) * SS);
+	Panel->SetRelativeScale3D(FVector(PanelScale * LensScale / SS));
+}
+
+void AVisexMenuDirector::PushLayoutToWidget()
+{
+	if (UVisexMenuWidget* W = GetMenuWidget())
+	{
+		W->TitleSize = Layout.LogoSize;
+		W->TitleLetterSpacing = Layout.LogoSpacing;
+		W->LogoGap = Layout.LogoGap;
+		W->ItemSize = Layout.ItemSize;
+		W->ItemGap = Layout.ItemGap;
+		if (Page == 0)
+		{
+			W->Title = FText::FromString(Layout.LogoText());
+			W->Refresh();
+		}
+		MarkPanel();
+	}
+}
+
+void AVisexMenuDirector::ApplyLayout(const FVisexMenuLayout& InLayout)
+{
+	Layout = InLayout;
+	bHaveLayout = true;
+	PanelOffset = Layout.Offset;
+	PanelYaw = Layout.Yaw;
+	PanelPitch = Layout.Pitch;
+	PanelRoll = Layout.Roll;
+	PanelScale = Layout.Scale;
+	if (Panel && MenuCamera)
+	{
+		PlacePanel();
+	}
+}
+
+void AVisexMenuDirector::ToggleLayoutEditor()
+{
+	// the start menu's own page only: not settings, not the body page, not in play
+	if (!LayoutEditor && (!bOpen || Page > 0))
+	{
+		return;
+	}
+	if (!LayoutEditor)
+	{
+		LayoutEditor = GetWorld()->SpawnActor<AVisexMenuLayoutEditor>();
+	}
+	if (LayoutEditor)
+	{
+		LayoutEditor->Toggle(this);
+	}
 }
 
 void AVisexMenuDirector::MoveSelection(int32 Delta)
@@ -349,7 +471,7 @@ void AVisexMenuDirector::CloseSettings()
 	{
 		// back on the main menu, on the Settings item
 		const UVisexMenuWidget* Defaults = W->GetClass()->GetDefaultObject<UVisexMenuWidget>();
-		W->SetPage(Defaults->Title, {}, 0, Defaults->Items, {}, 3);
+		W->SetPage(FText::FromString(Layout.LogoText()), {}, 0, Defaults->Items, {}, ItemSettings);
 	}
 }
 
@@ -388,16 +510,19 @@ void AVisexMenuDirector::OnItemChosen_Implementation(int32 Index)
 {
 	switch (Index)
 	{
-	case 1:
+	case ItemBody:
 		OpenBody();
 		break;
-	case 2:
+	case ItemWardrobe:
+		OpenWardrobe();
+		break;
+	case ItemPhoto:
 		OpenPhoto();
 		break;
-	case 3:
+	case ItemSettings:
 		OpenSettings();
 		break;
-	case 4:
+	case ItemQuit:
 		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
 		break;
 	default:
@@ -406,8 +531,9 @@ void AVisexMenuDirector::OnItemChosen_Implementation(int32 Index)
 	}
 }
 
-void AVisexMenuDirector::OpenBody()
+void AVisexMenuDirector::OpenCharacterPage(int32 InPage)
 {
+	CharacterPage = InPage;
 	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
 	if (!bOpen || !PC)
 	{
@@ -444,7 +570,7 @@ void AVisexMenuDirector::OpenBodyNow()
 	}
 	if (BodyEditor)
 	{
-		BodyEditor->Open();
+		BodyEditor->OpenPage(CharacterPage);
 	}
 	if (!BodyEditor || !BodyEditor->IsOpen())
 	{
@@ -573,13 +699,13 @@ void AVisexMenuDirector::HandlePhotoClosed()
 	// the scene returns; she walks back onto the column behind a quick dip to black
 	SetSceneStripped(false);
 	bStudio = false;
-	BackToMenu(PhotoMode ? PhotoMode->BlendTime : 0.f, 2);
+	BackToMenu(PhotoMode ? PhotoMode->BlendTime : 0.f, ItemPhoto);
 }
 
 void AVisexMenuDirector::HandleBodyClosed()
 {
 	bStudio = false;
-	BackToMenu(BodyEditor ? BodyEditor->BlendTime : 0.f, 1);
+	BackToMenu(BodyEditor ? BodyEditor->BlendTime : 0.f, CharacterPage == 1 ? ItemWardrobe : ItemBody);
 }
 
 void AVisexMenuDirector::BackToMenu(float BlendTime, int32 Select)
@@ -851,14 +977,20 @@ void AVisexMenuDirector::Lean(bool bFromStanding)
 	bLeaning = true;
 	static const FName Slot(TEXT("DefaultSlot"));
 	UAnimSequence* Down = bFromStanding ? LeanDown.LoadSynchronous() : nullptr;
+	LoadedLean.AddUnique(Idle);
+	if (Down) { LoadedLean.AddUnique(Down); }
 	if (Down)
 	{
 		Anim->PlaySlotAnimationAsDynamicMontage(Down, Slot, 0.25f, 0.f, 1.f, 1);
-		GetWorldTimerManager().SetTimer(StandTimer, FTimerDelegate::CreateWeakLambda(this, [this, Idle]()
+		// LoadedLean keeps the clip alive; the timer holds it weakly too, so if that ever slips it
+		// skips the idle instead of playing freed memory (0298)
+		GetWorldTimerManager().SetTimer(StandTimer, FTimerDelegate::CreateWeakLambda(this, [this, WeakIdle = TWeakObjectPtr<UAnimSequence>(Idle)]()
 		{
-			if (UAnimInstance* A = GetPawnAnim())
+			UAnimSequence* Clip = WeakIdle.Get();
+			UAnimInstance* A = GetPawnAnim();
+			if (Clip && A)
 			{
-				A->PlaySlotAnimationAsDynamicMontage(Idle, Slot, 0.f, 0.3f, 1.f, 1000000);
+				A->PlaySlotAnimationAsDynamicMontage(Clip, Slot, 0.f, 0.3f, 1.f, 1000000);
 			}
 		}), Down->GetPlayLength(), false);
 	}
@@ -884,6 +1016,7 @@ float AVisexMenuDirector::StandUp()
 	static const FName Slot(TEXT("DefaultSlot"));
 	if (UAnimSequence* Up = LeanUp.LoadSynchronous())
 	{
+		LoadedLean.AddUnique(Up);
 		Anim->PlaySlotAnimationAsDynamicMontage(Up, Slot, 0.15f, 0.35f, 1.f, 1);
 		return Up->GetPlayLength();
 	}
@@ -929,6 +1062,14 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 			+ Right * DriftDistance * FMath::Sin(Clock * W * 1.21f + 0.4f)
 			+ FVector::UpVector * 0.5f * DriftDistance * FMath::Sin(Clock * W * 0.91f + 2.1f);
 		MenuCamera->SetActorLocationAndRotation(Loc, Rot);
+	}
+	// the window changed shape under the menu: keep her whole height in the frame
+	if (bOpen && !bOrbiting && bHaveLens && bMenuFillsWindow && !FMath::IsNearlyEqual(ViewAspect(), MenuViewAspect, 0.001f))
+	{
+		if (UCineCameraComponent* Lens = GetLens())
+		{
+			SetMenuFocal(Lens, MenuLensFocal());
+		}
 	}
 
 	// the first push of the stick after the hand-over cuts the rest of the stand-up: its root
@@ -1022,7 +1163,7 @@ void AVisexMenuDirector::TickOrbit(float DeltaSeconds)
 	if (UCineCameraComponent* Lens = GetLens())
 	{
 		const float HalfW = Lens->Filmback.SensorWidth * 0.5f;
-		const float StartFocal = (MenuFocalLength > 0.f ? MenuFocalLength : MenuFocal) * FMath::Max(1.f, MenuSensorScale);
+		const float StartFocal = MenuLensFocal();
 		const float FovStart = 2.f * FMath::RadiansToDegrees(FMath::Atan(HalfW / FMath::Max(1.f, StartFocal)));
 		const float Fov = FMath::Lerp(FovStart, Follow->FieldOfView, S);
 		Lens->SetCurrentFocalLength(HalfW / FMath::Tan(FMath::DegreesToRadians(Fov * 0.5f)));
