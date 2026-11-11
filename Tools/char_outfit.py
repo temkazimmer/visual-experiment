@@ -25,8 +25,14 @@ BLACK = (0.012, 0.012, 0.016)
 STEEL = dict(Color=(0.78, 0.8, 0.84), Roughness=0.28, Metallic=1.0)
 GOLD = dict(Color=(0.9, 0.62, 0.3), Roughness=0.3, Metallic=1.0)
 WARDROBE = {
-    "Noir": dict(Sheer=dict(Color=BLACK, Opacity=0.5), Lace=dict(Color=BLACK, Opacity=0.5, Cell=3.0),
-                 Satin=dict(Color=BLACK, Roughness=0.3, RoughnessVariation=0.14), Trim=STEEL),
+    # refreshed 2026-11-11: the bodystocking's nylon and bindings, lace cups and welts, steel clasp
+    "Noir": dict(Nylon=dict(Color=(0.006, 0.006, 0.008), CoverTorso=0.55, CoverLeg=0.8, StretchSheer=0.36, SeamStrength=1.0),
+                 Lace=dict(Color=BLACK, Opacity=0.5, Cell=3.0),
+                 Satin=dict(Color=BLACK, Roughness=0.3, RoughnessVariation=0.14),
+                 # bindings as glossy as the satin: where a flat binding cuts across a curve the
+                 # satin under it pokes through, and a matte binding showed it as bright flecks
+                 Binding=dict(_base="Satin", Color=(0.006, 0.006, 0.008), Roughness=0.3, RoughnessVariation=0.14, NormalStrength=0.5),
+                 Trim=STEEL),
     "Garter": dict(Sheer=dict(Color=BLACK, Opacity=0.5), Lace=dict(Color=BLACK, Opacity=0.3, Cell=4.0),
                    Satin=dict(Color=BLACK, Roughness=0.42, RoughnessVariation=0.2), Trim=GOLD),
     "Cocoa": dict(Satin=dict(Color=(0.14, 0.05, 0.025), Roughness=0.26, RoughnessVariation=0.18, NormalStrength=0.9), Trim=GOLD),
@@ -351,6 +357,17 @@ def sheer_opacity(m, base, y=200):
 
 
 def done(m):
+    # depth bias: every vertex pulled DepthBias cm toward the camera, along its view ray, so
+    # nothing moves on screen; it only wins the depth test. Cloth sits 2-3 mm off the skin,
+    # and where a deep bend folds the skin (Mermaid's hip) the skin overtook it and showed
+    # through in flecks, broke bindings and dashed the seam tapes
+    # (CameraVector is pixel-shader only: the view ray is camera position minus world position)
+    ray = op(m, unreal.MaterialExpressionSubtract, node(m, unreal.MaterialExpressionCameraPositionWS, -900, 1400),
+             node(m, unreal.MaterialExpressionWorldPosition, -900, 1440), 1400)
+    to_cam = node(m, unreal.MaterialExpressionNormalize, -300, 1400)
+    link(ray, to_cam, "VectorInput")
+    bias = op(m, unreal.MaterialExpressionMultiply, to_cam, scalar(m, "DepthBias", 0.5, 1480), 1460)
+    mel.connect_material_property(bias, "", MP.MP_WORLD_POSITION_OFFSET)
     mel.recompile_material(m)
     unreal.EditorAssetLibrary.save_loaded_asset(m)
     return m
@@ -376,7 +393,9 @@ def build_materials():
     if KEEP_BASES:
         for n in ("Sheer", "Nylon", "Lace", "Net", "Satin", "Latex", "Trim"):
             base[n] = unreal.load_asset(DIR + "/M_Outfit" + n)
-        base["Tartan"] = build_tartan(weave, detail)
+        # Tartan too, once it exists: a run for another outfit must not re-save it (bundle-02)
+        have = unreal.EditorAssetLibrary.does_asset_exist(DIR + "/M_OutfitTartan")
+        base["Tartan"] = unreal.load_asset(DIR + "/M_OutfitTartan") if have else build_tartan(weave, detail)
         return base
 
     m = material("M_OutfitSheer", T)
