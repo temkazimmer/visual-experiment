@@ -4,7 +4,8 @@ vertex grid and settled heights, so it never dips into the sand. (Crest plumes
 were tried and removed: hovering sheet edges read as torn geometry.)
 
 Lit translucency, depth fade where it touches anything, gone by ~50 m from the
-camera. Labelled Dunes_Blow so photo mode keeps it. No collision. Idempotent;
+camera, and faded where the view grazes the sheet (a low camera saw it edge-on as
+horizontal lines). Labelled Dunes_Blow so photo mode keeps it. No collision. Idempotent;
 re-run after add_dunes.py.
 
 Run live: python3 Tools/ue.py Tools/add_blowing_sand.py
@@ -17,6 +18,7 @@ HERE = os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.proj
 LIFT = 15.0                  # cm over the sand
 SPEED = 650.0                # cm/s, gusts downwind
 OPACITY = 0.45
+EDGE_LO, EDGE_HI = 0.06, 0.3         # |cos| view-to-sheet: gone below, full above
 FADE_NEAR, FADE_FAR = 2000.0, 5000.0    # cm from the camera: full until, gone by (grazing sheets smear further out)
 SAND = (1.0, 0.74, 0.5)       # paler than the dunes: airborne sand catches light
 GLOW = 0.25                   # emissive share, so sheets read against same-coloured sand
@@ -58,7 +60,10 @@ float streak = lerp(lerp(s00, s10, qf.x), lerp(s01, s11, qf.x), qf.y);
 float d = distance(WP, Cam);
 float near = 1 - smoothstep(FadeNear, FadeFar, d);
 float plume = exp(-Gap / 1.2) * (1 + 1.5 * saturate(Gap * 4) * (1 - saturate(Gap / 2)));   // thick just off the crest
-return saturate(gust * (0.35 + 0.65 * streak) * plume * near * Opacity);
+// seen edge-on (a low camera skimming the sheet) it collapses into bright horizontal lines:
+// fade it out as the view grazes the surface
+float edge = smoothstep(EdgeFadeLo, EdgeFadeHi, abs(dot(normalize(Cam - WP), normalize(N))));
+return saturate(gust * (0.35 + 0.65 * streak) * plume * near * edge * Opacity);
 """
 
 
@@ -93,14 +98,16 @@ def material():
     cu = node(unreal.MaterialExpressionCustom, -500, 100)
     cu.set_editor_property("code", NOISE)
     cu.set_editor_property("output_type", unreal.CustomMaterialOutputType.CMOT_FLOAT1)
-    consts = dict(Speed=SPEED, FadeNear=FADE_NEAR, FadeFar=FADE_FAR, Opacity=OPACITY)
+    consts = dict(Speed=SPEED, FadeNear=FADE_NEAR, FadeFar=FADE_FAR, Opacity=OPACITY,
+                  EdgeFadeLo=EDGE_LO, EdgeFadeHi=EDGE_HI)
     ins = []
-    for n in ["WP", "Cam", "T", "Gap"] + list(consts):
+    for n in ["WP", "Cam", "T", "Gap", "N"] + list(consts):
         ci = unreal.CustomInput()
         ci.set_editor_property("input_name", n)
         ins.append(ci)
     cu.set_editor_property("inputs", ins)
-    for n, e in (("WP", wp), ("Cam", cam), ("T", t), ("Gap", gap)):
+    nrm = node(unreal.MaterialExpressionVertexNormalWS, -900, 380)
+    for n, e in (("WP", wp), ("Cam", cam), ("T", t), ("Gap", gap), ("N", nrm)):
         mel.connect_material_expressions(e, "", cu, n)
     y = 450
     for n, v in consts.items():

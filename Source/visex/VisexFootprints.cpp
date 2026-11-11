@@ -94,7 +94,7 @@ void AVisexFootprints::Tick(float DeltaSeconds)
 		MoundH[f] = FMath::FInterpConstantTo(MoundH[f], MoundTarget[f], DeltaSeconds, MoundRate);
 		M->SetVisibility(MoundH[f] > 0.05f);
 		FVector S = M->GetRelativeScale3D();
-		S.Z = MoundH[f] / 100.f;
+		S.Z = MoundH[f] / 10.f;     // SM_SandMound is 10 cm high
 		M->SetWorldScale3D(S);
 	}
 }
@@ -142,7 +142,7 @@ void AVisexFootprints::Feet(ACharacter* Pawn, USkeletalMeshComponent* Mesh)
 			}
 			// slightly sunk, so its rim meets the sand without a seam
 			Mounds[f]->SetWorldLocationAndRotation(Floor - Up * 0.3f, FRotationMatrix::MakeFromZX(Up, Fwd).Rotator());
-			Mounds[f]->SetWorldScale3D(FVector(MoundSize.X / 100.f, MoundSize.Y / 100.f, FMath::Max(MoundH[f], 0.05f) / 100.f));
+			Mounds[f]->SetWorldScale3D(FVector(MoundSize.X / 100.f, MoundSize.Y / 100.f, FMath::Max(MoundH[f], 0.05f) / 10.f));
 		}
 		if (bDebug)
 		{
