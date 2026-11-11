@@ -11,6 +11,9 @@
 #include "Components/InputComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/Engine.h"
+#include "EngineUtils.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "HAL/IConsoleManager.h"
 #include "Engine/GameViewportClient.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/PlayerController.h"
@@ -27,6 +30,9 @@ namespace
 	const FName Slot(TEXT("DefaultSlot"));
 	// same folder and order as the pose wheel, so index i here is its pose i
 	const TCHAR* PoseFolder = TEXT("/Game/Characters/Poses");
+	// A_Pose_Ledge isn't on main yet: this lets the FeetUp pose stand in for it
+	TAutoConsoleVariable<int32> CVarLedgeTest(TEXT("visex.Photo.LedgeTest"), 0,
+		TEXT("1: photo mode treats the FeetUp pose as Ledge and puts her on the PhotoLedge stone"));
 }
 
 AVisexPhotoMode::AVisexPhotoMode()
@@ -174,6 +180,7 @@ void AVisexPhotoMode::ClearMotion()
 	{
 		return;
 	}
+	LeaveLedge();
 	if (PlayingPose != INDEX_NONE)
 	{
 		if (UVisexPoseWheelComponent* Wheel = Char->FindComponentByClass<UVisexPoseWheelComponent>())
@@ -190,6 +197,103 @@ void AVisexPhotoMode::ClearMotion()
 		{
 			Visex->PhotoGait = -1.f;
 		}
+	}
+}
+
+bool AVisexPhotoMode::IsLedgeMotion(const FString& Name)
+{
+	return Name.Contains(TEXT("Ledge")) || (CVarLedgeTest.GetValueOnGameThread() != 0 && Name == TEXT("FeetUp"));
+}
+
+bool AVisexPhotoMode::SnapToLedge()
+{
+	ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	if (!Char)
+	{
+		return false;
+	}
+	if (!Ledge)
+	{
+		for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+		{
+			if (It->ActorHasTag(LedgeTag)) { Ledge = *It; break; }
+		}
+	}
+	UPrimitiveComponent* Stone = Ledge ? Cast<UPrimitiveComponent>(Ledge->GetRootComponent()) : nullptr;
+	if (!Stone)
+	{
+		return false;
+	}
+	if (!bOnLedge)
+	{
+		GroundSpot = Char->GetActorTransform();
+		bLedgeWasHidden = Ledge->IsHidden();
+	}
+	// the menu strips the scene for photo mode; the ledge comes back for this pose
+	Ledge->SetActorHiddenInGame(false);
+	Ledge->SetActorEnableCollision(true);
+
+	// she lies along its long axis, her root a little back of centre (she kneels there and
+	// reaches forward onto her forearms)
+	const FTransform T = Stone->GetComponentTransform();
+	const FBox Local = Stone->CalcBounds(FTransform::Identity).GetBox();
+	const FVector Size = Local.GetSize() * T.GetScale3D().GetAbs();
+	FVector Dir = T.GetUnitAxis(Size.X >= Size.Y ? EAxis::X : EAxis::Y);
+	Dir.Z = 0.f;
+	Dir = Dir.GetSafeNormal();
+	const FVector Centre = T.TransformPosition(Local.GetCenter());
+	const FVector Root = Centre + Dir * LedgeAlong;
+	const FBox World = Stone->Bounds.GetBox();
+	// the stone's own top under her root, not whatever else is near
+	float Top = World.Max.Z;
+	FHitResult Hit;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(VisexLedgeTop), true);
+	if (Stone->LineTraceComponent(Hit, FVector(Root.X, Root.Y, World.Max.Z + 50.f), FVector(Root.X, Root.Y, World.Min.Z - 10.f), Params))
+	{
+		Top = Hit.ImpactPoint.Z;
+	}
+	const float Half = Char->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	const FRotator Facing(0.f, Dir.Rotation().Yaw, 0.f);
+	// her capsule ignores the stone (it doesn't block pawns), so she is held, not walking
+	if (UCharacterMovementComponent* Move = Char->GetCharacterMovement())
+	{
+		Move->StopMovementImmediately();
+		Move->DisableMovement();
+	}
+	Char->SetActorLocationAndRotation(FVector(Root.X, Root.Y, Top + Half), Facing, false, nullptr, ETeleportType::TeleportPhysics);
+	LedgeSpot = Char->GetActorTransform();
+	bOnLedge = true;
+
+	// from her side, a little behind, low, on her hips
+	bFree = false;
+	Yaw = Facing.Yaw + LedgeCameraAngle;
+	Distance = FMath::Clamp(LedgeCameraDistance, MinDistance, MaxDistance);
+	Height = FMath::Clamp(LedgeCameraHeight, MinHeight, MaxHeight);
+	LookZ = LookGoal = -1.f;
+	LookPoint = FVector::ZeroVector;
+	return true;
+}
+
+void AVisexPhotoMode::LeaveLedge()
+{
+	if (!bOnLedge)
+	{
+		return;
+	}
+	bOnLedge = false;
+	LookZ = LookGoal = -1.f;
+	if (ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0)))
+	{
+		Char->SetActorTransform(GroundSpot, false, nullptr, ETeleportType::TeleportPhysics);
+		if (UCharacterMovementComponent* Move = Char->GetCharacterMovement())
+		{
+			Move->SetMovementMode(MOVE_Walking);
+		}
+	}
+	if (Ledge && bLedgeWasHidden)
+	{
+		Ledge->SetActorHiddenInGame(true);
+		Ledge->SetActorEnableCollision(false);
 	}
 }
 
@@ -220,6 +324,15 @@ void AVisexPhotoMode::SetMotion(int32 Index)
 	if (UVisexAnimInstance* Visex = Cast<UVisexAnimInstance>(Anim))
 	{
 		Visex->PhotoGait = Loop ? M.Gait : -1.f;
+	}
+	// the Ledge pose is shot on the stone slab; any other motion puts her back where she stood
+	if (M.Pose != INDEX_NONE && IsLedgeMotion(M.Name))
+	{
+		SnapToLedge();
+	}
+	else
+	{
+		LeaveLedge();
 	}
 	if (M.Pose != INDEX_NONE)
 	{
@@ -294,6 +407,19 @@ void AVisexPhotoMode::Tick(float DeltaSeconds)
 	if (!bOpen || !InputComponent)
 	{
 		return;
+	}
+	// on the ledge she is held: getting up from the last pose hands her back to walking, and
+	// walking, with nothing under her capsule, she would drop off the stone
+	if (bOnLedge)
+	{
+		ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+		UCharacterMovementComponent* Move = Char ? Char->GetCharacterMovement() : nullptr;
+		if (Move && Move->MovementMode != MOVE_None)
+		{
+			Move->StopMovementImmediately();
+			Move->DisableMovement();
+			Char->SetActorLocation(LedgeSpot.GetLocation(), false, nullptr, ETeleportType::TeleportPhysics);
+		}
 	}
 	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
 	auto Axis = [this](const FKey& K) { return InputComponent->GetAxisKeyValue(K); };
@@ -471,7 +597,13 @@ void AVisexPhotoMode::PlaceCamera()
 		LookGoal = Target;
 	}
 	LookZ = LookZ < 0.f ? LookGoal : FMath::FInterpTo(LookZ, LookGoal, GetWorld()->GetDeltaSeconds(), 1.5f);
-	const FVector Look = Feet + FVector(0.f, 0.f, FMath::Lerp(LookZ * 0.75f, LookZ, FMath::Clamp(Height / 150.f, 0.f, 1.f)));
+	FVector Look = Feet + FVector(0.f, 0.f, FMath::Lerp(LookZ * 0.75f, LookZ, FMath::Clamp(Height / 150.f, 0.f, 1.f)));
+	if (bOnLedge)
+	{
+		// on the ledge the camera holds on her hips themselves (she reaches forward of her root)
+		LookPoint = LookPoint.IsZero() ? Hips : FMath::VInterpTo(LookPoint, Hips, GetWorld()->GetDeltaSeconds(), 1.5f);
+		Look = LookPoint;
+	}
 	// keep the lens out of stone and sand: come in to whatever is between her and the camera
 	// (never closer than the near limit, so the lens can't end up inside her)
 	FHitResult Hit;

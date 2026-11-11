@@ -509,6 +509,46 @@ bool UVisexPoseWheelComponent::IsOnFloor() const
 
 static TAutoConsoleVariable<float> CVarContact(TEXT("visex.Contact"), 1.f, TEXT("Hands and hips meet the surface under them: 0 off, 1 on"));
 static TAutoConsoleVariable<float> CVarContactSnap(TEXT("visex.Contact.Snap"), 6.f, TEXT("A hand or the hips this close above a surface (cm) are meant to rest on it"));
+static TAutoConsoleVariable<float> CVarArmPush(TEXT("visex.Contact.ArmPush"), 1.f, TEXT("Hands and forearms are pushed out of walls, the column and her own body: 0 off, 1 on"));
+
+// The gain of a fix that is read back from the drawn pose. That pose can be a frame old, and with
+// a frame of lag a gain above 1/4 rings: at 15 fps the old dt x 6 (0.4) swung the hands 5 cm a
+// frame. So the gain follows the clock (1 - e^(-rate dt), the same in time at any frame rate)
+// but never passes 0.2 a frame, and the change is capped at MaxSpeed cm/s.
+static float FixGain(float DeltaTime, float Rate)
+{
+	return FMath::Min(1.f - FMath::Exp(-Rate * DeltaTime), 0.2f);
+}
+static float FixStep(float Step, float DeltaTime, float Rate, float MaxSpeed)
+{
+	const float Most = MaxSpeed * DeltaTime;
+	return FMath::Clamp(Step * FixGain(DeltaTime, Rate), -Most, Most);
+}
+
+// The menu's lean, its beats and the stand-up (AVisexMenuDirector) are clips named A_Menu_*,
+// played as slot montages. Their hands are solved onto the drum, so nothing needs fixing.
+static bool PlaysMenuClip(const UAnimInstance* Anim)
+{
+	for (const FAnimMontageInstance* Inst : Anim->MontageInstances)
+	{
+		if (!Inst || !Inst->Montage || !Inst->IsActive())
+		{
+			continue;
+		}
+		for (const FSlotAnimationTrack& Slot : Inst->Montage->SlotAnimTracks)
+		{
+			for (const FAnimSegment& Segment : Slot.AnimTrack.AnimSegments)
+			{
+				const UAnimSequenceBase* Clip = Segment.GetAnimReference();
+				if (Clip && Clip->GetName().StartsWith(TEXT("A_Menu_")))
+				{
+					return true;
+				}
+			}
+		}
+	}
+	return false;
+}
 
 void UVisexPoseWheelComponent::UpdateContacts(float DeltaTime)
 {
@@ -535,6 +575,8 @@ void UVisexPoseWheelComponent::UpdateContacts(float DeltaTime)
 	const UCharacterMovementComponent* Move = Character->GetCharacterMovement();
 	const bool bOn = CVarContact.GetValueOnGameThread() > 0.f && !(Move && Move->IsFalling());
 	const float Snap = CVarContactSnap.GetValueOnGameThread();
+	bMenuClip = PlaysMenuClip(Anim);
+	const bool bHands = bOn && !bMenuClip;      // the menu's hands are on the drum already: the fixes ease out
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(VisexContact), false, Character);
 	const auto SurfaceUnder = [&](const FVector& P, double From, double& OutZ)
 	{
@@ -571,9 +613,9 @@ void UVisexPoseWheelComponent::UpdateContacts(float DeltaTime)
 			*Gaps[i] = Raw;
 			// resting (close above, or inside but not buried under an overhang): onto it
 			const float K = Raw < -15.f ? 0.f : 1.f - FMath::SmoothStep(Snap, Snap + 4.f, Raw);
-			Step = bOn && K > 0.f ? -Drawn * K - *Fixes[i] * (1.f - K) : -(*Fixes[i]);
+			Step = bHands && K > 0.f ? -Drawn * K - *Fixes[i] * (1.f - K) : -(*Fixes[i]);
 		}
-		*Fixes[i] = FMath::Clamp(*Fixes[i] + Step * FMath::Min(1.f, DeltaTime * 6.f), -12.f, 15.f);
+		*Fixes[i] = FMath::Clamp(*Fixes[i] + FixStep(Step, DeltaTime, 6.f, 40.f), -12.f, 15.f);
 	}
 	const FVector Up = Mesh->GetComponentTransform().InverseTransformVector(FVector::UpVector);
 	Anim->HandFixL = Up * HandFixZL;
@@ -614,9 +656,16 @@ void UVisexPoseWheelComponent::UpdateContacts(float DeltaTime)
 		};
 		FCollisionQueryParams ArmParams(SCENE_QUERY_STAT(VisexArm), false, Character);
 		const FCollisionShape Ball = FCollisionShape::MakeSphere(4.f);
+		const bool bPush = !bMenuClip && CVarArmPush.GetValueOnGameThread() > 0.f;
 		for (int32 i = 0; i < 2; ++i)
 		{
 			FVector Push = FVector::ZeroVector;
+			if (!bPush)
+			{
+				ArmPush[i] = FMath::Lerp(ArmPush[i], FVector::ZeroVector, FixGain(DeltaTime, 4.f));
+				(i == 0 ? ArmPushL : ArmPushR) = float(ArmPush[i].Size());
+				continue;
+			}
 			const FVector Elbow = Mesh->GetSocketLocation(ArmBones[i][1]), Wrist = Mesh->GetSocketLocation(ArmBones[i][2]);
 			const FVector Palm = Mesh->DoesSocketExist(ArmBones[i][3]) ? Mesh->GetSocketLocation(ArmBones[i][3]) : Wrist;
 			for (const TPair<FVector, FVector>& Seg : {TPair<FVector, FVector>(Mesh->GetSocketLocation(ArmBones[i][0]), Elbow), TPair<FVector, FVector>(Elbow, Palm)})
@@ -655,7 +704,8 @@ void UVisexPoseWheelComponent::UpdateContacts(float DeltaTime)
 					Push += D / Dist * (Want - Dist);
 				}
 			}
-			ArmPush[i] = FMath::VInterpTo(ArmPush[i], Push.GetClampedToMaxSize(25.f), DeltaTime, Push.IsNearlyZero() ? 4.f : 10.f);
+			const FVector Ease = (Push.GetClampedToMaxSize(25.f) - ArmPush[i]) * FixGain(DeltaTime, Push.IsNearlyZero() ? 4.f : 10.f);
+			ArmPush[i] += Ease.GetClampedToMaxSize(60.f * DeltaTime);   // a sweep that comes and goes moves the hand, it doesn't flick it
 			(i == 0 ? ArmPushL : ArmPushR) = float(ArmPush[i].Size());
 		}
 		Anim->HandFixL += Mesh->GetComponentTransform().InverseTransformVector(ArmPush[0]);
@@ -702,8 +752,8 @@ void UVisexPoseWheelComponent::UpdateContacts(float DeltaTime)
 			}
 		}
 	}
-	SeatFixZ = FMath::Clamp(SeatFixZ + SeatStep * FMath::Min(1.f, DeltaTime * 3.f), -15.f, 30.f);
-	PitchFix = FMath::Clamp(PitchFix + PitchStep * FMath::Min(1.f, DeltaTime * 2.f), -28.f, 28.f);
+	SeatFixZ = FMath::Clamp(SeatFixZ + FixStep(SeatStep, DeltaTime, 3.f, 80.f), -15.f, 30.f);
+	PitchFix = FMath::Clamp(PitchFix + FixStep(PitchStep, DeltaTime, 2.f, 60.f), -28.f, 28.f);
 	PitchFixDeg = PitchFix;
 }
 

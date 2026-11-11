@@ -54,6 +54,9 @@ FINGER_YAW = globals().get("FINGER_YAW", -150.0)  # fingers down the drum's fron
 ARM_SLACK = globals().get("ARM_SLACK", 0.93)   # the arm reaches at most this much of its length: a soft elbow
 
 def lerp(a, b, t): return tuple(x + (y - x) * t for x, y in zip(a, b))
+SLIDE = globals().get("SLIDE", 16.0)      # degrees a hand may slide on the stone toward its shoulder
+SOLVED = {}
+ARM_MAX = globals().get("ARM_MAX", 0.985)   # the most of its length an arm ever reaches
 
 def on_stone(x, deg):
     """A point on the column's surface, `deg` from its top toward her."""
@@ -65,12 +68,37 @@ def lean_arms(P):
     for s, side in (("l", 1.0), ("r", -1.0)):
         up, lo, h = "upperarm_" + s, "lowerarm_" + s, "hand_" + s
         arm = (length(sub(pos(lo), pos(up))) + length(sub(pos(h), pos(lo)))) * ARM_SLACK
-        deg = P["hand_deg"]
-        while True:                              # her trunk is turned: a spot one shoulder reaches with a soft
-            pt, n = on_stone(side * P["hand_x"], deg)   # elbow locks the other arm, so that hand slides toward her
-            wrist = add(pt, mul(n, PALM_OFF))   # the wrist bone sits this far off the stone: palm thickness
-            if length(sub(wrist, pos(up))) <= arm or deg >= P["hand_deg"] + 40.0: break
-            deg += 2.0
+        def over(d):                             # how far past a soft elbow's reach the spot at d is
+            pt, n = on_stone(side * P["hand_x"], d)
+            return length(sub(add(pt, mul(n, PALM_OFF)), pos(up))) - arm   # wrist: palm thickness off the stone
+        # Her trunk is turned: a spot one shoulder reaches with a soft elbow locks the other arm, so
+        # that hand sits further up the drum, toward its shoulder, just as far as it must (at most
+        # SLIDE degrees; past that it lets go and the arm straightens toward the spot). The angle
+        # is solved once per key (carry_hands) and splined between keys like every other number,
+        # so a planted hand stays planted through the breaths. The old per-frame 2-degree search
+        # walked away from the shoulder and flung the arm to the far end of its range whenever a
+        # breath crossed the limit: a 7 cm hand pop, 12 cm at the elbow.
+        deg = P.get("deg_" + s)
+        if deg is None:
+            deg = P["hand_deg"]
+            if over(deg) > 0.0:
+                far = deg - SLIDE
+                if over(far) <= 0.0:
+                    near = deg
+                    for _ in range(30):          # bisect: over(near) > 0 >= over(far)
+                        mid = 0.5 * (near + far)
+                        if over(mid) > 0.0: near = mid
+                        else: far = mid
+                deg = far
+        SOLVED[s] = deg
+        pt, n = on_stone(side * P["hand_x"], deg)
+        wrist = add(pt, mul(n, PALM_OFF))
+        # past a soft elbow the reach eases out toward ARM_MAX instead of hitting the arm's full
+        # length: an elbow that snaps straight and then bends again is a kink in its path
+        v = sub(wrist, pos(up)); d = length(v); full = arm / ARM_SLACK
+        if d > arm:
+            room = (ARM_MAX - ARM_SLACK) * full
+            wrist = add(pos(up), mul(v, (arm + room * math.tanh((d - arm) / room)) / d))
         back = norm(cross((1.0, 0.0, 0.0), n))           # along the stone, away from her
         if FINGER_YAW is None:
             fingers = norm(lerp(back, (0.0, 0.0, -1.0), FINGER_DIP))
@@ -121,6 +149,15 @@ STEP.update(foot("l", (12.0, 0.0, 8.5), (0.2, 0.96, -0.2)))
 _mid_r = lerp(sub(LEAN["ball_r"], mul(LEAN["toe_r"], FOOT["r"])), sub(I["ball_r"], mul(I_TOE["r"], FOOT["r"])), 0.5)
 STEP.update(foot("r", add(_mid_r, (0.0, 0.0, 7.0)), (0.0, 0.7, -0.7), (0.0, -1.0, -0.4)))
 STEP["knee_r"] = (-8.0, 60.0, 50.0)
+
+def carry_hands(*keys):
+    """Solve each key's hand spots on its own pose and keep them in the key (deg_l, deg_r)."""
+    for K in keys:
+        K.pop("deg_l", None); K.pop("deg_r", None)
+        build(K)
+        K.update(deg_l=SOLVED["l"], deg_r=SOLVED["r"])
+carry_hands(LEAN, PREP, PUSH, STEP, STAND)
+print("hand spots, deg from the top: " + ", ".join("%s %.1f/%.1f" % (n, K["deg_l"], K["deg_r"]) for n, K in (("lean", LEAN), ("push", PUSH), ("step", STEP))))
 
 UP_KEYS = [(0.0, LEAN), (0.40, PUSH), (0.80, STEP), (1.40, STAND)]
 DOWN_KEYS = [(0.0, STAND), (0.70, STEP), (1.35, PUSH), (1.95, LEAN)]   # settling back, unhurried

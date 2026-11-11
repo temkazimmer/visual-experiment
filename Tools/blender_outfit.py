@@ -41,7 +41,7 @@ PREVIEW = args[2] if len(args) > 2 and not args[2].startswith("--") else None
 ONLY = next((a.split("=", 1)[1].split(",") for a in args if a.startswith("--only=")), None)
 os.makedirs(OUT_DIR, exist_ok=True)
 
-SLOTS = ["Sheer", "Lace", "Net", "Satin", "Latex", "Trim", "Nylon", "Binding", "Tartan"]
+SLOTS = ["Sheer", "Lace", "Net", "Satin", "Latex", "Trim", "Nylon", "Binding", "Tartan", "Jersey"]
 OPAQUE = ("Satin", "Latex", "Trim", "Tartan")
 CL, CP, PERIOD = 48.0, 96.0, 24.0     # nominal leg and torso girth (cm), pattern period
 
@@ -294,7 +294,8 @@ TRIM_PROUD, HW_PROUD = 0.3, 0.6
 NO_SEAM = 9.0        # UVSeam value far from any edge or seam (the material's profile is flat there)
 
 
-def edge_loops(bm, min_len):
+def edge_loops(bm, min_len, srcof=None):
+    """Boundary loops of a piece: (points, closed, skin source per point or None)."""
     adj = {}
     for e in bm.edges:
         if e.is_boundary:
@@ -316,7 +317,7 @@ def edge_loops(bm, min_len):
             chain.append(cur)
         pts = [v.co.copy() for v in chain]
         if sum((a - b).length for a, b in zip(pts, pts[1:])) >= min_len:
-            loops.append((pts, start in adj[chain[-1]]))
+            loops.append((pts, start in adj[chain[-1]], [srcof[v] for v in chain] if srcof else None))
     return loops
 
 
@@ -364,7 +365,7 @@ def region(val, offset, slot, rim=None, pipe=None, pipe_r=0.18, min_loop=10.0, l
                 bm.faces.new(poly)
             except ValueError:
                 pass
-    loops = edge_loops(bm, min_loop) if (pipe or bind) else []
+    loops = edge_loops(bm, min_loop, srcof) if (pipe or bind) else []
     # true distance from every vertex to the cut edge, for the seam/piping normal (UVSeam.x)
     bpts = []
     for e in bm.edges:
@@ -391,13 +392,15 @@ def region(val, offset, slot, rim=None, pipe=None, pipe_r=0.18, min_loop=10.0, l
                     edist.append(0.0)
             bm.faces.new((a, b, inner[b], inner[a]))
     PIECES.append((bm, slot, src, edist))
-    for pts, closed in loops:
+    for pts, closed, esrc in loops:
+        # trims ride the skin their panel edge rides: by nearest skin vertex, a binding in a
+        # deep crease (Mermaid's hip) took the thigh's side of the fold and split off the edge
         if pipe:
-            tube(pts, pipe_r, pipe, closed, push=0.08)
+            tube(pts, pipe_r, pipe, closed, push=0.08, src_from=(pts, esrc))
         if bind:      # a rounded binding standing TRIM_PROUD off the panel edge it covers
             # 0.4 mm off the panel: flush, its flat underside z-fights with the panel and
             # flecks of a glossy panel show through a matte binding (Noir's cincher)
-            tube(pts, 0.0, bind[0], closed, flat=(bind[1], TRIM_PROUD), step=0.5, push=0.04)
+            tube(pts, 0.0, bind[0], closed, flat=(bind[1], TRIM_PROUD), step=0.5, push=0.04, src_from=(pts, esrc))
     return bm
 
 
@@ -426,7 +429,7 @@ def resample(pts, closed, step):
     return out
 
 
-def tube(pts, r, slot, closed=False, sides=6, push=0.0, step=0.8, flat=None, rigid=None):
+def tube(pts, r, slot, closed=False, sides=6, push=0.0, step=0.8, flat=None, rigid=None, src_from=None):
     """A round cord along a point list. flat=(width, height): a tape lying on the surface
     instead, its top rounded like a bound edge. rigid: one skin vertex the whole piece rides
     (jewellery)."""
@@ -440,9 +443,18 @@ def tube(pts, r, slot, closed=False, sides=6, push=0.0, step=0.8, flat=None, rig
         return
     bm = bmesh.new()
     rings, src = [], []
+    ekd = None
+    if src_from and src_from[1]:                            # src_from: (edge points, their skin sources)
+        ekd = KDTree(len(src_from[0]))
+        for k, q in enumerate(src_from[0]):
+            ekd.insert(q, k)
+        ekd.balance()
     for i, p in enumerate(pts):
-        j = rigid if rigid is not None else nearest(p)      # the whole ring rides this skin vertex
-        src += [(j, j, 0.0)] * sides
+        if ekd is not None:                                 # the ring rides the panel edge under it
+            src += [src_from[1][ekd.find(p)[1]]] * sides
+        else:
+            j = rigid if rigid is not None else nearest(p)  # the whole ring rides this skin vertex
+            src += [(j, j, 0.0)] * sides
         a_, b_ = (pts[i - 1], pts[(i + 1) % n]) if closed else (pts[max(i - 1, 0)], pts[min(i + 1, n - 1)])
         t = (b_ - a_).normalized()
         out = nearest_normal(p)
@@ -1010,8 +1022,10 @@ def tartan():
         tri = np.minimum(-side(bi, ap), side(bo, ap))               # inside both sides: positive
         c = np.minimum.reduce([(1.0 - r) * 7.0, tri, y + cut - 0.45 * np.clip(x / c_["out"], 0, 1) * cut])
         cup = np.maximum(cup, where(TORSO & (NS @ FWD > -0.2) & (Dv @ f > -8), c))
-        low[s] = dict(inner=ANCHOR[s] + l * bi[0] * 0.8 + u * (bi[1] - 0.3),
-                      outer=ANCHOR[s] + l * bo[0] * 0.9 + u * (bo[1] - 0.3),
+        # the straps start 0.25 cm up, under the cup's bound edge, so they read as sewn to it
+        # (from below the edge they left a loose dash under each cup)
+        low[s] = dict(inner=ANCHOR[s] + l * bi[0] * 0.8 + u * (bi[1] + 0.25),
+                      outer=ANCHOR[s] + l * bo[0] * 0.9 + u * (bo[1] + 0.25),
                       top=ANCHOR[s] + l * ap[0] + u * (ap[1] - 1.2))
     region(cup, 0.30, "Tartan", bind=BIND, min_loop=6.0)
 
@@ -1053,35 +1067,49 @@ def tartan():
     # and a side strap from the cup's outer edge over the hip to the top of the thong
     cr, hb = LM["crotch"], LM["hip_top"]
     def wrap(keys, width):
-        """A strap on the skin through (angle from the front toward her left, deg; height, cm)
-        keys: each sample is found by a ray in toward the body axis, so it never cuts across."""
+        """A strap through (angle from the front toward her left, deg; height, cm) keys, laid as a
+        smooth flat tape: each sample is found by a ray in toward the body axis, lifted over the
+        hollows (BRIDGE), and the tape rides the skin beneath it. Cut from the skin as a field, the
+        thin straps went ragged on the flanks and the back band dipped in and out over the
+        shoulder blades (clothes-02, 2026-11-11). Samples under a cup are dropped, so a strap
+        starts tucked under the cup's binding."""
         pts = []
         for (t0, z0), (t1, z1) in zip(keys[:-1], keys[1:]):
-            for k in np.linspace(0, 1, 24, endpoint=False):
+            for k in np.linspace(0, 1, 64, endpoint=False):
                 q = ray(TORSO_BVH, pel_v, z0 + (z1 - z0) * k, D(t0 + (t1 - t0) * k), 0.0)
-                if q:
-                    pts.append(NP(q))
-        d = np.full(nv, 1e9)
-        for a, b in zip(pts[:-1], pts[1:]):
-            ab = b - a
-            t = np.clip(((X - a) @ ab) / max(ab @ ab, 1e-6), 0, 1)
-            d = np.minimum(d, np.linalg.norm(X - (a + t[:, None] * ab), axis=1))
-        return where((UPPERARM < 0.3) & (HEAD < 0.5), width * 0.5 - d)
+                if q and not (cup[nearest(q)] > -0.25 and len(pts) == 0):
+                    j = nearest(q)
+                    pts.append(q + NV[j] * (0.2 + float(BRIDGE[j])))
+        tube(pts, 0.0, "Binding", flat=(width, 0.14), step=0.35)
 
     ang = lambda p: (math.degrees(math.atan2((p - PEL) @ LEFT, (p - PEL) @ FWD)), float(p[2]))
-    straps = np.full(nv, NEG)
     for s in (1, -1):
-        ti, zi = ang(low[s]["inner"])
         to, zo = ang(low[s]["outer"])
-        straps = np.maximum(straps, wrap([(ti, zi), (s * 13.0, LM["waist"] - 2.0), (s * 13.0, hb - 1.6)], 1.0))
-        straps = np.maximum(straps, wrap([(to, zo), (s * 82.0, LM["waist"] + 1.0), (s * 100.0, hb + 3.0),
-                                          (s * 150.0, hb + 0.5), (s * 176.0, hb - 0.8)], 1.0))
-    # a thin band round the back at the bra line, from cup to cup
-    straps = np.maximum(straps, where(TORSO & (FW < (ANCHOR[1] - PEL) @ FWD - 7.0), 0.45 - np.abs(Z - (LM["fold"] + 2.5))))
-    region(straps, 0.36, "Binding", min_loop=4.0)
+        # the slingshot V (Tema's source): from the middle of each cup's lower edge down the flank,
+        # converging onto the small front panel's top corner
+        tm, zm = ang((low[s]["inner"] + low[s]["outer"]) * 0.5)
+        corner = (s * 15.0, hb - 1.7)
+        wrap([(tm, zm), (s * 27.0, LM["waist"]), corner], 1.0)
+        # high-cut hip strings: from the panel's corner up over the hip bone, round to the side
+        # strap above the hip, which carries on to the thong at the back
+        wrap([corner, (s * 45.0, hb + 2.5), (s * 75.0, hb + 4.5), (s * 100.0, hb + 3.0)], 0.8)
+        wrap([(to, zo), (s * 82.0, LM["waist"] + 1.0), (s * 100.0, hb + 3.0), (s * 150.0, hb + 0.5), (s * 176.0, hb - 0.8)], 1.0)
+        # a thin band from the cup's outer corner round the back at the bra line
+        wrap([(to, zo), (s * 105.0, LM["fold"] + 3.0), (s * 186.0, LM["fold"] + 3.0)], 0.9)   # the halves overlap at the spine
 
     # a small tartan front and a thong behind (the sheer tanga's cut, opaque and bound)
-    region(string_tanga(), 0.30, "Tartan", bind=("Binding", 0.45), min_loop=4.0)
+    # string_tanga()'s rear is cut against the leg weights, which aren't symmetric at the crease:
+    # opaque, the back came out lopsided with a ragged foot. Here both halves are one field in
+    # (height, distance from the centre plane), a thong narrowing evenly into the gusset.
+    cs = LM["crotch_skin"]
+    top_f, top_b = hb - 1.5, hb - 0.8
+    tf = np.clip((Z - cs) / (top_f - cs), 0, 1)
+    front = np.minimum(top_f - Z, 1.3 + 3.4 * tf ** 1.3 - ALAT)        # small, as in the source: 9.4 cm across the top
+    tb = np.clip((Z - cs) / (top_b - cs), 0, 1)
+    rear = np.minimum(top_b - Z, 0.7 + 3.3 * tb ** 2.2 - ALAT)        # 1.4 cm low, 8 cm at the top
+    panel = rear + (front - rear) * SIDE_BLEND
+    region(where((UPPERARM < 0.3) & (Z > cs - 6.0) & (Z < hb + 4.0) & (ALAT < 10.0), panel),
+           0.30, "Tartan", bind=("Binding", 0.45), min_loop=4.0)
 
     # white sheer thigh-highs with a wide lace top, no back seam
     st_top = ST_TOP + 1.0
@@ -1216,9 +1244,181 @@ def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.
     tube(top_ring, 0.0, slot, closed=True, flat=(0.7, TRIM_PROUD), step=0.5)
 
 
+def harness():
+    """Bundle 02 (Tema's references, 2026-11-11): a black strap harness set. Halter collar; a
+    centre strap to a steel ring between the cups and straps from the collar to each cup; cups
+    across the bust with a crescent opening under each, an underwire band below; a high thong
+    with a ring at the top of the front and two straps each side over the hips; a strap round
+    each upper thigh with a ring front and back, into opaque jersey chap stockings whose top
+    rises to a point at each ring and dips deep at the sides."""
+    BIND = ("Binding", 0.45)
+    cr, hb = LM["crotch"], LM["hip_top"]
+    ang = lambda p: (math.degrees(math.atan2((p - PEL) @ LEFT, (p - PEL) @ FWD)), float(p[2]))
+
+    def line(keys, n=24):
+        """Points on the torso skin through (angle from the front toward her left, deg; z, cm)."""
+        pts = []
+        for (t0, z0), (t1, z1) in zip(keys[:-1], keys[1:]):
+            for k in np.linspace(0, 1, n, endpoint=False):
+                q = ray(TORSO_BVH, pel_v, z0 + (z1 - z0) * k, D(t0 + (t1 - t0) * k), 0.0)
+                if q:
+                    pts.append(NP(q))
+        return pts
+
+    def field(pts, width, mask=None):
+        d = np.full(nv, 1e9)
+        for a, b in zip(pts[:-1], pts[1:]):
+            ab = b - a
+            t = np.clip(((X - a) @ ab) / max(ab @ ab, 1e-6), 0, 1)
+            d = np.minimum(d, np.linalg.norm(X - (a + t[:, None] * ab), axis=1))
+        return where(mask if mask is not None else (UPPERARM < 0.3) & (HEAD < 0.5), width * 0.5 - d)
+
+    def ring(p, n, r=0.75, wire=0.13):
+        """A steel O-ring lying on the strap at p, facing out along n."""
+        n = n.normalized()
+        a = n.orthogonal().normalized()
+        b = n.cross(a)
+        j = nearest(p)
+        tube([p + n * HW_PROUD + (a * math.cos(2 * math.pi * k / 24) + b * math.sin(2 * math.pi * k / 24)) * r
+              for k in range(24)], wire, "Trim", closed=True, sides=6, step=0.2, rigid=j)
+
+    def strap(pts, w=0.9):
+        """An elastic strap lying on the skin along points (numpy or Vectors): a flat bound tape."""
+        pts = [V3(q) if not isinstance(q, Vector) else q for q in pts]
+        pts = [q + nearest_normal(q) * 0.14 for q in pts]
+        tube(pts, 0.0, "Binding", flat=(w, 0.22), step=0.4)
+
+    def slider(p, along, w=1.0):
+        n = nearest_normal(p)
+        clip(p + n * (HW_PROUD - 0.1), n, along.normalized(), (w + 0.5, 0.7, 0.3))
+
+    straps = np.full(nv, NEG)
+
+    # ---- the halter collar and the bust ----
+    # the reference: a halter collar widening at the front into a bib that ends in a point over
+    # the sternum; a short strap from the point to a ring between the cup tops; halter straps
+    # from the collar's sides down to each cup's outer top, a teardrop of skin between them; full
+    # cups with their inner-lower quarter cut away (one wide opening under the ring); an
+    # underwire band that rises between the cups
+    zn = LM["neck"] + 1.0
+    region(where((G("head") < 0.5) & (UPPERARM < 0.3), np.minimum(zn + 2.4 - Z, Z - zn)), 0.4, "Satin", bind=BIND, min_loop=6.0)
+    zb = zn - 8.0                                                  # the bib's point
+    wb = 0.5 + 5.5 * np.clip((Z - zb) / (zn - zb), 0, 1) ** 1.2     # half-width: 5 cm under the collar, a point below
+    region(where((G("head") < 0.5) & (UPPERARM < 0.3) & (FW > 0), np.minimum.reduce([zn + 1.2 - Z, Z - zb, wb - ALAT])), 0.42, "Satin", bind=BIND, min_loop=4.0)
+    zr = LM["bust"] + 2.0                                          # the bra ring, between the cup tops
+    ring_c = ray(TORSO_BVH, pel_v, zr, 0.0, 0.0)
+    cup = np.full(nv, NEG)
+    tops = {}
+    for s in (1, -1):
+        f, u, l = frame(FWD, s, 12, 6)
+        Dv = X - ANCHOR[s]
+        x, y = Dv @ l, Dv @ u
+        c_ = CUP[s]
+        rx = np.where(x > 0, c_["out"], c_["inn"]) * 1.1
+        ry = np.where(y > 0, c_["up"], c_["dn"]) * 1.1
+        r = np.sqrt((x / rx) ** 2 + (y / ry) ** 2)
+        # top edge from the ring outward, rising a little to where the halter strap joins
+        k = np.clip((x + c_["inn"]) / (c_["inn"] + c_["out"]), 0, 1)
+        top_ = 1.6 + 1.6 * k - y
+        # the inner-lower quarter cut away: an ellipse round the cup's inner bottom corner
+        hole = np.sqrt(((x + c_["inn"] * 1.05) / (c_["inn"] * 1.25)) ** 2 + ((y + c_["dn"] * 1.1) / (c_["dn"] * 0.95)) ** 2)
+        c = np.minimum.reduce([(1.0 - r) * 7.0, top_, (hole - 1.0) * 6.0])
+        cup = np.maximum(cup, where(TORSO & (NS @ FWD > -0.2) & (Dv @ f > -8), c))
+        tops[s] = ANCHOR[s] + l * (0.75 * c_["out"]) + u * (3.0 - 0.5)
+    region(cup, 0.32, "Satin", bind=BIND, min_loop=6.0)
+    # underwire band: level round the back, rising 2.5 cm between the cups
+    zc = LM["fold"] - 0.7 + 2.5 * (1 - smooth01(1.5, 8.0, ALAT)) * SIDE_BLEND
+    region(where(TORSO, 0.7 - np.abs(Z - zc)), 0.46, "Satin", bind=BIND, min_loop=6.0)
+    # back: two level bands with sliders, no panel; the halves overlap at the spine
+    for dz in (0.0, 5.5):
+        for s in (1, -1):
+            pts = line([(s * 70.0, LM["fold"] - 0.7 + dz), (s * 187.0, LM["fold"] - 0.7 + dz)])
+            if dz:
+                strap(pts)
+            if len(pts) > 10:
+                k = int(len(pts) * 0.6)
+                slider(V3(pts[k]), V3(pts[k + 1] - pts[k - 1]))
+    lift = lambda q: V3(q) + nearest_normal(V3(q)) * 0.3
+    # bib point to the ring: a short strap with a slider
+    tip = ray(TORSO_BVH, pel_v, zb + 0.4, 0.0, 0.3)
+    if ring_c and tip:
+        pts = taut(tip, ring_c + nearest_normal(ring_c) * 0.3, 0.3)
+        strap(pts)
+        slider(pts[len(pts) // 2], pts[-1] - pts[0], 0.8)
+    for s in (1, -1):
+        co = surface_near(tops[s], FWD)
+        nk = surface_near(Bn["neck_01"] + LEFT * s * 5.5 + FWD * 3.0 + UP * (zn + 0.5 - Bn["neck_01"][2]), LEFT * s + FWD)
+        pts = taut(lift(nk), lift(co), 0.3)
+        strap(pts)
+        slider(pts[len(pts) // 3], pts[-1] - pts[0])
+
+    # ---- the thong, its ring and the hip straps ----
+    # one field in (height, distance from the centre plane), as Tartan's: cut against the leg
+    # weights the thong came out lopsided behind
+    cs = LM["crotch_skin"]
+    zt = hb - 2.5                                                  # top of the front panel
+    tv = np.clip((Z - cs) / (zt - cs), 0, 1)
+    front = np.minimum(zt - Z, 1.4 + 5.2 * tv ** 1.5 - ALAT)       # a V narrowing to the gusset, 13 cm across the top
+    tb = np.clip((Z - cs) / (hb - 1.0 - cs), 0, 1)
+    rear = np.minimum(hb - 1.0 - Z, 0.6 + 2.6 * tb ** 2.2 - ALAT)
+    region(where((UPPERARM < 0.3) & (Z > cs - 6.0) & (Z < hb + 4.0) & (ALAT < 10.0), rear + (front - rear) * SIDE_BLEND),
+           0.3, "Satin", bind=BIND, min_loop=4.0)
+    ring_t = ray(TORSO_BVH, pel_v, zt + 2.0, 0.0, 0.0)
+    if ring_t:                                                     # a short tab from the panel up to the ring
+        bot = ray(TORSO_BVH, pel_v, zt - 0.3, 0.0, 0.0)
+        if bot:
+            strap([bot, ring_t])
+    for s in (1, -1):
+        # upper: ring up over the hip bone to the side at the waist; lower: the panel's top
+        # corner out and up over the hip; both round the back to the top of the thong
+        hi = line([(s * 3.0, zt + 2.4), (s * 45.0, LM["waist"] - 1.0), (s * 95.0, LM["waist"] + 0.5),
+                   (s * 150.0, hb + 3.0), (s * 178.0, hb - 1.0)])
+        lo = line([(s * 24.0, zt - 0.2), (s * 55.0, hb + 0.5), (s * 95.0, hb + 0.5), (s * 150.0, hb - 0.5), (s * 178.0, hb - 1.0)])
+        strap(hi)
+        strap(lo)
+        for pts in (hi, lo):
+            k = len(pts) // 5
+            slider(V3(pts[k]), V3(pts[k + 1] - pts[k - 1]))
+    for p in (ring_c, ring_t):
+        if p:
+            ring(p, fwd_v)
+
+    # ---- thigh straps with rings, and opaque chap stockings rising to them ----
+    zs = cr - 5.0                                                  # thigh strap height (front)
+    chap = np.full(nv, NEG)
+    for s in (1, -1):
+        # by side and height, not by leg weight: at the front of the thigh near the groin the leg
+        # weights fade and the stocking's point was cut off 4 cm short of its ring
+        legm = LEGMASK & ((LAT > 0) == (s == 1)) & (Z < LM["crotch_skin"] - 0.5)
+        a_, b_ = Bn["thigh_" + SIDE[s]], Bn["foot_" + SIDE[s]]
+        d = X - (a_ + (b_ - a_) * ((a_[2] - Z) / (a_[2] - b_[2]))[:, None])
+        phi = np.degrees(np.arctan2(d @ (LEFT * s), d @ FWD))     # 0 front, 90 outer, 180 back
+        # strap: tilts down toward the back like the reference
+        zline = zs - 1.5 * (1 - np.cos(np.radians(phi))) * 0.5
+        loop = []
+        for k in range(72):
+            th = 360.0 * k / 72
+            zz = zs - 0.75 * (1 - math.cos(math.radians(th)))
+            q = ray(LEG_BVH[s], leg_axis(s, zz), zz, D(th * s), 0.14)
+            if q:
+                loop.append(q)
+        tube(loop, 0.0, "Binding", closed=True, flat=(0.9, 0.22), step=0.4)
+        # stocking top: a point at the front and back rings, a deep scallop at each side
+        # (deeper on the outer side, as in the reference); the points reach the rings' lower edge
+        dip = np.where(phi > 0, 15.0, 9.0) * np.abs(np.sin(np.radians(phi))) ** 1.2
+        top = zline - 0.45 - dip
+        chap = np.maximum(chap, where(legm, top - Z))
+        for th in (0.0, 180.0):
+            zz = zs - 1.5 * (1 - math.cos(math.radians(th))) * 0.5
+            p = ray(LEG_BVH[s], leg_axis(s, zz), zz, D(th * s), 0.0)
+            if p:
+                ring(p, nearest_normal(p), r=0.6, wire=0.11)
+    region(chap, 0.3, "Jersey", rim=True, bind=("Jersey", 0.5), min_loop=6.0)
+
+
 OUTFITS = {"Noir": noir, "Garter": garter_set, "Cocoa": cocoa, "Fishnet": fishnet,
            "Catsuit": catsuit_set, "Sheer": sheer, "Bodystocking": bodystocking,
-           "BodystockingSkirt": lambda: (bodystocking(), skirt()), "Tartan": tartan,
+           "BodystockingSkirt": lambda: (bodystocking(), skirt()), "Tartan": tartan, "Harness": harness,
            "Skirt": lambda: skirt(off=1.0, flare=1.5, swing=0.0, skin_to=LM["crotch"] + 2.0, tight=True, follow=True, cling=0.7)}   # the cloth skirt: follows her shape, only the hem moves (Tema 2026-11-10); 1 cm off at the top, 4 at the hem (the cloth gets no bounce morphs); skin weights to just above the crotch, so the hip front cannot push through
 CLOTH = {"Skirt"}                                # simulated in UE: the default body's morphs baked into the rest shape
 
@@ -1442,6 +1642,7 @@ MATS = dict(Sheer=pmat("Sheer", (0.01, 0.01, 0.012), 0.6, alpha=0.4), Lace=pmat(
             Latex=pmat("Latex", (0.012, 0.013, 0.02), 0.3, coat=1.0), Trim=pmat("Trim", (0.75, 0.78, 0.82), 0.25, metal=1.0),
             Nylon=pmat("Nylon", (0.006, 0.006, 0.008), 0.5, alpha=0.5), Binding=pmat("Binding", (0.006, 0.006, 0.008), 0.7),
             Tartan=pmat("Tartan", (0.45, 0.02, 0.02), 0.55))
+MATS["Jersey"] = pmat("Jersey", (0.01, 0.01, 0.012), 0.5)      # bundle 02: opaque matte stretch jersey
 scn = bpy.context.scene
 if PREVIEW:
     os.makedirs(PREVIEW, exist_ok=True)

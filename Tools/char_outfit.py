@@ -63,8 +63,14 @@ WARDROBE = {
                    Sheer=dict(Color=(0.8, 0.8, 0.78), Opacity=0.3, EdgeOpacity=0.8, EdgeExponent=1.8, Roughness=0.55),
                    Lace=dict(Color=(0.85, 0.85, 0.83), Opacity=0.35, Cell=3.0)),
     "Sheer": dict(Sheer=dict(Color=BLACK, Opacity=0.66, EdgeExponent=1.5), Latex=dict(Color=(0.012, 0.013, 0.02), Roughness=0.34, CoatRoughness=0.06, CoatVariation=0.07, NormalStrength=0.6), Trim=STEEL),
+    # bundle 02 (Tema's references, 2026-11-11): matte black elastic straps joined by steel rings,
+    # opaque jersey chap stockings with a soft sheen, matte bound edges
+    "Harness": dict(Satin=dict(Color=(0.008, 0.008, 0.01), Roughness=0.4, RoughnessVariation=0.12, NormalStrength=0.6, SeamStrength=1.0),
+                    Jersey=dict(_base="Satin", Color=(0.012, 0.012, 0.014), Roughness=0.72, RoughnessVariation=0.08, NormalStrength=0.3, SeamStrength=1.0),
+                    Binding=dict(_base="Satin", Color=(0.006, 0.006, 0.008), Roughness=0.7, RoughnessVariation=0.1, NormalStrength=0.5),
+                    Trim=dict(Color=(0.8, 0.8, 0.82), Roughness=0.22, RoughnessVariation=0.06, Metallic=1.0)),
 }
-MESH_DIR = {"Sheer": "/Game/Character/Clothes", "Bodystocking": "/Game/Character/Clothes", "BodystockingSkirt": "/Game/Character/Clothes", "Skirt": "/Game/Character/Clothes", "Tartan": "/Game/Character/Clothes"}       # the rest: /Game/Character/Outfits
+MESH_DIR = {"Sheer": "/Game/Character/Clothes", "Bodystocking": "/Game/Character/Clothes", "BodystockingSkirt": "/Game/Character/Clothes", "Skirt": "/Game/Character/Clothes", "Tartan": "/Game/Character/Clothes", "Harness": "/Game/Character/Clothes"}       # the rest: /Game/Character/Outfits
 DIR = "/Game/Character/Clothes"
 SKELETON = "/Game/Characters/Mannequins/Meshes/SK_Mannequin"
 ONLY = globals().get("ONLY")
@@ -217,6 +223,34 @@ tw = lerp(tw, 0.5, saturate(max(fwidth(th.x), fwidth(th.y)) * 0.7));
 return lerp(cf, cw, tw);
 """
 
+# Tartan relief: the 2/2 twill raises diagonal ribs (Rib cm apart) and each thread is a small
+# round ridge along its own direction, warp or weft by the same twill as the colour. The height
+# is analytic, so its slope is exact per pixel; ribs and threads fade out as they shrink below a
+# pixel, so the cloth goes from visible weave up close to soft sheen at full-body distance.
+# Laid over the satin weave detail texture (UDN blend). Returns (normal.xyz) and roughness in w.
+TARTAN_RELIEF_HLSL = """
+float2 p = float2(UV.x, 1.0 - UV.y);
+const float TAU = 6.2831853;
+// twill ribs along (u + v)
+float ph = TAU * (p.x + p.y) / Rib;
+float fr = 1.0 - saturate(fwidth(ph) / 3.14159);
+float rs = -sin(ph) * (Height * TAU / Rib) * fr;
+float2 g = float2(rs, rs);
+// threads: warp ridges where warp floats, weft ridges elsewhere
+float2 th = p / Thread;
+float warp = frac((floor(th.x) + floor(th.y)) * 0.25) < 0.5 ? 1.0 : 0.0;
+float ft = 1.0 - saturate(max(fwidth(th.x), fwidth(th.y)) * 1.2);
+float tx = -sin(TAU * th.x) * (Height * 0.6 * TAU / Thread) * ft;
+float ty = -sin(TAU * th.y) * (Height * 0.6 * TAU / Thread) * ft;
+g += warp > 0.5 ? float2(tx, 0.0) : float2(0.0, ty);
+float3 n = normalize(float3(-g.x * Strength, g.y * Strength, 1.0));
+float3 d = Detail;
+float3 o = normalize(float3(n.xy + d.xy, n.z * d.z));
+// the valleys between ribs hold less sheen
+float valley = 0.5 - 0.5 * cos(ph);
+return float4(o, valley * fr);
+"""
+
 TEX_DIR = DIR + "/Textures"
 
 
@@ -357,6 +391,17 @@ def sheer_opacity(m, base, y=200):
 
 
 def done(m):
+    # depth bias: every vertex pulled DepthBias cm toward the camera, along its view ray, so
+    # nothing moves on screen; it only wins the depth test. Cloth sits 2-3 mm off the skin,
+    # and where a deep bend folds the skin (Mermaid's hip) the skin overtook it and showed
+    # through in flecks, broke bindings and dashed the seam tapes
+    # (CameraVector is pixel-shader only: the view ray is camera position minus world position)
+    ray = op(m, unreal.MaterialExpressionSubtract, node(m, unreal.MaterialExpressionCameraPositionWS, -900, 1400),
+             node(m, unreal.MaterialExpressionWorldPosition, -900, 1440), 1400)
+    to_cam = node(m, unreal.MaterialExpressionNormalize, -300, 1400)
+    link(ray, to_cam, "VectorInput")
+    bias = op(m, unreal.MaterialExpressionMultiply, to_cam, scalar(m, "DepthBias", 0.5, 1480), 1460)
+    mel.connect_material_property(bias, "", MP.MP_WORLD_POSITION_OFFSET)
     mel.recompile_material(m)
     unreal.EditorAssetLibrary.save_loaded_asset(m)
     return m
@@ -369,9 +414,20 @@ def build_tartan(weave, detail):
         ("UV", uv), ("Period", scalar(m, "Period", 6.0, -340)), ("Thread", scalar(m, "Thread", 0.05, -280)),
         ("Red", color(m, "Red", (0.30, 0.014, 0.012), -220)), ("Dark", color(m, "Dark", (0.012, 0.008, 0.01), -160)),
         ("Line", color(m, "Line", (0.62, 0.6, 0.55), -100))], -300, unreal.CustomMaterialOutputType.CMOT_FLOAT3), "", MP.MP_BASE_COLOR)
+    relief = custom(m, TARTAN_RELIEF_HLSL, "TartanRelief", [
+        ("UV", node(m, unreal.MaterialExpressionTextureCoordinate, -900, 700)),
+        ("Rib", scalar(m, "Rib", 0.16, 760)), ("Thread", scalar(m, "Thread", 0.05, 820)),
+        ("Height", scalar(m, "ReliefHeight", 0.006, 880)), ("Strength", scalar(m, "ReliefStrength", 1.0, 940)),
+        ("Detail", detail_normal(m, weave, 1.5, 0.5, 600))], 700, unreal.CustomMaterialOutputType.CMOT_FLOAT4)
     mask = sample(m, "DetailMask", detail, False, 24.0, 300)
-    mel.connect_material_property(varied(m, scalar(m, "Roughness", 0.5, -40), mask, "R", "RoughnessVariation", 0.12, 0), "", MP.MP_ROUGHNESS)
-    mel.connect_material_property(seam_normal(m, 1000, detail_normal(m, weave, 1.5, 0.5, 600)), "", MP.MP_NORMAL)
+    rough = varied(m, scalar(m, "Roughness", 0.5, -40), mask, "R", "RoughnessVariation", 0.12, 0)
+    mask_a = node(m, unreal.MaterialExpressionComponentMask, -500, 160, r=False, g=False, b=False, a=True)
+    link(relief, mask_a, "")
+    valley = op(m, unreal.MaterialExpressionMultiply, mask_a, scalar(m, "ValleyRoughness", 0.12, 160), 120)
+    mel.connect_material_property(op(m, unreal.MaterialExpressionAdd, rough, valley, 80), "", MP.MP_ROUGHNESS)
+    mask3 = node(m, unreal.MaterialExpressionComponentMask, -500, 700, r=True, g=True, b=True, a=False)
+    link(relief, mask3, "")
+    mel.connect_material_property(seam_normal(m, 1000, mask3), "", MP.MP_NORMAL)
     return done(m)
 
 
@@ -384,7 +440,9 @@ def build_materials():
             base[n] = unreal.load_asset(DIR + "/M_Outfit" + n)
         # Tartan too, once it exists: a run for another outfit must not re-save it (bundle-02)
         have = unreal.EditorAssetLibrary.does_asset_exist(DIR + "/M_OutfitTartan")
-        base["Tartan"] = unreal.load_asset(DIR + "/M_OutfitTartan") if have else build_tartan(weave, detail)
+        # REBUILD_TARTAN = True: the tartan's own owner changed the base (done() keeps the depth bias)
+        rebuild = globals().get("REBUILD_TARTAN", False)
+        base["Tartan"] = unreal.load_asset(DIR + "/M_OutfitTartan") if have and not rebuild else build_tartan(weave, detail)
         return base
 
     m = material("M_OutfitSheer", T)

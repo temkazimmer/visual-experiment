@@ -40,11 +40,16 @@ Several Claude sessions work at once, each in its own git worktree of this repo:
 | `visex-clothes` | `character-clothes` | clothes |
 | `visex/.claude/worktrees/research-*` | `claude/research-*` | research, hair |
 
+- **Running or briefing subagents** for complicated subtasks: follow
+  [Docs/AGENT_PLAYBOOK.md](Docs/AGENT_PLAYBOOK.md) (short replies, chunked writes, a commit per step,
+  fresh agent after repeated network drops, and the traps that cost time).
 - **Start here:** the project memory `visex-orchestration` has the current main session,
   everyone's session ids, the merge/build/QA loop and where things stand. Read it before
   acting, and check the real state (git log, `pgrep`, `Build/*.dmg`), since peer messages go stale.
 - **Only main pushes `origin/main`.** "Push to main" from Tema means: commit on your branch
   and message the main session with the hash and what it touches.
+- **At most 4 UE editors on the machine at once** (memory fills), counted with
+  `ps -axo args | grep "MacOS/UnrealEditor " | grep -v grep | wc -l` before every launch; at 4, wait.
 - **One UE editor per folder.** Run your own in your worktree, never close another
   session's, and quit it when idle. No parallel builds while an editor compiles shaders.
   Kill whatever you start.
