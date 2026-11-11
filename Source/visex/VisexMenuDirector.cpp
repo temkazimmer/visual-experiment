@@ -944,11 +944,15 @@ void AVisexMenuDirector::Lean(bool bFromStanding)
 	if (Down)
 	{
 		Anim->PlaySlotAnimationAsDynamicMontage(Down, Slot, 0.25f, 0.f, 1.f, 1);
-		GetWorldTimerManager().SetTimer(StandTimer, FTimerDelegate::CreateWeakLambda(this, [this, Idle]()
+		// LoadedLean keeps the clip alive; the timer holds it weakly too, so if that ever slips it
+		// skips the idle instead of playing freed memory (0298)
+		GetWorldTimerManager().SetTimer(StandTimer, FTimerDelegate::CreateWeakLambda(this, [this, WeakIdle = TWeakObjectPtr<UAnimSequence>(Idle)]()
 		{
-			if (UAnimInstance* A = GetPawnAnim())
+			UAnimSequence* Clip = WeakIdle.Get();
+			UAnimInstance* A = GetPawnAnim();
+			if (Clip && A)
 			{
-				A->PlaySlotAnimationAsDynamicMontage(Idle, Slot, 0.f, 0.3f, 1.f, 1000000);
+				A->PlaySlotAnimationAsDynamicMontage(Clip, Slot, 0.f, 0.3f, 1.f, 1000000);
 			}
 		}), Down->GetPlayLength(), false);
 	}
