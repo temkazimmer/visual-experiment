@@ -14,7 +14,7 @@ a Villeneuve shot, not floaty or arcade.
 
 ## Branches and who owns what
 
-Two agents work in parallel, often on two laptops. Binary `.uasset`/`.umap` files can't
+Several agents work in parallel (see the team below), sometimes on two laptops. Binary `.uasset`/`.umap` files can't
 be merged, so each folder has one owner; edit the other side's files only through a
 merge.
 
@@ -26,6 +26,37 @@ merge.
 Character direction: [Docs/CHARACTER_DIRECTION.md](Docs/CHARACTER_DIRECTION.md). If
 something needs a change on the other branch, write it down for that agent (or message
 its session) rather than doing it.
+
+## The team: parallel sessions on this Mac
+
+Several Claude sessions work at once, each in its own git worktree of this repo:
+
+| Folder (`~/Documents/Unreal Projects/`) | Branch | Session |
+|---|---|---|
+| `visex` | `main` | **main**: coordinates, merges, builds, pushes. QA also runs here |
+| `visex-level` | `visex-level` | level / scene layout |
+| `visex-character` | `character-animation` | movement |
+| `visex-body` | `character-body` | character design (body, skin) |
+| `visex-clothes` | `character-clothes` | clothes |
+| `visex/.claude/worktrees/research-*` | `claude/research-*` | research, hair |
+
+- **Start here:** the project memory `visex-orchestration` has the current main session,
+  everyone's session ids, the merge/build/QA loop and where things stand. Read it before
+  acting, and check the real state (git log, `pgrep`, `Build/*.dmg`), since peer messages go stale.
+- **Only main pushes `origin/main`.** "Push to main" from Tema means: commit on your branch
+  and message the main session with the hash and what it touches.
+- **One UE editor per folder.** Run your own in your worktree, never close another
+  session's, and quit it when idle. No parallel builds while an editor compiles shaders.
+  Kill whatever you start.
+- **Review captures for Tema are 4K** (3840x2160, `Tools/.bridge/shot4k.py`).
+- **Licensed packs** (`/Game/FemaleMovement`, `/Game/FemaleEveryday`, `SourceArt/Fab/*`,
+  Megascans sand) are gitignored and read-only. Never commit them.
+- **Spawned decorative meshes** come up BlockAll. Call `set_collision_profile_name("NoCollision")`
+  after setting the mesh, and check that the player still spawns before saving Lvl_Dust.
+- **QA loop:** merge, build, push. Then QA runs `Tools/make_dmg.sh` (DMG number = commit
+  count), tours and hand-tests the build, and logs in [Docs/QA.md](Docs/QA.md).
+- **Docs:** [PLAN.md](Docs/PLAN.md) (the original plan), [CHARACTER_DIRECTION.md](Docs/CHARACTER_DIRECTION.md),
+  [CLOTHES.md](Docs/CLOTHES.md), [LOOK_RESEARCH.md](Docs/LOOK_RESEARCH.md), `Docs/Research/`.
 
 ## The game flow (C++ in `Source/visex`)
 
