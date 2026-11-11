@@ -7,6 +7,38 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-11 20:23 · VIS-EX-0401 Shipping (4d4be67) · PASS, classic photo mode walks in place, Harness and new Tartan wearable, Ledge end pose not caught
+
+- **Tour (b7ded30):** two runs from the mounted DMG, clean cook. Both reached `VisexQA: done` with 54 shots and exit 0
+  (285 s, 275 s). On ground at every step, body, shell, hair and outfit present, no spectator. No new visex `.ips`
+  (the only one is 13:25). Shots in `Saved/QA_0401ship{,_run2}/` and `Tools/.bridge/shots/qa0401/` (run 2 in `run2/`,
+  sheets in `crops/`).
+- **Cook:** `0 error(s), 0 warning(s)`, 825 packages in the IoStore. DMG md5 `f2da54d1…`.
+- **GC and layout:** both forced GCs pass in both runs (`menu again` reports after the lean-down GC). `layout save PASS, on disk`.
+- **Classic photo mode (b7ded30):** opens on the PHOTO MODE / WALK HUD and walks in place: `moved 0.0 cm in 1 s (PASS)`
+  in both runs (`26_photo_open_walk`, `27_photo_open_walk_1s`). The un-lean itself isn't shot: the camera takes over
+  between +0.8 and +1.5 s, she stays at the menu spot. The default photo camera is close: in Idle, Walk, Run, Bookend
+  and Peace the top of her head and her feet leave the frame (`crops/photo_poses.png`).
+- **Menu:** `01_menu` and `02_menu_feet` are 1 s apart (the tour has no 0.5 s pair). Same pose, a small even sway, no
+  arm or torso jump; her hand rests on the drum's edge in both (`crops/01_menu_torso.png`, `02_menu_feet_torso.png`).
+  Feet IN FRAME at 16:9 and 4:3 in both runs (toes at 85–87 % and 76–77 %).
+- **Outfits:** Bodystocking, Bodystocking + skirt, Catsuit, Noir, Tartan and Harness all wearable at her size
+  (`crops/outfits.png`). Harness: cups with a ring between, bib collar, strap V, matte black chaps. Tartan (rebuilt):
+  smooth strap tapes, hip strings, small dark-red cups, lace thigh-high; the weave doesn't read at menu distance
+  (`crops/tartan_chest.png`). Noir and Catsuit unchanged against 0370 (`crops/tartan_harness_noir_torso.png`).
+- **Deep bends:** FeetUp, Glance, Mermaid and the LegLift kneel hold the bodystocking, no skin through (`crops/deep_bends.png`).
+- **Poses:** 10 motions: Idle, Walk, Run, then Bookend, FeetUp, Glance, Ledge, LegLift, Mermaid, Peace. Bookend is on the wheel.
+- **Ledge (fe20bd7, 417ef8e):** on the wheel. Choosing it moves her from the menu spot to (8884, -354), with the stone's
+  top traced under her (z 101 vs sand 66), movement off, in both runs. **Not caught: the end pose.** At +4.5 s she
+  still stands upright, and the shot frames her hips to head, so the stone and the kneel on her forearms aren't in it
+  (`34_photo_06`). LegLift right after it is still in its kneeling flow (no `Ledge_To_LegLift`), so its end pose
+  isn't shot either. Needs a longer wait in the tour or a look by hand.
+- **Start move:** 4:3 menu, mid-move, landing and play all `fills the window`, landing at fov 90 (`crops/start_move.png`).
+- **Regressions:** none. Body and Wardrobe report `open` at the 4 s shot. No fall-through.
+- **Frame times:** quality 0/3/4: 16.7 / 16.6 / 35.6 ms (run 2: 16.7 / 22.5 / 49.4). Load around 4.
+- **Saves:** backed up `VisexBody.sav` (`37c1a469…`) and `GameUserSettings.ini` (`0f8144b4…`), restored after each
+  run, both md5s match. The tour rewrites `VisexBody.sav` (to `7ac129aa…`), hence the restore. No `Game.ini` before or after.
+
 ## 2026-11-11 17:49 · VIS-EX-0370 Shipping (ce9b744) · STABLE PASS, the photo sequence runs end to end, Noir wearable, jump framing cuts her head
 
 - **Tour (updated in 43f3455):** two runs from the mounted DMG, clean cook. Both reached `VisexQA: done` with 55 shots
