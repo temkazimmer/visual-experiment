@@ -10,7 +10,6 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "GameFramework/CharacterMovementComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/GameViewportClient.h"
 #include "GameFramework/Character.h"
@@ -36,47 +35,15 @@ AVisexPhotoMode::AVisexPhotoMode()
 	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	WalkLoop = TSoftObjectPtr<UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Photo_Walk.A_Photo_Walk")));
 	RunLoop = TSoftObjectPtr<UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Photo_Run.A_Photo_Run")));
-	auto Seq = [](const TCHAR* Name) { return TSoftObjectPtr<UAnimSequence>(FSoftObjectPath(FString::Printf(TEXT("/Game/Characters/PhotoSeq/%s.%s"), Name, Name))); };
-	SitLoop = Seq(TEXT("A_PhotoSeq_Sit"));
-	SitDownClip = Seq(TEXT("A_PhotoSeq_SitDown"));
-	StandUpClip = Seq(TEXT("A_PhotoSeq_StandUp"));
-	SeqWalk = Seq(TEXT("A_PhotoSeq_Walk"));
-	SeqJog = Seq(TEXT("A_PhotoSeq_Jog"));
-	SeqRun = Seq(TEXT("A_PhotoSeq_Run"));
-}
-
-UAnimSequence* AVisexPhotoMode::Clip(const TSoftObjectPtr<UAnimSequence>& Soft) const
-{
-	// only ever handed out while LoadedLoops holds it (BuildMotions)
-	UAnimSequence* A = Soft.Get();
-	return A && LoadedLoops.Contains(A) ? A : nullptr;
 }
 
 void AVisexPhotoMode::BuildMotions()
 {
 	Motions.Reset();
 	LoadedLoops.Reset();
-	for (const TSoftObjectPtr<UAnimSequence>* S : {&SitLoop, &SitDownClip, &StandUpClip, &SeqWalk, &SeqJog, &SeqRun})
-	{
-		if (UAnimSequence* A = S->LoadSynchronous()) { LoadedLoops.Add(A); }
-	}
-	// the sequence: sit by the column, get up and stroll, walk, jog, run, jump, the poses, go back
-	const bool bSeq = Clip(SitLoop) && Clip(SitDownClip) && Clip(StandUpClip) && Clip(SeqWalk) && Clip(SeqJog) && Clip(SeqRun);
-	if (bSeq)
-	{
-		Motions.Add({TEXT("Sit"), nullptr, INDEX_NONE, -1.f, EKind::Sit});
-		Motions.Add({TEXT("Slow walk"), Clip(SeqWalk), INDEX_NONE, 0.f, EKind::Move, 0.5f});
-		Motions.Add({TEXT("Walk"), Clip(SeqWalk), INDEX_NONE, 0.f, EKind::Move, 1.f});
-		Motions.Add({TEXT("Run"), Clip(SeqJog), INDEX_NONE, 0.f, EKind::Move, 1.f});
-		Motions.Add({TEXT("Dash"), Clip(SeqRun), INDEX_NONE, 0.f, EKind::Move, 1.f});
-		Motions.Add({TEXT("Jump"), Clip(SeqJog), INDEX_NONE, 0.f, EKind::Jump, 1.f});
-	}
-	else
-	{
-		Motions.Add({TEXT("Idle"), nullptr, INDEX_NONE});
-		if (UAnimSequence* Walk = WalkLoop.LoadSynchronous()) { LoadedLoops.Add(Walk); Motions.Add({TEXT("Walk"), Walk, INDEX_NONE, 1.f}); }
-		if (UAnimSequence* Run = RunLoop.LoadSynchronous()) { LoadedLoops.Add(Run); Motions.Add({TEXT("Run"), Run, INDEX_NONE, 0.35f}); }
-	}
+	Motions.Add({TEXT("Idle"), nullptr, INDEX_NONE});
+	if (UAnimSequence* Walk = WalkLoop.LoadSynchronous()) { LoadedLoops.Add(Walk); Motions.Add({TEXT("Walk"), Walk, INDEX_NONE, 1.f}); }
+	if (UAnimSequence* Run = RunLoop.LoadSynchronous()) { LoadedLoops.Add(Run); Motions.Add({TEXT("Run"), Run, INDEX_NONE, 0.35f}); }
 
 	TArray<FAssetData> Found;
 	FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get().GetAssetsByPath(PoseFolder, Found, true);
@@ -93,56 +60,6 @@ void AVisexPhotoMode::BuildMotions()
 		Name.RemoveFromStart(TEXT("A_Pose_"));
 		Motions.Add({Name.Replace(TEXT("_"), TEXT(" ")), nullptr, PoseIndex++});
 	}
-	if (bSeq)
-	{
-		Motions.Add({TEXT("Return"), Clip(SeqWalk), INDEX_NONE, 0.f, EKind::Return, 1.f});
-	}
-	for (FMotion& M : Motions)
-	{
-		if (M.Pose != INDEX_NONE) { M.Kind = EKind::Pose; }
-	}
-}
-
-void AVisexPhotoMode::FindColumn()
-{
-	ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
-	if (!Char)
-	{
-		return;
-	}
-	// the menu's fallen drum (AVisexMenuDirector::SpawnLeanColumn, tagged LeanColumn): pivot on
-	// the top of the stone at the middle of its length, X along the drum
-	TArray<AActor*> Tagged;
-	UGameplayStatics::GetAllActorsWithTag(this, TEXT("LeanColumn"), Tagged);
-	AActor* Best = nullptr;
-	for (AActor* A : Tagged)
-	{
-		if (!Best || FVector::DistSquared(A->GetActorLocation(), Char->GetActorLocation()) < FVector::DistSquared(Best->GetActorLocation(), Char->GetActorLocation()))
-		{
-			Best = A;
-		}
-	}
-	Column = Best;
-	const FVector Loc = Char->GetActorLocation();
-	if (!Best)
-	{
-		// no column: she sits where she stands, facing the way she faces
-		SitSpot = Loc;
-		Away = Char->GetActorForwardVector().GetSafeNormal2D();
-		return;
-	}
-	const FVector Along = Best->GetActorForwardVector().GetSafeNormal2D();
-	const FVector Mid = Best->GetActorLocation();
-	FVector Out = FVector::CrossProduct(FVector::UpVector, Along).GetSafeNormal2D();
-	if (FVector::DotProduct(Loc - Mid, Out) < 0.f)
-	{
-		Out = -Out;
-	}
-	Away = Out;
-	// beside the middle, where the menu sat her; her own height (the sand under her)
-	const float Along2 = FMath::Clamp(FVector::DotProduct(Loc - Mid, Along), -80.f, 80.f);
-	SitSpot = Mid + Along * Along2 + Out * SitGap;
-	SitSpot.Z = Loc.Z;
 }
 
 void AVisexPhotoMode::Open()
@@ -178,16 +95,6 @@ void AVisexPhotoMode::Open()
 	Yaw = FMath::RadiansToDegrees(FMath::Atan2(Rel.Y, Rel.X));
 	Distance = StartDistance;
 	Height = StartHeight;
-	FindColumn();
-	Phase = EPhase::None;
-	bAutoFrame = true;
-	bFollowSet = false;
-	if (Motions.Num() > 0 && Motions[0].Kind == EKind::Sit)
-	{
-		// she sits with her back to the stone: the camera comes round to face her, a little low
-		Yaw = FMath::RadiansToDegrees(FMath::Atan2(Away.Y, Away.X)) + 18.f;
-		Height = 95.f;
-	}
 	bFree = false;
 	Roll = 0.f;
 	Focal = FocalLength;
@@ -228,7 +135,11 @@ void AVisexPhotoMode::Open()
 		InputComponent->BindAxisKey(EKeys::MouseWheelAxis);
 		bKeysBound = true;
 	}
-	SetMotion(0);
+	// she has just pushed off the column (the menu's lean-up): walk on slowly, in place
+	const int32 WalkIndex = Motions.IndexOfByPredicate([](const FMotion& M) { return M.Name == TEXT("Walk"); });
+	bOpenWalk = WalkIndex != INDEX_NONE;
+	SetMotion(bOpenWalk ? WalkIndex : 0);
+	bOpenWalk = false;
 	ShowHud(true);
 }
 
@@ -263,11 +174,6 @@ void AVisexPhotoMode::ClearMotion()
 	{
 		return;
 	}
-	if (SavedAirBrake >= 0.f)
-	{
-		Char->GetCharacterMovement()->BrakingDecelerationFalling = SavedAirBrake;
-		SavedAirBrake = -1.f;
-	}
 	if (PlayingPose != INDEX_NONE)
 	{
 		if (UVisexPoseWheelComponent* Wheel = Char->FindComponentByClass<UVisexPoseWheelComponent>())
@@ -280,7 +186,6 @@ void AVisexPhotoMode::ClearMotion()
 	{
 		Anim->StopSlotAnimation(0.3f, Slot);
 		Anim->SetRootMotionMode(SavedRootMotion);
-		Phase = EPhase::None;
 		if (UVisexAnimInstance* Visex = Cast<UVisexAnimInstance>(Anim))
 		{
 			Visex->PhotoGait = -1.f;
@@ -303,7 +208,6 @@ void AVisexPhotoMode::SetMotion(int32 Index)
 		return;
 	}
 	Motion = (Index % Motions.Num() + Motions.Num()) % Motions.Num();
-	bAutoFrame = true;   // each step frames itself again
 	if (bPaused)
 	{
 		TogglePause();
@@ -317,57 +221,6 @@ void AVisexPhotoMode::SetMotion(int32 Index)
 	{
 		Visex->PhotoGait = Loop ? M.Gait : -1.f;
 	}
-	if (M.Kind == EKind::Sit || M.Kind == EKind::Move || M.Kind == EKind::Jump || M.Kind == EKind::Return)
-	{
-		if (PlayingPose != INDEX_NONE)
-		{
-			if (UVisexPoseWheelComponent* Wheel = Char ? Char->FindComponentByClass<UVisexPoseWheelComponent>() : nullptr)
-			{
-				Wheel->StopPose();
-			}
-			PlayingPose = INDEX_NONE;
-		}
-		if (UVisexAnimInstance* Visex = Cast<UVisexAnimInstance>(Anim))
-		{
-			Visex->PhotoGait = M.Kind == EKind::Sit ? -1.f : M.Gait;   // the mocap walks as it was caught
-		}
-		const bool bSeated = Phase == EPhase::SitDown || Phase == EPhase::Seated;
-		if (M.Kind == EKind::Sit)
-		{
-			if (!bSeated && Char)
-			{
-				// from wherever she is, she is put by the stone and sits (the photo camera blends in meanwhile)
-				Char->GetCharacterMovement()->StopMovementImmediately();
-				Char->SetActorLocationAndRotation(SitSpot, Away.Rotation(), false, nullptr, ETeleportType::TeleportPhysics);
-				PlayClip(Clip(SitDownClip), 1.f, false, false, 0.4f);
-				Phase = EPhase::SitDown;
-				PhaseTime = 0.f;
-			}
-		}
-		else if (M.Kind == EKind::Return)
-		{
-			PlayClip(Clip(SeqWalk), 1.f, true, true);
-			Phase = EPhase::Approach;
-			PhaseTime = 0.f;
-		}
-		else if (bSeated || Phase == EPhase::StandUp)
-		{
-			// get up first; TickSequence starts the stroll when she is on her feet
-			if (Phase != EPhase::StandUp)
-			{
-				PlayClip(Clip(StandUpClip), 1.f, false, false, 0.3f);
-				Phase = EPhase::StandUp;
-				PhaseTime = 0.f;
-			}
-		}
-		else
-		{
-			StartMoving(M);
-		}
-		RefreshHud();
-		return;
-	}
-	Phase = EPhase::None;
 	if (M.Pose != INDEX_NONE)
 	{
 		// poses go through the wheel: it handles sitting down, the slope and getting up
@@ -403,7 +256,7 @@ void AVisexPhotoMode::SetMotion(int32 Index)
 			Anim->SetRootMotionMode(Loop ? ERootMotionMode::IgnoreRootMotion : SavedRootMotion.GetValue());
 			if (Loop)
 			{
-				Anim->PlaySlotAnimationAsDynamicMontage(Loop, Slot, 0.35f, 0.35f, 1.f, 1000000);
+				Anim->PlaySlotAnimationAsDynamicMontage(Loop, Slot, 0.35f, 0.35f, bOpenWalk ? OpenWalkRate : 1.f, 1000000);
 			}
 			else
 			{
@@ -441,10 +294,6 @@ void AVisexPhotoMode::Tick(float DeltaSeconds)
 	if (!bOpen || !InputComponent)
 	{
 		return;
-	}
-	if (!bPaused)
-	{
-		TickSequence(DeltaSeconds);
 	}
 	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
 	auto Axis = [this](const FKey& K) { return InputComponent->GetAxisKeyValue(K); };
@@ -486,25 +335,6 @@ void AVisexPhotoMode::Tick(float DeltaSeconds)
 		{
 			Pawn->AddActorWorldRotation(FRotator(0.f, Turn * TurnSpeed * DeltaSeconds, 0.f));
 		}
-	}
-	// the camera frames each step until the user touches the orbit, height or zoom
-	if (FMath::Abs(Orbit) + FMath::Abs(Lift) + FMath::Abs(Zoom) + FMath::Abs(Axis(EKeys::MouseX)) + FMath::Abs(Axis(EKeys::MouseWheelAxis)) > 0.01f)
-	{
-		bAutoFrame = false;
-	}
-	const APawn* Her = UGameplayStatics::GetPlayerPawn(this, 0);
-	if (bAutoFrame && Her && Phase != EPhase::None)
-	{
-		// moving: out to her whole figure with headroom, trailing ahead of her at an angle like
-		// a slow dolly; seated (or sitting down): back in, facing her
-		const bool bSeat = Phase == EPhase::SitDown || Phase == EPhase::Seated;
-		const float WantDist = bSeat ? StartDistance : MoveDistance * Focal / 32.f;
-		const float WantYaw = bSeat ? FMath::RadiansToDegrees(FMath::Atan2(Away.Y, Away.X)) + 18.f
-			: Her->GetActorRotation().Yaw + (Motions.IsValidIndex(Motion) && Motions[Motion].Kind == EKind::Jump ? 85.f : MoveAngle);
-		const float Ease = FMath::Clamp(DeltaSeconds * 0.8f, 0.f, 1.f);
-		Distance = FMath::Clamp(FMath::Lerp(Distance, WantDist, Ease), MinDistance, MaxDistance);
-		Height = FMath::Lerp(Height, bSeat ? 95.f : MoveHeight, Ease);
-		Yaw += FMath::FindDeltaAngleDegrees(Yaw, WantYaw) * FMath::Clamp(DeltaSeconds * 0.45f, 0.f, 1.f);
 	}
 	PlaceCamera();
 }
@@ -628,18 +458,8 @@ void AVisexPhotoMode::PlaceCamera()
 		return;
 	}
 	const FVector Feet = Char->GetActorLocation() - FVector(0.f, 0.f, Char->GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
-	// the anchor trails her feet: quick across the sand, slow up and down, so a leap reads as
-	// a leap and the frame doesn't bob; a jump of metres (she was put by the stone) snaps
-	if (!bFollowSet || FVector::Dist(Follow, Feet) > 400.f)
-	{
-		Follow = Feet;
-		bFollowSet = true;
-	}
-	const float Dt = GetWorld()->GetDeltaSeconds();
-	const FVector Flat = FMath::VInterpTo(FVector(Follow.X, Follow.Y, 0.f), FVector(Feet.X, Feet.Y, 0.f), Dt, 6.f);
-	Follow = FVector(Flat.X, Flat.Y, FMath::FInterpTo(Follow.Z, Feet.Z, Dt, 1.5f));
 	const float A = FMath::DegreesToRadians(Yaw);
-	FVector Loc = Follow + FVector(FMath::Cos(A) * Distance, FMath::Sin(A) * Distance, Height);
+	FVector Loc = Feet + FVector(FMath::Cos(A) * Distance, FMath::Sin(A) * Distance, Height);
 	// watch her hips (so floor poses stay framed), eased so the camera doesn't jitter with her;
 	// the eye follows the camera down a little, so low shots still hold her whole
 	const FVector Hips = Char->GetMesh() ? Char->GetMesh()->GetSocketLocation(TEXT("pelvis")) : Feet + FVector(0.f, 0.f, LookHeight);
@@ -651,7 +471,7 @@ void AVisexPhotoMode::PlaceCamera()
 		LookGoal = Target;
 	}
 	LookZ = LookZ < 0.f ? LookGoal : FMath::FInterpTo(LookZ, LookGoal, GetWorld()->GetDeltaSeconds(), 1.5f);
-	const FVector Look = Follow + FVector(0.f, 0.f, FMath::Lerp(LookZ * 0.75f, LookZ, FMath::Clamp(Height / 150.f, 0.f, 1.f)));
+	const FVector Look = Feet + FVector(0.f, 0.f, FMath::Lerp(LookZ * 0.75f, LookZ, FMath::Clamp(Height / 150.f, 0.f, 1.f)));
 	// keep the lens out of stone and sand: come in to whatever is between her and the camera
 	// (never closer than the near limit, so the lens can't end up inside her)
 	FHitResult Hit;
@@ -741,191 +561,4 @@ void AVisexPhotoMode::EndPlay(const EEndPlayReason::Type Reason)
 {
 	ShowHud(false);
 	Super::EndPlay(Reason);
-}
-
-void AVisexPhotoMode::PlayClip(UAnimSequence* InClip, float Rate, bool bLoop, bool bRootMotion, float Blend)
-{
-	ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
-	UAnimInstance* Anim = Char && Char->GetMesh() ? Char->GetMesh()->GetAnimInstance() : nullptr;
-	if (!Anim || !InClip)
-	{
-		return;
-	}
-	// root motion carries her over the sand at the clip's own pace, so the feet never slide;
-	// the sit clips are in place
-	Anim->SetRootMotionMode(bRootMotion ? ERootMotionMode::RootMotionFromMontagesOnly : ERootMotionMode::IgnoreRootMotion);
-	Anim->PlaySlotAnimationAsDynamicMontage(InClip, Slot, Blend, bLoop ? Blend : 0.25f, Rate, bLoop ? 1000000 : 1);
-}
-
-void AVisexPhotoMode::StartMoving(const FMotion& M)
-{
-	PlayClip(M.Loop.Get(), M.Rate, true, true, 0.5f);
-	Phase = EPhase::Moving;
-	PhaseTime = 0.f;
-	JumpClock = 0.f;
-}
-
-void AVisexPhotoMode::SteerTo(const FVector& Dir, float DegPerSec, float DeltaSeconds)
-{
-	ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
-	const FVector D = Dir.GetSafeNormal2D();
-	if (!Char || D.IsNearlyZero())
-	{
-		return;
-	}
-	FRotator R = Char->GetActorRotation();
-	const float Delta = FMath::FindDeltaAngleDegrees(R.Yaw, D.Rotation().Yaw);
-	R.Yaw += FMath::Clamp(Delta, -DegPerSec * DeltaSeconds, DegPerSec * DeltaSeconds);
-	Char->SetActorRotation(R);
-}
-
-void AVisexPhotoMode::TickSequence(float DeltaSeconds)
-{
-	ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
-	if (!Char)
-	{
-		return;
-	}
-	if (Phase != EPhase::Air && SavedAirBrake >= 0.f && !Char->GetCharacterMovement()->IsFalling())
-	{
-		Char->GetCharacterMovement()->BrakingDecelerationFalling = SavedAirBrake;
-		SavedAirBrake = -1.f;
-	}
-	if (Phase == EPhase::None || !Motions.IsValidIndex(Motion))
-	{
-		return;
-	}
-	// the menu hides the scene for photo mode, her column too; she needs that one back (seen only)
-	if (Column.IsValid() && Column->IsHidden())
-	{
-		Column->SetActorHiddenInGame(false);
-	}
-	PhaseTime += DeltaSeconds;
-	auto Ends = [this](const TSoftObjectPtr<UAnimSequence>& S) { const UAnimSequence* A = Clip(S); return !A || PhaseTime >= A->GetPlayLength() - 0.3f; };
-	const FMotion& M = Motions[Motion];
-	const FVector Loc = Char->GetActorLocation();
-	// the menu's hand-over (its stand-up off the lean) can take the slot after Open: sit again
-	UAnimInstance* Anim = Char->GetMesh() ? Char->GetMesh()->GetAnimInstance() : nullptr;
-	if (Anim && Phase == EPhase::SitDown && PhaseTime < 1.5f && !Anim->IsPlayingSlotAnimation(Clip(SitDownClip), Slot))
-	{
-		PlayClip(Clip(SitDownClip), 1.f, false, false, 0.3f);
-		PhaseTime = 0.f;
-	}
-	else if (Anim && Phase == EPhase::Seated && !Anim->IsPlayingSlotAnimation(Clip(SitLoop), Slot))
-	{
-		PlayClip(Clip(SitLoop), 1.f, true, false, 0.3f);
-	}
-	const FVector Along = FVector::CrossProduct(FVector::UpVector, Away);
-	const FVector Mid = Column.IsValid() ? Column->GetActorLocation() : SitSpot - Away * SitGap;
-	switch (Phase)
-	{
-	case EPhase::SitDown:
-		if (Ends(SitDownClip))
-		{
-			PlayClip(Clip(SitLoop), 1.f, true, false, 0.3f);
-			Phase = EPhase::Seated;
-		}
-		break;
-	case EPhase::StandUp:
-		if (Ends(StandUpClip))
-		{
-			if (M.Kind == EKind::Move || M.Kind == EKind::Jump) { StartMoving(M); } else { Phase = EPhase::None; }
-		}
-		break;
-	case EPhase::Moving:
-	{
-		// free on the plaza; past the leash she curves round the stone instead of leaving
-		FVector ToHome = SitSpot - Loc;
-		ToHome.Z = 0.f;
-		const float D = ToHome.Size();
-		if (D > Leash)
-		{
-			FVector Tan = FVector::CrossProduct(FVector::UpVector, ToHome.GetSafeNormal());
-			if (FVector::DotProduct(Tan, Char->GetActorForwardVector()) < 0.f) { Tan = -Tan; }
-			const float Pull = FMath::Clamp((D - Leash) / 300.f, 0.f, 2.f);
-			SteerTo(Tan + ToHome.GetSafeNormal() * Pull, 30.f + 15.f * Pull, DeltaSeconds);
-		}
-		JumpClock += DeltaSeconds;
-		UCharacterMovementComponent* Move = Char->GetCharacterMovement();
-		if (M.Kind == EKind::Jump && JumpClock > JumpEvery && Move && !Move->IsFalling())
-		{
-			// a running leap: the slot lets go so her own jump and fall poses play under it
-			// root motion off first: a montage blending out would still steer her, and zero her speed
-			if (Anim)
-			{
-				Anim->SetRootMotionMode(ERootMotionMode::IgnoreRootMotion);
-				Anim->StopSlotAnimation(0.2f, Slot);
-			}
-			const float Speed = Char->GetVelocity().Size2D() > 50.f ? Char->GetVelocity().Size2D() : 220.f;
-			// she brakes hard in the air (her movement's 1500): a leap carries its speed to the ground
-			if (Move && SavedAirBrake < 0.f)
-			{
-				SavedAirBrake = Move->BrakingDecelerationFalling;
-				Move->BrakingDecelerationFalling = 0.f;
-			}
-			Char->LaunchCharacter(Char->GetActorForwardVector() * Speed + FVector(0.f, 0.f, JumpSpeed), true, true);
-			Phase = EPhase::Air;
-			PhaseTime = 0.f;
-		}
-		break;
-	}
-	case EPhase::Air:
-		if (PhaseTime > 0.2f && Char->GetCharacterMovement() && !Char->GetCharacterMovement()->IsFalling())
-		{
-			StartMoving(M);   // lands into the jog again; the clock waits for the next leap
-		}
-		break;
-	case EPhase::Approach:
-	{
-		// back to the stone: round its end if she is behind it, then in from the front
-		const FVector Rel = Loc - Mid;
-		const float A = FVector::DotProduct(Rel, Away);
-		const float L = FVector::DotProduct(Rel, Along);
-		const float LSit = FVector::DotProduct(SitSpot - Mid, Along);
-		const FVector Front = SitSpot + Away * 70.f;
-		FVector Target = Front;
-		if (A < 90.f && FMath::Abs(L) < 260.f)
-		{
-			Target = Mid + Along * FMath::Sign(L == 0.f ? 1.f : L) * 280.f + Away * 220.f;
-		}
-		else if (A < 160.f && FMath::Abs(L - LSit) > 80.f)
-		{
-			Target = SitSpot + Away * 240.f;
-		}
-		FVector To = Target - Loc;
-		To.Z = 0.f;
-		SteerTo(To, To.Size() < 200.f ? 120.f : 60.f, DeltaSeconds);
-		if (Target.Equals(Front) && To.Size() < 50.f)
-		{
-			// she stops, turns her back to the stone and sits
-			if (Anim)
-			{
-				Anim->StopSlotAnimation(0.5f, Slot);
-				Anim->SetRootMotionMode(SavedRootMotion);
-			}
-			Phase = EPhase::Turn;
-			PhaseTime = 0.f;
-		}
-		break;
-	}
-	case EPhase::Turn:
-	{
-		const FRotator R = FMath::RInterpTo(Char->GetActorRotation(), Away.Rotation(), DeltaSeconds, 3.5f);
-		FVector P = FMath::VInterpTo(Loc, SitSpot, DeltaSeconds, 2.5f);
-		P.Z = Loc.Z;
-		Char->SetActorLocationAndRotation(P, FRotator(0.f, R.Yaw, 0.f));
-		if (PhaseTime > 1.2f)
-		{
-			Char->SetActorLocationAndRotation(FVector(SitSpot.X, SitSpot.Y, Loc.Z), Away.Rotation());
-			PlayClip(Clip(SitDownClip), 1.f, false, false, 0.4f);
-			Phase = EPhase::SitDown;
-			PhaseTime = 0.f;
-			Motion = 0;   // the loop closes: she is on SIT again
-			RefreshHud();
-		}
-		break;
-	}
-	default:
-		break;
-	}
 }

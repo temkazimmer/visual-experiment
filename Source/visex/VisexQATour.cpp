@@ -28,7 +28,6 @@
 #include "Engine/GameViewportClient.h"
 #include "UnrealEngine.h"
 #include "GameFramework/PlayerController.h"
-#include "AssetRegistry/AssetRegistryModule.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogVisexQA, Log, All);
 
@@ -170,42 +169,6 @@ static void FeetCheck(ACharacter* C, const FString& Where)
 		}
 	}
 	QA_LOG(TEXT("VisexQA: %s feet %s:%s"), *Where, bAll ? TEXT("IN FRAME") : TEXT("CUT"), *Line);
-}
-
-// the lower foot's ball: the planted one while she walks
-static FVector LowerBall(ACharacter* C)
-{
-	if (!C || !C->GetMesh()) { return FVector::ZeroVector; }
-	const FVector L = C->GetMesh()->GetSocketLocation(TEXT("ball_l")), R = C->GetMesh()->GetSocketLocation(TEXT("ball_r"));
-	return L.Z < R.Z ? L : R;
-}
-
-// logs how far the planted foot went in the gap, against how far she did
-static void FootSlide(ACharacter* C, const FString& Where, const FVector& Foot0, const FVector& Body0, float Gap)
-{
-	if (!C || !C->GetMesh()) { return; }
-	const FVector L = C->GetMesh()->GetSocketLocation(TEXT("ball_l")), R = C->GetMesh()->GetSocketLocation(TEXT("ball_r"));
-	const float Foot = FMath::Min(FVector::Dist2D(L, Foot0), FVector::Dist2D(R, Foot0));
-	const float Body = FVector::Dist2D(C->GetActorLocation(), Body0);
-	QA_LOG(TEXT("VisexQA: %s foot slide: planted foot moved %.1f cm while she moved %.1f cm in %.2f s (%s)"), *Where, Foot, Body, Gap,
-		Body < 3.f ? TEXT("she is still") : Foot < FMath::Max(3.f, Body * 0.2f) ? TEXT("PASS, planted") : TEXT("SLIDES"));
-}
-
-// the poses in photo mode's order (VisexPhotoMode::BuildMotions): flows between poses are not poses
-static TArray<FString> PoseNames()
-{
-	TArray<FAssetData> Found;
-	FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get().GetAssetsByPath(TEXT("/Game/Characters/Poses"), Found, true);
-	Found.Sort([](const FAssetData& A, const FAssetData& B) { return A.AssetName.LexicalLess(B.AssetName); });
-	TArray<FString> Names;
-	for (const FAssetData& Asset : Found)
-	{
-		FString Name = Asset.AssetName.ToString();
-		if (Name.EndsWith(TEXT("_In")) || Name.EndsWith(TEXT("_Out")) || Name.Contains(TEXT("_To_")) || !Asset.IsInstanceOf(UAnimSequence::StaticClass())) { continue; }
-		Name.RemoveFromStart(TEXT("A_Pose_"));
-		Names.Add(Name);
-	}
-	return Names;
 }
 
 void AVisexQATour::Build()
@@ -368,102 +331,64 @@ void AVisexQATour::Build()
 	Add(0.2f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Close(); } });   // leaves the page
 	Add(4.f, [this] { Report(TEXT("after wardrobe")); Shot(TEXT("menu_after_wardrobe")); });
 
-	// photo mode (7048985): opens seated against the column, then Next steps through stand-up,
-	// slow walk, walk, run, dash, jump, the poses and the walk back to sit. Motion indices as in
-	// VisexPhotoMode::BuildMotions: 0 sit, 1-5 slow walk..jump, then the poses, then the return
-	const TArray<FString> Poses = PoseNames();
-	int32 FirstPose = 6;   // not const: a captured constant draws an unused-capture warning
-	const int32 ReturnAt = FirstPose + Poses.Num();
+	// photo mode, through every motion and pose
 	Add(0.5f, [this, D] { Report(TEXT("before photo")); D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
-	// she should sit once, straight from the menu, not stand and sit again: the montage in each report
+	// when does she start to drop: just after choosing, through the stand-up, as the camera takes over
 	float Since = 0.f;
 	for (const float Wait : {0.1f, 0.3f, 0.4f, 0.7f, 1.5f})
 	{
 		Since += Wait;
 		Add(Wait, [this, Since] { Report(FString::Printf(TEXT("photo +%.1fs"), Since)); });
 	}
-	Add(1.f, [this, ReturnAt]
+	// she pushed off the column and walks slowly in place: two shots 1 s apart, and how far she went
+	TSharedRef<FVector> WalkFrom = MakeShared<FVector>(FVector::ZeroVector);
+	Add(1.f, [this, WalkFrom]
+	{
+		Report(TEXT("photo open walk")); Shot(TEXT("photo_open_walk"));
+		*WalkFrom = Her() ? Her()->GetActorLocation() : FVector::ZeroVector;
+	});
+	Add(1.f, [this, WalkFrom]
+	{
+		const float Moved = Her() ? FVector::Dist2D(Her()->GetActorLocation(), *WalkFrom) : -1.f;
+		QA_LOG(TEXT("VisexQA: photo open walk moved %.1f cm in 1 s (%s)"), Moved, Moved >= 0.f && Moved < 3.f ? TEXT("PASS, in place") : TEXT("MOVES"));
+		Report(TEXT("photo open walk +1s")); Shot(TEXT("photo_open_walk_1s"));
+	});
+	Add(4.f, [this]
 	{
 		AVisexPhotoMode* P = Photo();
-		QA_LOG(TEXT("VisexQA: photo mode %s, motion %d, %d poses, return at %d"), P && P->IsOpen() ? TEXT("open") : TEXT("DID NOT OPEN"),
-			P ? P->GetMotion() : -1, ReturnAt - 6, ReturnAt);
-		Report(TEXT("photo sit at open")); Shot(TEXT("photo_sit_open"));
+		QA_LOG(TEXT("VisexQA: photo mode %s"), P && P->IsOpen() ? TEXT("open") : TEXT("DID NOT OPEN"));
+		if (!P || !P->IsOpen()) { return; }
+		for (int32 I = 0; I < 60; ++I)
+		{
+			P->SetMotion(I);
+			if (P->GetMotion() != I) { QA_LOG(TEXT("VisexQA: %d motions"), I); break; }
+		}
+		P->SetMotion(0);
 	});
-	// each move: shot after it has got going, then the planted foot 0.1 s later
-	struct FMove { int32 Motion; const TCHAR* Name; float Wait; };
-	for (const FMove& Mv : {FMove{1, TEXT("slow_walk"), 6.f}, FMove{2, TEXT("walk"), 3.f}, FMove{3, TEXT("run"), 3.f}, FMove{4, TEXT("dash"), 3.f}})
+	for (int32 I = 0; I < 40; ++I)
 	{
-		TSharedRef<TPair<FVector, FVector>> At = MakeShared<TPair<FVector, FVector>>();
-		const FString Name = Mv.Name;
-		const int32 Index = Mv.Motion;
-		Add(0.5f, [this, Index] { if (AVisexPhotoMode* P = Photo()) { P->SetMotion(Index); } });
-		Add(Mv.Wait, [this, Name, Index, At]
+		// switch, then shoot once the pose has settled (2.5 s caught them mid-flow in 0333/0351)
+		Add(0.5f, [this, I]
 		{
 			AVisexPhotoMode* P = Photo();
-			QA_LOG(TEXT("VisexQA: photo %s is motion %d"), *Name, P ? P->GetMotion() : -1);
-			Report(TEXT("photo ") + Name); Shot(TEXT("photo_") + Name);
-			At->Key = LowerBall(Her());
-			At->Value = Her() ? Her()->GetActorLocation() : FVector::ZeroVector;
+			if (!P || !P->IsOpen()) { return; }
+			P->SetMotion(I);
+			if (P->GetMotion() != I) { Next = AfterPoses; }   // past the last motion
 		});
-		Add(0.1f, [this, Name, At] { FootSlide(Her(), TEXT("photo ") + Name, At->Key, At->Value, 0.1f); });
-		Add(0.4f, [this, At]
+		Add(4.5f, [this, I]
 		{
-			At->Key = LowerBall(Her());
-			At->Value = Her() ? Her()->GetActorLocation() : FVector::ZeroVector;
+			Report(FString::Printf(TEXT("photo motion %d"), I));
+			Shot(FString::Printf(TEXT("photo_%02d"), I));
 		});
-		Add(0.1f, [this, Name, At] { FootSlide(Her(), TEXT("photo ") + Name + TEXT(" again"), At->Key, At->Value, 0.1f); });
-	}
-	// the jump: she leaps 3.5 s into the jog. Polls every frame and shoots as she tops out
-	{
-		TSharedRef<float> Left = MakeShared<float>(0.f);
-		Add(0.5f, [this, Left] { if (AVisexPhotoMode* P = Photo()) { P->SetMotion(5); } *Left = 9.f; });
-		Add(0.5f, [this, Left]
-		{
-			ACharacter* C = Her();
-			const UCharacterMovementComponent* Move = C ? C->GetCharacterMovement() : nullptr;
-			*Left -= GetWorld()->GetDeltaSeconds();
-			const bool bApex = Move && Move->IsFalling() && Move->Velocity.Z <= 0.f;
-			if (!bApex && *Left > 0.f) { --Next; Clock = 1.f; return; }   // again next frame
-			Report(bApex ? TEXT("photo jump apex") : TEXT("photo jump: NO LEAP in 9 s"));
-			Shot(bApex ? TEXT("photo_jump_apex") : TEXT("photo_jump_none"));
-		});
-		Add(2.f, [this] { Report(TEXT("photo jump landed")); });
-	}
-	// each pose once its flow in has ended (2.5 s caught them mid-transition in 0333/0351)
-	for (int32 I = 0; I < Poses.Num(); ++I)
-	{
-		const int32 Index = FirstPose + I;
-		const FString Name = Poses[I];
-		Add(0.5f, [this, Index] { if (AVisexPhotoMode* P = Photo()) { P->SetMotion(Index); } });
-		Add(5.f, [this, Index, Name]
-		{
-			AVisexPhotoMode* P = Photo();
-			Report(FString::Printf(TEXT("photo pose %s (motion %d, now %d)"), *Name, Index, P ? P->GetMotion() : -1));
-			Shot(TEXT("photo_pose_") + Name);
-		});
-	}
-	// the return: she walks back to the stone, turns and sits. Waits for her to stop, then for the sit
-	{
-		TSharedRef<float> Left = MakeShared<float>(0.f);
-		Add(0.5f, [this, Left, ReturnAt] { if (AVisexPhotoMode* P = Photo()) { P->SetMotion(ReturnAt); } *Left = 30.f; });
-		Add(2.f, [this] { Report(TEXT("photo return walk")); Shot(TEXT("photo_return_walk")); });
-		Add(0.5f, [this, Left]
-		{
-			ACharacter* C = Her();
-			*Left -= GetWorld()->GetDeltaSeconds();
-			if (C && C->GetVelocity().Size2D() > 5.f && *Left > 0.f) { --Next; Clock = 1.f; return; }
-			Report(*Left > 0.f ? TEXT("photo return: she stopped") : TEXT("photo return: STILL MOVING after 30 s"));
-		});
-		Add(5.f, [this] { Report(TEXT("photo return sit")); Shot(TEXT("photo_return_sit")); });
 	}
 	AfterPoses = Steps.Num();
 	// a full GC, then walk and run again: Shipping 0240 crashed here once GC freed the loop clips
 	Add(1.f, [] { CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS, true); QA_LOG(TEXT("VisexQA: forced GC")); });
-	Add(1.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetMotion(2); } });
-	Add(5.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetMotion(3); } Report(TEXT("photo after GC")); });
-	// hair turnaround on a standing pose out on the plaza (seated, the stone is behind her)
-	Add(2.f, [this, FirstPose, Poses] { if (AVisexPhotoMode* P = Photo()) { const int32 Peace = Poses.IndexOfByKey(TEXT("Peace")); P->SetMotion(FirstPose + FMath::Max(Peace, 0)); P->SetHudVisible(false); } });
-	Add(4.f, [] {});
+	Add(1.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetMotion(1); } });
+	Add(2.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetMotion(2); } Report(TEXT("photo after GC")); });
+	// hair turnaround: idle, 8 angles 45 deg apart, full body on the orbit camera, then head and
+	// shoulders on the free camera. No keypresses, so it runs on any keyboard layout (QA 0281)
+	Add(1.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetMotion(0); P->SetHudVisible(false); } });
 	for (int32 K = 0; K < 8; ++K)
 	{
 		Add(1.5f, [this, K]
