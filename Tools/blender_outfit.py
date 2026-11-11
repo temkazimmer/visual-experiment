@@ -718,16 +718,19 @@ BELT_Z = LM["waist"] - 3.0
 
 
 # ---- shared sets --------------------------------------------------------------------------------
-def bra(cup_slot, cup_top=0.30, band_w=1.6, strap_w=1.0, pipe="Satin"):
-    region(cups(cup_top), 0.30, cup_slot, pipe=pipe, pipe_r=0.15)
+def bra(cup_slot, cup_top=0.30, band_w=1.6, strap_w=1.0, pipe="Satin", bind=None):
+    """bind=(slot, width): a flat bound edge on the cups instead of round piping."""
+    region(cups(cup_top), 0.30, cup_slot, pipe=None if bind else pipe, pipe_r=0.15, bind=bind, min_loop=6.0 if bind else 10.0)
     region(underband(band_w), 0.46, "Satin")
     shoulder_straps(strap_w, cup_top)
     hardware(NP(ray(TORSO_BVH, pel_v, LM["fold"] - band_w * 0.5, 0.0, 0.0)), UP, (1.3, 1.3, 0.45), 0.6)   # centre ring
 
 
-def stockings(top=ST_TOP, welt="Lace", welt_h=6.0, slot="Sheer"):
+def stockings(top=ST_TOP, welt="Lace", welt_h=6.0, slot="Sheer", bind=None):
+    """bind=(slot, width): flat bound welt edges instead of round satin piping."""
     region(where(LEGMASK & (Z < LM["crotch"]), top - Z), 0.26, slot)
-    region(band(top - welt_h * 0.5, welt_h, LEGMASK & (Z < LM["crotch"])), 0.32, welt, pipe="Satin", pipe_r=0.16)
+    region(band(top - welt_h * 0.5, welt_h, LEGMASK & (Z < LM["crotch"])), 0.32, welt,
+           pipe=None if bind else "Satin", pipe_r=0.16, bind=bind)
     for s in (1, -1):
         seam(leg_line(s, 180, top - welt_h, LM["ankle"] + 3, 0.29), 0.12, "Satin")
 
@@ -741,16 +744,28 @@ def garters(belt_z, bot_z, back=True, off_top=0.6, off_bot=0.5, slot="Satin", wi
 
 # ---- the outfits ---------------------------------------------------------------------------------
 def noir():
-    """Sheer bodysuit with boning, lace cups, satin underband and straps, seamed thigh-highs."""
+    """Nylon bodysuit with boning and a satin waist cincher, lace cups, satin straps, seamed
+    nylon thigh-highs with lace welts. Refreshed 2026-11-11 (Tema): the bodystocking's nylon
+    instead of flat sheer, five straight boning channels instead of nine wobbly lines, flat
+    bound edges instead of round piping, a cincher with a front clasp instead of a stray band,
+    wider straps."""
+    BIND = ("Binding", 0.55)
     body = bodysuit()
-    region(body, 0.26, "Sheer", pipe="Satin", pipe_r=0.15)
-    bra("Lace", 0.55, 1.8, 1.0)
+    region(body, 0.26, "Nylon", bind=BIND, min_loop=6.0)
+    bra("Lace", 0.55, 1.8, 1.4, bind=BIND)
     z0 = LM["fold"] - 2.2
-    for th in (18, -18, 52, -52, 98, -98, 148, -148, 180):
-        seam(torso_line(th, z0, LM["crotch"] - 2, 0.29), 0.15, "Satin", body)
-    seam(torso_line(0, z0, LM["crotch"] - 1, 0.29), 0.13, "Satin", body)
-    region(band(LM["waist"] - 4.4, 1.4), 0.38, "Satin")     # clear of the leg line: piping under a band flickers through it
-    stockings()
+    for th in (22, -22, 70, -70, 180):                                   # boning channels
+        seam(torso_line(th, z0, LM["crotch"] - 2, 0.29), 0.22, "Satin", body)
+    cz, ch = LM["waist"] - 1.5, 7.0                                       # waist cincher
+    region(np.minimum(band(cz, ch), body + 2.0), 0.46, "Satin", bind=BIND)
+    # its clasp: hook-and-eye pairs down the front, on the belly's front (not in the navel)
+    front = [q for q in (ray(TORSO_BVH, pel_v, cz, D(t), 0.0) for t in (-12, -8, -4, 4, 8, 12)) if q]
+    if front:
+        depth = max((q - pel_v).dot(fwd_v) for q in front)
+        for k in range(4):
+            z = cz - ch * 0.5 + 1.2 + k * (ch - 2.4) / 3
+            clip(Vector((pel_v.x, pel_v.y, z)) + fwd_v * (depth + 0.75), fwd_v, left_v, (1.2, 0.5, 0.3))
+    stockings(slot="Nylon", bind=BIND)
 
 
 def garter_set():
