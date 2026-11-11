@@ -69,8 +69,12 @@ the skirt is skinned to her pose by the leader pose. That is the shipping look, 
   (PhysicsParallelFor, waits in `HandleExistingParallelSimulation`).
 
 The mesh for the skinned look: no flare or folds; 1 cm off at the top, easing out as u squared
-to about 4 cm at the hem; the skin's weights down to 2 cm above the crotch, then each column keeps
-the weights of that ring, with no thigh pull (`skirt(..., tight=True)`).
+to about 4 cm at the hem (`skirt(..., tight=True)`). **Weights follow her legs (2026-11-11,
+`follow=True`):** every ring takes the weights of the skin straight in from it (hip, glute, thigh),
+blurred about 4.5 cm round and 1.4 cm down. Before, each column kept the crotch ring's weights all
+the way down, so in FEETUP, GLANCE and MERMAID the skirt stayed with her pelvis: her seat showed
+through a crack at the back and her thighs passed through the front. With the sim switched on, the
+leg-following weights may bring the idle ridge back (untested).
 
 The outfit row names a cloth asset beside its mesh: "BodystockingSkirt" wears
 `SKM_Outfit_Bodystocking` plus `CA_Skirt`, a `UChaosClothComponent` that follows the body's

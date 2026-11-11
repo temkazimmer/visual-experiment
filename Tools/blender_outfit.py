@@ -934,7 +934,7 @@ def bodystocking():
             tube(ring, 0.1, "Trim", closed=True, sides=8, step=0.35, rigid=nearest(cv))
 
 
-def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.5, slot="Satin", skin_to=None, tight=False, rigid_from=None):
+def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.5, slot="Satin", skin_to=None, tight=False, rigid_from=None, follow=False):
     """A short satin A-line worn over the bodystocking (Docs/Research/DESIGN_SKIRT.md). Not cut
     from the skin: rings lofted from the waist down. Each ring follows her hull to the hip, then
     hangs straight from the widest point above it, flares out (A-line) and swings in broad
@@ -947,7 +947,12 @@ def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.
     the skin at skin_to, with no thigh pull.
     rigid_from (cm): from here down the weights blend to the pelvis alone, so the ring keeps its
     length round her: the cloth's rest ring is the reference pose's, and where the legs pulled the
-    ring shorter in idle the free cloth bulged out into a ridge."""
+    ring shorter in idle the free cloth bulged out into a ridge.
+    follow: for the skinned skirt (the cloth sim is off by default): every ring takes the weights
+    of the skin straight in from it (waist, hip, glute, thigh), blurred round the ring and down, so
+    it rides her legs when she sits, kneels or lies down. With one ring's weights from the crotch
+    down it stayed with the pelvis, and in FEETUP, GLANCE and MERMAID her thighs went through the
+    front, her seat showed through the back and the hem sank into the sand."""
     cr, hb = LM["crotch"], LM["hip_top"]
     top = LM["waist"] + 1.0 if top is None else top
     hem = cr - 6.0 if hem is None else hem
@@ -985,6 +990,18 @@ def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.
     PELVIS_W = np.zeros(nb)
     PELVIS_W[gnames.index("pelvis")] = 1.0
     kl, kr = nt // 4, 3 * nt // 4                                  # columns straight out over her left and right leg
+    if follow:
+        WF = WM[J[:, :-1]].astype(float)                               # rows, columns (the last repeats the first), bones
+        sc, sr = 6.0, 2.0                                              # blur sigma: 6 columns (~4.5 cm) round, 2 rows (1.4 cm) down
+        f = np.fft.fftfreq(nt)
+        WF = np.real(np.fft.ifft(np.fft.fft(WF, axis=1) * np.exp(-2 * (math.pi * f * sc) ** 2)[None, :, None], axis=1))
+        g = np.exp(-0.5 * (np.arange(-6, 7) / sr) ** 2)
+        g /= g.sum()
+        pad = np.concatenate([np.repeat(WF[:1], 6, 0), WF, np.repeat(WF[-1:], 6, 0)], 0)
+        WF = sum(pad[o:o + len(zs)] * g[o] for o in range(13))
+        WF = np.clip(WF, 0.0, None)
+        WF /= np.maximum(WF.sum(2, keepdims=True), 1e-9)
+        WF = np.concatenate([WF, WF[:, :1]], 1)
 
     def sheet(rr, z0, z1, piece_slot, own_uv=True):
         rows = [i for i, z in enumerate(zs) if z1 - 1e-6 <= z <= z0 + 1e-6]
@@ -1007,6 +1024,10 @@ def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.
                 # pelvis = the hip ring's skin weights; each thigh pulls the part of the skirt
                 # that hangs over it, more towards the hem (stand-in for cloth, see the doc)
                 uu = float(uw[i])
+                if follow:
+                    ws.append(WF[i, k])
+                    ms.append(1.0 - float(u[i, 0]))
+                    continue
                 # tight (cloth): no thigh pull. Each column keeps one set of weights below the
                 # hand-over, so it keeps its length when the thighs move; a pull that grew down the
                 # skirt shortened the front in idle and the sim folded it (the ridge). Colliders do the legs.
@@ -1038,7 +1059,7 @@ def skirt(top=None, hem=None, off=0.75, flare=9.0, lobes=5, swing=5.0, band_h=3.
 OUTFITS = {"Noir": noir, "Garter": garter_set, "Cocoa": cocoa, "Fishnet": fishnet,
            "Catsuit": catsuit_set, "Sheer": sheer, "Bodystocking": bodystocking,
            "BodystockingSkirt": lambda: (bodystocking(), skirt()),
-           "Skirt": lambda: skirt(off=1.0, flare=1.5, swing=0.0, skin_to=LM["crotch"] + 2.0, tight=True)}   # the cloth skirt: follows her shape, only the hem moves (Tema 2026-11-10); 1 cm off at the top, 4 at the hem (the cloth gets no bounce morphs); skin weights to just above the crotch, so the hip front cannot push through
+           "Skirt": lambda: skirt(off=1.0, flare=1.5, swing=0.0, skin_to=LM["crotch"] + 2.0, tight=True, follow=True)}   # the cloth skirt: follows her shape, only the hem moves (Tema 2026-11-10); 1 cm off at the top, 4 at the hem (the cloth gets no bounce morphs); skin weights to just above the crotch, so the hip front cannot push through
 CLOTH = {"Skirt"}                                # simulated in UE: the default body's morphs baked into the rest shape
 
 
