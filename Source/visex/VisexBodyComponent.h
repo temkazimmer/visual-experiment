@@ -135,6 +135,12 @@ private:
 	class USkeletalMeshComponent* Body() const;
 	void PushToAnim() const;
 	void ApplyOutfit();
+	/** The worn outfit's fit morphs (Tools/blender_outfit.py --fit): Fit_<O> seats it, and
+	 *  Fit_<O>_<Key> takes each body morph past the design body, on the skin and the outfit alike. */
+	void ApplyFit();
+	TArray<FName> FitMorphs;
+	/** How much the worn outfit holds the bust still (0 = bare, 1 = a sports bra). */
+	float BustSupport = 0.f;
 	void TickJiggle(float DeltaTime);
 	/** Moves one spring on: X is its bone's position along the spring's axis (cm). */
 	static void StepSpring(FVisexJiggleState& J, float X, float DeltaTime, float Hz, float Zeta, float Limit);

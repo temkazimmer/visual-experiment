@@ -154,9 +154,10 @@ FText FVisexBodyProfile::SkinToneName(float Tone)
 
 const TArray<FVisexOutfit>& FVisexBodyProfile::Outfits()
 {
-	auto O = [](const TCHAR* Name, const FText& Label, const TCHAR* Asset, const TCHAR* Cloth = TEXT(""))
+	auto O = [](const TCHAR* Name, const FText& Label, const TCHAR* Asset, const TCHAR* Cloth = TEXT(""), float Support = 0.f)
 	{
 		FVisexOutfit Out;
+		Out.BustSupport = Support;
 		Out.Name = Name;
 		Out.Label = Label;
 		Out.Mesh = Asset;
@@ -177,15 +178,15 @@ const TArray<FVisexOutfit>& FVisexBodyProfile::Outfits()
 	// list one again. A saved profile naming an unlisted outfit falls back to "None".
 	static const TArray<FVisexOutfit> Table = {
 		O(TEXT("None"),    LOCTEXT("OutfitNone", "Nothing"),          TEXT("")),
-		O(TEXT("Bodystocking"), LOCTEXT("OutfitBodystocking", "Sheer bodystocking"), TEXT("/Game/Character/Clothes/SKM_Outfit_Bodystocking.SKM_Outfit_Bodystocking")),
+		O(TEXT("Bodystocking"), LOCTEXT("OutfitBodystocking", "Sheer bodystocking"), TEXT("/Game/Character/Clothes/SKM_Outfit_Bodystocking.SKM_Outfit_Bodystocking"), TEXT(""), 0.15f),
 		O(TEXT("BodystockingSkirt"), LOCTEXT("OutfitBodystockingSkirt", "Bodystocking and skirt"), TEXT("/Game/Character/Clothes/SKM_Outfit_Bodystocking.SKM_Outfit_Bodystocking"),
 			TEXT("/Game/Character/Clothes/CA_Skirt.CA_Skirt")),   // the skirt is Chaos cloth (Docs/Research/STUDY_SKIRT_SIM.md)
 		// refreshed and unlocked 2026-11-11 (Tema): smooth navy latex, keyhole, bound edges, belt and buckle
-		O(TEXT("Catsuit"), LOCTEXT("OutfitCatsuit", "Latex catsuit"), TEXT("/Game/Character/Outfits/SKM_Outfit_Catsuit.SKM_Outfit_Catsuit")),
+		O(TEXT("Catsuit"), LOCTEXT("OutfitCatsuit", "Latex catsuit"), TEXT("/Game/Character/Outfits/SKM_Outfit_Catsuit.SKM_Outfit_Catsuit"), TEXT(""), 0.7f),
 		// refreshed and unlocked 2026-11-11 (Tema): nylon bodysuit, lace cups as the neckline, satin cincher, seamed thigh-highs
-		O(TEXT("Noir"),    LOCTEXT("OutfitNoir", "Noir lace"),        TEXT("/Game/Character/Outfits/SKM_Outfit_Noir.SKM_Outfit_Noir")),
+		O(TEXT("Noir"),    LOCTEXT("OutfitNoir", "Noir lace"),        TEXT("/Game/Character/Outfits/SKM_Outfit_Noir.SKM_Outfit_Noir"), TEXT(""), 0.55f),
 		// bundle 03 (Tema's references, 2026-11-11): red tartan slingshot, collar and tie, white thigh-highs
-		O(TEXT("Tartan"), LOCTEXT("OutfitTartan", "Tartan"), TEXT("/Game/Character/Clothes/SKM_Outfit_Tartan.SKM_Outfit_Tartan")),
+		O(TEXT("Tartan"), LOCTEXT("OutfitTartan", "Tartan"), TEXT("/Game/Character/Clothes/SKM_Outfit_Tartan.SKM_Outfit_Tartan"), TEXT(""), 0.25f),   // a triangle top: little support
 		// bundle 02 (Tema's references, 2026-11-11): black strap harness, ring-joined, opaque chap stockings
 		O(TEXT("Harness"), LOCTEXT("OutfitHarness", "Harness"), TEXT("/Game/Character/Clothes/SKM_Outfit_Harness.SKM_Outfit_Harness")),
 		// the dressing room's locked costumes: listed, not wearable yet (unlocked in play or
