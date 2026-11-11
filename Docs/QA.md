@@ -7,6 +7,38 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-11 23:25 · VIS-EX-0441 Shipping (e9f0adf) · STABLE PASS, new fluted menu column reads well once lit, Mirror and Silversuit wearable, Ledge end pose still not caught
+
+- **Tour (b7ded30, unchanged):** two runs from the mounted DMG, clean cook. Both reached `VisexQA: done` with 57 shots and exit 0
+  (290 s, 282 s). On ground at every step, no spectator, no new visex `.ips`. Shots in `Saved/QA_0441ship{,_run2}/` and
+  `Tools/.bridge/shots/qa0441/` (run 2 in `run2/`, sheets in `crops/`).
+- **Cook:** `0 error(s), 0 warning(s)`, 834 packages in the IoStore. DMG md5 `a4af5d9a…`, copied to `VIS-EX-0441-stable.dmg`.
+- **GC and layout:** both forced GCs pass in both runs. `layout save PASS, on disk`.
+- **Menu column (SM_LeanColumn_HD, FitLeanColumn):** crisp. Flutes with sharp arrises, chipped edges and pitting all read at
+  menu distance (`crops/05_menu_again_column.png`, `crops/outfits.png`). She leans on it, hip against the flutes, hand on
+  the top edge: no gap, nothing sinks. `01_menu` and `02_menu_feet` (1 s apart): same pose, small even sway, no jitter.
+  **But on the first menu after launch the drum is a black mass** (`crops/01_menu_column.png`): it sits in shadow, the
+  flutes don't show. From `05_menu_again` on it's lit. 0401's first menu had the same shadow (`crops/menu_0401_vs_0441.png`),
+  so it's the first-menu light, not the mesh. Worth a look: it's the first thing Tema sees.
+- **Outfits:** Bodystocking, + skirt, Catsuit, Silversuit, Noir, Mirror, Harness and Tartan all wearable at her size
+  (`crops/outfits.png`, run 2 `crops/run2_outfits.png`). Silversuit: full-body metallic gold-silver, belt with a hip cutout, ankle
+  cuffs. Mirror: glossy black cups and brief over a sheer bodice, choker, arm cuff (`crops/silversuit_mirror_torso.png`).
+  No skin through cloth at menu distance. Not checked in deep bends: photo mode runs in the default Bodystocking.
+- **Wardrobe order:** Nothing, Sheer bodystocking, + skirt, Latex catsuit, Silversuit, Noir lace, Mirror, Harness, Tartan, then
+  Garter set, Cocoa satin, Fishnet locked (`24_wardrobe`). Noir, Mirror, Harness, Tartan as asked.
+- **Poses (11 motions):** Idle, Walk, Run, Bookend, Crown, FeetUp, Glance, Ledge, LegLift, Mermaid, Peace. Crown is in, labelled
+  CROWN (`34_photo_04`), but the close camera frames hips to thighs, head cut. Mermaid: seated end pose, legs swept, peace hand by
+  her face (`39_photo_09`). **Ledge: end pose not caught again**: she's moved to (8884, -354) on the stone (trace z 101), but at
+  +4.5 s still stands upright, stone out of frame (`37_photo_07`). LegLift right after is still in its kneeling flow (`38_photo_08`).
+  Sheets `crops/poses_a.png`, `crops/poses_b.png`.
+- **Growing from the soles:** not checked, the tour doesn't move body sliders.
+- **Start move:** 4:3 menu, mid-move, landing and play all `fills the window`, landing at fov 90. Feet IN FRAME at 16:9 and 4:3.
+- **Regressions:** none. Body and Wardrobe `open` at 4 s. Photo mode opens walking in place: `moved 0.0 cm in 1 s (PASS)` both runs.
+- **4K column close-up:** not taken. The editor's `take_high_res_screenshot` with `camera=MenuCam` shot the editor viewport instead, so it was dropped.
+- **Frame times:** quality 0/3/4: 16.7 / 16.7 / 35.2 ms (run 2: 16.7 / 17.3 / 36.3). Load around 3.5.
+- **Saves:** backed up `VisexBody.sav` (`37c1a469…`) and `GameUserSettings.ini` (`0f8144b4…`), restored after each run, both md5s
+  match. The tour rewrites both. No `Game.ini` before or after.
+
 ## 2026-11-11 20:23 · VIS-EX-0401 Shipping (4d4be67) · PASS, classic photo mode walks in place, Harness and new Tartan wearable, Ledge end pose not caught
 
 - **Tour (b7ded30):** two runs from the mounted DMG, clean cook. Both reached `VisexQA: done` with 54 shots and exit 0
