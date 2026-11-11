@@ -1587,7 +1587,7 @@ def mirror():
 
 
 OUTFITS = {"Noir": noir, "Garter": garter_set, "Cocoa": cocoa, "Fishnet": fishnet,
-           "Catsuit": catsuit_set, "Sheer": sheer, "Bodystocking": bodystocking,
+           "Catsuit": catsuit_set, "Silversuit": catsuit_set, "Sheer": sheer, "Bodystocking": bodystocking,
            "BodystockingSkirt": lambda: (bodystocking(), skirt()), "Tartan": tartan, "Harness": harness,
            "Mirror": mirror,   # premium bundle 01
            "Skirt": lambda: skirt(off=1.0, flare=1.5, swing=0.0, skin_to=LM["crotch"] + 2.0, tight=True, follow=True, cling=0.7)}   # the cloth skirt: follows her shape, only the hem moves (Tema 2026-11-10); 1 cm off at the top, 4 at the hem (the cloth gets no bounce morphs); skin weights to just above the crotch, so the hip front cannot push through

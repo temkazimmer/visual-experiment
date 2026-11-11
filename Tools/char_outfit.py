@@ -41,6 +41,11 @@ WARDROBE = {
     # (0.025) showed every hard edge of the scene as jagged black shapes on her (2026-11-11)
     "Catsuit": dict(Latex=dict(Color=(0.006, 0.009, 0.032), Roughness=0.3, RoughnessVariation=0.04, CoatRoughness=0.12, CoatVariation=0.02, NormalStrength=0.0),
                     Trim=STEEL),   # only the buckle and the zip pull: no white on it (Tema, 2026-11-11)
+    # the Catsuit cut in liquid chrome (Tema's reference, 2026-11-11): a true metal (the Trim
+    # base), cool silver, near-mirror; rough enough that the scene's hard edges blur into soft
+    # bands instead of jagged black shapes (the Catsuit's mirror-coat lesson)
+    "Silversuit": dict(Latex=dict(_base="Trim", Color=(0.80, 0.83, 0.88), Roughness=0.13, RoughnessVariation=0.03, Metallic=1.0),
+                       Trim=STEEL),
     # the hero outfit: one piece of sheer nylon, heavier on the legs, with gold jewellery
     "Bodystocking": dict(Nylon=dict(Color=(0.006, 0.006, 0.008), CoverTorso=0.6, CoverLeg=0.84, StretchSheer=0.36, SeamStrength=1.0),
                          Sheer=dict(Color=(0.006, 0.006, 0.008), Opacity=0.5, EdgeExponent=1.6, SeamStrength=1.0),
@@ -75,7 +80,7 @@ WARDROBE = {
                    Satin=dict(Color=(0.008, 0.008, 0.01), Roughness=0.55, RoughnessVariation=0.1, NormalStrength=0.4, SeamStrength=1.0),
                    Binding=dict(_base="Satin", Color=(0.006, 0.006, 0.008), Roughness=0.7, RoughnessVariation=0.1, NormalStrength=0.5)),
 }
-MESH_DIR = {"Sheer": "/Game/Character/Clothes", "Bodystocking": "/Game/Character/Clothes", "BodystockingSkirt": "/Game/Character/Clothes", "Skirt": "/Game/Character/Clothes", "Tartan": "/Game/Character/Clothes", "Harness": "/Game/Character/Clothes", "Mirror": "/Game/Character/Clothes"}       # the rest: /Game/Character/Outfits
+MESH_DIR = {"Sheer": "/Game/Character/Clothes", "Bodystocking": "/Game/Character/Clothes", "BodystockingSkirt": "/Game/Character/Clothes", "Skirt": "/Game/Character/Clothes", "Silversuit": "/Game/Character/Clothes", "Tartan": "/Game/Character/Clothes", "Harness": "/Game/Character/Clothes", "Mirror": "/Game/Character/Clothes"}       # the rest: /Game/Character/Outfits
 DIR = "/Game/Character/Clothes"
 SKELETON = "/Game/Characters/Mannequins/Meshes/SK_Mannequin"
 ONLY = globals().get("ONLY")

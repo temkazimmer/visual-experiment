@@ -183,6 +183,8 @@ const TArray<FVisexOutfit>& FVisexBodyProfile::Outfits()
 			TEXT("/Game/Character/Clothes/CA_Skirt.CA_Skirt"), 0.15f),   // the skirt is Chaos cloth (Docs/Research/STUDY_SKIRT_SIM.md)
 		// refreshed and unlocked 2026-11-11 (Tema): smooth navy latex, keyhole, bound edges, belt and buckle
 		O(TEXT("Catsuit"), LOCTEXT("OutfitCatsuit", "Latex catsuit"), TEXT("/Game/Character/Outfits/SKM_Outfit_Catsuit.SKM_Outfit_Catsuit"), TEXT(""), 0.7f),
+		// the catsuit in liquid chrome (Tema's reference, 2026-11-11)
+		O(TEXT("Silversuit"), LOCTEXT("OutfitSilversuit", "Silversuit"), TEXT("/Game/Character/Clothes/SKM_Outfit_Silversuit.SKM_Outfit_Silversuit"), TEXT(""), 0.7f),
 		// refreshed and unlocked 2026-11-11 (Tema): nylon bodysuit, lace cups as the neckline, satin cincher, seamed thigh-highs
 		O(TEXT("Noir"),    LOCTEXT("OutfitNoir", "Noir lace"),        TEXT("/Game/Character/Outfits/SKM_Outfit_Noir.SKM_Outfit_Noir"), TEXT(""), 0.55f),
 		// premium bundle 01 (Tema's references, 2026-11-11): sheer mesh bodysuit, bandeau, curved boning, opera gloves
