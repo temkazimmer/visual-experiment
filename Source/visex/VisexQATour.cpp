@@ -24,6 +24,8 @@
 #include "RenderCore.h"
 #include "GameFramework/GameUserSettings.h"
 #include "VisexSettings.h"
+#include "Engine/GameViewportClient.h"
+#include "UnrealEngine.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogVisexQA, Log, All);
 
@@ -122,6 +124,25 @@ void AVisexQATour::Report(const FString& Where) const
 	QA_LOG(TEXT("VisexQA: %s: %s"), *Where, *Body);
 }
 
+void AVisexQATour::ViewCheck(const FString& Where) const
+{
+	FVector2D Size(0.f);
+	if (UGameViewportClient* Viewport = GetWorld()->GetGameViewport())
+	{
+		Viewport->GetViewportSize(Size);
+	}
+	const APlayerCameraManager* Cam = UGameplayStatics::GetPlayerCameraManager(this, 0);
+	if (!Cam)
+	{
+		QA_LOG(TEXT("VisexQA: %s: no camera"), *Where);
+		return;
+	}
+	const FMinimalViewInfo& View = Cam->GetCameraCacheView();
+	QA_LOG(TEXT("VisexQA: %s: window %.0fx%.0f (%.3f), view %s, fov %.1f, %s"), *Where, Size.X, Size.Y,
+		Size.Y > 0.f ? Size.X / Size.Y : 0.f, *GetNameSafe(Cam->GetViewTarget()), View.FOV,
+		View.bConstrainAspectRatio ? *FString::Printf(TEXT("LETTERBOXED to %.3f"), View.AspectRatio) : TEXT("fills the window"));
+}
+
 void AVisexQATour::Build()
 {
 	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
@@ -185,6 +206,30 @@ void AVisexQATour::Build()
 	// GC while the lean-down plays: the idle clip waiting in its timer must survive (0298 crash)
 	Add(0.3f, [] { CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS, true); });
 	Add(4.7f, [this] { Report(TEXT("menu again")); Shot(TEXT("menu_again")); });
+
+	// a 4:3 window: the menu, the Start move and its landing fill it, no letterbox (the menu's
+	// cine camera used to box to 16:9 and the bars snapped off as the move landed)
+	{
+		struct FRes { int32 X = 0, Y = 0; EWindowMode::Type Mode = EWindowMode::Windowed; };
+		TSharedRef<FRes> Was = MakeShared<FRes>();
+		const float Orbit = D->BlendToPlayTime;
+		const float Landing = D->LandingBlendTime;
+		Add(0.5f, [Was]
+		{
+			Was->X = GSystemResolution.ResX;
+			Was->Y = GSystemResolution.ResY;
+			Was->Mode = GSystemResolution.WindowMode;
+			FSystemResolution::RequestResolutionChange(1440, 1080, EWindowMode::Windowed);
+		});
+		Add(3.f, [this] { ViewCheck(TEXT("4:3 menu")); Shot(TEXT("menu_4x3")); });
+		Add(0.1f, [D] { D->StartGame(); });
+		Add(Orbit * 0.5f, [this] { ViewCheck(TEXT("4:3 mid-move")); Shot(TEXT("start_4x3_mid")); });
+		Add(Orbit * 0.5f + Landing * 0.5f, [this] { ViewCheck(TEXT("4:3 landing")); Shot(TEXT("start_4x3_landing")); });
+		Add(Landing + 0.5f, [this] { ViewCheck(TEXT("4:3 play")); Shot(TEXT("play_4x3")); });
+		Add(0.5f, [D] { D->ToggleMenu(); });
+		Add(3.f, [Was] { FSystemResolution::RequestResolutionChange(Was->X, Was->Y, Was->Mode); });
+		Add(3.f, [this] { ViewCheck(TEXT("menu, window back")); Report(TEXT("menu after 4:3")); });
+	}
 
 	// the Settings page: open, both tabs, step a value there and back, close
 	Add(0.5f, [D] { D->OpenSettings(); });

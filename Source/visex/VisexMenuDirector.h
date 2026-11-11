@@ -237,6 +237,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera", meta = (ClampMin = "1"))
 	float MenuSensorScale = 3.f;
 
+	/** The menu fills the window like the play camera, with no letterbox, so the Start move lands
+	 * without the bars snapping off. A narrower window than the shot shows more above and below;
+	 * a wider one widens the lens to keep her whole height and shows more at the sides. Off: the
+	 * cine camera's own 16:9 frame, letterboxed on any other window. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Camera")
+	bool bMenuFillsWindow = true;
+
 	/** Menu aperture (f-stop) on that sensor; 0 keeps the camera's own. f/2.8 holds about ±14 cm
 	 * around the focus at menu distance, so she stays crisp while the steps and colonnade behind
 	 * her fall soft (f/8, about ±40 cm, kept the background too sharp). */
@@ -438,7 +445,13 @@ private:
 	float OrbitA0 = 0.f, OrbitR0 = 0.f, OrbitZ0 = 0.f;
 	float MenuFocal = 0.f, MenuFStop = 0.f;
 	FCameraFilmbackSettings MenuFilmback;
+	bool bMenuConstrain = true;   // the cine camera's own aspect-ratio setting
+	float MenuViewAspect = 0.f;   // the window shape the menu lens was last set for
 	bool bHaveLens = false;
+	/** The menu's focal length on the scaled sensor, widened for a window wider than the shot. */
+	float MenuLensFocal() const;
+	void SetMenuFocal(class UCineCameraComponent* Lens, float Focal);
+	float ViewAspect() const;
 	bool bOpen = false;
 	bool bInputBound = false;
 	bool bStickHeld = false;

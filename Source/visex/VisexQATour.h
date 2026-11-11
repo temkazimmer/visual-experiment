@@ -41,4 +41,6 @@ private:
 	class ACharacter* Her() const;
 	class AVisexPhotoMode* Photo() const;
 	void Report(const FString& Where) const;
+	/** Logs the window's shape and whether the view is letterboxed. */
+	void ViewCheck(const FString& Where) const;
 };

@@ -16,6 +16,7 @@
 #include "Components/SkyLightComponent.h"
 #include "Components/SpotLightComponent.h"
 #include "Engine/DirectionalLight.h"
+#include "Engine/GameViewportClient.h"
 #include "Engine/RectLight.h"
 #include "Engine/SpotLight.h"
 #include "Engine/PostProcessVolume.h"
@@ -180,20 +181,21 @@ void AVisexMenuDirector::ShowMenu()
 			MenuFocal = Lens->CurrentFocalLength;
 			MenuFStop = Lens->CurrentAperture;
 			MenuFilmback = Lens->Filmback;
+			bMenuConstrain = Lens->bConstrainAspectRatio;
 			bHaveLens = true;
 		}
+		// a cine camera letterboxes to its sensor's 16:9 by default, the play camera fills the
+		// window: on any other window the bars snapped off where the Start move lands (QA 4:3)
+		Lens->bConstrainAspectRatio = bMenuFillsWindow ? false : bMenuConstrain;
 		// a bigger sensor with a matching focal length frames the same and blurs more
 		const float Scale = FMath::Max(1.f, MenuSensorScale);
 		Lens->Filmback = MenuFilmback;
 		Lens->Filmback.SensorWidth *= Scale;
 		Lens->Filmback.SensorHeight *= Scale;
-		const float Focal = (MenuFocalLength > 0.f ? MenuFocalLength : MenuFocal) * Scale;
 		const float Stop = MenuAperture > 0.f ? MenuAperture : MenuFStop;
 		// the lens preset's range would clamp these
-		Lens->LensSettings.MinFocalLength = FMath::Min(Lens->LensSettings.MinFocalLength, Focal);
-		Lens->LensSettings.MaxFocalLength = FMath::Max(Lens->LensSettings.MaxFocalLength, Focal);
 		Lens->LensSettings.MinFStop = FMath::Min(Lens->LensSettings.MinFStop, Stop);
-		Lens->SetCurrentFocalLength(Focal);
+		SetMenuFocal(Lens, MenuLensFocal());
 		Lens->SetCurrentAperture(Stop);
 		FCameraFocusSettings Focus = Lens->FocusSettings;
 		Focus.ManualFocusDistance = FVector::Dist(CameraBase.GetLocation(), MenuAim);
@@ -275,6 +277,42 @@ UCineCameraComponent* AVisexMenuDirector::GetLens() const
 {
 	const ACineCameraActor* Cine = Cast<ACineCameraActor>(MenuCamera);
 	return Cine ? Cine->GetCineCameraComponent() : nullptr;
+}
+
+float AVisexMenuDirector::ViewAspect() const
+{
+	FVector2D Size(0.f);
+	if (UGameViewportClient* Viewport = GetWorld() ? GetWorld()->GetGameViewport() : nullptr)
+	{
+		Viewport->GetViewportSize(Size);
+	}
+	return Size.Y > 0.f ? Size.X / Size.Y : 16.f / 9.f;
+}
+
+float AVisexMenuDirector::MenuLensFocal() const
+{
+	float Focal = (MenuFocalLength > 0.f ? MenuFocalLength : MenuFocal) * FMath::Max(1.f, MenuSensorScale);
+	// unboxed, the view keeps the lens's horizontal field (as the play camera does), so a
+	// window wider than the shot would crop her head and feet: widen to keep its height
+	if (bMenuFillsWindow && MenuFilmback.SensorHeight > 0.f)
+	{
+		const float Shot = MenuFilmback.SensorWidth / MenuFilmback.SensorHeight;
+		const float Window = ViewAspect();
+		if (Window > Shot)
+		{
+			Focal *= Shot / Window;
+		}
+	}
+	return Focal;
+}
+
+void AVisexMenuDirector::SetMenuFocal(UCineCameraComponent* Lens, float Focal)
+{
+	// the lens preset's range would clamp it
+	Lens->LensSettings.MinFocalLength = FMath::Min(Lens->LensSettings.MinFocalLength, Focal);
+	Lens->LensSettings.MaxFocalLength = FMath::Max(Lens->LensSettings.MaxFocalLength, Focal);
+	Lens->SetCurrentFocalLength(Focal);
+	MenuViewAspect = ViewAspect();
 }
 
 UVisexMenuWidget* AVisexMenuDirector::GetMenuWidget() const
@@ -1025,6 +1063,14 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 			+ FVector::UpVector * 0.5f * DriftDistance * FMath::Sin(Clock * W * 0.91f + 2.1f);
 		MenuCamera->SetActorLocationAndRotation(Loc, Rot);
 	}
+	// the window changed shape under the menu: keep her whole height in the frame
+	if (bOpen && !bOrbiting && bHaveLens && bMenuFillsWindow && !FMath::IsNearlyEqual(ViewAspect(), MenuViewAspect, 0.001f))
+	{
+		if (UCineCameraComponent* Lens = GetLens())
+		{
+			SetMenuFocal(Lens, MenuLensFocal());
+		}
+	}
 
 	// the first push of the stick after the hand-over cuts the rest of the stand-up: its root
 	// motion would otherwise hold her in place while the player is already asking her to walk
@@ -1117,7 +1163,7 @@ void AVisexMenuDirector::TickOrbit(float DeltaSeconds)
 	if (UCineCameraComponent* Lens = GetLens())
 	{
 		const float HalfW = Lens->Filmback.SensorWidth * 0.5f;
-		const float StartFocal = (MenuFocalLength > 0.f ? MenuFocalLength : MenuFocal) * FMath::Max(1.f, MenuSensorScale);
+		const float StartFocal = MenuLensFocal();
 		const float FovStart = 2.f * FMath::RadiansToDegrees(FMath::Atan(HalfW / FMath::Max(1.f, StartFocal)));
 		const float Fov = FMath::Lerp(FovStart, Follow->FieldOfView, S);
 		Lens->SetCurrentFocalLength(HalfW / FMath::Tan(FMath::DegreesToRadians(Fov * 0.5f)));
