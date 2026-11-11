@@ -66,7 +66,7 @@ WARDROBE = {
     # bundle 02 (Tema's references, 2026-11-11): matte black elastic straps joined by steel rings,
     # opaque jersey chap stockings with a soft sheen, matte bound edges
     "Harness": dict(Satin=dict(Color=(0.008, 0.008, 0.01), Roughness=0.4, RoughnessVariation=0.12, NormalStrength=0.6, SeamStrength=1.0),
-                    Jersey=dict(_base="Satin", Color=(0.01, 0.01, 0.012), Roughness=0.52, RoughnessVariation=0.1, NormalStrength=0.35, SeamStrength=1.0),
+                    Jersey=dict(_base="Satin", Color=(0.012, 0.012, 0.014), Roughness=0.72, RoughnessVariation=0.08, NormalStrength=0.3, SeamStrength=1.0),
                     Binding=dict(_base="Satin", Color=(0.006, 0.006, 0.008), Roughness=0.7, RoughnessVariation=0.1, NormalStrength=0.5),
                     Trim=dict(Color=(0.8, 0.8, 0.82), Roughness=0.22, RoughnessVariation=0.06, Metallic=1.0)),
 }
