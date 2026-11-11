@@ -1769,6 +1769,33 @@ def fit_outfit(name, fit, oc, idx3, w3, dl, fab):
     np.savez_compressed(os.path.join(OUT_DIR, "skinfit_%s.npz" % name.lower()), **SKIN_FIT[name])
 
 
+STRAND_SMOOTH = 30   # [1,2,1] passes along a string's rings: ~2-4 cm of shared weighting
+
+
+def _along_strands(a, strap, ring, passes=STRAND_SMOOTH):
+    """Average a per-vertex array (bone weights, morph deltas) along each string and tape.
+    A string skinned ring by ring to its nearest skin vertex took the belly's side of a deep
+    hip crease on one ring and the thigh's on the next, and jogged into a Z or broke into
+    dashes there (Mermaid); sharing the weighting along it keeps it one smooth line."""
+    a = a.copy()
+    for sid in np.unique(strap[strap >= 0]):
+        m = np.nonzero(strap == sid)[0]
+        r = ring[m]
+        nr = int(r.max()) + 1
+        if nr < 3:
+            continue
+        acc = np.zeros((nr,) + a.shape[1:])
+        np.add.at(acc, r, a[m])
+        cnt = np.maximum(np.bincount(r, minlength=nr), 1).reshape((nr,) + (1,) * (a.ndim - 1))
+        mean = acc / cnt
+        sm = mean.copy()
+        for _ in range(passes):
+            pad = np.concatenate([sm[:1], sm, sm[-1:]])         # ends keep their own anchor
+            sm = 0.25 * pad[:-2] + 0.5 * pad[1:-1] + 0.25 * pad[2:]
+        a[m] = a[m] - mean[r] + sm[r]
+    return a
+
+
 def finalize(ob):
     """Weights, the rest shape with every body morph, and garment UVs."""
     om, name = ob.data, ob.name[len("SKM_Outfit_"):]
@@ -1790,6 +1817,10 @@ def finalize(ob):
     w3 /= w3.sum(1, keepdims=True)
 
     ow = sum(WM[idx3[:, k]] * w3[:, k, None] for k in range(3))
+    _fm = FIT_OF.get(ob.name)
+    strands = (np.array(_fm["strap"]), np.array(_fm["ring"])) if _fm else None
+    if strands is not None:
+        ow = _along_strands(ow, *strands)
     ex = EXTRA_OF.pop(ob.name)
     own = ~np.isnan(ex["w"][:, 0])                         # pieces that bring their own weights (skirt)
     ow[own] = ex["w"][own]
@@ -1806,6 +1837,8 @@ def finalize(ob):
                 vgs[g].add((i,), w, "REPLACE")
 
     dl = {kname: sum(DL[idx3[:, k]] * w3[:, k, None] for k in range(3)) * ex["m"][:, None] for kname, DL in DELTAS.items()}
+    if strands is not None:
+        dl = {k: _along_strands(v, *strands) for k, v in dl.items()}
     oc = clear_skin(oc, idx3, w3, SEAM_OF[ob.name][:, 0] < NO_SEAM, dl)     # fabric panels only
     fit = FIT_OF.pop(ob.name, None)
     if FIT and fit and name not in CLOTH:
