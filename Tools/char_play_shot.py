@@ -20,8 +20,9 @@ world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_game_world
 if not world:
     raise RuntimeError("not in Play")
 pawn = unreal.GameplayStatics.get_player_pawn(world, 0)
-comps = pawn.get_components_by_class(unreal.SkeletalMeshComponent)
-body = [c for c in comps if c.get_class().get_name() != "VisexShellComponent"][0]
+# the character's own mesh: "first non-shell skeletal mesh" sometimes picked the hair, and a
+# pose then went onto the hair instead of her
+body = pawn.get_editor_property("mesh")
 anim = globals().get("ANIM")
 if anim:
     body.override_animation_data(unreal.load_asset(anim), True, True, 0.0, 1.0)
