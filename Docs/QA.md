@@ -7,6 +7,39 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-11 15:43 · VIS-EX-0333 Shipping (31f4903) · STABLE PASS, 4:3 menu fixed, toe tips still show a pale sliver
+
+- **Tour:** two runs from the mounted DMG, clean cook. Both reached `VisexQA: done` with 45 shots and exit 0,
+  and the two runs' shots match. She spawns and plays as the character, not a spectator: `play` and `walked`
+  report the third-person view, on ground, and the walk moves her about 5 m. Body (`SKM_Quinn_Simple`), shell
+  (`SKM_AndroidSkin`), hair and outfit are present at every step. No new visex `.ips`; the only new reports are
+  `zen` ones from before the build. Shots are in `Saved/QA_0333ship{,_run2}/` and `Tools/.bridge/shots/qa0333/`
+  (run 2 in `run2/`), with comparisons against 0320 in `crops/`.
+- **Cook:** 809 packages, `0 error(s), 0 warning(s)`. Nothing mentions either mesh, and there's no
+  Payload, corrupt or bulk-data warning. The skeletal meshes came from the DDC, so this doesn't re-derive them.
+- **GC and layout:** both forced GCs pass in both runs (lean-down and photo mode). `layout save PASS, on disk`.
+- **Menu at 4:3 (c359518):** fixed. The full text shows: VIS/EX-0333, Start, Body, Wardrobe, Photo mode,
+  Settings, Quit (`05_menu_4x3`). All four 4:3 checks report `fills the window`. **21:9 (31016d2) isn't
+  checked**: the tour has no 21:9 step.
+- **Menu lean and idle beats (895aa7d, a092f91):** she leans on the drum in both runs, before and after the GC,
+  on the ground. Her feet now stand apart in the lean stance, not crossed as in 0320 (`crops/cmp_04_menu_again.png`).
+  A beat itself isn't visible in stills. In photo poses her feet follow each pose (`crops/photo_grid_0333.png`).
+- **Toes (696182d, e55d62a):** much better. 0320's big pale patch on the big toe is gone
+  (`crops/toes_zoom_0320_0333.png`, `crops/cmp_feet_turn.png`). **But each toe tip still shows a thin pale sliver
+  with a hard dark rim**, most visible in the menu close-up (`crops/toes_menu_both.png`). There are no catsuit
+  pieces on her toes.
+- **Skirt (7c33f3b):** clean in the menu lean, no seat hole or thigh through it (`crops/cmp_skirt_menu.png`).
+  **Photo poses with the skirt aren't checked**: photo mode runs in Tema's saved Bodystocking.
+- **Walk head (a771a5a):** not checkable from stills. `03_walked` is taken after she stops, and the WALK photo
+  crops her head. Side-to-side sway needs a clip.
+- **Against 0320:** no regression. She's clothed at the right size in every outfit (`crops/outfits.png`), and
+  there's no HUD in the turnaround. Body and Wardrobe still arrive after the 4 s shot, as in 0320. Photo
+  motions 3–7 report `mode 0`, as before. Quality 0/3/4: 16.7 / 23.3 / 59.2 ms (run 2: 19.5 / 25.3 / 61.6),
+  with load around 5 and two other editors open, so not comparable.
+- **Saves:** I backed up `VisexBody.sav` and `GameUserSettings.ini` and restored them after each run. Both md5s
+  match the originals, `29ae709f…` and `0f8144b4…`. GameUserSettings had no `[VisexMenuLayout]` before the run.
+  There's no `Game.ini`, before or after. The release copy is `Build/VIS-EX-0333-stable.dmg`.
+
 ## 2026-11-11 14:15 · VIS-EX-0320 Shipping (8a90666) · PASS, but her big toe pokes through the stocking and 4:3 clips the menu
 
 - **Tour:** one run from the mounted DMG. No crash: it reached `VisexQA: done`, took 45 shots and exited 0.
