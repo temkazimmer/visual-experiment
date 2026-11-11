@@ -1517,7 +1517,7 @@ def mirror():
     neck_w = 5.2                                                   # half-width of the strap at the neck
     zh = LM["fold"] - 1.0                                          # armhole meets the side seam here
     t = np.clip((cz - Z) / (cz - zh), 0, 1)
-    edge = neck_w + (cx + 6.0 - neck_w) * t ** 1.7                 # lateral edge, widening down
+    edge = neck_w + (cx + 9.0 - neck_w) * t ** 1.15                # lateral edge, widening down: covers the side of the bust
     f_arm = np.where(Z > zh, edge - ALAT, 9.0)
     # leg line: high cut to above the hip bone, thong behind
     a = np.clip(ALAT / LM["hip_half"], 0, 1)
