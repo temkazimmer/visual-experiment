@@ -395,7 +395,9 @@ def region(val, offset, slot, rim=None, pipe=None, pipe_r=0.18, min_loop=10.0, l
         if pipe:
             tube(pts, pipe_r, pipe, closed, push=0.08)
         if bind:      # a rounded binding standing TRIM_PROUD off the panel edge it covers
-            tube(pts, 0.0, bind[0], closed, flat=(bind[1], TRIM_PROUD), step=0.5)
+            # 0.4 mm off the panel: flush, its flat underside z-fights with the panel and
+            # flecks of a glossy panel show through a matte binding (Noir's cincher)
+            tube(pts, 0.0, bind[0], closed, flat=(bind[1], TRIM_PROUD), step=0.5, push=0.04)
     return bm
 
 
@@ -750,13 +752,19 @@ def noir():
     bound edges instead of round piping, a cincher with a front clasp instead of a stray band,
     wider straps."""
     BIND = ("Binding", 0.55)
-    body = bodysuit()
+    # sweetheart top (Tema's review, 2026-11-11): in front the nylon stops at the cups' edge,
+    # so the lace cups are the neckline, not two shapes under a straight sheer strip; round
+    # the sides and back it ends just under the satin underband, its binding the band's lower
+    # edge (under the band, the binding stood proud through it in flecks); between and under the
+    # cups it rises just over the band's top edge
+    level = LM["fold"] - 2.4 + 2.7 * smooth01(0.3, 0.6, NS @ FWD)
+    body = np.minimum(bodysuit(), where(TORSO, np.maximum(cups(0.55), level - Z)))
     region(body, 0.26, "Nylon", bind=BIND, min_loop=6.0)
     bra("Lace", 0.55, 1.8, 1.4, bind=BIND)
     z0 = LM["fold"] - 2.2
-    for th in (22, -22, 70, -70, 180):                                   # boning channels
-        seam(torso_line(th, z0, LM["crotch"] - 2, 0.29), 0.22, "Satin", body)
     cz, ch = LM["waist"] - 1.5, 7.0                                       # waist cincher
+    for th in (22, -22, 70, -70, 180):                                   # boning channels, underbust into the cincher
+        seam(torso_line(th, z0, cz, 0.29), 0.22, "Satin", body)
     region(np.minimum(band(cz, ch), body + 2.0), 0.46, "Satin", bind=BIND)
     # its clasp: hook-and-eye pairs down the front, on the belly's front (not in the navel)
     front = [q for q in (ray(TORSO_BVH, pel_v, cz, D(t), 0.0) for t in (-12, -8, -4, 4, 8, 12)) if q]
@@ -1477,9 +1485,12 @@ for name, build in OUTFITS.items():
     build()
     ob = assemble(name)
     if PREVIEW:
-        for label, d in (("front", FWD * 0.9 + LEFT * 0.42), ("back", -FWD * 0.9 + LEFT * 0.42)):
-            tgt = Vector((pel_v.x, pel_v.y, 92))
-            cam.location = tgt + V3(d).normalized() * 560
+        shots = [("front", FWD * 0.9 + LEFT * 0.42, 92, 560), ("back", -FWD * 0.9 + LEFT * 0.42, 92, 560)]
+        if os.environ.get("OUTFIT_CLOSE"):                     # torso close-ups for checking edges
+            shots += [("front_close", FWD * 0.9 + LEFT * 0.3, LM["waist"], 190), ("back_close", -FWD * 0.9 + LEFT * 0.3, LM["waist"], 190)]
+        for label, d, tz, dist in shots:
+            tgt = Vector((pel_v.x, pel_v.y, tz))
+            cam.location = tgt + V3(d).normalized() * dist
             cam.rotation_euler = (tgt - cam.location).to_track_quat("-Z", "Y").to_euler()
             scn.render.filepath = os.path.join(PREVIEW, "%s_%s.png" % (name, label))
             bpy.ops.render.render(write_still=True)

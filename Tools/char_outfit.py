@@ -29,7 +29,9 @@ WARDROBE = {
     "Noir": dict(Nylon=dict(Color=(0.006, 0.006, 0.008), CoverTorso=0.55, CoverLeg=0.8, StretchSheer=0.36, SeamStrength=1.0),
                  Lace=dict(Color=BLACK, Opacity=0.5, Cell=3.0),
                  Satin=dict(Color=BLACK, Roughness=0.3, RoughnessVariation=0.14),
-                 Binding=dict(_base="Satin", Color=(0.006, 0.006, 0.008), Roughness=0.74, RoughnessVariation=0.1, NormalStrength=0.5),
+                 # bindings as glossy as the satin: where a flat binding cuts across a curve the
+                 # satin under it pokes through, and a matte binding showed it as bright flecks
+                 Binding=dict(_base="Satin", Color=(0.006, 0.006, 0.008), Roughness=0.3, RoughnessVariation=0.14, NormalStrength=0.5),
                  Trim=STEEL),
     "Garter": dict(Sheer=dict(Color=BLACK, Opacity=0.5), Lace=dict(Color=BLACK, Opacity=0.3, Cell=4.0),
                    Satin=dict(Color=BLACK, Roughness=0.42, RoughnessVariation=0.2), Trim=GOLD),
@@ -380,7 +382,9 @@ def build_materials():
     if KEEP_BASES:
         for n in ("Sheer", "Nylon", "Lace", "Net", "Satin", "Latex", "Trim"):
             base[n] = unreal.load_asset(DIR + "/M_Outfit" + n)
-        base["Tartan"] = build_tartan(weave, detail)
+        # Tartan too, once it exists: a run for another outfit must not re-save it (bundle-02)
+        have = unreal.EditorAssetLibrary.does_asset_exist(DIR + "/M_OutfitTartan")
+        base["Tartan"] = unreal.load_asset(DIR + "/M_OutfitTartan") if have else build_tartan(weave, detail)
         return base
 
     m = material("M_OutfitSheer", T)
