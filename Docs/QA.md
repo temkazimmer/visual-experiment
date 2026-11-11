@@ -7,6 +7,24 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-11 · VIS-EX-0291 Shipping (e5a260b) · PASS
+
+- **Tour:** no crash, on ground, all 41 shots. Orbit landing smooth (0.656 → 0.543 → 0.427 → 0.397 → 0.388).
+- **Body page:** BODY / FACE / HAIR tabs, with E and Q stepping both ways. FACE shows Head plus its note,
+  HAIR shows "Long, straight" WORN. Escape returns to the menu with Body selected.
+- **Wardrobe:**
+  - It opens on the worn costume. Down tries on the next one, so the skirt appears; nothing is skipped.
+  - Locked rows leave her as she is, and Enter opens UNDER CONSTRUCTION. Enter or Escape closes it.
+  - Escape returns to the menu with Wardrobe selected.
+- **Saves:** Tema's `VisexBody.sav` is unchanged (same md5). `GameUserSettings.ini` was restored from a
+  backup after the tour.
+- **Mounds:** her feet sit in soft sand with mounds shaded like the dunes, and prints show behind her.
+  No pale pads or rims.
+- **Turnaround:** body shots now frame her whole, with no HUD. Head 2 (side) is still mostly a hair
+  silhouette against the sky. Shots are still 1600×900.
+- **Low-camera wind:** no horizontal streaks in the play and walk shots. A real grazing-angle check
+  needs a lower camera than the tour has.
+
 ## 2026-11-10 21:45 · VIS-EX-0286 Shipping (ab61ef3 + QA.md) · PASS, close-ups show hair-card edges
 
 - **Automated turnaround (new):** 8 body and 8 head shots at 1600×900 (window clamped), no keys.
