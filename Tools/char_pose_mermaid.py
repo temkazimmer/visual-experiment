@@ -204,7 +204,34 @@ def clip(keys):
     return frames
 
 
+def _frame_world(fr, b):
+    chain = []
+    while b:
+        chain.append(b)
+        b = parent[b]
+    P, Q = (0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0)
+    for x in reversed(chain):
+        p, q, _ = fr[x]
+        P, Q = add(P, rot(Q, p)), qnorm(qmul(Q, q))
+    return P, Q
+
+
+def ik_feet(fr):
+    """Put ik_foot_l/r on the frame's own feet. The anim blueprint's foot IK rig solves the legs
+    to those bones, so left at the idle stance they pinned her feet there whatever the clip did."""
+    if "ik_foot_root" not in fr:
+        return
+    RP, RQ = _frame_world(fr, "ik_foot_root")
+    iq = qinv(RQ)
+    for s in "lr":
+        FP, FQ = _frame_world(fr, "foot_" + s)
+        fr["ik_foot_" + s] = (rot(iq, sub(FP, RP)), qnorm(qmul(iq, FQ)), fr["ik_foot_" + s][2])
+
+
 def write(name, frames, folder=OUT_DIR, save=True):
+    frames = [dict(fr) for fr in frames]
+    for fr in frames:
+        ik_feet(fr)
     path = folder + "/" + name
     if unreal.EditorAssetLibrary.does_asset_exist(path):
         seq = unreal.load_asset(path)
