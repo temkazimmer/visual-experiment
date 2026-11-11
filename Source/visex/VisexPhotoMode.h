@@ -124,6 +124,30 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Motion", meta = (ClampMin = "0.1", ClampMax = "1"))
 	float OpenWalkRate = 0.7f;
 
+	/** A motion whose name contains "Ledge" puts her on the actor with this tag (Tools/add_ledge.py):
+	 * on its top, facing along its long axis, shot from her side. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Ledge")
+	FName LedgeTag = TEXT("PhotoLedge");
+
+	/** Where her root goes along the ledge from its centre (cm, + = the way she faces): she kneels
+	 * at the root and her forearms reach forward, so the root sits back of centre. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Ledge")
+	float LedgeAlong = -35.f;
+
+	/** The ledge camera: angle round her from her facing (deg; 90 = her right side, more = a
+	 * little behind), distance and height above the stone (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Ledge")
+	float LedgeCameraAngle = 115.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Ledge")
+	float LedgeCameraDistance = 260.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Photo|Ledge")
+	float LedgeCameraHeight = 70.f;
+
+	UFUNCTION(BlueprintPure, Category = "Photo|Ledge")
+	bool IsOnLedge() const { return bOnLedge; }
+
 	UFUNCTION(BlueprintCallable, Category = "Photo")
 	void Open();
 
@@ -191,6 +215,17 @@ private:
 	void ShowHud(bool bShow);
 	void RefreshHud();
 	void ClearMotion();
+	static bool IsLedgeMotion(const FString& Name);
+	/** Put her on the ledge top (true if there is one), or back where she stood. */
+	bool SnapToLedge();
+	void LeaveLedge();
+	bool bOnLedge = false;
+	FTransform LedgeSpot;            // her actor transform on the stone
+	FTransform GroundSpot;           // where she stood before
+	bool bLedgeWasHidden = false;    // the menu strips the scene for photo mode; put it back after
+	FVector LookPoint = FVector::ZeroVector;   // eased hips the ledge camera watches
+	UPROPERTY(Transient)
+	TObjectPtr<AActor> Ledge;
 
 	TArray<FMotion> Motions;
 	/** Keeps the walk/run clips alive: FMotion only holds them weakly (it isn't seen by GC), and
