@@ -125,35 +125,38 @@ MOUND = "/Game/VisEx/SM_SandMound"
 
 
 def mound_mesh():
-    """A unit mound: 100 cm across, 100 cm high, h = (1 - r^2)^2, so its rim has no
-    slope and meets the sand without a crease. Scaled per foot by the actor."""
+    """A unit mound: 100 cm across and 10 cm high (close to its real proportions, so
+    the actor's scale stays near uniform and the normals hold up). Profile
+    h = (1 - r^2)^3: a broad soft top and a long feathered skirt with no slope at the
+    rim, so it melts into the sand. Analytic normals, UVs from x/y. Scaled per foot."""
     import math, os
     path = os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir()), "Tools", ".bridge", "sand_mound.obj")
-    rings, segs = 16, 32
-    v, n, f = ["v 0 0 100"], ["vn 0 0 1"], []
+    R, H, rings, segs = 50.0, 10.0, 24, 48
+    v, t, n, f = ["v 0 0 %.3f" % H], ["vt 0.5 0.5"], ["vn 0 0 1"], []
     for i in range(1, rings + 1):
         r = i / rings
-        h = 100 * (1 - r * r) ** 2
-        dh = 100 * 2 * (1 - r * r) * (-2 * r) / 50.0          # dh/dR, R in cm (radius 50)
+        h = H * (1 - r * r) ** 3
+        dh = H * 3 * (1 - r * r) ** 2 * (-2 * r) / R          # dh/dR, R in cm
         for j in range(segs):
             a = 2 * math.pi * j / segs
-            v.append("v %.3f %.3f %.3f" % (50 * r * math.cos(a), -50 * r * math.sin(a), h))
+            x, y = R * r * math.cos(a), -R * r * math.sin(a)
+            v.append("v %.3f %.3f %.3f" % (x, y, h))
+            t.append("vt %.4f %.4f" % (0.5 + x / (2 * R), 0.5 + y / (2 * R)))
             ln = math.sqrt(dh * dh + 1)
-            n.append("vn %.4f %.4f %.4f" % (-dh * math.cos(a) / ln, dh * math.sin(a) / ln, 1 / ln))
+            n.append("vn %.5f %.5f %.5f" % (-dh * math.cos(a) / ln, dh * math.sin(a) / ln, 1 / ln))
     for j in range(segs):
         a, b = 2 + j, 2 + (j + 1) % segs
-        f.append("f 1//1 %d//%d %d//%d" % (b, b, a, a))
+        f.append("f 1/1/1 %d/%d/%d %d/%d/%d" % (b, b, b, a, a, a))
     for i in range(rings - 1):
         for j in range(segs):
             a = 2 + i * segs + j
             b = 2 + i * segs + (j + 1) % segs
             c, d = a + segs, b + segs
-            f.append("f %d//%d %d//%d %d//%d" % (a, a, d, d, c, c))
-            f.append("f %d//%d %d//%d %d//%d" % (a, a, b, b, d, d))
+            f.append("f %d/%d/%d %d/%d/%d %d/%d/%d" % (a, a, a, d, d, d, c, c, c))
+            f.append("f %d/%d/%d %d/%d/%d %d/%d/%d" % (a, a, a, b, b, b, d, d, d))
     with open(path, "w") as fh:
-        fh.write("\n".join(v + n + f) + "\n")
-    if unreal.EditorAssetLibrary.does_asset_exist(MOUND):
-        unreal.EditorAssetLibrary.delete_asset(MOUND)
+        fh.write("\n".join(v + t + n + f) + "\n")
+    # reimport over the old one: the footprints CDO holds it, so it can't be deleted
     task = unreal.AssetImportTask()
     for k, val in (("filename", path), ("destination_path", "/Game/VisEx"), ("destination_name", "SM_SandMound"),
                    ("automated", True), ("save", False), ("replace_existing", True)):
