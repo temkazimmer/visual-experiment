@@ -316,6 +316,22 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
 	TSoftObjectPtr<class UAnimSequence> LeanDown = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Lean_Down.A_Menu_Lean_Down")));
 
+	/** Small things she does while she leans and nobody has picked anything (Tools/char_menu_beats.py):
+	 *  a glance, a weight shift, playing with her toes. Each starts and ends in the lean. One plays
+	 *  after a rest of IdleBeatRest seconds (min, max), never the same one twice running. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
+	TArray<TSoftObjectPtr<class UAnimSequence>> IdleBeats = {
+		TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Beat_Glance.A_Menu_Beat_Glance"))),
+		TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Beat_Shift.A_Menu_Beat_Shift"))),
+		TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Beat_Toes.A_Menu_Beat_Toes")))};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
+	FVector2D IdleBeatRest = FVector2D(8.f, 20.f);
+
+	/** Plays one idle beat now if she is leaning: Index into IdleBeats, or -1 for a random one. */
+	UFUNCTION(BlueprintCallable, Category = "Menu|Lean")
+	void PlayIdleBeat(int32 Index = -1);
+
 	/** The lean clips once loaded, held so GC can't free one while a timer waits to play it
 	 * (a raw pointer caught in the lean-down timer crashed Shipping 0298). */
 	UPROPERTY(Transient)
@@ -468,6 +484,11 @@ private:
 	class UAnimInstance* GetPawnAnim() const;
 	bool bLeaning = false;
 	bool bHaveLeaned = false;
+	// idle beats: the rest timer, the beat's end, and the last one played
+	void ScheduleIdleBeat();
+	void EndIdleBeat();
+	FTimerHandle BeatTimer;
+	int32 LastBeat = INDEX_NONE;
 	void OpenCharacterPage(int32 InPage);
 	void PlacePanel();
 	void PushLayoutToWidget();

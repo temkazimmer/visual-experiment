@@ -998,6 +998,65 @@ void AVisexMenuDirector::Lean(bool bFromStanding)
 	{
 		Anim->PlaySlotAnimationAsDynamicMontage(Idle, Slot, 0.3f, 0.3f, 1.f, 1000000);
 	}
+	ScheduleIdleBeat();
+}
+
+void AVisexMenuDirector::ScheduleIdleBeat()
+{
+	GetWorldTimerManager().ClearTimer(BeatTimer);
+	if (bLeaning && IdleBeats.Num() > 0)
+	{
+		const float Rest = FMath::FRandRange(IdleBeatRest.X, FMath::Max(IdleBeatRest.X, IdleBeatRest.Y));
+		GetWorldTimerManager().SetTimer(BeatTimer, FTimerDelegate::CreateUObject(this, &AVisexMenuDirector::PlayIdleBeat, -1), Rest, false);
+	}
+}
+
+void AVisexMenuDirector::PlayIdleBeat(int32 Index)
+{
+	UAnimInstance* Anim = GetPawnAnim();
+	if (!bLeaning || !Anim || IdleBeats.Num() == 0)
+	{
+		return;
+	}
+	if (!IdleBeats.IsValidIndex(Index))
+	{
+		// never the same beat twice running
+		Index = FMath::RandRange(0, IdleBeats.Num() - 1);
+		if (Index == LastBeat && IdleBeats.Num() > 1)
+		{
+			Index = (Index + 1 + FMath::RandRange(0, IdleBeats.Num() - 2)) % IdleBeats.Num();
+		}
+	}
+	UAnimSequence* Clip = IdleBeats[Index].LoadSynchronous();
+	UAnimSequence* Idle = LeanIdle.LoadSynchronous();
+	if (!Clip || !Idle)
+	{
+		ScheduleIdleBeat();
+		return;
+	}
+	// held in LoadedLean so GC can't free either while BeatTimer waits (see 0298)
+	LoadedLean.AddUnique(Clip);
+	LoadedLean.AddUnique(Idle);
+	LastBeat = Index;
+	static const FName Slot(TEXT("DefaultSlot"));
+	// the beat opens and closes on the lean's own pose, so slow cross-fades hide the seams
+	constexpr float Blend = 0.6f;
+	Anim->PlaySlotAnimationAsDynamicMontage(Clip, Slot, Blend, Blend, 1.f, 1);
+	GetWorldTimerManager().SetTimer(BeatTimer, this, &AVisexMenuDirector::EndIdleBeat,
+		FMath::Max(Clip->GetPlayLength() - Blend, 0.1f), false);
+}
+
+void AVisexMenuDirector::EndIdleBeat()
+{
+	UAnimInstance* Anim = GetPawnAnim();
+	UAnimSequence* Idle = LeanIdle.Get();   // loaded and held in LoadedLean by PlayIdleBeat
+	if (!bLeaning || !Anim || !Idle)
+	{
+		return;
+	}
+	static const FName Slot(TEXT("DefaultSlot"));
+	Anim->PlaySlotAnimationAsDynamicMontage(Idle, Slot, 0.6f, 0.3f, 1.f, 1000000);
+	ScheduleIdleBeat();
 }
 
 float AVisexMenuDirector::StandUp()
@@ -1008,6 +1067,7 @@ float AVisexMenuDirector::StandUp()
 	}
 	bLeaning = false;
 	GetWorldTimerManager().ClearTimer(StandTimer);
+	GetWorldTimerManager().ClearTimer(BeatTimer);
 	UAnimInstance* Anim = GetPawnAnim();
 	if (!Anim)
 	{
