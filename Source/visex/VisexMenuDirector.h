@@ -309,7 +309,37 @@ public:
 	bool bLeanOnColumn = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
-	TSoftObjectPtr<class UStaticMesh> LeanColumnMesh = TSoftObjectPtr<class UStaticMesh>(FSoftObjectPath(TEXT("/Game/VisEx/Geo/SM_Drum_0.SM_Drum_0")));
+	TSoftObjectPtr<class UStaticMesh> LeanColumnMesh = TSoftObjectPtr<class UStaticMesh>(FSoftObjectPath(TEXT("/Game/VisEx/Geo/SM_LeanColumn_HD.SM_LeanColumn_HD")));
+
+	/** SM_LeanColumn_HD's outer radius at scale 1 (cm): where the worn arrises are, the stone she
+	 * actually touches. The drum is scaled so this lands on the radius FitLeanColumn solves. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
+	float LeanColumnMeshRadius = 46.4f;
+
+	/** The seat the lean clip (Tools/char_menu_lean.py) was posed on, in her mesh space (cm, at
+	 * her authored body scale): pelvis bone height above her feet, how far in front of her root
+	 * (negative: behind), how far the pelvis bone sits off the stone, and the angle from the
+	 * drum's top toward her where it sits. FitLeanColumn keeps this seat for any body. Leg length
+	 * doesn't move it: in the lean her pelvis and hands hold still whatever the legs (measured). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
+	FVector LeanSeat = FVector(85.22f, -31.51f, 8.31f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
+	float LeanSeatAngle = 46.f;
+
+	/** Her mesh scale when the lean clip was posed (Height 166). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
+	float LeanAuthoredScale = 0.935f;
+
+	/** How far the drum's underside sinks into the sand (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
+	float LeanColumnSettle = 5.2f;
+
+	/** Re-place the drum for her current body (Height scales her seat): her seat meets the stone at
+	 * the angle the lean clip was posed for, the drum stays settled in the sand. Called on every
+	 * ShowMenu (so after the Body editor closes and after a profile loads); callable any time. */
+	UFUNCTION(BlueprintCallable, Category = "Menu|Lean")
+	void FitLeanColumn();
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
 	float LeanColumnRadius = 45.f;
@@ -325,8 +355,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
 	float LeanColumnShift = 60.f;
 
-	/** The stone's measured surface radius at Play (cm): the collision capsule's radius, and the
-	 * pivot sits this far above the drum's axis. The spawned actor carries the tag LeanColumn. */
+	/** The drum's outer radius as placed (cm), measured by traces over its top: the pivot sits
+	 * this far above the drum's axis. The spawned actor carries the tag LeanColumn. */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Menu|Lean")
 	float LeanColumnSurfaceRadius = 0.f;
 

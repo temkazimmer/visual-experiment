@@ -203,6 +203,7 @@ void AVisexMenuDirector::ShowMenu()
 	}
 	SetCornerShade(1.f);
 	SpawnLeanColumn();
+	FitLeanColumn();
 	Lean(bHaveLeaned);
 	bHaveLeaned = true;
 	bOrbiting = false;
@@ -962,20 +963,12 @@ void AVisexMenuDirector::SpawnLeanColumn()
 	{
 		return;
 	}
-	// A drum lying across behind her, settled a little into the sand. Built so the animation
-	// side can read it exactly: actor tagged LeanColumn, uniform scale, pivot on the top of the
-	// stone at the middle of its length, X along the drum, Z up, no roll; collision is a capsule
-	// sized to the stone's real surface.
-	const FVector Feet = Char->GetActorLocation() - FVector(0.f, 0.f, Char->GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
-	const FVector Fwd = Char->GetActorForwardVector().GetSafeNormal2D();
-	const FVector Right = FVector::CrossProduct(FVector::UpVector, Fwd);
-	const float R = LeanColumnRadius;
-	const FVector Axis = Feet - Fwd * (LeanColumnGap + R) + Right * LeanColumnShift + FVector(0.f, 0.f, R - 3.f);
-	const FRotator Rot = FRotationMatrix::MakeFromXZ(Right, FVector::UpVector).Rotator();
-
+	// A fallen drum lying across behind her, settled into the sand. Built so the animation side
+	// can read it exactly: actor tagged LeanColumn, scale 1, pivot on the top of the stone at the
+	// middle of its length, X along the drum, Z up, no roll. FitLeanColumn places and sizes it.
 	FActorSpawnParameters Params;
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	AActor* Column = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(), FTransform(Rot, Axis + FVector(0.f, 0.f, R)), Params);
+	AActor* Column = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(), Char->GetActorTransform(), Params);
 	if (!Column)
 	{
 		return;
@@ -984,26 +977,63 @@ void AVisexMenuDirector::SpawnLeanColumn()
 	Top->SetMobility(EComponentMobility::Movable);
 	Column->SetRootComponent(Top);
 	Top->RegisterComponent();
-	Column->SetActorLocationAndRotation(Axis + FVector(0.f, 0.f, R), Rot);
 	Column->Tags.Add(TEXT("LeanColumn"));
 
-	// the stone: its own length runs along its Z (100 cm), radius 50; its X faced her before
+	// SM_LeanColumn_HD: built at size along its X, pivot on its axis. Its collision is its own
+	// drawn triangles (complex as simple), so traces land on the stone she is drawn against.
 	UStaticMeshComponent* Stone = NewObject<UStaticMeshComponent>(Column, TEXT("Stone"));
 	Stone->SetMobility(EComponentMobility::Movable);
 	Stone->SetStaticMesh(StoneMesh);
 	Stone->SetupAttachment(Top);
-	Stone->SetRelativeRotation(FRotationMatrix::MakeFromZX(FVector(1.f, 0.f, 0.f), FVector(0.f, -1.f, 0.f)).Rotator());
-	Stone->SetRelativeScale3D(FVector(R / 50.f, R / 50.f, LeanColumnLength / 100.f));
-	Stone->SetRelativeLocation(FVector(0.f, 0.f, -R));
-	// traceable for the measurement below only; the capsule does the colliding
+	// queries only: the contact traces (Visibility) and the camera hit it; the player capsule
+	// only while she walks off (SetColumnBlocksPawn), never at spawn
+	Stone->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+	Stone->SetCollisionObjectType(ECC_WorldStatic);
 	Stone->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	Stone->SetCollisionResponseToAllChannels(ECR_Ignore);
+	Stone->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+	Stone->SetCollisionResponseToChannel(ECC_Camera, ECR_Block);
 	Stone->RegisterComponent();
-	// centre the stone's bounds on the axis (its pivot is a hair off)
-	const FVector Off = Stone->Bounds.Origin - Axis;
-	Stone->AddWorldOffset(FVector(-FVector::DotProduct(Off, Fwd) * Fwd - FVector(0.f, 0.f, Off.Z)));
+	LeanColumn = Column;
+	SetColumnBlocksPawn(false);
+	FitLeanColumn();
+}
 
-	// the real surface: trace down onto the stone across its top, along the middle of its length
+void AVisexMenuDirector::FitLeanColumn()
+{
+	const ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	UStaticMeshComponent* Stone = LeanColumn ? LeanColumn->FindComponentByClass<UStaticMeshComponent>() : nullptr;
+	if (!Char || !Char->GetMesh() || !Stone)
+	{
+		return;
+	}
+	// Her body: Height scales her whole mesh (VisexBodyComponent::Apply), and the lean clip is
+	// posed in her mesh space, so her seat scales with it. Leg length lifts the mesh but the lean
+	// keeps her pelvis and hands where they were. Solve the drum that meets the seat at the posed
+	// angle while its underside stays in the sand.
+	const FVector Feet = Char->GetActorLocation() - FVector(0.f, 0.f, Char->GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+	const FVector Fwd = Char->GetActorForwardVector().GetSafeNormal2D();
+	const FVector Right = FVector::CrossProduct(FVector::UpVector, Fwd);
+	const USkeletalMeshComponent* Mesh = Char->GetMesh();
+	const float S = Mesh->GetComponentScale().Z;
+	const float S0 = FMath::Max(LeanAuthoredScale, 0.01f);
+	const float SeatZ = S * LeanSeat.X;                         // pelvis bone above her feet
+	const float SeatFwd = S * LeanSeat.Y;                       // in front of her root
+	const float Flesh = S * LeanSeat.Z;                         // pelvis bone off the stone
+	const float C = FMath::Cos(FMath::DegreesToRadians(LeanSeatAngle));
+	const float Sn = FMath::Sin(FMath::DegreesToRadians(LeanSeatAngle));
+	// seat = axis + (R + flesh) * (sin, cos); axis height = R - settle
+	const float R = FMath::Max(20.f, (SeatZ + LeanColumnSettle - Flesh * C) / (1.f + C));
+	const float AxisFwd = SeatFwd - (R + Flesh) * Sn;
+	const FVector Axis = Feet + Fwd * AxisFwd + Right * (LeanColumnShift * S / S0) + FVector(0.f, 0.f, R - LeanColumnSettle);
+	const float K = R / FMath::Max(LeanColumnMeshRadius, 1.f);
+
+	LeanColumn->SetActorLocationAndRotation(Axis + FVector(0.f, 0.f, R), FRotationMatrix::MakeFromXZ(Right, FVector::UpVector).Rotator());
+	Stone->SetRelativeLocationAndRotation(FVector(0.f, 0.f, -R), FRotator::ZeroRotator);
+	Stone->SetRelativeScale3D(FVector(K));
+	Stone->UpdateComponentToWorld();
+
+	// the stone as placed: trace down onto its top along the middle of its length
 	TArray<float> Radii;
 	FHitResult Hit;
 	FCollisionQueryParams Trace(SCENE_QUERY_STAT(LeanColumnSurface), true);
@@ -1011,47 +1041,25 @@ void AVisexMenuDirector::SpawnLeanColumn()
 	{
 		for (int32 j = -3; j <= 3; ++j)
 		{
-			const FVector Along = Right * (LeanColumnLength * 0.35f * i / 4.f);
+			const FVector Along = Right * (LeanColumnLength * K * 0.3f * i / 4.f);
 			const float Ang = FMath::DegreesToRadians(12.f * j);
 			const FVector Dir = Fwd * FMath::Sin(Ang) + FVector::UpVector * FMath::Cos(Ang);
-			const FVector Start = Axis + Along + Dir * (R * 2.f);
-			if (Stone->LineTraceComponent(Hit, Start, Axis + Along, Trace))
+			if (Stone->LineTraceComponent(Hit, Axis + Along + Dir * (R * 2.f), Axis + Along, Trace))
 			{
-				// distance from the drum's axis, across the drum
 				const FVector D = Hit.Location - Axis;
 				Radii.Add(FVector2D(FVector::DotProduct(D, Fwd), D.Z).Size());
 			}
 		}
 	}
-	float Surface = R;
-	if (Radii.Num() >= 5)
-	{
-		Radii.Sort();
-		Surface = Radii[Radii.Num() / 2];
-	}
-	LeanColumnSurfaceRadius = Surface;
-	// pivot onto the measured top
-	Column->SetActorLocation(Axis + FVector(0.f, 0.f, Surface));
-	Stone->AddWorldOffset(FVector(0.f, 0.f, R - Surface));   // the stone stays where it was
-
-	UCapsuleComponent* Body = NewObject<UCapsuleComponent>(Column, TEXT("Collision"));
-	Body->SetMobility(EComponentMobility::Movable);
-	Body->SetupAttachment(Top);
-	Body->SetRelativeLocation(FVector(0.f, 0.f, -Surface));
-	Body->SetRelativeRotation(FRotator(90.f, 0.f, 0.f));   // capsule axis along the drum
-	Body->SetCapsuleSize(Surface, LeanColumnLength * 0.5f);
-	Body->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
-	Body->RegisterComponent();
-
-	UE_LOG(LogTemp, Log, TEXT("LeanColumn: surface radius %.1f (from %d hits), top %.1f, axis %s, gap %.1f"),
-		Surface, Radii.Num(), Axis.Z + Surface, *Axis.ToString(), LeanColumnGap);
-	LeanColumn = Column;
-	SetColumnBlocksPawn(false);
+	Radii.Sort();
+	LeanColumnSurfaceRadius = Radii.Num() ? Radii.Last() : R;
+	UE_LOG(LogTemp, Log, TEXT("LeanColumn fit: body scale %.3f, seat %.1f up %.1f fwd -> radius %.1f (scale %.3f, traced outer %.1f from %d hits), axis %.1f behind her, top %.1f"),
+		S, SeatZ, SeatFwd, R, K, LeanColumnSurfaceRadius, Radii.Num(), -AxisFwd, R * 2.f - LeanColumnSettle);
 }
 
 void AVisexMenuDirector::SetColumnBlocksPawn(bool bBlock)
 {
-	if (UCapsuleComponent* Body = LeanColumn ? LeanColumn->FindComponentByClass<UCapsuleComponent>() : nullptr)
+	if (UStaticMeshComponent* Body = LeanColumn ? LeanColumn->FindComponentByClass<UStaticMeshComponent>() : nullptr)
 	{
 		// while she leans her capsule sits partly inside it
 		Body->SetCollisionResponseToChannel(ECC_Pawn, bBlock ? ECR_Block : ECR_Ignore);
