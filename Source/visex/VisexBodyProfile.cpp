@@ -183,12 +183,17 @@ const TArray<FVisexOutfit>& FVisexBodyProfile::Outfits()
 			TEXT("/Game/Character/Clothes/CA_Skirt.CA_Skirt"), 0.15f),   // the skirt is Chaos cloth (Docs/Research/STUDY_SKIRT_SIM.md)
 		// refreshed and unlocked 2026-11-11 (Tema): smooth navy latex, keyhole, bound edges, belt and buckle
 		O(TEXT("Catsuit"), LOCTEXT("OutfitCatsuit", "Latex catsuit"), TEXT("/Game/Character/Outfits/SKM_Outfit_Catsuit.SKM_Outfit_Catsuit"), TEXT(""), 0.7f),
+		// the catsuit in liquid chrome (Tema's reference, 2026-11-11)
+		O(TEXT("Silversuit"), LOCTEXT("OutfitSilversuit", "Silversuit"), TEXT("/Game/Character/Clothes/SKM_Outfit_Silversuit.SKM_Outfit_Silversuit"), TEXT(""), 0.7f),
 		// refreshed and unlocked 2026-11-11 (Tema): nylon bodysuit, lace cups as the neckline, satin cincher, seamed thigh-highs
 		O(TEXT("Noir"),    LOCTEXT("OutfitNoir", "Noir lace"),        TEXT("/Game/Character/Outfits/SKM_Outfit_Noir.SKM_Outfit_Noir"), TEXT(""), 0.55f),
-		// bundle 03 (Tema's references, 2026-11-11): red tartan slingshot, collar and tie, white thigh-highs
-		O(TEXT("Tartan"), LOCTEXT("OutfitTartan", "Tartan"), TEXT("/Game/Character/Clothes/SKM_Outfit_Tartan.SKM_Outfit_Tartan"), TEXT(""), 0.25f),   // a triangle top: little support
+		// premium bundle 01 (Tema's references, 2026-11-11): sheer mesh bodysuit, bandeau, curved boning, opera gloves
+		O(TEXT("Mirror"), LOCTEXT("OutfitMirror", "Mirror"), TEXT("/Game/Character/Clothes/SKM_Outfit_Mirror.SKM_Outfit_Mirror"), TEXT(""), 0.4f),
 		// bundle 02 (Tema's references, 2026-11-11): black strap harness, ring-joined, opaque chap stockings
 		O(TEXT("Harness"), LOCTEXT("OutfitHarness", "Harness"), TEXT("/Game/Character/Clothes/SKM_Outfit_Harness.SKM_Outfit_Harness"), TEXT(""), 0.45f),
+		// bundle 03 (Tema's references, 2026-11-11): red tartan slingshot, collar and tie, white thigh-highs
+		O(TEXT("Tartan"), LOCTEXT("OutfitTartan", "Tartan"), TEXT("/Game/Character/Clothes/SKM_Outfit_Tartan.SKM_Outfit_Tartan"), TEXT(""), 0.25f),   // a triangle top: little support
+		// wardrobe order (Tema, 2026-11-11): the base set, then Noir, then the premium bundles
 		// the dressing room's locked costumes: listed, not wearable yet (unlocked in play or
 		// bought, later; Tema, 2026-11-11). Choosing one shows "under construction".
 		L(TEXT("Garter"),  LOCTEXT("OutfitGarter", "Garter set")),
