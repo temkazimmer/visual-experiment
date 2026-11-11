@@ -432,7 +432,7 @@ def resample(pts, closed, step):
     return out
 
 
-def tube(pts, r, slot, closed=False, sides=6, push=0.0, step=0.8, flat=None, rigid=None, src_from=None):
+def tube(pts, r, slot, closed=False, sides=6, push=0.0, step=0.8, flat=None, rigid=None, src_from=None, turn=0):
     """A round cord along a point list. flat=(width, height): a tape lying on the surface
     instead, its top rounded like a bound edge. rigid: one skin vertex the whole piece rides
     (jewellery)."""
@@ -452,6 +452,11 @@ def tube(pts, r, slot, closed=False, sides=6, push=0.0, step=0.8, flat=None, rig
         for k, q in enumerate(src_from[0]):
             ekd.insert(q, k)
         ekd.balance()
+    # turn: smooth the tape's facing along it over this many passes, so a strap that leaves the
+    # skin to span a hollow doesn't twist where the surface under it changes
+    nn = [nearest_normal(p) for p in pts]
+    if turn:
+        nn = [v.normalized() for v in smooth_pts(nn, closed, turn)]
     for i, p in enumerate(pts):
         if ekd is not None:                                 # the ring rides the panel edge under it
             src += [src_from[1][ekd.find(p)[1]]] * sides
@@ -460,7 +465,7 @@ def tube(pts, r, slot, closed=False, sides=6, push=0.0, step=0.8, flat=None, rig
             src += [(j, j, 0.0)] * sides
         a_, b_ = (pts[i - 1], pts[(i + 1) % n]) if closed else (pts[max(i - 1, 0)], pts[min(i + 1, n - 1)])
         t = (b_ - a_).normalized()
-        out = nearest_normal(p)
+        out = nn[i]
         a = out - t * out.dot(t)
         if a.length < 1e-4:
             a = t.orthogonal()
@@ -508,7 +513,7 @@ def hanging_tie(zt, zb, over=(), slot="Tartan", off=0.42, bind=("Binding", 0.55)
         depth.append(prev)
         src_j.append(prev_j if prev_j is not None else nearest(V3(PEL + UP * (z - PEL[2]))))
     bm = bmesh.new()
-    grid, src, ed = [], [], []
+    grid, src, ed, uvs = [], [], [], []
     for r, (z, w, d, j) in enumerate(zip(rows, hw, depth, src_j)):
         row = []
         for k in range(cols):
@@ -517,17 +522,21 @@ def hanging_tie(zt, zb, over=(), slot="Tartan", off=0.42, bind=("Binding", 0.55)
             row.append(bm.verts.new(V3(p)))
             src.append((j, j, 0.0))
             ed.append(min(w - abs(x), zt - z, NO_SEAM - 0.01))
+            uvs.append((x + 12.0, zt - z))          # its own cloth coordinates: the tartan runs down it
         grid.append(row)
     for r0, r1 in zip(grid, grid[1:]):
         for k in range(cols - 1):
             bm.faces.new((r0[k], r0[k + 1], r1[k + 1], r1[k]))
-    PIECES.append((bm, slot, src, ed))
+    nv_ = len(src)
+    PIECES.append((bm, slot, src, ed, dict(w=np.full((nv_, len(gnames)), np.nan), m=np.ones(nv_),
+                                           uv=np.array(uvs, float), y=np.full(nv_, np.nan))))
     centre = np.array([NP(r_[cols // 2].co) for r_ in grid])
     META[id(bm)] = dict(kind="strap", line=centre, per=cols, width=2.0 * float(hw.mean()))
     if bind:
         loop = [r_[0].co.copy() for r_ in grid] + [r_[-1].co.copy() for r_ in grid[::-1]]
         lsrc = [s_ for s_ in src[::cols]] + [s_ for s_ in src[::cols][::-1]]
         tube(loop, 0.0, bind[0], closed=True, flat=(bind[1], TRIM_PROUD), step=0.4, push=0.04, src_from=(loop, lsrc))
+    return rows, np.array(depth) + off, hw
 
 
 def seam(pts, r, slot, field=None):
@@ -1080,17 +1089,34 @@ def tartan():
                       outer=ANCHOR[s] + l * bo[0] * 0.9 + u * (bo[1] + 0.25),
                       top=ANCHOR[s] + l * ap[0] + u * (ap[1] - 1.2))
     region(cup, 0.30, "Tartan", bind=BIND, min_loop=6.0)
+    # every string starts at a corner of its cup's triangle (Tema, 2026-11-11): found on the cup's
+    # real edge, then 0.4 cm in, so the string's end tucks under the binding
+    for s in (1, -1):
+        f, u, l = frame(FWD, s, 12, 6)
+        e = np.nonzero((cup > -0.05) & (cup < 0.35) & (LAT * s > 0))[0]
+        x, y = (X[e] - ANCHOR[s]) @ l, (X[e] - ANCHOR[s]) @ u
+        mid = X[np.nonzero((cup > 1.5) & (LAT * s > 0))[0]].mean(0)
+        for key, k in (("inner", np.argmin(x + y)), ("outer", np.argmax(x - y))):
+            q = X[e[k]]
+            low[s][key] = q + (mid - q) / np.linalg.norm(mid - q) * 0.4
 
     # the bridge (Tema's sketch, 2026-11-11): a strap between the cups' inner bottom corners,
     # pulled straight across the cleavage
-    ends = [V3(surface_near(low[s]["inner"], FWD)) for s in (1, -1)]
-    bridge = taut(*(e + nearest_normal(e) * 0.35 for e in ends), 0.35)
-    tube(bridge, 0.0, "Binding", flat=(0.9, 0.16), step=0.35)
     # the tie hangs from the knot under the collar: on the chest it lies on the skin, past the
     # bust it falls straight down in front of her, over the cleavage and the bridge, to a point
     # below the cups (Tema's sketch: it hangs, it does not follow her in)
     zt = zn - 3.0
-    hanging_tie(zt, LM["bust"] - 10.0, bridge, bind=BIND)
+    rows, tdepth, thw = hanging_tie(zt, LM["bust"] - 10.0, bind=BIND)
+    # the bridge between the cups' inner corners runs over the tie: the tie passes under it
+    ends = [V3(low[s]["inner"]) for s in (1, -1)]
+    bridge = taut(*(e + nearest_normal(e) * 0.35 for e in ends), 0.35)
+    for i, q in enumerate(bridge):
+        r = int(np.argmin(np.abs(rows - q.z)))
+        if abs((NP(q) - PEL) @ LEFT) < thw[r] + 0.6:
+            need = tdepth[r] + 0.25 - (NP(q) - PEL) @ FWD
+            if need > 0:
+                bridge[i] = q + fwd_v * need
+    tube(smooth_pts(bridge, False, 4), 0.0, "Binding", flat=(0.9, 0.16), step=0.35)
     knot = np.sqrt((ALAT / 1.6) ** 2 + ((Z - (zt + 0.6)) / 1.6) ** 2)
     region(where((FW > 0) & (HEAD < 0.6), (1.0 - knot) * 3.0), 0.75, "Tartan", bind=BIND, min_loop=3.0)
 
@@ -1146,11 +1172,11 @@ def tartan():
         corner = (s * 15.0, hb - 1.7)
         # pulled straight from the cup to the corner (Tema's sketch): it spans the waist's hollow
         # instead of following it in
-        a_ = ray(TORSO_BVH, pel_v, zm, D(tm), 0.0)
+        a_ = V3(low[s]["outer"])       # the band, the side string and the V all leave the outer corner
         b_ = ray(TORSO_BVH, pel_v, corner[1], D(corner[0]), 0.0)
         if a_ and b_:
             a_, b_ = a_ + nearest_normal(a_) * 0.2, b_ + nearest_normal(b_) * 0.2
-            tube(taut(a_, b_, 0.2, n=80), 0.0, "Binding", flat=(1.0, 0.14), step=0.35)
+            tube(taut(a_, b_, 0.2, n=80), 0.0, "Binding", flat=(1.0, 0.14), step=0.35, turn=40)
         # high-cut hip strings: from the panel's corner up over the hip bone, round to the side
         # strap above the hip, which carries on to the thong at the back
         wrap([corner, (s * 45.0, hb + 2.5), (s * 75.0, hb + 4.5), (s * 100.0, hb + 3.0)], 0.8)
