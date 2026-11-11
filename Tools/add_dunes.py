@@ -288,6 +288,9 @@ def dune_material():
     sand = mel.get_material_instance_vector_parameter_value(mi, "SandColor")
     mel.set_material_instance_vector_parameter_value(mi, "StoneColor", sand)  # all sand, no patches
     mel.set_material_instance_scalar_parameter_value(mi, "MinCover", 1.0)
+    # no stone relief either: where the patchiness noise dips, the slab joints' normals
+    # showed through the sand as long straight lines
+    mel.set_material_instance_scalar_parameter_value(mi, "StoneNormal", 0.0)
     unreal.EditorAssetLibrary.save_asset(path)
     return mi
 
