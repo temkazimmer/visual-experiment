@@ -40,6 +40,9 @@ Several Claude sessions work at once, each in its own git worktree of this repo:
 | `visex-clothes` | `character-clothes` | clothes |
 | `visex/.claude/worktrees/research-*` | `claude/research-*` | research, hair |
 
+- **Running or briefing subagents** for complicated subtasks: follow
+  [Docs/AGENT_PLAYBOOK.md](Docs/AGENT_PLAYBOOK.md) (short replies, chunked writes, a commit per step,
+  fresh agent after repeated network drops, and the traps that cost time).
 - **Start here:** the project memory `visex-orchestration` has the current main session,
   everyone's session ids, the merge/build/QA loop and where things stand. Read it before
   acting, and check the real state (git log, `pgrep`, `Build/*.dmg`), since peer messages go stale.
