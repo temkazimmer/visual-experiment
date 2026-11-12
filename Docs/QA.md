@@ -7,6 +7,25 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-12 17:46 · VIS-EX-0505 Shipping (cc18718) · STABLE PASS, Tartan (kit) and the re-imported Silversuit wearable, everything from 0485 holds
+
+- **Tour (b7ded30, unchanged):** two runs from the mounted DMG, clean cook. Both reached `VisexQA: done` with 58 shots (one more outfit) and exit 0
+  (295 s, 293 s). On ground at every step (only photo motions 5/6/7/9 in mode 0, as 0485), no spectator, no new `.ips`.
+  Shots in `Saved/QA_0505ship_run{1,2}/` and `Tools/.bridge/shots/qa0505/` (run 2 in `run2/`, sheets in `crops/`, 5 fps recording in `rec/`).
+- **Cook:** `0 error(s), 0 warning(s)`, 851 packages cooked (+6 kit assets). DMG md5 `36d1e432…`, copied to `VIS-EX-0505-stable.dmg`.
+- **Outfit kit (`crops/outfits_silver0485_silver0505_kittartan_tartan.jpg`, `crops/silver_kittartan_torso.jpg`):** `Tartan (kit)` (`21_outfit_KitTartan`)
+  wears at her size on the lean: collar, red cups, straps, red brief, as the kit's `build_front.png`. The re-imported Silversuit now has the
+  drawn chest keyhole and side/hip cutouts with clean edges, matching the kit. No skin through cloth on either at tour resolution (1080p, menu distance).
+- **Silversuit default:** no fresh profile in the tour; the reset after the outfit loop puts her in the new Silversuit (`22_body_tab_body`, `58_after_photo`).
+- **Menu, Settings, Body, Photo:** as 0485. Logo white, one-line menu, no text shadows, build number still barely readable. Settings: same-height dolly,
+  climb onto the drum, seated with one leg hooked and one hanging, Back slides her into the lean. Proud idle on the Body page, walk back and turn after Close.
+  Photo opens walking in place (`moved 0.0 cm`). 11 motions.
+- **Wardrobe NOT exercised:** `wardrobe DID NOT OPEN` in both runs (tour timing gap, as 0464/0485).
+- **Regressions:** none. First menu column lit, Start move `fills the window` at 4:3, feet IN FRAME, forced GC fine, `layout save PASS, on disk` in both runs.
+- **Frame times:** run 1 quality 0/3/4: 16.7 / 16.6 / 34.1 ms; menu 22.0, settings 51, after body 59, after photo 65 (0485: 48 / 54 / 59).
+  Run 2 slower (18.3 / 42.8 at quality 3/4, after body 89): two other editors were running, not comparable.
+- **Saves:** backed up `VisexBody.sav` (`bddfbe76…`) and `GameUserSettings.ini` (`06e783cf…`), restored after each run, both md5s match. No `Game.ini` before or after.
+
 ## 2026-11-12 17:33 · VIS-EX-0485 Shipping (a1835b0) · PASS, Unopened Gate logo and one-line menu read well, she climbs onto the drum in Settings, build number nearly invisible
 
 - **Tour (b7ded30, unchanged):** two runs from the mounted DMG, clean cook. Both reached `VisexQA: done` with 57 shots and exit 0
