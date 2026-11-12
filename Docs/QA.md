@@ -7,6 +7,33 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-12 14:59 · VIS-EX-0464 Shipping (29353f7) · PASS, she walks back and turns onto the lean, proud idle reads, tour's Wardrobe step now fires too early
+
+- **Tour (b7ded30, unchanged):** two runs from the mounted DMG, clean cook. Both reached `VisexQA: done` with 57 shots and exit 0
+  (291 s, 293 s). On ground at every step (only photo motions 5/6/7/9 in mode 0, as 0451), no spectator, no new `.ips`.
+  Shots in `Saved/QA_0464ship_run{1,2}/` and `Tools/.bridge/shots/qa0464/` (run 2 in `run2/`, sheets in `crops/`).
+  New: a screen recording at ~3 fps during both runs, to see the walk back between tour shots.
+- **Cook:** `0 error(s), 0 warning(s)`, 851 packages cooked, 843 in the IoStore. DMG md5 `2aef5675…`, copied to `VIS-EX-0464-stable.dmg`.
+- **Return after Body:** she pushes off and walks clear of the stone, the page opens with her standing (run 2 frames, `crops/run2_body_stepout_and_return.jpg`).
+  After Close she walks forward toward the column, turns through ~180° in small steps facing the lens, and settles on the lean
+  (`crops/return_turn_after_body.jpg`). No backward steps. Feet slip couldn't be judged at 3 fps. The 1.4 m gap is a UE_LOG line, not in Shipping.
+- **Menu back takes ~6 s now:** the menu only fades in once she's on the lean, ~6 s after Close (0451: under 4 s).
+- **Wardrobe NOT exercised:** the tour calls `OpenWardrobe` 4.5 s after closing Body, while she's still walking back (`bOpen` false),
+  so both runs log `wardrobe DID NOT OPEN` and shots 24–26 show the menu (`crops/body_wardrobe_shots.jpg`). A tour timing gap, not a
+  game failure: the page code is unchanged and Body opens through the same path. The tour needs ~3 s more after the Body close (main owns VisexQATour).
+- **Return after photo:** she's already at the lean after Close, menu back within ~1 s, hand on hip (`57_after_photo`, `crops/run1_photo_return.jpg`).
+- **Proud idle:** on the Body page she stands in contrapposto, weight on one leg, right hand on the hip, chest up, no slouch (`21_body_tab_body`).
+  The look-around is visible as a head turn between frames; not judged on stills.
+- **Settings sit (c6ac475):** at 3.5 s the raised left leg is stretched out straight and level toward the panel, sole to the lens,
+  right foot on the sand, hand on the stone (`11_settings_visuals`). Same in run 2.
+- **Outfits:** all nine wearable on the menu lean. **Poses:** as 0451.
+- **Start move:** 4:3 menu, mid-move, landing and play all `fills the window`, landing at fov 90. Feet IN FRAME at 16:9 and 4:3.
+- **Regressions:** none. First menu column lit. GC and `layout save PASS, on disk` in both runs. Photo mode opens walking in place: `moved 0.0 cm in 1 s (PASS)`.
+- **Frame times:** run 1 quality 0/3/4: 16.7 / 16.7 / 34.5 ms; menu after quality 4 a little below 0451 (settings 52 vs 56, after body page 59 vs 68).
+  Run 2 was much slower (34 / 76 ms at quality 3/4, menu 79–97): the machine was busy with other sessions, not comparable.
+- **Saves:** backed up `VisexBody.sav` (`bddfbe76…`) and `GameUserSettings.ini` (`06e783cf…`), restored after each run, both
+  md5s match. No `Game.ini` before or after.
+
 ## 2026-11-12 12:35 · VIS-EX-0451 Shipping (65be362) · PASS, first menu column lit, Settings sit and Body step-out work, menu frame times a little up
 
 - **Tour (b7ded30, unchanged):** two runs from the mounted DMG, clean cook. Both reached `VisexQA: done` with 57 shots and exit 0
