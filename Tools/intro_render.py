@@ -4,7 +4,7 @@
   python3 Tools/ue.py -c "QUALITY='final'; exec(open('Tools/intro_render.py').read())"
 
 Frames land in Saved/MovieRenders/Intro_<quality>/ as PNG (final: 3840x2400 PNG, 16:10 for Mac screens,
-32 temporal samples, motion blur on). Pre-roll: the sequence starts 2 s before the film so
+10 temporal samples, motion blur on). Pre-roll: the sequence starts 2 s before the film so
 she is mid-stride; the camera cut starts at 2 s and MRQ runs the frames before it as warm-up.
 """
 import os
@@ -44,7 +44,7 @@ o.set_editor_property("override_existing_output", True)
 
 aa = cfg.find_or_add_setting_by_class(unreal.MoviePipelineAntiAliasingSetting)
 aa.set_editor_property("spatial_sample_count", 1)
-aa.set_editor_property("temporal_sample_count", 32 if QUALITY == "final" else 4)
+aa.set_editor_property("temporal_sample_count", 10 if QUALITY == "final" else 4)   # 10 at 4K: ~1 h for the film
 aa.set_editor_property("override_anti_aliasing", True)
 aa.set_editor_property("anti_aliasing_method", unreal.AntiAliasingMethod.AAM_TEMPORAL_AA if QUALITY != "final" else unreal.AntiAliasingMethod.AAM_NONE)
 aa.set_editor_property("use_camera_cut_for_warm_up", True)   # the 2 s before the cut
