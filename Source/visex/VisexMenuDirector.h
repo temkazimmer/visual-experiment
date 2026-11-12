@@ -408,6 +408,13 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Menu|Lean")
 	AActor* GetLeanColumn() const { return LeanColumn; }
+	/** FitLeanColumn has placed the drum for her body: the launch cover waits on it. */
+	bool HasFittedColumn() const { return bColumnFitted; }
+	/** Keeps the handheld drift at its start, the frame the intro film ends on, while the launch
+	 *  cover holds and cross-fades. */
+	void HoldDrift() { Clock = 0.f; }
+	/** The 3D menu panel's opacity: the launch cover fades it in after the film's last frame. */
+	void SetPanelOpacity(float Alpha);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
 	TSoftObjectPtr<class UAnimSequence> LeanIdle = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Lean.A_Menu_Lean")));
@@ -495,6 +502,33 @@ public:
 	/** Farther than this (cm, after photo mode) she isn't walked back: a dip to black instead. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0"))
 	float ReturnWalkMax = 600.f;
+
+	// first launch: she walks in to the column and leans while the panel fades in (visex.Menu.Arrival)
+	/** Frame 0: where she is (world XY, on the ground) and her yaw, mid-stride. The intro film's
+	 *  last frame lands here. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Arrival")
+	FVector2D ArrivalStart = FVector2D(9560.f, -1010.f);
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Arrival")
+	float ArrivalStartYaw = 75.f;
+	/** Her pace (cm/s): 0.6 of the walk's 190, as the film walks her. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Arrival", meta = (ClampMin = "10"))
+	float ArrivalSpeed = 114.f;
+	/** Seconds of walk her pose is run through before frame 0, so frame 0 is mid-stride. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Arrival", meta = (ClampMin = "0"))
+	float ArrivalPreRoll = 1.5f;
+	/** Seconds after frame 0 until the panel starts to fade in, and the fade's length. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Arrival", meta = (ClampMin = "0"))
+	float ArrivalPanelFadeStart = 1.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Arrival", meta = (ClampMin = "0.05"))
+	float ArrivalPanelFadeTime = 1.6f;
+	/** Replays the arrival from frame 0 (for tuning and the film); visex.Menu.ArrivalFreeze 1 holds it there. */
+	UFUNCTION(BlueprintCallable, Category = "Menu|Arrival")
+	void PlayArrival();
+	/** True from launch until she is down on the lean (and while a replay runs). */
+	UFUNCTION(BlueprintPure, Category = "Menu|Arrival")
+	bool IsArriving() const;
+	/** The arrival fades the panel in during her walk: the launch cover leaves it alone. */
+	bool FadesOwnPanel() const { return bArrivalRan || IsArriving(); }
 
 	/** Her farthest part from her own axis at the sliders' ends (cm), and the gap from her
 	 *  axis to the stone she stopped at: last measured on the way to the Body page. */
@@ -645,6 +679,7 @@ private:
 	void SetMenuFocal(class UCineCameraComponent* Lens, float Focal);
 	float ViewAspect() const;
 	bool bOpen = false;
+	bool bColumnFitted = false;
 	bool bInputBound = false;
 	bool bStickHeld = false;
 	bool bPlaying = false;   // handed back to the player after Start
@@ -702,6 +737,29 @@ private:
 	void EndStep();
 	int32 StepDir = 0;           // +1 walking out, -1 returning to the column, 0 still
 	void TickReturn(float DeltaSeconds);
+	// the first-launch arrival: a walk-back (StepDir -1) from ArrivalStart that ends in Lean
+	bool BeginArrival();
+	void EndArrival();
+	void TickArrivalPanel(float DeltaSeconds);
+	void TickFootSkate();
+	bool bArrivalChecked = false;   // the first ShowMenu has decided
+	bool bArriving = false;
+	/** Frame 0 is held: the launch cover still shows, or visex.Menu.ArrivalFreeze is 1. */
+	bool ArrivalHeld() const;
+	void FreezeHer(bool bFreeze);
+	void PreRollWalk(float Seconds);
+	bool bArrivalFrozen = false;
+	bool bArrivalRan = false;
+	FVector FrozenVelocity = FVector::ZeroVector;
+	float ArrivalClock = -1.f;      // seconds since the arrival began; <0 when no fade runs
+	float PanelInAlpha = 1.f;       // the panel's fade-in; input waits for 1
+	int32 ArrivalQueued = 0;        // pressed while she finished walking: 1 Confirm, 2 ToggleMenu
+	FVector PlantAt[2];             // the planted foot's spot on the ground, per foot
+	FVector LastFoot[2];
+	float PlantFor[2] = {0.f, 0.f};
+	bool bPlanted[2] = {false, false};
+	float SkateMax = 0.f, SkateSum = 0.f;
+	int32 SkateSteps = 0;
 	int32 ReturnPhase = 0;       // 0 turning to her spot, 1 walking there, 2 turning round on it
 	float PhaseClock = 0.f;
 	float TurnFrom = 0.f, TurnTo = 0.f, TurnTime = 0.f;   // yaw (deg) and seconds of this turn

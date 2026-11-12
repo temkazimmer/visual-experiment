@@ -1,0 +1,31 @@
+"""Import SourceArt/VisEx/Intro/SM_IntroSand.fbx as a Nanite mesh at /Game/VisEx/Intro.
+Run live: python3 Tools/ue.py Tools/intro_import_sand.py"""
+import os
+import unreal
+
+root = unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir())
+ui = unreal.FbxImportUI()
+ui.set_editor_property("import_mesh", True)
+ui.set_editor_property("import_as_skeletal", False)
+ui.set_editor_property("import_materials", False)
+ui.set_editor_property("import_textures", False)
+ui.set_editor_property("mesh_type_to_import", unreal.FBXImportType.FBXIT_STATIC_MESH)
+sm = ui.get_editor_property("static_mesh_import_data")
+sm.set_editor_property("combine_meshes", True)
+sm.set_editor_property("auto_generate_collision", False)
+sm.set_editor_property("generate_lightmap_u_vs", False)
+sm.set_editor_property("build_nanite", True)
+sm.set_editor_property("normal_import_method", unreal.FBXNormalImportMethod.FBXNIM_COMPUTE_NORMALS)
+sm.set_editor_property("remove_degenerates", False)
+t = unreal.AssetImportTask()
+t.set_editor_property("filename", os.path.join(root, "SourceArt/VisEx/Intro/SM_IntroSand.fbx"))
+t.set_editor_property("destination_path", "/Game/VisEx/Intro")
+t.set_editor_property("destination_name", "SM_IntroSand")
+t.set_editor_property("automated", True)
+t.set_editor_property("replace_existing", True)
+t.set_editor_property("save", False)
+t.set_editor_property("options", ui)
+unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([t])
+m = unreal.load_asset("/Game/VisEx/Intro/SM_IntroSand")
+b = m.get_bounding_box()
+print("imported", m, "bounds", b.min, b.max, "nanite", m.get_editor_property("nanite_settings").enabled)

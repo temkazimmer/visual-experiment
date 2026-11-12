@@ -28,6 +28,7 @@ private:
 	TArray<FStep> Steps;
 	int32 Next = 0;
 	float Clock = 0.f;
+	bool bCoverLogged = false;
 	float WalkFor = 0.f;
 	int32 ShotCount = 0;
 	int32 AfterPoses = INDEX_NONE;

@@ -26,3 +26,5 @@ __pycache__/
 
 # Blender backups of Outfit Kit sketches
 SourceArt/Character/OutfitKit/**/*.blend1
+# intro sand mesh export (90 MB; rebuilt by Tools/intro_sand_mesh.py)
+SourceArt/VisEx/Intro/*.fbx
