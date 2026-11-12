@@ -59,10 +59,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
 	float LogoHeightPerSize = 3.f;
 
-	/** Colour scale on the logo image: the panel is lit 5x over white (PanelBrightness), so this
-	 * keeps the stone texture and grunge from burning out to flat white. */
+	/** Colour scale on the logo image. White = the same white as the text (the texture is white
+	 * with its grunge in alpha, so the panel's 5x lighting can't burn detail out). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
-	FLinearColor LogoTint = FLinearColor(0.22f, 0.22f, 0.22f, 1.f);
+	FLinearColor LogoTint = FLinearColor::White;
 
 	/** The build number, small under the logo; empty = none. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu")
