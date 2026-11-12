@@ -315,11 +315,18 @@ public:
 	TSoftObjectPtr<class UAnimSequence> SettingsSitDown = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Sit_Settings_Down.A_Menu_Sit_Settings_Down")));
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
 	TSoftObjectPtr<class UAnimSequence> SettingsSitUp = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Sit_Settings_Up.A_Menu_Sit_Settings_Up")));
-	/** The Settings shot is the menu shot moved a little: the camera steps by this much in its own
-	 *  space (X ahead, Y right, Z up, cm) and turns onto SettingsCamAim, a point in her mesh space
-	 *  (X her left, Y forward, Z up), then by a look-up and a pan (deg). */
+	/** The Settings shot (Tema 2026-11-12): the menu camera dollies in along the ground toward her,
+	 *  at its own low height, by SettingsCamOffset (cm, in the menu camera's heading: X ahead,
+	 *  Y right, Z up; Z 0 keeps the height), turns onto SettingsCamAim (her mesh space: X her
+	 *  left, Y forward, Z up) plus a look-up and a pan (deg), and its lens opens to
+	 *  SettingsFocalLength on the way. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
-	FVector SettingsCamOffset = FVector(-40.f, 0.f, 45.f);
+	FVector SettingsCamOffset = FVector(110.f, 0.f, 0.f);
+	/** The Settings lens (mm), on the same scale as MenuFocalLength (the camera's own Super 35
+	 *  size filmback; MenuSensorScale multiplies both alike): 6 mm is a ~126 deg horizontal view,
+	 *  about a 9 mm on full frame. The panel moves in with it so it keeps its size on screen. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings", meta = (ClampMin = "0"))
+	float SettingsFocalLength = 6.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
 	FVector SettingsCamAim = FVector(0.f, 10.f, 75.f);
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")

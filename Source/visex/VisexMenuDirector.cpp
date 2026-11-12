@@ -1493,8 +1493,9 @@ FTransform AVisexMenuDirector::SettingsCameraTransform() const
 	{
 		return CameraBase;
 	}
-	// the menu shot, stepped a little in its own space, then turned onto a point on her
-	const FVector Loc = CameraBase.TransformPositionNoScale(SettingsCamOffset);
+	// the menu shot dollied along the ground in its own heading (no climb), then turned onto her
+	const FTransform Heading(FRotator(0.f, CameraBase.Rotator().Yaw, 0.f), CameraBase.GetLocation());
+	const FVector Loc = Heading.TransformPositionNoScale(SettingsCamOffset);
 	const FVector Aim = Mesh->GetComponentTransform().TransformPosition(SettingsCamAim);
 	FRotator Look = (Aim - Loc).Rotation();
 	Look.Pitch += SettingsCamLookUp;
@@ -1529,28 +1530,37 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 		}
 	}
 
-	// Settings: the camera sinks onto her feet while she sits, and climbs back after
+	// Settings: the camera dollies in at its own height while she sits, the lens opening wide,
+	// and back out after
 	const float SitGoal = (bOpen && bSitting) ? 1.f : 0.f;
 	const float SitAlpha0 = SettingsCamAlpha;
 	SettingsCamAlpha = FMath::FInterpConstantTo(SettingsCamAlpha, SitGoal, DeltaSeconds, 1.f / FMath::Max(0.1f, SettingsCamTime));
 	const bool bSitCamMoved = SitAlpha0 != SettingsCamAlpha;
+	if (bOpen && MenuCamera && bSitCamMoved && bHaveLens)
+	{
+		// focal eased in log space, so the field of view opens evenly; the panel rides in with it
+		const float Ratio = (SettingsFocalLength > 0.f && MenuFocalLength > 0.f) ? SettingsFocalLength / MenuFocalLength : 1.f;
+		const float K = FMath::Exp(FMath::Loge(Ratio) * SettingsCamEase());
+		if (UCineCameraComponent* Lens = GetLens())
+		{
+			SetMenuFocal(Lens, MenuLensFocal() * K);
+		}
+		if (Panel)
+		{
+			const float LensScale = (MenuFocalLength > 0.f && MenuFocal > 0.f) ? MenuFocalLength / MenuFocal : 1.f;
+			Panel->SetRelativeLocation(PanelOffset * LensScale * K);
+		}
+	}
 	if (bOpen && MenuCamera && (DriftPeriod > 0.f || SettingsCamAlpha > 0.f || bSitCamMoved))
 	{
 		FTransform Base = CameraBase;
 		if (SettingsCamAlpha > 0.f)
 		{
-			// round her, not through her: angle, distance and height each eased from shot to shot
+			// a straight dolly: it stops short of her, so it never passes through her
 			const float S = SettingsCamEase();
-			const FTransform Feet = SettingsCameraTransform();
-			const APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0);
-			const FVector C = Pawn ? Pawn->GetActorLocation() : Feet.GetLocation();
-			const FVector D0 = (CameraBase.GetLocation() - C) * FVector(1.f, 1.f, 0.f);
-			const FVector D1 = (Feet.GetLocation() - C) * FVector(1.f, 1.f, 0.f);
-			const float A0 = FMath::Atan2(D0.Y, D0.X);
-			const float A = A0 + FMath::FindDeltaAngleRadians(A0, FMath::Atan2(D1.Y, D1.X)) * S;
-			const float R = FMath::Lerp(D0.Size(), D1.Size(), S);
-			FVector Loc(C.X + R * FMath::Cos(A), C.Y + R * FMath::Sin(A), FMath::Lerp(CameraBase.GetLocation().Z, Feet.GetLocation().Z, S));
-			Base = FTransform(FQuat::Slerp(CameraBase.GetRotation(), Feet.GetRotation(), S), Loc);
+			const FTransform Shot = SettingsCameraTransform();
+			Base = FTransform(FQuat::Slerp(CameraBase.GetRotation(), Shot.GetRotation(), S),
+				FMath::Lerp(CameraBase.GetLocation(), Shot.GetLocation(), S));
 		}
 		const float W = DriftPeriod > 0.f ? 2.f * PI / DriftPeriod : 0.f;
 		const float Sway = DriftPeriod > 0.f ? 1.f : 0.f;
