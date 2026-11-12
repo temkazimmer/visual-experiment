@@ -14,6 +14,7 @@
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "Engine/Texture2D.h"
 #include "Styling/CoreStyle.h"
 
 UVisexMenuWidget::UVisexMenuWidget(const FObjectInitializer& ObjectInitializer)
@@ -24,6 +25,7 @@ UVisexMenuWidget::UVisexMenuWidget(const FObjectInitializer& ObjectInitializer)
 #endif
 	// the name carries the build: commits on the branch it was built from
 	Title = FText::FromString(FString::Printf(TEXT("VIS/EX-%04d"), VISEX_BUILD));
+	BuildLabel = FText::FromString(FString::Printf(TEXT("%04d"), VISEX_BUILD));
 	Items = {
 		FText::FromString(TEXT("Start")),
 		FText::FromString(TEXT("Body")),
@@ -115,7 +117,34 @@ void UVisexMenuWidget::BuildContent()
 	Root->ClearChildren();
 
 	// logo, then (if set) a tagline in wide-spaced small caps under it
-	Root->AddChildToVerticalBox(MakeText(Title, TitleSize, TEXT("Light"), TitleLetterSpacing, TextColor));
+	// the main page shows the logo image (the build small under it); other pages their title
+	UTexture2D* Logo = Tabs.Num() == 0 ? LogoTexture.LoadSynchronous() : nullptr;
+	if (Logo)
+	{
+		const float H = TitleSize * LogoHeightPerSize;
+		const float W = H * Logo->GetSizeX() / FMath::Max(1, Logo->GetSizeY());
+		UImage* LogoImage = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass());
+		LogoImage->SetBrushFromTexture(Logo);
+		FSlateBrush LogoBrush = LogoImage->GetBrush();
+		LogoBrush.ImageSize = FVector2D(W, H);
+		LogoImage->SetBrush(LogoBrush);
+		LogoImage->SetColorAndOpacity(LogoTint);
+		if (UVerticalBoxSlot* LogoSlot = Root->AddChildToVerticalBox(LogoImage))
+		{
+			LogoSlot->SetHorizontalAlignment(HAlign_Left);
+		}
+		if (!BuildLabel.IsEmpty())
+		{
+			UTextBlock* Build = MakeText(BuildLabel, BuildLabelSize, TEXT("Regular"), 400, TextColor);
+			Build->SetColorAndOpacity(FSlateColor((TextColor * 0.3f).CopyWithNewOpacity(BuildLabelOpacity)));
+			// the logo's letters start a little inside its image
+			Root->AddChildToVerticalBox(Build)->SetPadding(FMargin(W * 0.075f, 4.f, 0.f, 0.f));
+		}
+	}
+	else
+	{
+		Root->AddChildToVerticalBox(MakeText(Title, TitleSize, TEXT("Light"), TitleLetterSpacing, TextColor));
+	}
 	if (!Tagline.IsEmpty())
 	{
 		UVerticalBoxSlot* TagSlot = Root->AddChildToVerticalBox(
