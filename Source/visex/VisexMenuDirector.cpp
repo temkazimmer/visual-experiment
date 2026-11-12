@@ -187,6 +187,7 @@ void AVisexMenuDirector::ShowMenu()
 	}
 	MenuCamera->SetActorTransform(CameraBase);
 	SettingsCamAlpha = 0.f;
+	PanelLensK = 1.f;
 	// and its lens, which the Start move turns into the play camera's
 	if (UCineCameraComponent* Lens = GetLens())
 	{
@@ -372,8 +373,7 @@ void AVisexMenuDirector::PlacePanel()
 	PushLayoutToWidget();
 	// PanelOffset is set for the camera's own lens: a wider menu lens brings the panel in to keep its size on screen
 	const float LensScale = (MenuFocalLength > 0.f && MenuFocal > 0.f) ? MenuFocalLength / MenuFocal : 1.f;
-	Panel->SetRelativeLocation(PanelOffset * LensScale);
-	Panel->SetRelativeRotation(FRotator(PanelPitch, 180.f + PanelYaw, PanelRoll));
+
 	// draw the panel's texture larger and shrink it back to the same size on screen
 	const UVisexMenuWidget* MenuDefaults = Panel->GetWidgetClass()
 		? Cast<UVisexMenuWidget>(Panel->GetWidgetClass()->GetDefaultObject()) : nullptr;
@@ -382,7 +382,41 @@ void AVisexMenuDirector::PlacePanel()
 	// the widget pads its text for the shade to fade out in: grow the panel to match
 	const float Pad = GetMenuWidget() ? GetMenuWidget()->ShadePadding : MenuDefaults ? MenuDefaults->ShadePadding : 0.f;
 	Panel->SetDrawSize((FVector2D(1100.f, 1000.f) + FVector2D(2.f * Pad)) * SS);
+	Panel->SetRelativeLocation(PanelOffset * LensScale);
+	Panel->SetRelativeRotation(FRotator(PanelPitch, 180.f + PanelYaw, PanelRoll));
 	Panel->SetRelativeScale3D(FVector(PanelScale * LensScale / SS));
+}
+
+void AVisexMenuDirector::ApplyPanelLens(float K)
+{
+	// The panel rides with the camera. When the lens goes from focal f to K * f, a point at camera
+	// space (depth, right, up) lands on the same pixel if its depth is scaled by K. No rectangle
+	// can do that for a panel both turned and rolled (best fit: 26 px off), so it is done per vertex:
+	// while K < 1 the panel draws with M_MenuPanelLens, whose World Position Offset scales each
+	// vertex's depth toward the camera by K, and its silhouette on screen is the main page's to
+	// the pixel, whatever the widget draws. At K = 1 it is back on the plain panel material.
+	PanelLensK = K;
+	if (!Panel || !MenuCamera)
+	{
+		return;
+	}
+	UMaterialInterface* Base = PanelMaterial.LoadSynchronous();
+	UMaterialInterface* Lens = K < 0.9999f ? SettingsPanelMaterial.LoadSynchronous() : nullptr;
+	UMaterialInterface* Want = Lens ? Lens : Base;
+	if (Want && Panel->GetMaterial(0) != Want)
+	{
+		Panel->SetMaterial(0, Want);
+	}
+	if (Lens)
+	{
+		if (UMaterialInstanceDynamic* MID = Panel->GetMaterialInstance())
+		{
+			const FTransform Cam = GetLens() ? GetLens()->GetComponentTransform() : MenuCamera->GetActorTransform();
+			MID->SetScalarParameterValue(TEXT("LensK"), K);
+			MID->SetVectorParameterValue(TEXT("LensCamPos"), FLinearColor(Cam.GetLocation()));
+			MID->SetVectorParameterValue(TEXT("LensCamFwd"), FLinearColor(Cam.GetRotation().GetForwardVector()));
+		}
+	}
 }
 
 void AVisexMenuDirector::PushLayoutToWidget()
@@ -1786,18 +1820,14 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 	const bool bSitCamMoved = SitAlpha0 != SettingsCamAlpha;
 	if (bOpen && MenuCamera && bSitCamMoved && bHaveLens)
 	{
-		// focal eased in log space, so the field of view opens evenly; the panel rides in with it
+		// focal eased in log space, so the field of view opens evenly
 		const float Ratio = (SettingsFocalLength > 0.f && MenuFocalLength > 0.f) ? SettingsFocalLength / MenuFocalLength : 1.f;
 		const float K = FMath::Exp(FMath::Loge(Ratio) * SettingsCamEase());
 		if (UCineCameraComponent* Lens = GetLens())
 		{
 			SetMenuFocal(Lens, MenuLensFocal() * K);
 		}
-		if (Panel)
-		{
-			const float LensScale = (MenuFocalLength > 0.f && MenuFocal > 0.f) ? MenuFocalLength / MenuFocal : 1.f;
-			Panel->SetRelativeLocation(PanelOffset * LensScale * K);
-		}
+		PanelLensK = K;   // the panel follows once the camera has moved (below)
 	}
 	if (bOpen && MenuCamera && (DriftPeriod > 0.f || SettingsCamAlpha > 0.f || bSitCamMoved))
 	{
@@ -1821,6 +1851,11 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 			+ Right * Sway * DriftDistance * FMath::Sin(Clock * W * 1.21f + 0.4f)
 			+ FVector::UpVector * Sway * 0.5f * DriftDistance * FMath::Sin(Clock * W * 0.91f + 2.1f);
 		MenuCamera->SetActorLocationAndRotation(Loc, Rot);
+		if (SettingsCamAlpha > 0.f || bSitCamMoved)
+		{
+			// every frame while it is wide: the camera sways, and the offset is taken from where it is now
+			ApplyPanelLens(PanelLensK);
+		}
 	}
 	// the window changed shape under the menu: keep her whole height in the frame
 	if (bOpen && !bOrbiting && bHaveLens && bMenuFillsWindow && !FMath::IsNearlyEqual(ViewAspect(), MenuViewAspect, 0.001f))

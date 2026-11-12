@@ -325,15 +325,20 @@ public:
 	FVector SettingsCamOffset = FVector(150.f, 0.f, 0.f);
 	/** The Settings lens (mm), on the same scale as MenuFocalLength (the camera's own Super 35
 	 *  size filmback; MenuSensorScale multiplies both alike): 6 mm is a ~126 deg horizontal view,
-	 *  about a 9 mm on full frame. The panel moves in with it so it keeps its size on screen. */
+	 *  about a 9 mm on full frame. The panel keeps its exact on-screen shape (ApplyPanelLens). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings", meta = (ClampMin = "0"))
 	float SettingsFocalLength = 6.f;
+	/** The panel's material while the Settings lens is wide: M_MenuPanel plus a per-vertex depth
+	 *  scale that keeps the panel's on-screen shape exact (Tools/menu_panel_lens.py rebuilds it from
+	 *  M_MenuPanel: rerun it when M_MenuPanel changes). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
+	TSoftObjectPtr<class UMaterialInterface> SettingsPanelMaterial = TSoftObjectPtr<class UMaterialInterface>(FSoftObjectPath(TEXT("/Game/VisEx/UI/M_MenuPanelLens.M_MenuPanelLens")));
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
 	FVector SettingsCamAim = FVector(0.f, -20.f, 80.f);
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
 	float SettingsCamLookUp = 0.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
-	float SettingsCamPan = -10.f;
+	float SettingsCamPan = -17.f;   // her slightly right of centre (Tema)
 	/** Focus slides this far (0..1) from her toward the raised foot's ball (SettingsFocusBone). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
 	FName SettingsFocusBone = TEXT("ball_l");
@@ -670,6 +675,9 @@ private:
 	float SettingsCamEase() const { const float X = FMath::Clamp(SettingsCamAlpha, 0.f, 1.f); return X * X * X * (X * (6.f * X - 15.f) + 10.f); }
 	bool bSitting = false;
 	static constexpr float SitBlend = 0.3f;   // the sit clips hand over to each other this long
+	// the panel's layout transform before any lens compensation, and the compensation in force
+	void ApplyPanelLens(float K);
+	float PanelLensK = 1.f;
 	FTimerHandle SitTimer;
 	// idle beats: the rest timer, the beat's end, and the last one played
 	void ScheduleIdleBeat();
