@@ -48,9 +48,10 @@ public:
 	UPROPERTY(config) float AfterColumn = 0.7f;
 	/** Music under this content path is held during the cover and faded in with the menu. */
 	UPROPERTY(config) FString MusicPath = TEXT("/Game/VisEx/Audio/");
-	/** The film carries this many seconds of the soundtrack's opening: the live music starts there
-	 *  at the film's end (plus the time since) instead of fading in from 0 with the cross-fade. */
-	UPROPERTY(config) float LaunchMusicOffset = 0.f;
+	/** The film carries this many seconds of the soundtrack's opening: the live music starts there,
+	 *  full volume, no fade, on the first frame after the film. 0: it fades in from its top with
+	 *  the cross-fade instead. */
+	UPROPERTY(config) float LaunchMusicOffset = 20.f;
 	/** After the cross-fade, the menu panel (not in the film) fades in over this long. */
 	UPROPERTY(config) float PanelFadeTime = 0.8f;
 

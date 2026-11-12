@@ -178,7 +178,9 @@ void UVisexLaunchCover::ReleaseMusic(float StartAt, float Fade)
 {
 	for (const TWeakObjectPtr<UAudioComponent>& M : Music)
 	{
-		if (M.IsValid()) { M->FadeIn(Fade, 1.f, StartAt); }
+		if (!M.IsValid()) { continue; }
+		if (Fade > 0.f) { M->FadeIn(Fade, 1.f, StartAt); }
+		else { M->Play(StartAt); }
 	}
 	Music.Reset();
 }
@@ -227,9 +229,11 @@ bool UVisexLaunchCover::Tick(float DeltaTime)
 		StartTime = Now;
 		if (LaunchMusicOffset > 0.f)
 		{
-			// the film carries the soundtrack's opening: pick it up where the film left it
+			// the film carries the soundtrack's opening: pick it up where the film left it, at full
+			// volume, no fade
 			const double Ended = FilmEnd.IsValid() && FilmEnd->EndTime > 0.0 ? FilmEnd->EndTime.load() : Now;
-			ReleaseMusic(LaunchMusicOffset + float(Now - Ended), 0.15f);
+			UE_LOG(LogVisexLaunch, Display, TEXT("Launch music from %.2f s, %.2f s after the film's end"), LaunchMusicOffset, float(Now - Ended));
+			ReleaseMusic(LaunchMusicOffset, 0.f);
 		}
 		return true;
 	}
