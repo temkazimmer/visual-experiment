@@ -37,6 +37,8 @@ public:
 	TObjectPtr<ACharacter> Her;
 
 protected:
+	float LogClock = 0.f;
+
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 };

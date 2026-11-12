@@ -1,6 +1,6 @@
 """Hero sand for the intro: a 1 cm grid draped on the real dune where she walks up the ridge.
 
-The dune surface comes from SourceArt/VisEx/Intro/dune_heights.json (25 cm traces of
+A grid along her path (Tools/intro_params.py). The dune surface comes from SourceArt/VisEx/Intro/dune_heights.json (25 cm traces of
 SM_Dunes, baked by the intro tooling), smoothed with Catmull-Rom. The scanned ripple
 relief (height_2k.npy, from Tools/intro_sand_height.py) is carved in with the same
 world mapping as M_SandCover (uv = world xy / 200 cm), so geometry and normal map agree.
@@ -18,14 +18,13 @@ DUNE = os.path.join(ROOT, "SourceArt/VisEx/Intro/dune_heights.json")
 RIPPLE = os.path.join(ROOT, "SourceArt/Megascans/RippledSand_vd3lecfs/height_2k.npy")
 OUT = os.path.join(ROOT, "SourceArt/VisEx/Intro/SM_IntroSand.fbx")
 
-CENTER = (12500.0, -4000.0)          # actor location in UE (cm); vertices are relative
-X0, X1 = 11300.0, 13700.0            # walk runs +x up to the crest at ~13150
-Y0, Y1 = -4500.0, -3500.0
-STEP = 1.0                           # cm
-CORE = 330.0                         # full relief within this |y - centre|
-RIPPLE_SCALE = 1.0                   # x the scan's 4 cm relief
-LIFT = 0.4                           # cm above the dune at the edges
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import intro_params as P            # the path, patch extent and grid step
 
+CENTER = P.CENTER                   # actor location in UE (cm); vertices are relative
+RIPPLE_SCALE = 1.0                  # x the scan's 4 cm relief
+LIFT = 0.4                          # cm above the dune at the edges
 
 def catmull(p0, p1, p2, p3, t):
     return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t ** 2
@@ -67,11 +66,12 @@ def smooth01(a):
     return a * a * (3 - 2 * a)
 
 
-xs = np.arange(X0, X1 + STEP / 2, STEP)
-ys = np.arange(Y0, Y1 + STEP / 2, STEP)
-X, Y = np.meshgrid(xs, ys)                               # [row = y, col = x]
-fade_y = smooth01((0.5 * (Y1 - Y0) - np.abs(Y - CENTER[1])) / (0.5 * (Y1 - Y0) - CORE))
-fade_x = smooth01((X - X0) / 200.0) * smooth01((X1 - X) / 200.0)
+us = np.arange(P.PATCH_U[0], P.PATCH_U[1] + P.STEP / 2, P.STEP)
+vs = np.arange(-P.PATCH_V, P.PATCH_V + P.STEP / 2, P.STEP)
+U, Vv = np.meshgrid(us, vs)                              # [row = v, col = u]
+X, Y = P.world(U, Vv)
+fade_y = smooth01((P.PATCH_V - np.abs(Vv)) / (P.PATCH_V - P.CORE_V))
+fade_x = smooth01((U - P.PATCH_U[0]) / 200.0) * smooth01((P.PATCH_U[1] - U) / 200.0)
 fade = fade_y * fade_x
 Z = dune_height(X, Y) + LIFT + fade * RIPPLE_SCALE * ripple_height(X, Y)
 print("grid", X.shape, "z", float(Z.min()), float(Z.max()))
@@ -81,7 +81,7 @@ ny, nx = Z.shape
 V = np.stack([(X - CENTER[0]) / 100.0, -(Y - CENTER[1]) / 100.0, Z / 100.0], axis=-1).reshape(-1, 3)
 r, c = np.meshgrid(np.arange(ny - 1), np.arange(nx - 1), indexing="ij")
 a = (r * nx + c).ravel()
-quads = np.stack([a, a + nx, a + nx + 1, a + 1], axis=-1)   # winding faces up after the y flip
+quads = np.stack([a, a + nx, a + nx + 1, a + 1], axis=-1)   # rows +v, cols +u: same handedness as x, y
 nq = quads.shape[0]
 
 bpy.ops.wm.read_factory_settings(use_empty=True)

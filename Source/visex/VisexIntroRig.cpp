@@ -8,6 +8,8 @@
 #include "TimerManager.h"
 #include "VisexMenuDirector.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogVisexIntro, Log, All);
+
 AVisexIntroRig::AVisexIntroRig()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -34,6 +36,7 @@ void AVisexIntroRig::BeginPlay()
 	UClass* Cls = CharacterClass.LoadSynchronous();
 	if (!Cls)
 	{
+		UE_LOG(LogVisexIntro, Warning, TEXT("Intro rig: no character class"));
 		return;
 	}
 	const ACharacter* Def = Cls->GetDefaultObject<ACharacter>();
@@ -43,6 +46,7 @@ void AVisexIntroRig::BeginPlay()
 	FActorSpawnParameters P;
 	P.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
 	Her = World->SpawnActor<ACharacter>(Cls, Loc, Rot, P);
+	UE_LOG(LogVisexIntro, Log, TEXT("Intro rig: spawned %s at %s"), *GetNameSafe(Her), *Loc.ToString());
 	if (!Her)
 	{
 		return;
@@ -62,6 +66,14 @@ void AVisexIntroRig::Tick(float DeltaSeconds)
 	if (Her && Walk > 0.001f)
 	{
 		Her->AddMovementInput(GetActorForwardVector(), FMath::Clamp(Walk, 0.f, 1.f));
+	}
+	// her real path, for framing the camera keys (Tools/intro_sequence.py)
+	LogClock += DeltaSeconds;
+	if (Her && LogClock >= 0.25f)
+	{
+		LogClock = 0.f;
+		UE_LOG(LogVisexIntro, Log, TEXT("Intro path t=%.2f pos=%s speed=%.0f"), GetWorld()->GetTimeSeconds(),
+			*Her->GetActorLocation().ToCompactString(), Her->GetVelocity().Size2D());
 	}
 }
 
