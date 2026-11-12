@@ -51,7 +51,16 @@ void AVisexIntroRig::BeginPlay()
 	{
 		return;
 	}
-	if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
+	APlayerController* PC = bPlayer ? UGameplayStatics::GetPlayerController(this, 0) : nullptr;
+	if (!PC)
+	{
+		Her->SpawnDefaultController();
+		if (AController* C = Her->GetController())
+		{
+			C->SetControlRotation(Rot);
+		}
+	}
+	else
 	{
 		// the sequence's camera cut owns the view; possessing would hand it to her boom camera
 		PC->bAutoManageActiveCameraTarget = false;

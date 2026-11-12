@@ -29,6 +29,11 @@ public:
 	UPROPERTY(EditAnywhere, Interp, BlueprintReadWrite, Category = "Intro")
 	float Walk = 0.f;
 
+	/** Possess her with player 0 (the sand footprints follow the player only). Off: she gets
+	 *  her own AI controller, so two rigs can walk at once around a cut. */
+	UPROPERTY(EditAnywhere, Category = "Intro")
+	bool bPlayer = false;
+
 	/** Who to spawn. */
 	UPROPERTY(EditAnywhere, Category = "Intro")
 	TSoftClassPtr<ACharacter> CharacterClass;

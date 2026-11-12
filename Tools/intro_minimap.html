@@ -1,0 +1,131 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Intro Minimap</title>
+<style>
+:root{--bg:#141110;--panel:#1f1a17;--ink:#eadfd2;--dim:#9b8e80;--her:#ff8a3d;--cam:#5fb4ff;--note:#f2f2f2}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 -apple-system,system-ui,sans-serif}
+header{display:flex;gap:8px;align-items:center;padding:10px 16px;background:var(--panel);flex-wrap:wrap}
+header b{margin-right:8px}
+button{background:#2c2520;color:var(--ink);border:1px solid #3d332c;border-radius:6px;padding:6px 10px;cursor:pointer;font:inherit}
+button.on{border-color:var(--ink);background:#3a2f27}
+#wrap{padding:12px 16px}
+canvas{width:100%;height:auto;background:#000;border-radius:6px;cursor:crosshair;touch-action:none}
+#help{color:var(--dim);margin:8px 0 0}
+.sw{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:middle}
+</style></head><body>
+<header>
+  <b>VIS-EX intro: draw the walk</b>
+  <button data-mode="her" class="on"><span class="sw" style="background:var(--her)"></span>Her path</button>
+  <button data-mode="cam"><span class="sw" style="background:var(--cam)"></span>Camera (click, drag to aim)</button>
+  <button data-mode="note"><span class="sw" style="background:var(--note)"></span>Note</button>
+  <button id="undo">Undo</button><button id="clear">Clear</button>
+  <span id="pos" style="margin-left:auto;color:var(--dim)"></span>
+</header>
+<div id="wrap"><canvas id="c"></canvas>
+<p id="help">North (the colonnade) is up. Sand is shaded by height (darker = lower); grey bands are exposed stone steps.
+Draw her path in order; drop numbered cameras where shots should be, dragging toward what they look at. Your drawing stays in this page; tell Claude when it's done.</p></div>
+<script>
+const D=/*DATA*/null;
+</script>
+<script>
+const PX=10, cv=document.getElementById('c'), g=cv.getContext('2d');
+const NX=D.grid[0].length, NY=D.grid.length, S=D.step;
+cv.width=NX*PX; cv.height=NY*PX;
+const X1=D.x0+(NX-1)*S, Y1=D.y0+(NY-1)*S;
+// the level seen from above, turned 180 degrees so the colonnade (+y) is at the top (a rotation, not a mirror)
+const toPx=(x,y)=>[(X1-x)/S*PX+PX/2,(Y1-y)/S*PX+PX/2];
+const toW=(px,py)=>[X1-(px-PX/2)/PX*S, Y1-(py-PX/2)/PX*S];
+const dirPx=(deg,L)=>[-Math.cos(deg*Math.PI/180)*L,-Math.sin(deg*Math.PI/180)*L];  // a world yaw on screen
+let zmin=1e9,zmax=-1e9; D.grid.forEach(r=>r.forEach(c=>{if(c[0]=='d'){zmin=Math.min(zmin,c[1]);zmax=Math.max(zmax,c[1]);}}));
+const base=document.createElement('canvas'); base.width=cv.width; base.height=cv.height;
+const b=base.getContext('2d');
+D.grid.forEach((row,j)=>row.forEach((c,i)=>{
+  const k=c[0], z=c[1];
+  if(k=='d'){const t=(z-zmin)/Math.max(1,zmax-zmin); b.fillStyle=`rgb(${110+120*t|0},${60+80*t|0},${30+45*t|0})`;}
+  else if(k=='s'){b.fillStyle='#8d8780';}
+  else if(k=='o'){b.fillStyle='#77706a';}
+  else b.fillStyle='#222';
+  b.fillRect((NX-1-i)*PX,(NY-1-j)*PX,PX,PX);   // row j is world y0 + j*S: south at the bottom
+}));
+// step risers every 220 cm where the steps are exposed
+b.strokeStyle='rgba(30,25,20,.55)'; b.lineWidth=1;
+for(let k=0;k<15;k++){const y=-1500-220*k; D.grid[0].forEach((_,i)=>{
+  const j=Math.round((y-D.y0)/S); if(j<0||j>=NY) return; if(D.grid[j][i][0]!='s') return;
+  const [px,py]=toPx(D.x0+i*S,y); b.beginPath(); b.moveTo(px-PX/2,py); b.lineTo(px+PX/2,py); b.stroke();});}
+function box(o,fill,stroke){const [px,py]=toPx(o.x,o.y), a=o.yaw*Math.PI/180;
+  b.save(); b.translate(px,py); b.rotate(a); b.fillStyle=fill; b.strokeStyle=stroke;
+  b.fillRect(-o.ex[0]/S*PX,-o.ex[1]/S*PX,2*o.ex[0]/S*PX,2*o.ex[1]/S*PX);
+  b.strokeRect(-o.ex[0]/S*PX,-o.ex[1]/S*PX,2*o.ex[0]/S*PX,2*o.ex[1]/S*PX); b.restore();}
+function label(x,y,t,col){const [px,py]=toPx(x,y); b.fillStyle=col||'#eadfd2'; b.font='12px system-ui'; b.fillText(t,px+6,py-6);}
+D.objs.forEach(o=>{
+  if(o.kind=='plinth'){box(o,'#4a443e','#6f675f'); const [px,py]=toPx(o.x,o.y); b.fillStyle='#2c2825'; b.beginPath(); b.arc(px,py,510/S*PX,0,7); b.fill(); }
+  else if(o.kind=='drum') box(o,'#5b5048','#8a7a6c');
+  else if(o.kind=='stone') box(o,'#6a5f55','#9a8a7a');
+});
+D.objs.forEach(o=>{
+  const [px,py]=toPx(o.x,o.y);
+  if(o.kind=='MenuModel'){ const f=(o.yaw+90)*Math.PI/180;
+    // the lean column: a fallen drum lying across, just behind her
+    const r=[Math.cos(f-Math.PI/2),Math.sin(f-Math.PI/2)], bk=[-Math.cos(f)*60,-Math.sin(f)*60];
+    box({x:o.x+bk[0],y:o.y+bk[1],yaw:o.yaw,ex:[160,45]},'#c9b8a3','#f1e3d0');
+    b.fillStyle='#ff8a3d'; b.beginPath(); b.arc(px,py,5,0,7); b.fill();
+    {const d=dirPx(o.yaw+90,16); b.strokeStyle='#ff8a3d'; b.beginPath(); b.moveTo(px,py); b.lineTo(px+d[0],py+d[1]); b.stroke();}
+    label(o.x,o.y,'she leans here (menu)','#ffb27d');}
+  if(o.kind=='MenuCam'){ const f=o.yaw*Math.PI/180; b.fillStyle='rgba(95,180,255,.18)';
+    {const l=dirPx(o.yaw-14,90), r=dirPx(o.yaw+14,90); b.beginPath(); b.moveTo(px,py); b.lineTo(px+l[0],py+l[1]); b.lineTo(px+r[0],py+r[1]); b.fill();}
+    b.fillStyle='#5fb4ff'; b.fillRect(px-4,py-4,8,8); label(o.x,o.y-150,'menu camera','#9fd0ff');}
+});
+label(12500,2700,'colonnade (plinths, columns rising into the haze)','#d8cbbd');
+label(1500,-6600,'exposed steps','#d8cbbd'); label(12500,-600,'plaza (stone floor, sand drifts)','#d8cbbd'); label(12500,-6600,'steps buried in sand','#d8cbbd');
+// sun: light travels toward yaw D.sun_yaw; the sun sits the other way
+{const a=(D.sun_yaw+180)*Math.PI/180, cx=cv.width-110, cy=60; b.strokeStyle='#ffd27a'; b.lineWidth=2;
+ b.beginPath(); b.arc(cx,cy,34,0,7); b.stroke(); b.fillStyle='#ffd27a';
+ {const d=dirPx(D.sun_yaw+180,34); b.beginPath(); b.arc(cx+d[0],cy+d[1],7,0,7); b.fill();} b.font='12px system-ui';
+ b.fillText('sun ('+Math.round(-D.sun_pitch)+'° up)',cx-40,cy+52);}
+// scale bar: 10 m
+b.fillStyle='#eadfd2'; b.fillRect(20,cv.height-24,1000/S*PX,3); b.fillText('10 m',20,cv.height-30);
+</script>
+<script>
+// ---- drawing: strokes kept in world cm ----
+let mode='her', items=[], cur=null;
+try{ items=JSON.parse(localStorage.getItem('visexIntroMinimap')||'[]'); }catch(e){}
+const save=()=>{ try{ localStorage.setItem('visexIntroMinimap',JSON.stringify(items)); }catch(e){} };
+document.querySelectorAll('[data-mode]').forEach(bt=>bt.onclick=()=>{
+  mode=bt.dataset.mode; document.querySelectorAll('[data-mode]').forEach(x=>x.classList.toggle('on',x==bt)); });
+document.getElementById('undo').onclick=()=>{ items.pop(); save(); draw(); };
+document.getElementById('clear').onclick=()=>{ if(confirm('Clear the whole drawing?')){ items=[]; save(); draw(); } };
+function evW(e){ const r=cv.getBoundingClientRect(); const px=(e.clientX-r.left)*cv.width/r.width, py=(e.clientY-r.top)*cv.height/r.height; return toW(px,py); }
+cv.addEventListener('pointerdown',e=>{
+  cv.setPointerCapture(e.pointerId); const w=evW(e);
+  if(mode=='her') cur={type:'her',pts:[w]};
+  else if(mode=='cam') cur={type:'cam',n:items.filter(i=>i.type=='cam').length+1,at:w,aim:w};
+  else { const t=prompt('Note:'); if(t){ items.push({type:'note',at:w,text:t}); save(); draw(); } }
+});
+cv.addEventListener('pointermove',e=>{
+  const w=evW(e); document.getElementById('pos').textContent='x '+Math.round(w[0])+'  y '+Math.round(w[1])+' cm';
+  if(!cur) return;
+  if(cur.type=='her'){ const l=cur.pts[cur.pts.length-1]; if(Math.hypot(w[0]-l[0],w[1]-l[1])>25) cur.pts.push(w); }
+  else cur.aim=w;
+  draw();
+});
+cv.addEventListener('pointerup',()=>{ if(cur){ if(cur.type!='her'||cur.pts.length>1){ items.push(cur); save(); } cur=null; draw(); } });
+function draw(){
+  g.drawImage(base,0,0);
+  const all=cur?items.concat([cur]):items;
+  let hi=0;
+  all.forEach(it=>{
+    if(it.type=='her'){ hi++; g.strokeStyle='#ff8a3d'; g.lineWidth=4; g.lineJoin=g.lineCap='round'; g.beginPath();
+      it.pts.forEach((p,i)=>{ const q=toPx(p[0],p[1]); i?g.lineTo(q[0],q[1]):g.moveTo(q[0],q[1]); }); g.stroke();
+      const e=toPx(...it.pts[it.pts.length-1]), s0=toPx(...it.pts[0]);
+      g.fillStyle='#ff8a3d'; g.beginPath(); g.arc(e[0],e[1],6,0,7); g.fill();
+      g.font='bold 13px system-ui'; g.fillText('path '+hi,s0[0]+8,s0[1]+16); }
+    if(it.type=='cam'){ const p=toPx(...it.at), q=toPx(...it.aim); g.strokeStyle='#5fb4ff'; g.lineWidth=2;
+      g.beginPath(); g.moveTo(p[0],p[1]); g.lineTo(q[0],q[1]); g.stroke();
+      g.fillStyle='#5fb4ff'; g.fillRect(p[0]-7,p[1]-7,14,14); g.fillStyle='#0b1a2a'; g.font='bold 11px system-ui'; g.fillText(it.n,p[0]-3,p[1]+4); }
+    if(it.type=='note'){ const p=toPx(...it.at); g.fillStyle='#fff'; g.beginPath(); g.arc(p[0],p[1],3,0,7); g.fill();
+      g.font='13px system-ui'; g.fillText(it.text,p[0]+6,p[1]-6); }
+  });
+}
+window.getDrawing=()=>JSON.parse(JSON.stringify(items));
+draw();
+</script>
+</body></html>
