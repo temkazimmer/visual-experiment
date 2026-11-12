@@ -1877,18 +1877,21 @@ void AVisexMenuDirector::Lean(bool bFromStanding)
 	if (Down) { LoadedLean.AddUnique(Down); }
 	if (Down)
 	{
-		Anim->PlaySlotAnimationAsDynamicMontage(Down, Slot, 0.25f, 0.f, 1.f, 1);
-		// LoadedLean keeps the clip alive; the timer holds it weakly too, so if that ever slips it
-		// skips the idle instead of playing freed memory (0298)
+		// The loop cross-fades in over the lean-down's last SitBlend seconds, where she already
+		// rests on the stone. A zero-time hand-off at the clip's end let the montage run out a
+		// frame or more before the loop started, and her standing base idle flashed through
+		// ("lean pop", 0534). LoadedLean keeps the clip alive; the timer holds it weakly too, so
+		// if that ever slips it skips the idle instead of playing freed memory (0298)
+		Anim->PlaySlotAnimationAsDynamicMontage(Down, Slot, 0.25f, SitBlend, 1.f, 1);
 		GetWorldTimerManager().SetTimer(StandTimer, FTimerDelegate::CreateWeakLambda(this, [this, WeakIdle = TWeakObjectPtr<UAnimSequence>(Idle)]()
 		{
 			UAnimSequence* Clip = WeakIdle.Get();
 			UAnimInstance* A = GetPawnAnim();
 			if (Clip && A)
 			{
-				A->PlaySlotAnimationAsDynamicMontage(Clip, Slot, 0.f, 0.3f, 1.f, 1000000);
+				A->PlaySlotAnimationAsDynamicMontage(Clip, Slot, SitBlend, 0.3f, 1.f, 1000000);
 			}
-		}), Down->GetPlayLength(), false);
+		}), FMath::Max(Down->GetPlayLength() - SitBlend, 0.05f), false);
 	}
 	else
 	{
