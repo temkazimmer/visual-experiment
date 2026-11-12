@@ -1,0 +1,78 @@
+{
+ "px_per_cm": 10.0,
+ "z_top": 195.0,
+ "z_bottom": -5.0,
+ "landmarks": {
+  "neck": 150.18,
+  "bust": 128.77,
+  "underbust": 120.54,
+  "waist": 109.79,
+  "hip_top": 101.69,
+  "crotch": 85.47,
+  "thigh_mid": 72.62,
+  "knee": 49.77,
+  "ankle": 8.13
+ },
+ "views": {
+  "front": {
+   "file": "front.png",
+   "width": 2000,
+   "height": 2000,
+   "toward_camera": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "image_right": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "h_range_cm": [
+    -100.0,
+    100.0
+   ],
+   "note": "pixel (u, v) -> cm: along image_right = h0 + u / px, z = z_top - v / px"
+  },
+  "side": {
+   "file": "side.png",
+   "width": 800,
+   "height": 2000,
+   "toward_camera": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "image_right": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "h_range_cm": [
+    -40.0,
+    40.0
+   ],
+   "note": "pixel (u, v) -> cm: along image_right = h0 + u / px, z = z_top - v / px"
+  },
+  "back": {
+   "file": "back.png",
+   "width": 2000,
+   "height": 2000,
+   "toward_camera": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "image_right": [
+    -1.0,
+    0.0,
+    0.0
+   ],
+   "h_range_cm": [
+    -100.0,
+    100.0
+   ],
+   "note": "pixel (u, v) -> cm: along image_right = h0 + u / px, z = z_top - v / px"
+  }
+ }
+}

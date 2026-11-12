@@ -67,9 +67,38 @@ CENTRE = 1.2        # cm from the centre line that counts as "on" it
 
 
 # ---- her default body ------------------------------------------------------------------------
-def build_body():
+def t_pose(arm):
+    """Raise both upper arms to horizontal (her T-pose): the views are traced with her arms clear
+    of her sides. Vertex numbering does not change, so a point on the T-posed skin maps to the
+    same skin vertices in her rest pose."""
+    from mathutils import Matrix
+    Mi = arm.matrix_world.inverted().to_3x3()
+    for s, sgn in (("l", 1.0), ("r", -1.0)):
+        pb, lo = arm.pose.bones["upperarm_" + s], arm.pose.bones["lowerarm_" + s]
+        cur = (lo.head - pb.head).normalized()
+        tgt = (Mi @ Vector((sgn, 0.0, 0.0))).normalized()
+        R = Matrix.Translation(pb.head) @ cur.rotation_difference(tgt).to_matrix().to_4x4() @ Matrix.Translation(-pb.head)
+        pb.matrix = R @ pb.matrix
+        bpy.context.view_layer.update()
+
+
+def posed_points(obj, keys):
+    """World positions of a mesh with shape key values and its armature modifier applied."""
+    if obj.data.shape_keys:
+        for k in obj.data.shape_keys.key_blocks[1:]:
+            k.value = keys.get(k.name, 0.0)
+    dg = bpy.context.evaluated_depsgraph_get()
+    ev = obj.evaluated_get(dg)
+    m = ev.to_mesh()
+    P = np.array([obj.matrix_world @ v.co for v in m.vertices])
+    ev.to_mesh_clear()
+    return P
+
+
+def build_body(pose=None):
     """Import the skin like Tools/blender_outfit.py does (same hair removal, so the same vertex
-    numbering), bake the default sliders in, triangulate. Returns (object, landmarks)."""
+    numbering), bake the default sliders in, triangulate. pose="T": arms raised to horizontal.
+    Returns (object, design positions, info, masks)."""
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.import_scene.fbx(filepath=SKIN)
     arm = next(o for o in bpy.data.objects if o.type == "ARMATURE")
@@ -111,10 +140,15 @@ def build_body():
     legs = G("thigh", "calf", "foot", "ball", "toe_0")
     Bn = {b.name: np.array(arm.matrix_world @ b.head_local) for b in arm.data.bones}
 
-    # the body object: design shape, no keys, no rig, triangles
+    # the body object: design shape (posed if asked), no keys, no rig, triangles
+    shown = X
+    if pose == "T":
+        t_pose(arm)
+        shown = posed_points(skin, DESIGN)
+        assert len(shown) == nv
     if me.shape_keys:
         skin.shape_key_clear()
-    me.vertices.foreach_set("co", X.ravel())          # world cm; the object sits at the origin
+    me.vertices.foreach_set("co", shown.ravel())      # world cm; the object sits at the origin
     me.update()
     skin.parent = None
     skin.modifiers.clear()
