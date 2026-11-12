@@ -12,7 +12,7 @@ class SWidget;
 /**
  * The launch hand-off from the intro film to the menu. The startup movie (DefaultGame.ini,
  * MoviePlayerSettings) ends exactly on the live menu shot. A still of that last frame covers
- * the screen (aspect-fill) from the film's end until the scene has settled (textures streamed,
+ * the screen, framed as the film was, from the film's end until the scene has settled (textures streamed,
  * PSOs compiled, the menu column fitted, a run of calm frames), then cross-fades into the live
  * menu while the menu music fades in. No still: a flat colour instead. Once per launch: never on returning to the menu, never
  * in the editor. Tunables in DefaultGame.ini under [/Script/visex.VisexLaunchCover].
@@ -42,6 +42,9 @@ public:
 	UPROPERTY(config) float MinHold = 0.5f;
 	UPROPERTY(config) float MaxHold = 8.f;
 	UPROPERTY(config) float FadeTime = 0.8f;
+	/** Share of the fade over which the still eases from the film's framing (aspect-fit, barred)
+	 *  to the live one (the window's width), when the window isn't the film's 16:10. */
+	UPROPERTY(config) float FillShare = 0.6f;
 	/** Calm frames (all else settled, no hitch) before the fade: Lumen and shadows converge. */
 	UPROPERTY(config) int32 SettleFrames = 30;
 	/** A frame this slow, or 1.6x the recent average if more, breaks the calm run. */
@@ -62,7 +65,7 @@ private:
 	/** Haze over the movie player's black border, from the film's end to the map's. */
 	void CoverFilmEnd();
 	void LoadStill();
-	TSharedRef<class SWidget> MakeCover(TAttribute<FSlateColor> Tint);
+	TSharedRef<class SWidget> MakeCover(TAttribute<FSlateColor> Tint, TAttribute<float> InFill = 0.f);
 	void OnFilmFinished();
 	bool Tick(float DeltaTime);
 	/** Empty when settled, else what it still waits on. */
@@ -87,6 +90,8 @@ private:
 	int32 CalmFrames = 0;
 	float AvgDelta = 0.f;
 	float Opacity = 1.f;
+	/** 0: the still framed as the movie player framed the film; 1: as the live camera frames it. */
+	float Fill = 0.f;
 	float HeldSeconds = 0.f;
 	FString ReleaseReason;
 	/** The last thing it waited on: the condition whose clearing let the cover go. */

@@ -30,6 +30,8 @@ DEFINE_LOG_CATEGORY_STATIC(LogVisexLaunch, Log, All);
  * The still, drawn byte for byte. Slate would decode an sRGB texture with the sRGB curve and
  * re-encode with gamma 2.2 (Mac), lifting the darks; the film and the game viewport both go
  * to the screen ungamma'd, so the still does too: sampled raw (texture not sRGB), NoGamma.
+ * Framed as the movie player frames the film (aspect-fit, centred, black bars) at Fill 0, as the
+ * live camera frames the shot at Fill 1 (its horizontal FOV is kept: scaled to the window's width).
  */
 class SVisexStill : public SLeafWidget
 {
@@ -37,25 +39,41 @@ public:
 	SLATE_BEGIN_ARGS(SVisexStill) {}
 		SLATE_ARGUMENT(const FSlateBrush*, Brush)
 		SLATE_ATTRIBUTE(FSlateColor, Tint)
+		SLATE_ATTRIBUTE(float, Fill)
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs)
 	{
 		Brush = InArgs._Brush;
 		Tint = InArgs._Tint;
+		Fill = InArgs._Fill;
 	}
 	virtual int32 OnPaint(const FPaintArgs&, const FGeometry& Geometry, const FSlateRect&, FSlateWindowElementList& Out,
 		int32 Layer, const FWidgetStyle& Style, bool) const override
 	{
 		const FLinearColor C = Style.GetColorAndOpacityTint() * Tint.Get().GetSpecifiedColor();
-		FSlateDrawElement::MakeBox(Out, Layer, Geometry.ToPaintGeometry(), Brush, ESlateDrawEffect::NoGamma, C);
-		return Layer;
+		const FVector2D Size = Geometry.GetLocalSize();
+		const FVector2D Image = Brush->ImageSize;
+		if (Image.X <= 0.0 || Image.Y <= 0.0 || Size.X <= 0.0 || Size.Y <= 0.0)
+		{
+			return Layer;
+		}
+		const double Fit = FMath::Min(Size.X / Image.X, Size.Y / Image.Y);
+		const double Live = Size.X / Image.X;
+		const FVector2D Drawn = Image * FMath::Lerp(Fit, Live, (double)FMath::Clamp(Fill.Get(), 0.f, 1.f));
+		// the movie player's bars (its border is BlackBrush), then the frame centred over them
+		FSlateDrawElement::MakeBox(Out, Layer, Geometry.ToPaintGeometry(), FCoreStyle::Get().GetBrush(TEXT("BlackBrush")),
+			ESlateDrawEffect::NoGamma, FLinearColor::Black.CopyWithNewOpacity(C.A));
+		FSlateDrawElement::MakeBox(Out, Layer + 1, Geometry.ToPaintGeometry(Drawn, FSlateLayoutTransform((Size - Drawn) * 0.5)),
+			Brush, ESlateDrawEffect::NoGamma, C);
+		return Layer + 1;
 	}
 	virtual FVector2D ComputeDesiredSize(float) const override { return Brush ? Brush->ImageSize : FVector2D::ZeroVector; }
 
 private:
 	const FSlateBrush* Brush = nullptr;
 	TAttribute<FSlateColor> Tint;
+	TAttribute<float> Fill;
 };
 
 void UVisexLaunchCover::Initialize(FSubsystemCollectionBase& Collection)
@@ -104,18 +122,14 @@ void UVisexLaunchCover::LoadStill()
 		: *FString::Printf(TEXT("no still at %s, flat colour"), *CoverImage));
 }
 
-TSharedRef<SWidget> UVisexLaunchCover::MakeCover(TAttribute<FSlateColor> Tint)
+TSharedRef<SWidget> UVisexLaunchCover::MakeCover(TAttribute<FSlateColor> Tint, TAttribute<float> InFill)
 {
 	if (!Still)
 	{
 		return SNew(SImage).Image(FCoreStyle::Get().GetBrush(TEXT("WhiteBrush"))).ColorAndOpacity(Tint);
 	}
-	// aspect-fill: the film's last frame, cropped to the window, never barred
-	return SNew(SScaleBox)
-		.Stretch(EStretch::ScaleToFill)
-		[
-			SNew(SVisexStill).Brush(&StillBrush).Tint(Tint)
-		];
+	// the film's last frame where the film left it, eased onto the live framing by Fill
+	return SNew(SVisexStill).Brush(&StillBrush).Tint(Tint).Fill(InFill);
 }
 
 void UVisexLaunchCover::CoverFilmEnd()
@@ -190,7 +204,7 @@ void UVisexLaunchCover::OnMapLoaded(UWorld* World)
 			MakeCover(TAttribute<FSlateColor>::CreateLambda([this]
 			{
 				return FSlateColor((Still ? FLinearColor::White : CoverColor).CopyWithNewOpacity(Opacity));
-			}))
+			}), TAttribute<float>::CreateLambda([this] { return Fill; }))
 		];
 	Viewport->AddViewportWidgetContent(Cover.ToSharedRef(), 10000);
 	HoldMusic(World);
@@ -315,6 +329,9 @@ bool UVisexLaunchCover::Tick(float DeltaTime)
 	Opacity = 1.f - FMath::Clamp(float(Now - FadeStart) / FMath::Max(FadeTime, 0.01f), 0.f, 1.f);
 	// eased: the haze thins slowly at first, like the fog lifting
 	Opacity = FMath::InterpEaseInOut(0.f, 1.f, Opacity, 2.f);
+	// off the film's framing onto the live one within the fade's first part, while the still is
+	// still mostly there (a no-op at the film's own 16:10)
+	Fill = FMath::SmoothStep(0.f, 1.f, FMath::Clamp(float(Now - FadeStart) / FMath::Max(FadeTime * FillShare, 0.01f), 0.f, 1.f));
 	if (Now - FadeStart < FadeTime)
 	{
 		return true;
