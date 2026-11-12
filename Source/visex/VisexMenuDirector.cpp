@@ -468,6 +468,13 @@ void AVisexMenuDirector::Confirm()
 
 void AVisexMenuDirector::OpenSettings()
 {
+	// only from the open menu with her settled: not while she steps out to or walks back from the
+	// column (StepDir), where ShowMenu would later reset the page under a sitting figure. Input
+	// already waits for bOpen; this also covers Blueprint and script callers
+	if (!bOpen || StepDir != 0 || Page > 0)
+	{
+		return;
+	}
 	Page = 1;
 	ShowSettingsPage(0);
 	SitForSettings();
