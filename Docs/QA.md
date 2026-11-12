@@ -7,6 +7,31 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-12 21:10 · VIS-EX-0550 Shipping (d799e54) · STABLE PASS, the intro film plays in-game, any key skips it, she walks on and leans with no pop; cook clean again
+
+- **Cook:** `Success - 0 error(s), 0 warning(s)`, 854 packages; dca6395 keeps `/MovieRenderPipeline` out. DMG md5 `3f69708c…` (1.6 GB), copied to `VIS-EX-0550-stable.dmg`.
+- **Launch** (no `-visexqa`, 1920×1080 fullscreen, `screencapture -x` every 0.25 s; `qa0550/launch/launch_contact_sheet.jpg`, from frame 36 = 9 s, 8 per row = 2 s):
+  - Cold first launch from the DMG: desktop 9 s, then 3.25 s black before the film. A warm relaunch shows the film ~4.5 s after launch.
+  - Film plays full (~6.5 s visible): her feet on rippled sand, low sun, black at both ends. Pillarboxed (16:10 in 16:9), as in 0534.
+  - Film → game: ≤0.5 s black, then up from black at once (~1.2 s fade). No wait, no still, no ghosting (the 0534 still→live cross-fade is gone).
+  - The plaza fades up empty; she walks in from off frame left, the panel fades in during the walk, she turns and sinks into the lean (settled ~16 s after the film starts).
+  - **No pop** in the 4 s after she settles: frame-to-frame difference stays flat (1–3), against the 0534 snap. At 4 fps a sub-0.25 s pop could still slip through.
+  - **Skip** (`qa0550/skip/skip_sheet.jpg`): space 2.5 s into the film cuts it to black within 0.3 s, then the game fades up over ~1.2 s with no hold.
+  - Music: no audio track in captures. coreaudiod held audio-out from launch through the menu, so sound runs from the start; not heard.
+- **Tour:** two runs from the mounted DMG, `-visexqa` 1920×1080 windowed. Both `VisexQA: done`, 58 shots, exit 0, 297 s each. Launch cover held 0.02 s, `settled`.
+  On ground at every step (only photo motions 5/6/7/9 in mode 0, as 0505), no spectator, no `.ips`. Shots in `Saved/QA_0550ship_run{1,2}/` and `Tools/.bridge/shots/qa0550/run{1,2}/`, sheets in `sheets/`.
+- **Settings jump** (run 2, 60 fps `screencapture -V` clip; `sheets/settings_jump_zoom.jpg`): she pushes off the lean, tucks both legs and rises onto the drum in ~0.5 s,
+  then sits with one leg hooked. The recording is ~20 fps real, and the Dock covers the bottom of the windowed frame, so **both feet off the sand is likely but not proven**.
+- **Menu, outfits, poses** (`sheets/flow_sheet.jpg`, `outfits_sheet.jpg`, `photo_sheet.jpg`): Unopened Gate logo and the one-line menu as 0505. All ten outfits wear on the lean,
+  incl. Silversuit and Tartan (kit). Photo mode labels the motions by name (Idle, Walk, Run, Bookend, Crown, Feetup, Glance, Ledge, Leglift, Mermaid, Peace).
+- **Body:** page opens (Body/Face/Hair), she walks back and settles after Close. **Photo:** opens walking in place, `moved 0.0 cm`.
+- **Wardrobe:** the tour still logs `DID NOT OPEN` (timing gap, as 0464–0534). **By hand it opens** (`qa0550/wardrobe/wardrobe_sheet.jpg`): Down ×2, Enter,
+  list with Tartan WORN, Tartan (kit) and three locked costumes.
+- **Regressions:** none. Start move 4:3 `fills the window`, feet IN FRAME at 16:9 and 4:3, forced GC fine, `layout save PASS, on disk` in both runs.
+- **Frame times** (machine idle, no other editor): run 1 quality 0/3/4: 16.7 / 16.7 / 30.5 ms; menu 20.5, settings 46.7, after body 50.6, after wardrobe 48.0, after photo 57.2.
+  Run 2: 16.7 / 16.7 / 36.3; settings 49.6, after body 51.9, after photo 57.9. The 0534 run-2 434.8 ms "after body page" doesn't repeat.
+- **Saves:** backed up `VisexBody.sav` (`bddfbe76…`) and `GameUserSettings.ini` (`06e783cf…`), restored after every launch (the tour rewrites both), both md5s match. No `Game.ini` before or after.
+
 ## 2026-11-12 18:44 · VIS-EX-0534 Shipping (e1585c4) · FAIL, cook fails on MovieRenderPipeline content; in a workaround build the film plays, but the still→live cross-fade ghosts and she pops off the lean once
 
 - **Cook FAILS as committed:** `Failure - 1 error(s)`, `Failed to cook /MovieRenderPipeline/Blueprints/Graph/UI_MovieGraphImagePreview for platform Mac`
