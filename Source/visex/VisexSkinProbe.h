@@ -17,13 +17,16 @@ struct FVisexSkinProbe
 	enum ERegion : uint8 { HandL, HandR, Seat, Body, Num };
 
 	/** Read the mesh's LOD 0 and pick the region vertices. False if the CPU copy is missing. */
-	bool Build(const USkeletalMeshComponent* Component);
+	bool Build(const USkeletalMeshComponent* Component, bool bEveryVertex = false); // true: no per-region cap (slow; for checks)
 	bool IsBuiltFor(const USkeletalMeshComponent* Component) const;
 
 	/** The region's vertex with the lowest Score (e.g. world Z), in world space. */
 	bool Lowest(const USkeletalMeshComponent* Component, ERegion Region, TFunctionRef<double(const FVector&)> Score, FVector& Out) const;
 
 	int32 Count(ERegion Region) const { return Regions[Region].Num(); }
+
+	/** Every vertex of the region, skinned, in world space, with the name of its heaviest bone. */
+	void Skinned(const USkeletalMeshComponent* Component, ERegion Region, TArray<FVector>& Out, TArray<FName>& OutBone) const;
 
 	/** The skin's radius around a limb bone (thigh_*, calf_*, upperarm_*, lowerarm_*, head), from the
 	 *  reference mesh, at a point Along01 of the way from the bone to its child (0..1), in the direction
