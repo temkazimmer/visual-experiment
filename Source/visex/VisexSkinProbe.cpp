@@ -19,7 +19,7 @@ bool FVisexSkinProbe::IsBuiltFor(const USkeletalMeshComponent* Component) const
 	return bBuilt && Component && Mesh.Get() == Component->GetSkeletalMeshAsset();
 }
 
-bool FVisexSkinProbe::Build(const USkeletalMeshComponent* Component)
+bool FVisexSkinProbe::Build(const USkeletalMeshComponent* Component, bool bEveryVertex)
 {
 	bBuilt = false;
 	for (TArray<FVert>& R : Regions)
@@ -213,7 +213,7 @@ bool FVisexSkinProbe::Build(const USkeletalMeshComponent* Component)
 	// an even spread of each region, capped
 	for (int32 r = 0; r < Num; ++r)
 	{
-		const int32 Step = FMath::Max(1, FMath::DivideAndRoundUp(All[r].Num(), MaxPerRegion[r]));
+		const int32 Step = FMath::Max(1, FMath::DivideAndRoundUp(All[r].Num(), bEveryVertex ? FMath::Max(All[r].Num(), 1) : MaxPerRegion[r]));
 		for (int32 i = 0; i < All[r].Num(); i += Step)
 		{
 			Regions[r].Add(All[r][i]);
@@ -255,6 +255,46 @@ bool FVisexSkinProbe::Lowest(const USkeletalMeshComponent* Component, ERegion Re
 		}
 	}
 	return true;
+}
+
+void FVisexSkinProbe::Skinned(const USkeletalMeshComponent* Component, ERegion Region, TArray<FVector>& Out, TArray<FName>& OutBone) const
+{
+	Out.Reset();
+	OutBone.Reset();
+	if (!IsBuiltFor(Component))
+	{
+		return;
+	}
+	// a follower (her shell, her outfit) draws with its leader's bones
+	const USkinnedMeshComponent* Leader = Component->LeaderPoseComponent.Get();
+	const USkinnedMeshComponent* Pose = Leader ? Leader : Component;
+	const TArray<FTransform>& CS = Pose->GetComponentSpaceTransforms();
+	const TArray<int32>& Map = Component->GetLeaderBoneMap();
+	const USkeletalMesh* Skel = Mesh.Get();
+	const TArray<FMatrix44f>& RefInv = Skel->GetRefBasesInvMatrix();
+	const FTransform ToWorld = Pose->GetComponentTransform();
+	for (const FVert& V : Regions[Region])
+	{
+		FVector3f P = FVector3f::ZeroVector;
+		int32 Heaviest = 0;
+		bool bOk = true;
+		for (int32 i = 0; i < V.Num; ++i)
+		{
+			const int32 L = Leader ? (Map.IsValidIndex(V.Bone[i]) ? Map[V.Bone[i]] : INDEX_NONE) : V.Bone[i];
+			if (!CS.IsValidIndex(L) || !RefInv.IsValidIndex(V.Bone[i]))
+			{
+				bOk = false;
+				break;
+			}
+			P += (RefInv[V.Bone[i]] * FMatrix44f(CS[L].ToMatrixWithScale())).TransformPosition(V.Ref) * V.Weight[i];
+			Heaviest = V.Weight[i] > V.Weight[Heaviest] ? i : Heaviest;
+		}
+		if (bOk)
+		{
+			Out.Add(ToWorld.TransformPosition(FVector(P)));
+			OutBone.Add(Skel->GetRefSkeleton().GetBoneName(V.Bone[Heaviest]));
+		}
+	}
 }
 
 float FVisexSkinProbe::Radius(const USkeletalMeshComponent* Component, FName Bone, float Along01, const FVector& OutWorld) const
