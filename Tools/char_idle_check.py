@@ -20,6 +20,7 @@ pawn = unreal.GameplayStatics.get_player_pawn(world, 0)
 mesh = pawn.get_editor_property("mesh")
 for c in pawn.get_components_by_class(unreal.SkeletalMeshComponent):
     c.set_editor_property("bounds_scale", 3.0)
+skin = next((c for c in pawn.get_components_by_class(unreal.SkeletalMeshComponent) if c.get_name() == "Shell"), mesh)
 root = os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir()), "Tools", ".bridge")
 shot_dir = os.path.join(root, "shots")
 rt = unreal.RenderingLibrary.create_render_target2d(world, 3840, 2160, unreal.TextureRenderTargetFormat.RTF_RGBA8_SRGB)
@@ -56,7 +57,7 @@ def head_turn(q0):
 def gap(side):
     lib = getattr(unreal, "VisexSkinProbeLibrary", None)
     if lib and hasattr(lib, "hand_body_gap"):
-        return lib.hand_body_gap(mesh, side == "l")
+        return lib.hand_body_gap(skin, side == "l")
     return -1.0
 
 
@@ -77,7 +78,8 @@ def shoot(view, t):
     unreal.RenderingLibrary.export_render_target(world, rt, shot_dir, name)
 
 
-state = {"t": 0.0, "next": 0.0, "rows": [], "done": set(), "q0": None}
+state = {"t": 0.0, "next": 0.0, "rows": [], "done": set(), "q0": None,
+         "w0": unreal.GameplayStatics.get_time_seconds(world)}   # game time: the slate's dt runs slow in Play
 WS = unreal.RelativeTransformSpace.RTS_WORLD
 
 
@@ -105,7 +107,8 @@ def report():
         out.append("%s mean %.1f min %.1f max %.1f" % (k, sum(v) / len(v), min(v), max(v)))
     for s in "lr":
         f = [r["foot_" + s] for r in rows]
-        out.append("ball_%s drift %.2f cm" % (s, max(math.dist(a, f[0]) for a in f)))
+        out.append("ball_%s drift %.2f cm, lifts %.2f cm" % (s, max(math.dist(a, f[0]) for a in f),
+                                                          max(a[2] for a in f) - min(a[2] for a in f)))
     for r in rows[::4]:
         out.append("t%.1f trunk %.1f upper %.1f neck %.1f sh %.1f head %.0f pelx %.1f hL(%.0f,%.0f,%.0f) hR(%.0f,%.0f,%.0f) gap %.1f/%.1f" % (
             r["t"], r["trunk"], r["upper"], r["neck"], r["shoulders"], r["head"], r["pelvis_x"],
@@ -113,9 +116,15 @@ def report():
     open(os.path.join(root, "out", "idle_%s.txt" % TAG), "w").write("\n".join(out) + "\n")
 
 
+WALK = globals().get("WALK", False)        # True: walk her forward instead, to compare the walk's posture
+_dir = pawn.get_actor_forward_vector()
+
+
 def tick(dt):
     try:
-        state["t"] += dt
+        if WALK:
+            pawn.add_movement_input(_dir, 1.0)
+        state["t"] = unreal.GameplayStatics.get_time_seconds(world) - state["w0"]
         if state["t"] >= state["next"]:
             sample()
             state["next"] += 0.5
