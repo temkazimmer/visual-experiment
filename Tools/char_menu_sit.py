@@ -41,16 +41,16 @@ def clearance(p):
     return math.hypot(p[1] - CY, p[2] - CZ) - RADIUS
 
 # ---- the seat: on the drum's top, a little toward its front ----
-SEAT_DEG = globals().get("SEAT_DEG", 16.0)       # from the top toward her
+SEAT_DEG = globals().get("SEAT_DEG", 26.0)       # from the top toward her
 SEAT_OFF = globals().get("SEAT_OFF", 10.0)       # pelvis bone off the stone
 _a = math.radians(SEAT_DEG)
 SEAT_PELVIS = (1.0, CY + (RADIUS + SEAT_OFF) * math.sin(_a), CZ + (RADIUS + SEAT_OFF) * math.cos(_a))
 
 # the left leg hangs off the front toward the lens: thigh out over the edge, knee soft, foot relaxed
-HANG = globals().get("HANG", dict(ankle=(30.0, -8.0, 40.0), knee=(30.0, 10.0, 90.0), toe=(0.25, 0.35, -0.9)))
+HANG = globals().get("HANG", dict(ankle=(20.0, -4.0, 24.0), knee=(22.0, 30.0, 70.0), toe=(0.15, 0.4, -0.9)))   # long, knee soft, toes to the lens
 # the right leg hooks round the drum: the knee over its front, the shin down the bulge, the foot
 # tucked back under it, toes curled toward the stone
-HOOK = globals().get("HOOK", dict(ankle=(-16.0, -16.0, 50.0), knee=(-14.0, 0.0, 110.0), toe=(0.0, -0.35, -0.94)))   # ankle high and close: the knee folds out over the edge
+HOOK = globals().get("HOOK", dict(ankle=(-15.0, -18.0, 56.0), knee=(-14.0, 25.0, 100.0), toe=(0.0, -0.3, -0.95)))   # knee 35 cm out over the edge, shin 12 cm back onto the stone
 
 SEAT = dict(LEAN, pelvis=SEAT_PELVIS, roll=0.0, pitch=-4.0, yaw=-12.0,
             knee_l=HANG["knee"], knee_r=HOOK["knee"],
@@ -58,7 +58,7 @@ SEAT = dict(LEAN, pelvis=SEAT_PELVIS, roll=0.0, pitch=-4.0, yaw=-12.0,
             hand_deg=globals().get("SIT_HAND_DEG", 34.0), hand_x=globals().get("SIT_HAND_X", 26.0),   # ~5 cm off the stone, no wrist past its range
             arms=1.0, floor=0.0)
 SEAT.update(foot("l", HANG["ankle"], HANG["toe"], (0.1, -0.9, -0.3)))
-SEAT.update(foot("r", HOOK["ankle"], HOOK["toe"], (0.0, 0.8, -0.5)))
+SEAT.update(foot("r", HOOK["ankle"], HOOK["toe"], (0.0, 0.9, -0.3)))
 SEAT.update(globals().get("TWEAK", {}))
 carry_hands(SEAT)
 
