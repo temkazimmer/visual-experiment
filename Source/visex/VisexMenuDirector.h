@@ -750,6 +750,7 @@ private:
 	void PreRollWalk(float Seconds);
 	bool bArrivalFrozen = false;
 	bool bArrivalRan = false;
+	FVector FrozenVelocity = FVector::ZeroVector;
 	float ArrivalClock = -1.f;      // seconds since the arrival began; <0 when no fade runs
 	float PanelInAlpha = 1.f;       // the panel's fade-in; input waits for 1
 	int32 ArrivalQueued = 0;        // pressed while she finished walking: 1 Confirm, 2 ToggleMenu

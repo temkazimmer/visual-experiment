@@ -1203,11 +1203,19 @@ void AVisexMenuDirector::PreRollWalk(float Seconds)
 
 void AVisexMenuDirector::FreezeHer(bool bFreeze)
 {
-	if (APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0))
+	// her movement and pose stop exactly as they are, stride and velocity kept for the release
+	// (a zero time dilation let a frame through and zeroed her velocity)
+	ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	if (!Char || bFreeze == bArrivalFrozen)
 	{
-		// her own clock stops: pose, stride and velocity wait exactly as they are
-		Pawn->CustomTimeDilation = bFreeze ? 0.f : 1.f;
+		bArrivalFrozen = bFreeze && Char;
+		return;
 	}
+	UCharacterMovementComponent* Move = Char->GetCharacterMovement();
+	if (bFreeze) { FrozenVelocity = Move->Velocity; }
+	Move->SetComponentTickEnabled(!bFreeze);
+	Move->Velocity = FrozenVelocity;
+	Char->GetMesh()->bPauseAnims = bFreeze;
 	bArrivalFrozen = bFreeze;
 }
 
