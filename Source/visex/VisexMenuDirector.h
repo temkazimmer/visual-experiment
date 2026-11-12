@@ -504,10 +504,11 @@ public:
 	float ReturnWalkMax = 600.f;
 
 	// first launch: she walks in to the column and leans while the panel fades in (visex.Menu.Arrival)
-	/** Where she starts (world XY, on the ground), out of the menu camera's frame; she walks
+	/** Where she starts (world XY, on the ground), out of the menu camera's frame (left, the
+	 *  steps side: she crosses in profile, in frame ~1.6 s later); she walks
 	 *  in from there at her own pace, facing her spot. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Arrival")
-	FVector2D ArrivalStart = FVector2D(9560.f, -1010.f);
+	FVector2D ArrivalStart = FVector2D(9529.f, -1322.f);
 	/** Unused (the start faces her spot); kept so saved levels load. */
 	UPROPERTY()
 	float ArrivalStartYaw = 75.f;
