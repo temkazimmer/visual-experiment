@@ -45,6 +45,32 @@ TSharedRef<SWidget> UVisexMenuWidget::RebuildWidget()
 	return Super::RebuildWidget();
 }
 
+void UVisexMenuWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+	if (!Root || Root->GetChildrenCount() == 0)
+	{
+		return;
+	}
+	// a render translation per row (not layout), so it follows font changes on selection
+	const FGeometry& RootGeo = Root->GetCachedGeometry();
+	auto CentreY = [&RootGeo](const UWidget* C)
+	{
+		const FGeometry& G = C->GetCachedGeometry();
+		return RootGeo.AbsoluteToLocal(G.GetAbsolutePositionAtCoordinates(FVector2D(0.5f, 0.5f))).Y;
+	};
+	AlignY0 = CentreY(Root->GetChildAt(0));
+	for (UWidget* C : Root->GetAllChildren())
+	{
+		const float Dx = AlignSlope * (CentreY(C) - AlignY0);
+		if (!FMath::IsNearlyEqual(C->GetRenderTransform().Translation.X, Dx, 0.05f))
+		{
+			C->SetRenderTranslation(FVector2D(Dx, 0.f));
+			bAlignChanged = true;
+		}
+	}
+}
+
 UTextBlock* UVisexMenuWidget::MakeText(const FText& Text, int32 Size, FName Typeface, int32 Spacing, const FLinearColor& Color)
 {
 	UTextBlock* Block = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
@@ -53,8 +79,8 @@ UTextBlock* UVisexMenuWidget::MakeText(const FText& Text, int32 Size, FName Type
 	Font.LetterSpacing = Spacing;
 	Block->SetFont(Font);
 	Block->SetColorAndOpacity(FSlateColor(Color));
-	// a soft dark shadow under every line, so the white reads on the bright haze (Tema)
-	Block->SetShadowOffset(ShadowOffset);
+	// an optional drop shadow (off by default)
+	Block->SetShadowOffset(ShadowOpacity > 0.f ? ShadowOffset : FVector2D::ZeroVector);
 	Block->SetShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, ShadowOpacity));
 	return Block;
 }
@@ -132,13 +158,14 @@ void UVisexMenuWidget::BuildContent()
 		if (UVerticalBoxSlot* LogoSlot = Root->AddChildToVerticalBox(LogoImage))
 		{
 			LogoSlot->SetHorizontalAlignment(HAlign_Left);
+			// the letters start LogoInset inside the image: pull it left so they sit on the items' edge
+			LogoSlot->SetPadding(FMargin(-W * LogoInset, 0.f, 0.f, 0.f));
 		}
 		if (!BuildLabel.IsEmpty())
 		{
 			UTextBlock* Build = MakeText(BuildLabel, BuildLabelSize, TEXT("Regular"), 400, TextColor);
 			Build->SetColorAndOpacity(FSlateColor((TextColor * 0.3f).CopyWithNewOpacity(BuildLabelOpacity)));
-			// the logo's letters start a little inside its image
-			Root->AddChildToVerticalBox(Build)->SetPadding(FMargin(W * 0.075f, 4.f, 0.f, 0.f));
+			Root->AddChildToVerticalBox(Build)->SetPadding(FMargin(0.f, 4.f, 0.f, 0.f));
 		}
 	}
 	else

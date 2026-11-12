@@ -59,10 +59,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
 	float LogoHeightPerSize = 3.f;
 
-	/** Colour scale on the logo image: the panel is lit 5x over white (PanelBrightness), so this
-	 * keeps the stone texture and grunge from burning out to flat white. */
+	/** Colour scale on the logo image. White = the same white as the text (the texture is white
+	 * with its grunge in alpha, so the panel's 5x lighting can't burn detail out). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
-	FLinearColor LogoTint = FLinearColor(0.22f, 0.22f, 0.22f, 1.f);
+	FLinearColor LogoTint = FLinearColor::White;
 
 	/** The build number, small under the logo; empty = none. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu")
@@ -96,10 +96,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
 	FLinearColor AccentColor = FLinearColor::White;
 
-	/** A dark feathered plate behind the text, inside the panel so it tilts with it; works with
-	 * the menu camera's corner shade (AVisexMenuDirector::CornerShade). */
+	/** A dark feathered plate behind the text, inside the panel so it tilts with it. Off: Tema
+	 * wants one big soft darkening instead (AVisexMenuDirector::CornerShade). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
-	TSoftObjectPtr<class UMaterialInterface> ShadeMaterial = TSoftObjectPtr<class UMaterialInterface>(FSoftObjectPath(TEXT("/Game/VisEx/UI/M_MenuShade.M_MenuShade")));
+	TSoftObjectPtr<class UMaterialInterface> ShadeMaterial;
 
 	/** Room round the text (layout px) for the shade to fade out in; the director grows the
 	 * panel by twice this, so the text stays where it was. */
@@ -130,12 +130,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
 	float IdleOpacity = 0.6f;
 
-	/** Drop shadow under the text, in layout units before Supersample. */
+	/** Drop shadow under the text, in layout units before Supersample. Off (Tema: no shadows on
+	 * the items); the corner shade carries readability. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
 	FVector2D ShadowOffset = FVector2D(3.f, 4.f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
-	float ShadowOpacity = 0.9f;
+	float ShadowOpacity = 0.f;
 
 	UFUNCTION(BlueprintCallable, Category = "Menu")
 	void SetSelected(int32 Index);
@@ -155,8 +156,25 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Menu")
 	void OnSelectionChanged(int32 Index);
 
+	/** Left edges on one vertical line on screen (Tema): each row is moved right by AlignSlope x
+	 * (its centre - the first row's centre), layout px. The director sets the slope from the
+	 * panel's tilt and the camera; 0 = rows as laid out. */
+	float AlignSlope = 0.f;
+
+	/** Set when a tick moved a row; the director redraws the panel and clears it. */
+	bool bAlignChanged = false;
+
+	/** The first row's centre in the rows' layout space (from the last tick), for the director. */
+	float GetAlignY0() const { return AlignY0; }
+
+	/** Where the logo's letters start inside its image, as a fraction of its width. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
+	float LogoInset = 0.083f;
+
 protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+	float AlignY0 = 0.f;
 
 private:
 	void Build();
