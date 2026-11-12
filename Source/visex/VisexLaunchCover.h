@@ -11,10 +11,11 @@ class SWidget;
 
 /**
  * The launch hand-off from the intro film to the menu. The startup movie (DefaultGame.ini,
- * MoviePlayerSettings) ends exactly on the live menu shot. A still of that last frame covers
- * the screen, framed as the film was, from the film's end until the scene has settled (textures streamed,
- * PSOs compiled, the menu column fitted, a run of calm frames), then cross-fades into the live
- * menu while the menu music fades in. No still: a flat colour instead. Once per launch: never on returning to the menu, never
+ * MoviePlayerSettings) ends on black. A flat colour (CoverColor, black) covers the screen from
+ * the film's end until the scene has settled (textures streamed, PSOs compiled, the menu column
+ * fitted, a run of calm frames), then the live menu fades up from it; the music picks up where
+ * the film left it on the first frame after the film. With CoverImage set, a still of the film's
+ * last frame, framed as the film was, cross-fades into the live menu instead. Once per launch: never on returning to the menu, never
  * in the editor. Tunables in DefaultGame.ini under [/Script/visex.VisexLaunchCover].
  */
 UCLASS(config = Game)
@@ -28,7 +29,7 @@ public:
 
 	/** True once the cover has fully faded (or never showed). The QA tour waits on it. */
 	bool IsDone() const { return bDone; }
-	/** Still on the film's last frame (the arrival's frame 0): before the cross-fade begins. */
+	/** Still fully covered (black), before the fade begins: her arrival waits for it. */
 	bool IsHolding() const { return !bDone && FadeStart < 0.0; }
 	/** Seconds the cover held at full before its fade began, and what let it go. */
 	float GetHeldSeconds() const { return HeldSeconds; }
@@ -37,7 +38,7 @@ public:
 	/** The film's last frame, held from its end until the scene settles, then cross-faded into
 	 *  the live menu. A /Game texture path, or an image file relative to Content/. */
 	UPROPERTY(config) FString CoverImage = TEXT("Movies/VisexIntro_last.png");
-	/** Fallback when there's no still: a flat colour (linear). */
+	/** The cover when there's no still: a flat colour (black from DefaultGame.ini). */
 	UPROPERTY(config) FLinearColor CoverColor = FLinearColor(0.92f, 0.62f, 0.36f, 1.f);
 	UPROPERTY(config) float MinHold = 0.5f;
 	UPROPERTY(config) float MaxHold = 8.f;

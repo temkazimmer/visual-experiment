@@ -197,7 +197,7 @@ void UVisexLaunchCover::OnMapLoaded(UWorld* World)
 	bShown = true;
 	// The map loads while the film still plays, and the world doesn't tick until it ends: the
 	// cover goes in now, so the first game frame after the film's last is already the cover.
-	// With the still, the fade is a cross-fade: the frozen last frame thins into the live shot.
+	// Black (no still): the live scene fades up from it. With a still: a cross-fade.
 	Cover = SNew(SBox)
 		.Visibility(EVisibility::HitTestInvisible)
 		[
@@ -287,12 +287,12 @@ bool UVisexLaunchCover::Tick(float DeltaTime)
 		return true;
 	}
 	UWorld* World = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr;
-	// the film ends on the menu shot at the drift's start (and without the panel): hold both
-	// until the cross-fade is over
-	if (Director.IsValid() && (FadeStart < 0.0 || Now - FadeStart < FadeTime))
+	// the camera's drift waits at its start under the black, and runs from the fade on; the
+	// panel stays out until the fade is over (unless her arrival fades it in itself)
+	if (Director.IsValid() && FadeStart < 0.0) { Director->HoldDrift(); }
+	if (Director.IsValid() && (FadeStart < 0.0 || Now - FadeStart < FadeTime) && !Director->FadesOwnPanel())
 	{
-		Director->HoldDrift();
-		if (!Director->FadesOwnPanel()) { Director->SetPanelOpacity(0.f); }
+		Director->SetPanelOpacity(0.f);
 	}
 	if (FadeStart < 0.0)
 	{

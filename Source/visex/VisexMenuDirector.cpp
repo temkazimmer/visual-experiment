@@ -1103,10 +1103,11 @@ bool AVisexMenuDirector::BeginArrival()
 	{
 		Start.Z = Hit.Location.Z;
 	}
-	// mid-stride along her own heading; TickReturn steers her on to her spot from there
-	const FVector Dir = FRotator(0.f, ArrivalStartYaw, 0.f).Vector();
+	// out of frame, mid-stride, heading for her spot; TickReturn steers her on to it from there
+	const FVector Dir = (StepHome - Start).GetSafeNormal2D();
+	const float StartYaw = Dir.Rotation().Yaw;
 	const float Half = Char->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
-	Char->SetActorLocationAndRotation(Start + FVector(0.f, 0.f, Half), FRotator(0.f, ArrivalStartYaw, 0.f), false, nullptr, ETeleportType::TeleportPhysics);
+	Char->SetActorLocationAndRotation(Start + FVector(0.f, 0.f, Half), FRotator(0.f, StartYaw, 0.f), false, nullptr, ETeleportType::TeleportPhysics);
 	GetWorldTimerManager().ClearTimer(StandTimer);
 	GetWorldTimerManager().ClearTimer(BeatTimer);
 	if (UAnimInstance* Anim = GetPawnAnim())
@@ -1129,6 +1130,7 @@ bool AVisexMenuDirector::BeginArrival()
 	bArriving = true;
 	bArrivalRan = true;
 	ArrivalClock = 0.f;
+	ArrivalInFrame = -1.f;
 	PanelInAlpha = 0.f;
 	ArrivalQueued = 0;
 	bPlanted[0] = bPlanted[1] = false;
@@ -1137,9 +1139,9 @@ bool AVisexMenuDirector::BeginArrival()
 	PreRollWalk(ArrivalPreRoll);
 	bArrivalFrozen = false;
 	FreezeHer(ArrivalHeld());
-	UE_LOG(LogTemp, Log, TEXT("Menu arrival: frame 0 at (%.1f, %.1f, %.1f) yaw %.1f, %.0f cm to her spot at %.0f cm/s, panel in %.1f-%.1f s%s"),
-		Char->GetActorLocation().X, Char->GetActorLocation().Y, Char->GetActorLocation().Z, ArrivalStartYaw,
-		FVector::Dist2D(Start, StepHome), ArrivalSpeed, ArrivalPanelFadeStart, ArrivalPanelFadeStart + ArrivalPanelFadeTime,
+	UE_LOG(LogTemp, Log, TEXT("Menu arrival: starts at (%.1f, %.1f, %.1f) yaw %.1f, %.0f cm to her spot at %.0f cm/s, panel %.1f s after she's in frame%s"),
+		Char->GetActorLocation().X, Char->GetActorLocation().Y, Char->GetActorLocation().Z, StartYaw,
+		FVector::Dist2D(Start, StepHome), ArrivalSpeed, ArrivalPanelFadeStart,
 		bArrivalFrozen ? TEXT(", held") : TEXT(""));
 	return true;
 }
@@ -1164,7 +1166,7 @@ bool AVisexMenuDirector::IsArriving() const
 
 bool AVisexMenuDirector::ArrivalHeld() const
 {
-	// the launch cover's still is the film's last frame, which is frame 0: hold it until it lets go
+	// she waits off frame under the launch cover's black until it starts to fade
 	const UVisexLaunchCover* Cover = GetGameInstance() ? GetGameInstance()->GetSubsystem<UVisexLaunchCover>() : nullptr;
 	return CVarMenuArrivalFreeze.GetValueOnGameThread() != 0 || (Cover && Cover->IsHolding());
 }
@@ -1235,10 +1237,26 @@ void AVisexMenuDirector::PlayArrival()
 void AVisexMenuDirector::TickArrivalPanel(float DeltaSeconds)
 {
 	ArrivalClock += DeltaSeconds;
-	if (PanelInAlpha < 1.f)
+	if (ArrivalInFrame < 0.f)
+	{
+		// she walks in from out of frame: the panel follows her in, a beat after she shows
+		const ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+		APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+		FVector2D At;
+		int32 W = 0, H = 0;
+		if (PC) { PC->GetViewportSize(W, H); }
+		const bool bIn = Char && W > 0 && PC->ProjectWorldLocationToScreen(Char->GetActorLocation(), At)
+			&& At.X > 0.03f * W && At.X < 0.97f * W;
+		if (bIn || ArrivalClock >= ArrivalPanelLatest || !bArriving)
+		{
+			ArrivalInFrame = FMath::Min(ArrivalClock, ArrivalPanelLatest);
+			UE_LOG(LogTemp, Log, TEXT("Menu arrival: in frame at %.2f s%s"), ArrivalClock, bIn ? TEXT("") : TEXT(" (not seen, timed)"));
+		}
+	}
+	if (PanelInAlpha < 1.f && ArrivalInFrame >= 0.f)
 	{
 		// the panel and its corner shade fade in together while she walks
-		const float A = FMath::Clamp((ArrivalClock - ArrivalPanelFadeStart) / FMath::Max(0.05f, ArrivalPanelFadeTime), 0.f, 1.f);
+		const float A = FMath::Clamp((ArrivalClock - ArrivalInFrame - ArrivalPanelFadeStart) / FMath::Max(0.05f, ArrivalPanelFadeTime), 0.f, 1.f);
 		const float E = A >= 1.f ? 1.f : A * A * (3.f - 2.f * A);
 		if (E != PanelInAlpha)
 		{
@@ -2088,8 +2106,6 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 	Clock += DeltaSeconds;
 	if (bArriving)
 	{
-		// the handheld drift waits at its start, the film's last frame, until she is leaning
-		Clock = 0.f;
 		if (bArrivalFrozen && !ArrivalHeld())
 		{
 			FreezeHer(false);
