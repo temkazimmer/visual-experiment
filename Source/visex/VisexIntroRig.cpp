@@ -7,6 +7,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 #include "VisexMenuDirector.h"
+#include "VisexBodyComponent.h"
+#include "Components/WidgetComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogVisexIntro, Log, All);
 
@@ -59,21 +61,45 @@ void AVisexIntroRig::SpawnHer()
 	{
 		return;
 	}
-	APlayerController* PC = bPlayer ? UGameplayStatics::GetPlayerController(this, 0) : nullptr;
-	if (!PC)
+	if (!Outfit.IsNone())
 	{
-		Her->SpawnDefaultController();
-		if (AController* C = Her->GetController())
+		if (UVisexBodyComponent* Body = Her->FindComponentByClass<UVisexBodyComponent>())
 		{
-			C->SetControlRotation(Rot);
+			Body->SetOutfit(Outfit);   // Tema: the film wears the Silversuit
 		}
 	}
-	else
+	// her own AI controller until she takes the player (TakePlayer, when she starts walking)
+	Her->SpawnDefaultController();
+	if (AController* C = Her->GetController())
 	{
-		// the sequence's camera cut owns the view; possessing would hand it to her boom camera
-		PC->bAutoManageActiveCameraTarget = false;
-		PC->Possess(Her);
-		PC->SetControlRotation(Rot);
+		C->SetControlRotation(Rot);
+	}
+}
+
+void AVisexIntroRig::TakePlayer()
+{
+	// the sand footprints and mounds follow player 0's pawn: whoever walks on camera takes it,
+	// and the one before gets an AI controller back so she keeps walking out of the shot
+	bTookPlayer = true;
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	if (!PC || !Her)
+	{
+		return;
+	}
+	APawn* Before = PC->GetPawn();
+	const FRotator Rot = Her->GetActorRotation();
+	if (AController* Old = Her->GetController())
+	{
+		Old->UnPossess();
+		Old->Destroy();
+	}
+	// the sequence's camera cut owns the view; possessing would hand it to her boom camera
+	PC->bAutoManageActiveCameraTarget = false;
+	PC->Possess(Her);
+	PC->SetControlRotation(Rot);
+	if (Before && Before != Her)
+	{
+		Before->SpawnDefaultController();
 	}
 }
 
@@ -87,6 +113,31 @@ void AVisexIntroRig::Tick(float DeltaSeconds)
 	if (Her)
 	{
 		Her->SetActorHiddenInGame(Show < 0.5f);
+	}
+	if (Her && !bTookPlayer && (Player >= 0.5f || (bAutoPlayer && Walk > 0.001f && Show >= 0.5f)))
+	{
+		TakePlayer();
+	}
+	if (bMenuShown && bHideMenuPanel)
+	{
+		// the film's menu shot has no panel: its build number would never match the live one;
+		// the live menu brings the panel in after the cut
+		for (TActorIterator<AVisexMenuDirector> It(GetWorld()); It; ++It)
+		{
+			if (UWidgetComponent* Panel = It->FindComponentByClass<UWidgetComponent>())
+			{
+				Panel->SetVisibility(false);
+			}
+		}
+	}
+	if (Her && bTookPlayer && !bMenuShown && Menu >= 0.5f)
+	{
+		bMenuShown = true;
+		for (TActorIterator<AVisexMenuDirector> It(GetWorld()); It; ++It)
+		{
+			It->SetActorTickEnabled(true);   // parked at BeginPlay
+			It->ShowMenu();
+		}
 	}
 	if (Her && Walk > 0.001f)
 	{

@@ -3,7 +3,7 @@
   python3 Tools/ue.py Tools/intro_render.py                 # preview: 1280x720, 4 samples
   python3 Tools/ue.py -c "QUALITY='final'; exec(open('Tools/intro_render.py').read())"
 
-Frames land in Saved/MovieRenders/Intro_<quality>/ as PNG (final: 3840x2160 EXR-free PNG,
+Frames land in Saved/MovieRenders/Intro_<quality>/ as PNG (final: 3840x2400 PNG, 16:10 for Mac screens,
 32 temporal samples, motion blur on). Pre-roll: the sequence starts 2 s before the film so
 she is mid-stride; the camera cut starts at 2 s and MRQ runs the frames before it as warm-up.
 """
@@ -35,7 +35,7 @@ cfg = job.get_configuration()
 o = cfg.find_or_add_setting_by_class(unreal.MoviePipelineOutputSetting)
 o.set_editor_property("output_directory", unreal.DirectoryPath(out_dir))
 o.set_editor_property("file_name_format", "intro.{frame_number}")
-o.set_editor_property("output_resolution", unreal.IntPoint(3840, 2160) if QUALITY == "final" else unreal.IntPoint(1280, 720))
+o.set_editor_property("output_resolution", unreal.IntPoint(3840, 2400) if QUALITY == "final" else unreal.IntPoint(1280, 800))   # 16:10
 if ONLY:
     o.set_editor_property("use_custom_playback_range", True)
     o.set_editor_property("custom_start_frame", ONLY[0])

@@ -19,8 +19,8 @@ import unreal
 PATH, NAME = "/Game/VisEx/Intro", "LS_Intro"
 FPS, PRE, FILM = 24, 4.0, 20.0     # 4 s pre-roll: the scene loads and settles before frame 1
 END = PRE + FILM
-CUT = PRE + 7.0                       # shot 1 -> shot 2
-WALK = 0.75                           # x MaxWalkSpeed 190 -> ~142 cm/s
+CUT = PRE + 6.0                       # shot 1 -> shot 2
+WALK = 0.6                            # x MaxWalkSpeed 190 -> ~114 cm/s: calm (Tema)
 SPEED = 190.0 * WALK
 HEAD = 60.0                           # her heading (UE yaw): up the steps toward the drum
 D = (math.cos(math.radians(HEAD)), math.sin(math.radians(HEAD)))
@@ -29,7 +29,8 @@ DRUM = ((9575.8, -849.1, 108.0), -15.0, 1.011)   # the menu's lean column, as th
 STOP = (DRUM[0][0] - D[0] * 110, DRUM[0][1] - D[1] * 110)   # she stops just short of it
 A_END = (8300.0, -3250.0)             # shot 1 walker reaches the sand edge at the cut
 A_T0 = PRE - 2.0                      # shot 1 walker starts walking 2 s before the film
-B_T0, B_STOP_T = CUT - 2.0, PRE + 18.5  # shot 2 walker: walks from 2 s before the cut, stops here
+T3 = END - 2.5                        # shot 3: the live menu shot itself (invisible cut into the menu)
+B_T0, B_STOP_T = CUT - 2.0, T3        # shot 2 walker: walks from 2 s before the cut until shot 3
 HAZE = (0.92, 0.62, 0.36)
 
 world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
@@ -104,11 +105,11 @@ def place(b, loc, yaw=0.0, scale=1.0, t0=0.0, t1=END):
                   [(t0, loc, (0, 0, yaw), scale)])
 
 
-def rig(name, start, walk_keys, show_keys, player):
+def rig(name, start, walk_keys, show_keys, player, extra=()):
     b = spawnable(unreal.load_class(None, "/Script/visex.VisexIntroRig"), name)
-    b.get_object_template().set_editor_property("player", player)
+    b.get_object_template().set_editor_property("auto_player", player)
     place(b, (start[0], start[1], ground(*start)), HEAD, 1.0)
-    for prop, keys in (("Walk", walk_keys), ("Show", show_keys)):
+    for prop, keys in (("Walk", walk_keys), ("Show", show_keys)) + tuple(extra):
         tr = b.add_track(unreal.MovieSceneFloatTrack)
         tr.set_property_name_and_path(prop, prop)
         ch = section_for(tr).get_all_channels()[0]
@@ -144,16 +145,28 @@ les = unreal.get_editor_subsystem(unreal.LevelSequenceEditorSubsystem)
 
 # ---- her: shot 1 on the sand (player 0: footprints), shot 2 up the steps to the drum
 rig("Her shot 1", A0, [(0.0, 0.0), (A_T0, WALK), (CUT + 0.5, 0.0)], [(0.0, 0.0), (A_T0, 1.0), (CUT + 0.1, 0.0)], True)
-rig("Her shot 2", B0, [(0.0, 0.0), (B_T0, WALK), (B_STOP_T, 0.0)], [(0.0, 0.0), (B_T0, 1.0)], False)
+rig("Her shot 2", B0, [(0.0, 0.0), (B_T0, WALK), (B_STOP_T, 0.0)], [(0.0, 0.0), (CUT, 1.0), (T3, 0.0)], True)
+# shot 3: a third her takes the player just before the cut and the menu director stages the
+# menu with her (lean at the column, MenuCam framed and lensed as at launch)
+mm = actors["MenuModel"].get_actor_location()
+rig("Her shot 3 (menu)", (mm.x, mm.y), [(0.0, 0.0)], [(0.0, 0.0), (T3, 1.0)], False,
+    (("Player", [(0.0, 0.0), (T3 - 0.3, 1.0)]), ("Menu", [(0.0, 0.0), (T3 - 0.25, 1.0)])))
+
+# ---- light: the game sun as is (the menu matches), but SlopedMass, 175 m off, no longer
+# shades the steps and the sand below them: her feet stay readable (Tema)
+mass = seq.add_possessable(actors["SlopedMass"].static_mesh_component)
+st = mass.add_track(unreal.MovieSceneBoolTrack)
+st.set_property_name_and_path("CastShadow", "CastShadow")
+section_for(st).get_all_channels()[0].add_key(fr(0.0), False)
 
 # ---- the menu's stand-in mannequin (the director hides it in game; hide it here too)
 stand = seq.add_possessable(actors["MenuModel"])
 vt = stand.add_track(unreal.MovieSceneVisibilityTrack)
 vt.set_property_name_and_path("bHiddenInGame", "bHiddenInGame")
-section_for(vt).get_all_channels()[0].add_key(fr(0.0), True)
+section_for(vt).get_all_channels()[0].add_key(fr(0.0), False)   # the channel is "visible"
 
 # ---- the drum she leans on in the menu (the director only spawns it with the menu)
-mesh("Lean column", "/Game/VisEx/Geo/SM_LeanColumn_HD", DRUM[0], DRUM[1], DRUM[2])
+mesh("Lean column", "/Game/VisEx/Geo/SM_LeanColumn_HD", DRUM[0], DRUM[1], DRUM[2], 0.0, T3 - 0.25)   # then the director's own
 
 # ---- rubble on her way (film only; Tema wants more here in the level too: main decides)
 # (s along shot 2's line from B0, v to her left, mesh, scale, yaw); stones stay >= 60 cm off her line
@@ -169,7 +182,7 @@ for i, (s, v, m, sc, yaw) in enumerate(STONES):
 
 # ---- cameras: shot 1 behind-right of her on the sand, shot 2 her left side, in profile
 cams = []
-for name, t0, t1 in (("Cam 1 behind", 0.0, CUT), ("Cam 2 profile", CUT, END)):
+for name, t0, t1 in (("Cam 1 behind", 0.0, CUT), ("Cam 2 profile", CUT, T3)):
     b, actor = les.create_camera(True)
     b.set_display_name(name)
     for tr in b.get_tracks():
@@ -209,6 +222,14 @@ hx, hy = her(CUT + 0.35)
 x, y = hx + L[0] * 128 + D[0] * 20, hy + L[1] * 128 + D[1] * 20
 mesh("Wipe stone 2", R % 1, (x, y, ground(x, y) - 6), -25, 0.5)
 
+# ---- exposure: shot 2 opens up in the colonnade's shadow and settles as she steps into the sun
+T_SUN = next(t / 10.0 for t in range(int(CUT * 10), int(END * 10)) if her(t / 10.0)[1] > -1780)
+
+
+def ev(t0):
+    return [(t0, 0.0)]   # the steps are lit now (SlopedMass's shadow is off in the film)
+
+
 # ---- key the cameras (every 1/4 s), lens, focus
 for (b, actor, t0, t1), fn in zip(cams, (cam1, cam2)):
     tkeys, lens, focus = [], [], []
@@ -225,32 +246,53 @@ for (b, actor, t0, t1), fn in zip(cams, (cam1, cam2)):
     for tr in comp.get_tracks():
         comp.remove_track(tr)
     cc = actor.get_cine_camera_component()
-    cc.set_editor_property("filmback", unreal.CameraFilmbackSettings(sensor_width=36.0, sensor_height=20.25))
+    cc.set_editor_property("filmback", unreal.CameraFilmbackSettings(sensor_width=36.0, sensor_height=22.5))   # 16:10: fills a Mac screen
     fs = cc.get_editor_property("focus_settings")
     fs.set_editor_property("focus_method", unreal.CameraFocusMethod.MANUAL)
     cc.set_editor_property("focus_settings", fs)
+    pp = cc.get_editor_property("post_process_settings")
+    pp.set_editor_property("override_auto_exposure_bias", True)
+    cc.set_editor_property("post_process_settings", pp)
     les.save_default_spawnable_state(b)
     for prop, path, keys in (("CurrentFocalLength", "CurrentFocalLength", lens),
                              ("CurrentAperture", "CurrentAperture", [(t0, 2.0)]),
-                             ("ManualFocusDistance", "FocusSettings.ManualFocusDistance", focus)):
+                             ("ManualFocusDistance", "FocusSettings.ManualFocusDistance", focus),
+                             ("AutoExposureBias", "PostProcessSettings.AutoExposureBias", ev(t0))):
         tr = comp.add_track(unreal.MovieSceneFloatTrack)
         tr.set_property_name_and_path(prop, path)
         key_channel(section_for(tr).get_all_channels()[0], keys)
+
+# ---- bounce: a warm board beside camera 2 (it sees the shadow side of her feet), no shadows
+fill = spawnable(unreal.RectLight, "Bounce 2", CUT - 0.5, T3)
+lc = fill.get_object_template().get_editor_property("rect_light_component")
+for prop, v in (("intensity", 18.0), ("source_width", 80.0), ("source_height", 50.0), ("attenuation_radius", 450.0),
+                ("cast_shadows", False), ("light_color", unreal.Color(255, 196, 140, 255))):
+    lc.set_editor_property(prop, v)
+fkeys = []
+t = CUT - 0.5
+while t <= END + 0.26:
+    c, tg, _ = cam2(t)
+    x, y, z = c[0] - L[0] * 20, c[1] - L[1] * 20, c[2] + 35       # just above and in front of the lens
+    dx, dy, dz = tg[0] - x, tg[1] - y, tg[2] - z
+    fkeys.append((t, (x, y, z), (0.0, math.degrees(math.atan2(dz, math.hypot(dx, dy))), math.degrees(math.atan2(dy, dx)))))
+    t += 0.25
+key_transform(section_for(fill.add_track(unreal.MovieScene3DTransformTrack), CUT - 0.5, T3), fkeys)
 
 # ---- camera cuts: shot 1 runs from 0 (the pre-roll is MRQ's warm-up), shot 2 from CUT
 cut_track = next(t for t in seq.get_tracks() if isinstance(t, unreal.MovieSceneCameraCutTrack))
 for s in list(cut_track.get_sections()):
     cut_track.remove_section(s)
+menu_cam = seq.add_possessable(actors["MenuCam"])   # the director moves and lenses it: no tracks here
+cams.append((menu_cam, actors["MenuCam"], T3, END))
 for b, actor, t0, t1 in cams:
     s = cut_track.add_section()
     s.set_range(fr(t0).value, fr(t1).value)
     s.set_camera_binding_id(seq.get_binding_id(b) if hasattr(seq, "get_binding_id") else
                             unreal.MovieSceneSequenceExtensions.get_portable_binding_id(seq, seq, b))
 
-# ---- out of darkness, and into the haze at the end
+# ---- out of darkness
 fade = seq.add_track(unreal.MovieSceneFadeTrack)
-for t0, t1, col, keys in ((0.0, PRE + 3.5, (0, 0, 0), [(0.0, 1.0), (PRE + 0.3, 1.0), (PRE + 3.5, 0.0)]),
-                          (END - 2.2, END, HAZE, [(END - 2.2, 0.0), (END, 1.0)])):
+for t0, t1, col, keys in ((0.0, PRE + 3.5, (0, 0, 0), [(0.0, 1.0), (PRE + 0.3, 1.0), (PRE + 3.5, 0.0)]),):   # no end fade: it cuts into the menu
     s = section_for(fade, t0, t1)
     s.set_editor_property("fade_color", unreal.LinearColor(*col, 1.0))
     key_channel(s.get_all_channels()[0], keys)
