@@ -396,6 +396,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Menu|Lean")
 	AActor* GetLeanColumn() const { return LeanColumn; }
+	/** FitLeanColumn has placed the drum for her body: the launch cover waits on it. */
+	bool HasFittedColumn() const { return bColumnFitted; }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
 	TSoftObjectPtr<class UAnimSequence> LeanIdle = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Lean.A_Menu_Lean")));
@@ -631,6 +633,7 @@ private:
 	void SetMenuFocal(class UCineCameraComponent* Lens, float Focal);
 	float ViewAspect() const;
 	bool bOpen = false;
+	bool bColumnFitted = false;
 	bool bInputBound = false;
 	bool bStickHeld = false;
 	bool bPlaying = false;   // handed back to the player after Start
