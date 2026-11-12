@@ -442,7 +442,7 @@ public:
 
 	/** Her pace on those steps, out and back (cm/s): slow and weighty. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "10"))
-	float BodyStepSpeed = 100.f;
+	float BodyStepSpeed = 75.f;
 
 	/** Body/Wardrobe: the least gap from her axis to the stone she walks out to (cm), so the
 	 *  way out and back is a real little walk, not a shuffle. */
@@ -451,12 +451,17 @@ public:
 
 	/** Her pace walking back to the column after Body, Wardrobe or photo mode (cm/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "10"))
-	float BodyStepBackSpeed = 100.f;
+	float BodyStepBackSpeed = 75.f;
 
 	/** The return: she turns to the column in place, walks to her spot facing it, and turns
 	 *  round there before she sinks into the lean. Seconds for a half turn; less for less. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0.1"))
 	float ReturnTurnTime = 1.4f;
+
+	/** Her feet's pace through those turns (cm/s, at the turn's middle): small steps, so
+	 *  they don't skate round on the sand. 0 turns her on still feet. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0"))
+	float ReturnShuffleSpeed = 30.f;
 
 	/** Closer to her spot than this (cm) she doesn't walk: she turns and settles back onto it. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0"))

@@ -773,15 +773,20 @@ void AVisexMenuDirector::TickReturn(float DeltaSeconds)
 	To.Z = 0.f;
 	const float Left = To.Size();
 	auto Ease = [](float X) { X = FMath::Clamp(X, 0.f, 1.f); return X * X * X * (X * (6.f * X - 15.f) + 10.f); };
+	const UCharacterMovementComponent* Move = Char->GetCharacterMovement();
+	const float MaxSpeed = FMath::Max(1.f, Move->GetMaxSpeed());
 	if (ReturnPhase == 0)
 	{
-		// a slow turn on the spot; the first step comes as it finishes
+		// she turns to her spot through small steps (a pivot on still feet skated them a
+		// half metre round): the turn eases in and out, her feet carry her a little toward it
 		const float A = PhaseClock / FMath::Max(0.05f, TurnTime);
 		Char->SetActorRotation(FRotator(0.f, FMath::Lerp(TurnFrom, TurnTo, Ease(A)), 0.f));
+		const float Shuffle = ReturnShuffleSpeed * FMath::Sin(PI * FMath::Clamp(A, 0.f, 1.f));
+		Char->AddMovementInput(To.GetSafeNormal2D(), FMath::Clamp(Shuffle / MaxSpeed, 0.f, 1.f));
 		if (A >= 0.8f)
 		{
 			ReturnPhase = 1;
-			PhaseClock = 0.f;
+			PhaseClock = WalkOffRamp * 0.3f;   // the walk picks up from the shuffle's pace
 		}
 		return;
 	}
@@ -807,16 +812,22 @@ void AVisexMenuDirector::TickReturn(float DeltaSeconds)
 			TurnTime = ReturnTurnTime * FMath::Max(0.35f, FMath::Abs(TurnTo - TurnFrom) / 180.f);
 			return;
 		}
-		const UCharacterMovementComponent* Move = Char->GetCharacterMovement();
-		Char->AddMovementInput(To.GetSafeNormal2D(), FMath::Clamp(Want / FMath::Max(1.f, Move->GetMaxSpeed()), 0.02f, 1.f));
+		Char->AddMovementInput(To.GetSafeNormal2D(), FMath::Clamp(Want / MaxSpeed, 0.02f, 1.f));
 		return;
 	}
-	// turning round on the spot, the last centimetres taken up under the turn
+	// turning round on her spot through small side steps, drawn back onto it as they fade
 	const float A = PhaseClock / FMath::Max(0.05f, TurnTime);
 	Char->SetActorRotation(FRotator(0.f, FMath::Lerp(TurnFrom, TurnTo, Ease(A)), 0.f));
-	if (Left > 0.5f)
+	const float Side = FMath::Sign(TurnTo - TurnFrom) * ReturnShuffleSpeed * FMath::Sin(PI * FMath::Clamp(A, 0.f, 1.f));
+	const FVector Tangent = FVector::CrossProduct(FVector::UpVector, Char->GetActorForwardVector()).GetSafeNormal2D();
+	const FVector Want = Tangent * Side + To * 2.5f;
+	if (A < 0.85f && Want.Size() > 3.f)
 	{
-		Char->AddActorWorldOffset(To * FMath::Min(1.f, DeltaSeconds * 3.f));
+		Char->AddMovementInput(Want.GetSafeNormal2D(), FMath::Clamp(Want.Size() / MaxSpeed, 0.f, 1.f));
+	}
+	else if (Left > 0.5f)
+	{
+		Char->AddActorWorldOffset(To * FMath::Min(1.f, DeltaSeconds * 4.f));
 	}
 	if (A >= 1.f)
 	{
