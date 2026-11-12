@@ -50,6 +50,30 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
 	int32 TitleLetterSpacing = 200;
 
+	/** The game's logo, drawn in place of the title text on the main page (the one without
+	 * tabs). Unset = the title as text. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
+	TSoftObjectPtr<class UTexture2D> LogoTexture = TSoftObjectPtr<class UTexture2D>(FSoftObjectPath(TEXT("/Game/VisEx/Menu/T_Logo_UnopenedGate.T_Logo_UnopenedGate")));
+
+	/** Logo height in layout px per point of TitleSize, so the layout editor's logo size scales it. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
+	float LogoHeightPerSize = 3.f;
+
+	/** Colour scale on the logo image: the panel is lit 5x over white (PanelBrightness), so this
+	 * keeps the stone texture and grunge from burning out to flat white. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
+	FLinearColor LogoTint = FLinearColor(0.22f, 0.22f, 0.22f, 1.f);
+
+	/** The build number, small under the logo; empty = none. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu")
+	FText BuildLabel;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
+	int32 BuildLabelSize = 14;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
+	float BuildLabelOpacity = 0.7f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
 	int32 TaglineSize = 24;
 

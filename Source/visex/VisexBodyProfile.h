@@ -69,7 +69,7 @@ struct FVisexBodyProfile
 	 *  bodystocking. Saves only store this when it differs from the default, so a save made
 	 *  before she had a default outfit loads as the bodystocking too. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body")
-	FName Outfit = TEXT("Bodystocking");
+	FName Outfit = TEXT("Silversuit");
 
 	/** Her hairstyle (a name from HairStyles()). Saves from before styles load as Long. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Body")
