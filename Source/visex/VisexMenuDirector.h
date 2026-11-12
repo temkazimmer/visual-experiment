@@ -444,9 +444,27 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "10"))
 	float BodyStepSpeed = 100.f;
 
-	/** Her pace backing onto the column after the page closes (cm/s): a few slow steps. */
+	/** Body/Wardrobe: the least gap from her axis to the stone she walks out to (cm), so the
+	 *  way out and back is a real little walk, not a shuffle. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0"))
+	float BodyWalkGap = 140.f;
+
+	/** Her pace walking back to the column after Body, Wardrobe or photo mode (cm/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "10"))
-	float BodyStepBackSpeed = 70.f;
+	float BodyStepBackSpeed = 100.f;
+
+	/** The return: she turns to the column in place, walks to her spot facing it, and turns
+	 *  round there before she sinks into the lean. Seconds for a half turn; less for less. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0.1"))
+	float ReturnTurnTime = 1.4f;
+
+	/** Closer to her spot than this (cm) she doesn't walk: she turns and settles back onto it. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0"))
+	float ReturnWalkMin = 35.f;
+
+	/** Farther than this (cm, after photo mode) she isn't walked back: a dip to black instead. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0"))
+	float ReturnWalkMax = 600.f;
 
 	/** Her farthest part from her own axis at the sliders' ends (cm), and the gap from her
 	 *  axis to the stone she stopped at: last measured on the way to the Body page. */
@@ -503,7 +521,7 @@ public:
 	UVisexMenuWidget* GetMenuWidget() const;
 
 	/** Item 0 starts, 1 opens the body page, 2 is photo mode, 3 quits. Override in Blueprint to change. */
-	UFUNCTION(BlueprintNativeEvent, Category = "Menu")
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Menu")
 	void OnItemChosen(int32 Index);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Menu")
@@ -646,7 +664,12 @@ private:
 	void BeginStepBack(float Wait, int32 Select);
 	void TickStep(float DeltaSeconds);
 	void EndStep();
-	int32 StepDir = 0;           // +1 walking out, -1 backing onto the column, 0 still
+	int32 StepDir = 0;           // +1 walking out, -1 returning to the column, 0 still
+	void TickReturn(float DeltaSeconds);
+	int32 ReturnPhase = 0;       // 0 turning to her spot, 1 walking there, 2 turning round on it
+	float PhaseClock = 0.f;
+	float TurnFrom = 0.f, TurnTo = 0.f, TurnTime = 0.f;   // yaw (deg) and seconds of this turn
+	float HomeYaw = 0.f;         // her facing on the lean
 	float StepClock = 0.f;
 	FVector StepAway = FVector::ForwardVector;   // on the ground, from the drum toward her
 	FVector StepHome = FVector::ZeroVector;      // where she backs to: the stand-in's spot
