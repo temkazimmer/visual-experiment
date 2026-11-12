@@ -7,6 +7,39 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-12 18:44 · VIS-EX-0534 Shipping (e1585c4) · FAIL, cook fails on MovieRenderPipeline content; in a workaround build the film plays, but the still→live cross-fade ghosts and she pops off the lean once
+
+- **Cook FAILS as committed:** `Failure - 1 error(s)`, `Failed to cook /MovieRenderPipeline/Blueprints/Graph/UI_MovieGraphImagePreview for platform Mac`
+  (imports `MovieRenderPipelineCore.MovieGraphImagePreviewData`, editor-only). The MovieRenderPipeline plugin enabled in `visex.uproject` (Editor-only allow list)
+  still gets its plugin content cooked. No DMG. Log: `Tools/.bridge/shots/qa0534/make_dmg_fail.log`. **b1c3936 doesn't touch this, so it fails the same way.**
+- **Workaround build (QA only, not committed):** `+DirectoriesToNeverCook=(Path="/MovieRenderPipeline")` under `DirectoriesToAlwaysCook` in `DefaultGame.ini`, then reverted.
+  `0 error(s), 0 warning(s)`, 854 packages. `Build/VIS-EX-0534.dmg` md5 `1ff3579b…`. That line (or disabling the plugin outside intro work) is the likely fix.
+- **Film staged:** `Content/Movies/VisexIntro.mp4` (h264 3840×2400, 24 fps, 7.0 s, md5 matches source) and `VisexIntro_last.png` are in the app as loose files.
+- **Launch recording** (no `-visexqa`, 1920×1080 windowed, 60 fps `screencapture -V`; `launch/launch.mov`, sheet `launch/launch_contact_sheet.jpg`, 4 fps from launch):
+  - 0–0.75 s black (window opening), then the film fades in from black and plays the full 7 s. No black frames anywhere after that.
+  - **Film → still pops** (`launch/film_to_still.jpg`): the film plays pillarboxed (black side bars, 16:10 in 16:9); the cover still fills the window,
+    so the frame jumps ~11 % larger and brighter (mean luma 98 → 108) in one frame.
+  - The still holds 3.0 s, frozen (8.0–11.0 s), then cross-fades over ~0.5 s.
+  - **Still → live doesn't match** (`still_vs_live_run1.jpg`, `launch/still_to_live.jpg`, `launch/handoff_sheet.jpg`): the cross-fade shows two women.
+    The still has her in the Silversuit, mid-stride at left of frame; live she's in the saved outfit (Tema's save: red Tartan/KitTartan), about half a body width
+    further right and turned more toward the lens. The drum is framed slightly differently too. With a non-Silversuit save, the outfit can never match the film.
+  - Live: she walks on, turns her back to the column and sinks into the lean (settled ~16 s). The panel fades in during the walk (~12.3–13 s). Logo and menu read well.
+  - **Pose pop on the lean at ~17.3 s** (`launch/lean_glitch_60fps.jpg`, `launch/lean_settle.jpg`): about 1 s after she settles, for ~5 screen frames
+    she snaps to standing off the lean with her arms up at her hair, then smears back. Also visible in the tour-start capture (`tourlaunch/sheet.jpg`).
+  - Music not checked: the screen recording has no audio track.
+- **Tour (unchanged):** two runs from the mounted workaround DMG. Both reached `VisexQA: done` with 59 shots and exit 0 (327 s, 296 s). The tour also plays the film.
+  Launch cover held 6.08 s (run 1, machine loaded) and 1.43 s (run 2), released `settled`. On ground at every step (only photo motions 5/6/7/9 in mode 0, as 0505),
+  no spectator, no `.ips`. Shots in `Saved/QA_0534ship_run{1,2}/` and `Tools/.bridge/shots/qa0534/run{1,2}/`, run 2 screen frames (~4 fps) in `rec2/`.
+- **Settings jump** (`settings_jump_sheet.jpg`, `settings_jump_zoom.jpg`): she pushes off the lean, crouches, and is up on the drum in under 0.5 s. At ~4 fps
+  no frame catches the flight, so **"both feet off the sand" is not verified**. She sits with one leg hooked; Back returns her to the lean.
+- **Outfits** (`outfits_sheet.jpg`): all ten wear on the lean (None … KitTartan). **Body:** she walks clear, page opens (Body/Face/Hair), after Close she walks back
+  and settles on the lean (`body_sheet.jpg`). **Photo:** opens walking in place, `moved 0.0 cm`. **Wardrobe NOT exercised** (`DID NOT OPEN`, as 0505).
+- **Regressions:** none. Start move 4:3 `fills the window`, feet IN FRAME at 16:9 and 4:3, forced GC fine, `layout save PASS, on disk` in both runs.
+- **Frame times not comparable:** another worktree's editor (visex-intro) was rendering a Movie Render Queue job during run 1. Run 1 quality 0/3/4: 18.3 / 47.6 / 90.2 ms;
+  run 2: 11.7 / 17.5 / 54.2, menu 25.7, settings 59.8, after photo 60.1. **Run 2 "after body page" averaged 434.8 ms** (run 1: 110.5, 0505: 59); worth a recheck on an idle machine.
+- **Saves:** backed up `VisexBody.sav` (`bddfbe76…`) and `GameUserSettings.ini` (`06e783cf…`), restored after each run (the launch run rewrote the ini), both md5s match. No `Game.ini` before or after.
+- No `-stable` copy (FAIL; main is rebuilding with the matched film from 3ef295f).
+
 ## 2026-11-12 17:46 · VIS-EX-0505 Shipping (cc18718) · STABLE PASS, Tartan (kit) and the re-imported Silversuit wearable, everything from 0485 holds
 
 - **Tour (b7ded30, unchanged):** two runs from the mounted DMG, clean cook. Both reached `VisexQA: done` with 58 shots (one more outfit) and exit 0
