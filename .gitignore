@@ -23,3 +23,6 @@ Content/FemaleEveryday/
 # licensed pack clips imported or retargeted for study only (movement), never committed
 Content/Study/
 __pycache__/
+
+# intro sand mesh export (90 MB; rebuilt by Tools/intro_sand_mesh.py)
+SourceArt/VisEx/Intro/*.fbx
