@@ -461,7 +461,7 @@ public:
 	/** Her feet's pace through those turns (cm/s, at the turn's middle): small steps, so
 	 *  they don't skate round on the sand. 0 turns her on still feet. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0"))
-	float ReturnShuffleSpeed = 30.f;
+	float ReturnShuffleSpeed = 20.f;
 
 	/** Closer to her spot than this (cm) she doesn't walk: she turns and settles back onto it. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0"))
