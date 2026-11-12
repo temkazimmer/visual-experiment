@@ -98,7 +98,7 @@ _SEEN = [("front", np.array((0., -1., 0.)), False), ("back", np.array((0., 1., 0
          ("side", np.array((1., 0., 0.)), False), ("side", np.array((-1., 0., 0.)), True)]
 
 
-def kit_field(by_view, ctx):
+def kit_field(by_view, ctx, radius=20.0):
     """Drawn shapes {view: [polygons in view pixels]} -> per skin vertex signed distance to the
     drawn edge (cm, + inside). A vertex is inside if any view that sees it well has it inside
     (where the side and back views meet, each used to own its half and the edge came out
@@ -126,7 +126,7 @@ def kit_field(by_view, ctx):
         # occlusion is checked on the real (unmirrored) body from the real camera side
         vis = _visible(bvh, tp, toward, ids)          # toward is the real camera side, mirrored or not
         ids = ids[vis]
-        sd = _sd_blurred(Q[ids], polys) / vj["px_per_cm"]
+        sd = _sd_blurred(Q[ids], polys, radius=radius) / vj["px_per_cm"]
         field[ids] = np.maximum(field[ids], sd)
         best[ids] = np.maximum(best[ids], f[ids])
     # skin no view sees head-on (the top of the foot, under the bust) takes its neighbours' value
@@ -219,12 +219,12 @@ def kit_outfit(name):
             # it runs down to her feet: a stocking or leg. The leg is a tube, so whatever the
             # outline's width, everything below its top edge around that leg is covered (a drawn
             # outline narrower than the calf left a bare strip down the back of the calf)
-            y0 = poly[:, 1].min()
+            y0 = poly[:, 1].min() - 25          # tucked 2.5 cm under whatever band sits on top (the lace)
             poly = np.array([(poly[:, 0].min() - 60, y0), (poly[:, 0].max() + 60, y0),
                              (poly[:, 0].max() + 60, 2000), (poly[:, 0].min() - 60, 2000)])
         groups.setdefault(key, {}).setdefault({"f": "front", "s": "side", "b": "back"}[view], []).append(poly)
     for (slot, bind), by_view in groups.items():
-        field = kit_field(by_view, ctx)
+        field = kit_field(by_view, ctx, radius=6.0)     # drawn garments keep their corners (a strap meets a panel there)
         print("KIT %s %s%s: %d vertices inside" % (name, slot, " bind" if bind else "", int((field > 0).sum())))
         region(field, _OFFSET.get(slot, 0.3), slot, bind=("Binding", 0.55) if bind else None, min_loop=4.0)
     # straps: 3D lines from the import; side-view copies of a line the front or back already has are dropped
@@ -237,6 +237,7 @@ def kit_outfit(name):
             fbk.insert(Vector(pt), i)
             i += 1
     fbk.balance()
+    all_runs = []
     for p in lines:
         P = np.array(p["points"])
         if p["view"] == "side" and i:
@@ -250,10 +251,44 @@ def kit_outfit(name):
         if cur:
             runs.append(cur)
         for run in runs:
-            if len(run) < 3:
-                continue
-            pts = [V3(q) + NV[nearest(V3(q))] * (0.2 + float(BRIDGE[nearest(V3(q))])) for q in run]
-            tube(pts, 0.0, "Binding", flat=(p.get("width_cm", 1.0), 0.14), step=0.35)
+            if len(run) >= 3:
+                all_runs.append([np.array(run), p.get("width_cm", 1.0)])
+    # a strap drawn partly in the front view and partly in the side view comes in as two runs
+    # with a gap where neither view sees the skin head-on: join ends that face each other across
+    # less than JOIN cm, bridging along her skin (left alone, both ended as loose stubs)
+    JOIN = 7.0
+    merged = True
+    while merged:
+        merged = False
+        for a in range(len(all_runs)):
+            for b in range(len(all_runs)):
+                if a == b or merged:
+                    continue
+                A, B = all_runs[a][0], all_runs[b][0]
+                for ea, A2 in ((A[-1], A), (A[0], A[::-1])):
+                    for eb, B2 in ((B[0], B), (B[-1], B[::-1])):
+                        if merged or np.linalg.norm(ea - eb) > JOIN:
+                            continue
+                        # only where B carries on A's direction: otherwise the join doubled back
+                        # and folded the strap into a zig-zag on her flank
+                        ta = A2[-1] - A2[max(0, len(A2) - 8)]
+                        tb = B2[min(len(B2) - 1, 7)] - B2[0]
+                        gapv = eb - ea
+                        ta, tb = ta / (np.linalg.norm(ta) or 1), tb / (np.linalg.norm(tb) or 1)
+                        if ta @ tb < 0.3 or (np.linalg.norm(gapv) > 1.0 and ta @ (gapv / np.linalg.norm(gapv)) < 0.2):
+                            continue
+                        n = max(2, int(np.linalg.norm(ea - eb) / 0.5))
+                        gap = [np.array(BODY_BVH.find_nearest(V3(ea + (eb - ea) * k / n))[0]) for k in range(1, n)]
+                        all_runs[a] = [np.vstack([A2] + ([np.array(gap)] if gap else []) + [B2]), max(all_runs[a][1], all_runs[b][1])]
+                        del all_runs[b]
+                        merged = True
+                if merged:
+                    break
+            if merged:
+                break
+    for run, width in all_runs:
+        pts = [V3(q) + NV[nearest(V3(q))] * (0.2 + float(BRIDGE[nearest(V3(q))])) for q in run]
+        tube(smooth_pts(pts, False, 3), 0.0, "Binding", flat=(width, 0.14), step=0.35)
 
 
 for _d in sorted(os.listdir(_KIT)) if os.path.isdir(_KIT) else []:
