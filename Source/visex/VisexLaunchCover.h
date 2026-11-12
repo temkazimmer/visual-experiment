@@ -44,6 +44,9 @@ public:
 
 private:
 	void OnMapLoaded(UWorld* World);
+	/** Haze over the movie player's black border, from the film's end to the map's. */
+	void CoverFilmEnd();
+	void OnFilmFinished();
 	bool Tick(float DeltaTime);
 	/** Empty when settled, else what it still waits on. */
 	FString Pending(UWorld* World);

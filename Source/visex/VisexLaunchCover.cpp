@@ -12,6 +12,11 @@
 #include "UObject/UObjectGlobals.h"
 #include "Widgets/Images/SImage.h"
 #include "Styling/CoreStyle.h"
+#include "MoviePlayer.h"
+#include "Engine/GameEngine.h"
+#include "Framework/Application/SlateApplication.h"
+#include "RenderingThread.h"
+#include "Widgets/SOverlay.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogVisexLaunch, Log, All);
 
@@ -25,6 +30,56 @@ void UVisexLaunchCover::Initialize(FSubsystemCollectionBase& Collection)
 		return;
 	}
 	FCoreUObjectDelegates::PostLoadMapWithWorld.AddUObject(this, &UVisexLaunchCover::OnMapLoaded);
+	if (IsMoviePlayerEnabled() && GetMoviePlayer()->IsMovieCurrentlyPlaying())
+	{
+		CoverFilmEnd();
+	}
+}
+
+void UVisexLaunchCover::CoverFilmEnd()
+{
+	// The map can still be loading when the film ends, and the movie player then shows its
+	// black border until it has. Lay haze over that: an overlay that shows once the film's own
+	// viewport has gone (the Apple streamer sends no clip-finished event). It runs on the
+	// loading thread's Slate, so it only reads the widget tree.
+	struct FFilmEnd { TWeakPtr<SWidget> Self; TWeakPtr<SWidget> Film; bool bSeen = false; };
+	TSharedRef<FFilmEnd> State = MakeShared<FFilmEnd>();
+	TSharedRef<SWidget> Haze = SNew(SImage)
+		.Image(FCoreStyle::Get().GetBrush(TEXT("WhiteBrush")))
+		.ColorAndOpacity(CoverColor)
+		.Visibility_Lambda([State]
+		{
+			if (!State->Film.IsValid())
+			{
+				// movie border > overlay > [film box > film viewport, DPI scaler > holder > this]
+				TSharedPtr<SWidget> W = State->Self.Pin();
+				while (W.IsValid() && W->GetType() != FName(TEXT("SOverlay"))) { W = W->GetParentWidget(); }
+				FChildren* Box = W.IsValid() && W->GetChildren()->Num() ? W->GetChildren()->GetChildAt(0)->GetChildren() : nullptr;
+				if (Box && Box->Num()) { State->Film = Box->GetChildAt(0); }
+			}
+			const TSharedPtr<SWidget> Film = State->Film.Pin();
+			const bool bPlaying = Film.IsValid() && Film->GetVisibility() == EVisibility::Visible;
+			State->bSeen |= bPlaying;
+			return State->bSeen && !bPlaying ? EVisibility::HitTestInvisible : EVisibility::Collapsed;
+		});
+	State->Self = Haze;
+	GetMoviePlayer()->SetSlateOverlayWidget(Haze);
+	GetMoviePlayer()->OnMoviePlaybackFinished().AddUObject(this, &UVisexLaunchCover::OnFilmFinished);
+}
+
+void UVisexLaunchCover::OnFilmFinished()
+{
+	GetMoviePlayer()->OnMoviePlaybackFinished().RemoveAll(this);
+	// The movie player leaves its black border in the window until the end of the first game
+	// frame, which can take a second (first PSOs): hand the window to the game now and draw it
+	// once, so what shows meanwhile is the cover, already in the viewport.
+	UGameEngine* Game = Cast<UGameEngine>(GEngine);
+	if (Game && FSlateApplication::IsInitialized())
+	{
+		Game->SwitchGameWindowToUseGameViewport();
+		FSlateApplication::Get().Tick();
+		FlushRenderingCommands();
+	}
 }
 
 void UVisexLaunchCover::Deinitialize()
