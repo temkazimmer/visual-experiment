@@ -67,6 +67,15 @@ AVisexMenuDirector::AVisexMenuDirector()
 void AVisexMenuDirector::BeginPlay()
 {
 	Super::BeginPlay();
+	// the turn clips load now: a clip loaded at the turn itself can still be compressing (in
+	// the editor) and reads as no turn at all
+	for (const TSoftObjectPtr<UAnimSequence>& Soft : TurnClips)
+	{
+		if (UAnimSequence* Clip = Soft.LoadSynchronous())
+		{
+			LoadedLean.AddUnique(Clip);
+		}
+	}
 	if (bMaxQualityOnPlay)
 	{
 		// the look is the point: Ultra (Cinematic) in Play and on a first launch; after that
@@ -750,6 +759,7 @@ bool AVisexMenuDirector::StartTurnClip(bool bThenWalk)
 	UAnimInstance* Anim = GetPawnAnim();
 	if (!Anim || FMath::Abs(Need) < TurnClipMin)
 	{
+		UE_LOG(LogTemp, Log, TEXT("Return turn: need %.1f deg, eased (no clip)"), Need);
 		return false;
 	}
 	// her root yaw through each clip, unwrapped; the nearest turn (by ratio) on the same side wins
@@ -762,6 +772,9 @@ bool AVisexMenuDirector::StartTurnClip(bool bThenWalk)
 			continue;
 		}
 		LoadedLean.AddUnique(Clip);
+#if WITH_EDITOR
+		Clip->WaitOnExistingCompression();
+#endif
 		const float Len = Clip->GetPlayLength();
 		const int32 N = FMath::Max(8, FMath::CeilToInt(Len * 60.f));
 		TArray<float> Curve;
@@ -791,6 +804,7 @@ bool AVisexMenuDirector::StartTurnClip(bool bThenWalk)
 	}
 	if (!TurnClip)
 	{
+		UE_LOG(LogTemp, Log, TEXT("Return turn: need %.1f deg, no clip turns that way"), Need);
 		return false;
 	}
 	// done once the yaw has all but landed: into the walk soon after, onto the lean at the
