@@ -20,15 +20,16 @@ FPS, PRE, FILM = 24, 4.0, 7.0          # 4 s pre-roll: the scene loads and settl
 END = PRE + FILM
 WALK = 0.6                             # x MaxWalkSpeed 190 -> ~114 cm/s: calm (Tema)
 SPEED = 190.0 * WALK
-WALK_T0 = PRE - 2.0                    # she is mid-stride when the film starts
+WALK_T0 = PRE - 2.0 - 0.07             # mid-stride when the film starts; the 0.07 s lines her stride up with
+                                       # the live arrival's frame 0 (left ball 11 cm ahead, right one pushing off)
 
 # the hand-off: where she is (mid-stride, heading HEAD) on the film's last frame, and the
-# camera there = the menu camera as the director stages it (read in Play). PROVISIONAL until
-# main's arrival reports its own frame 0.
+# camera there = the live arrival's frame 0 (main's arrival-walk, read in Play with
+# visex.Menu.ArrivalFreeze 1).
 ARRIVE = (9560.0, -1010.0)             # in the menu frame, ~2.6 m out, a little right of centre
 HEAD = 75.0
-MENU_CAM = ((9303.64, -932.01, 69.31), (0.0, 18.445, -6.09))   # loc, (roll, pitch, yaw)
-MENU_FOCAL, MENU_FSTOP, MENU_FOCUS = 45.0, 2.8, 226.1
+MENU_CAM = ((9303.41, -934.37, 71.02), (0.0, 18.754, -5.654))  # loc, (roll, pitch, yaw): live arrival frame 0 (drift at Clock 0)
+MENU_FOCAL, MENU_FSTOP, MENU_FOCUS = 45.0, 2.8, 297.6   # focus tracks her head live (default body, read with visex.Menu.ArrivalFreeze)
 SENSOR = (71.28, 71.28 / 1.6)          # the menu's scaled sensor width; 16:10 like a Mac screen
 SETTLE = PRE + 4.5                     # the dolly starts to stop and the lens to open
 D = (math.cos(math.radians(HEAD)), math.sin(math.radians(HEAD)))
@@ -111,8 +112,9 @@ def rig(name, start, walk_keys, show_keys, player, extra=()):
         tr = b.add_track(unreal.MovieSceneFloatTrack)
         tr.set_property_name_and_path(prop, prop)
         ch = section_for(tr).get_all_channels()[0]
-        for t, v in keys:   # stepped: on/off, no ramps between keys
-            ch.add_key(fr(t), float(v), interpolation=unreal.MovieSceneKeyInterpolation.CONSTANT)
+        mode = unreal.MovieSceneKeyInterpolation.AUTO if prop == "SinkCm" else unreal.MovieSceneKeyInterpolation.CONSTANT
+        for t, v in keys:   # switches are stepped (no ramps); the sink eases
+            ch.add_key(fr(t), float(v), interpolation=mode)
     return b
 
 
@@ -150,7 +152,8 @@ def her(t):
 START = her(0.0)
 
 # ---- her: one walker, on camera from the start (player 0: the footprints follow her)
-rig("Her", START, [(0.0, 0.0), (WALK_T0, WALK)], [(0.0, 0.0), (WALK_T0, 1.0)], True)
+rig("Her", START, [(0.0, 0.0), (WALK_T0, WALK)], [(0.0, 0.0), (WALK_T0, 1.0)], True,
+    (("SinkCm", [(0.0, 3.5), (END - 1.5, 3.5), (END - 0.1, 0.0)]),))   # back where the game puts her for the hand-off
 
 # ---- light: the game sun as is (the menu matches), but SlopedMass, 175 m off, no longer
 # shades the treads: her feet stay readable (Tema)
