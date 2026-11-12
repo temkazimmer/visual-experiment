@@ -92,11 +92,66 @@ def breathing(seconds=12.0):
         frames.append({b2: (local[b2][0], local[b2][1], local[b2][2]) for b2 in bones})
     return frames
 
-# ---- getting up there and back (placeholders until the jump lands: straight key blends) ----
-DOWN_KEYS = globals().get("DOWN_KEYS") or [(0.0, LEAN), (1.6, SEAT)]
-UP_KEYS = globals().get("UP_KEYS") or [(0.0, SEAT), (1.4, LEAN)]
+# ---- the jump up: a real two-foot spring, hands pressing on the stone ----
+# She gathers (both feet flat under her, hands back onto the drum), sinks into a crouch, springs:
+# the hips rise past the seat and back onto the top while both feet leave the sand and tuck,
+# then she lands seated, the hips compress 3 cm and settle while the legs swing into the
+# hook and the hang. Timings from a bench hop-up: ~0.3 s crouch, ~0.25 s in the air.
+def feet(K, l, r):
+    K.update(foot("l", l[0], l[1], l[2] if len(l) > 2 else (0.0, 0.0, -1.0)))
+    K.update(foot("r", r[0], r[1], r[2] if len(r) > 2 else (0.0, 0.0, -1.0)))
+    return K
+FLAT_L, FLAT_R = ((13.0, -4.0, 8.5), (0.15, 0.98, -0.1)), ((-13.0, -4.0, 8.5), (-0.15, 0.98, -0.1))
+GATHER = feet(dict(LEAN, pelvis=add(LEAN["pelvis"], (0.0, 4.0, -4.0)), pitch=6.0, yaw=-6.0, lean_fwd=4.0,
+                   head_down=6.0, head_left=0.0, hand_deg=40.0, hand_x=28.0, knee_l=(16.0, 40.0, 50.0), knee_r=(-16.0, 40.0, 50.0)),
+              FLAT_L, FLAT_R)
+CROUCH = dict(GATHER, pelvis=add(LEAN["pelvis"], (0.0, 12.0, -14.0)),   # forward: low down the drum's face comes out to meet her
+             pitch=10.0, lean_fwd=14.0, head_down=10.0, hand_deg=36.0)
+# in the air: hips up past the seat, knees tucked, feet off the sand; the hands leave the stone at the
+# top (nothing can reach it from there), arms half back toward hanging
+AIR = feet(dict(SEAT, pelvis=add(SEAT["pelvis"], (0.0, 4.0, 7.0)), pitch=4.0, yaw=-6.0, lean_fwd=10.0, twist_left=2.0,
+                head_down=6.0, head_left=-10.0, hand_deg=30.0, arms=0.5, knee_l=(16.0, 40.0, 70.0), knee_r=(-16.0, 40.0, 70.0)),
+           ((14.0, -6.0, 26.0), (0.1, 0.5, -0.86)), ((-14.0, -8.0, 30.0), (-0.1, 0.45, -0.89)))
+LAND = dict(SEAT, pelvis=add(SEAT["pelvis"], (0.0, 1.0, -3.0)), lean_fwd=4.0, head_down=8.0)   # weight arrives: hips compress
+carry_hands(GATHER, CROUCH, AIR, LAND)
+DOWN_KEYS = [(0.0, LEAN), (0.45, GATHER), (0.80, CROUCH), (1.08, AIR), (1.35, LAND), (1.95, SEAT)]
+
+# ---- the way down: she slides forward off the edge, lands on both feet, rises into the lean ----
+SLIP = feet(dict(SEAT, pelvis=add(SEAT["pelvis"], (0.0, 8.0, -2.0)), pitch=0.0, yaw=-6.0, lean_fwd=8.0, head_down=8.0, head_left=-6.0,
+                  hand_deg=40.0, knee_l=(16.0, 40.0, 60.0), knee_r=(-16.0, 40.0, 60.0)),
+             ((14.0, 0.0, 16.0), (0.1, 0.6, -0.8)), ((-14.0, -2.0, 18.0), (-0.1, 0.6, -0.8)))
+TOUCH = dict(CROUCH, pelvis=add(LEAN["pelvis"], (0.0, 10.0, -10.0)), lean_fwd=10.0, hand_deg=44.0)
+carry_hands(SLIP, TOUCH)
+UP_KEYS = [(0.0, SEAT), (0.45, SLIP), (0.80, TOUCH), (1.45, LEAN)]
+
+def snappy(keys, scale=0.35, pad=0.12):
+    """clip() with the lead/follow offsets cut to a third: a jump is quick, every part on nearly one clock."""
+    global LEAD, PAD
+    keep = LEAD, PAD
+    LEAD, PAD = {k: v * scale for k, v in keep[0].items()}, pad
+    try:
+        return clip(keys)
+    finally:
+        LEAD, PAD = keep
+
+def ground_check(frames, tag):
+    """The lowest ball and ankle over the clip, and the closest any joint comes to the stone."""
+    lo, worst = 99.0, (99.0, "")
+    for fr in frames[::3]:
+        for b in bones:
+            local[b] = [fr[b][0], fr[b][1], fr[b][2]]
+        _cache.clear()
+        lo = min(lo, pos("ball_l")[2], pos("ball_r")[2])
+        for j in ("calf_l", "calf_r", "foot_l", "foot_r", "ball_l", "ball_r", "hand_l", "hand_r", "thigh_l", "thigh_r"):
+            c = clearance(pos(j))
+            if c < worst[0]:
+                worst = (c, j)
+    print("%s: %.2f s, lowest ball %.1f cm, closest to the stone %.1f cm (%s)" % (tag, (len(frames) - 1) / float(FPS), lo, worst[0], worst[1]))
+
+frames_down, frames_up = snappy(DOWN_KEYS), snappy(UP_KEYS)
+ground_check(frames_down, "jump up"); ground_check(frames_up, "slide down")
 
 if BUILD:
     write("A_Menu_Sit_Settings", breathing(), MENU_DIR)
-    write("A_Menu_Sit_Settings_Down", clip(DOWN_KEYS), MENU_DIR)
-    write("A_Menu_Sit_Settings_Up", clip(UP_KEYS), MENU_DIR)
+    write("A_Menu_Sit_Settings_Down", frames_down, MENU_DIR)
+    write("A_Menu_Sit_Settings_Up", frames_up, MENU_DIR)
