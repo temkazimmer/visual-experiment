@@ -405,7 +405,7 @@ public:
 
 	/** How much of her reach the width sliders (Shoulders, Hips) widen, up to their ends. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0", ClampMax = "1"))
-	float BodyReachWidthShare = 0.6f;
+	float BodyReachWidthShare = 0.8f;
 
 	/** Her pace on those steps, out and back (cm/s): slow and weighty. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "10"))
