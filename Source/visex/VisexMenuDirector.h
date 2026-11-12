@@ -401,6 +401,8 @@ public:
 	/** Keeps the handheld drift at its start, the frame the intro film ends on, while the launch
 	 *  cover holds and cross-fades. */
 	void HoldDrift() { Clock = 0.f; }
+	/** The 3D menu panel's opacity: the launch cover fades it in after the film's last frame. */
+	void SetPanelOpacity(float Alpha);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
 	TSoftObjectPtr<class UAnimSequence> LeanIdle = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Lean.A_Menu_Lean")));

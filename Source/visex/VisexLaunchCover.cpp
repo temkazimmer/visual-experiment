@@ -89,8 +89,8 @@ void UVisexLaunchCover::CoverFilmEnd()
 	// black border until it has. Lay the cover over that: an overlay that shows once the film's own
 	// viewport has gone (the Apple streamer sends no clip-finished event). It runs on the
 	// loading thread's Slate, so it only reads the widget tree.
-	struct FFilmEnd { TWeakPtr<SWidget> Self; TWeakPtr<SWidget> Film; bool bSeen = false; };
 	TSharedRef<FFilmEnd> State = MakeShared<FFilmEnd>();
+	FilmEnd = State;
 	TSharedRef<SWidget> Haze = SNew(SBox)
 		.Visibility_Lambda([State]
 		{
@@ -105,6 +105,7 @@ void UVisexLaunchCover::CoverFilmEnd()
 			const TSharedPtr<SWidget> Film = State->Film.Pin();
 			const bool bPlaying = Film.IsValid() && Film->GetVisibility() == EVisibility::Visible;
 			State->bSeen |= bPlaying;
+			if (State->bSeen && !bPlaying && State->EndTime == 0.0) { State->EndTime = FPlatformTime::Seconds(); }
 			return State->bSeen && !bPlaying ? EVisibility::HitTestInvisible : EVisibility::Collapsed;
 		})
 		[
@@ -157,27 +158,27 @@ void UVisexLaunchCover::OnMapLoaded(UWorld* World)
 			}))
 		];
 	Viewport->AddViewportWidgetContent(Cover.ToSharedRef(), 10000);
-	HoldMusic(World, true);
+	HoldMusic(World);
 	TickHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateUObject(this, &UVisexLaunchCover::Tick));
 }
 
-void UVisexLaunchCover::HoldMusic(UWorld* World, bool bHold)
+void UVisexLaunchCover::HoldMusic(UWorld* World)
 {
-	if (bHold)
+	for (TObjectIterator<UAudioComponent> It; It; ++It)
 	{
-		for (TObjectIterator<UAudioComponent> It; It; ++It)
+		if (It->GetWorld() == World && It->Sound && It->Sound->GetPathName().StartsWith(MusicPath))
 		{
-			if (It->GetWorld() == World && It->Sound && It->Sound->GetPathName().StartsWith(MusicPath))
-			{
-				It->Stop();
-				Music.Add(*It);
-			}
+			It->Stop();
+			Music.Add(*It);
 		}
-		return;
 	}
+}
+
+void UVisexLaunchCover::ReleaseMusic(float StartAt, float Fade)
+{
 	for (const TWeakObjectPtr<UAudioComponent>& M : Music)
 	{
-		if (M.IsValid()) { M->FadeIn(FadeTime); }
+		if (M.IsValid()) { M->FadeIn(Fade, 1.f, StartAt); }
 	}
 	Music.Reset();
 }
@@ -224,11 +225,22 @@ bool UVisexLaunchCover::Tick(float DeltaTime)
 	{
 		// its delta spans the whole load: nothing to judge by yet
 		StartTime = Now;
+		if (LaunchMusicOffset > 0.f)
+		{
+			// the film carries the soundtrack's opening: pick it up where the film left it
+			const double Ended = FilmEnd.IsValid() && FilmEnd->EndTime > 0.0 ? FilmEnd->EndTime.load() : Now;
+			ReleaseMusic(LaunchMusicOffset + float(Now - Ended), 0.15f);
+		}
 		return true;
 	}
 	UWorld* World = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr;
-	// the film ends on the menu shot at the drift's start: hold it there until the cover is gone
-	if (Director.IsValid()) { Director->HoldDrift(); }
+	// the film ends on the menu shot at the drift's start (and without the panel): hold both
+	// until the cross-fade is over
+	if (Director.IsValid() && (FadeStart < 0.0 || Now - FadeStart < FadeTime))
+	{
+		Director->HoldDrift();
+		Director->SetPanelOpacity(0.f);
+	}
 	if (FadeStart < 0.0)
 	{
 		FString Wait = World ? Pending(World) : FString(TEXT("world"));
@@ -252,7 +264,7 @@ bool UVisexLaunchCover::Tick(float DeltaTime)
 				: FString::Printf(TEXT("max hold, still waiting on %s"), *Wait);
 			ReleaseReason += FString::Printf(TEXT(" (%.0f ms frames)"), AvgDelta * 1000.f);
 			UE_LOG(LogVisexLaunch, Display, TEXT("Launch cover held %.2f s, released: %s"), HeldSeconds, *ReleaseReason);
-			HoldMusic(World, false);
+			ReleaseMusic(0.f, FadeTime);
 			if (FParse::Param(FCommandLine::Get(), TEXT("visexqa")))
 			{
 				// the live frame the still fades into, without the cover: diff it against the still
@@ -268,11 +280,21 @@ bool UVisexLaunchCover::Tick(float DeltaTime)
 	{
 		return true;
 	}
-	if (UGameViewportClient* Viewport = GetGameInstance()->GetGameViewportClient())
+	if (Cover.IsValid())
 	{
-		Viewport->RemoveViewportWidgetContent(Cover.ToSharedRef());
+		if (UGameViewportClient* Viewport = GetGameInstance()->GetGameViewportClient())
+		{
+			Viewport->RemoveViewportWidgetContent(Cover.ToSharedRef());
+		}
+		Cover.Reset();
 	}
-	Cover.Reset();
+	// then the menu panel, which the film doesn't have, fades in over the live shot
+	const float PanelAlpha = FMath::Clamp(float(Now - FadeStart - FadeTime) / FMath::Max(PanelFadeTime, 0.01f), 0.f, 1.f);
+	if (Director.IsValid()) { Director->SetPanelOpacity(FMath::InterpEaseInOut(0.f, 1.f, PanelAlpha, 2.f)); }
+	if (PanelAlpha < 1.f)
+	{
+		return true;
+	}
 	bDone = true;
 	return false;
 }

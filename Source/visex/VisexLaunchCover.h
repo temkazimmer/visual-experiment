@@ -4,6 +4,9 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Containers/Ticker.h"
 #include "Styling/SlateBrush.h"
+#include <atomic>
+
+class SWidget;
 #include "VisexLaunchCover.generated.h"
 
 /**
@@ -45,6 +48,11 @@ public:
 	UPROPERTY(config) float AfterColumn = 0.7f;
 	/** Music under this content path is held during the cover and faded in with the menu. */
 	UPROPERTY(config) FString MusicPath = TEXT("/Game/VisEx/Audio/");
+	/** The film carries this many seconds of the soundtrack's opening: the live music starts there
+	 *  at the film's end (plus the time since) instead of fading in from 0 with the cross-fade. */
+	UPROPERTY(config) float LaunchMusicOffset = 0.f;
+	/** After the cross-fade, the menu panel (not in the film) fades in over this long. */
+	UPROPERTY(config) float PanelFadeTime = 0.8f;
 
 private:
 	void OnMapLoaded(UWorld* World);
@@ -56,11 +64,15 @@ private:
 	bool Tick(float DeltaTime);
 	/** Empty when settled, else what it still waits on. */
 	FString Pending(UWorld* World);
-	void HoldMusic(UWorld* World, bool bHold);
+	void HoldMusic(UWorld* World);
+	void ReleaseMusic(float StartAt, float Fade);
 
 	UPROPERTY() TObjectPtr<class UTexture2D> Still;
 	FSlateBrush StillBrush;
 	TSharedPtr<class SWidget> Cover;
+	/** Shared with the movie overlay on the loading thread: when the film's own viewport went. */
+	struct FFilmEnd { TWeakPtr<SWidget> Self; TWeakPtr<SWidget> Film; bool bSeen = false; std::atomic<double> EndTime{0.0}; };
+	TSharedPtr<FFilmEnd> FilmEnd;
 	FTSTicker::FDelegateHandle TickHandle;
 	TArray<TWeakObjectPtr<class UAudioComponent>> Music;
 	TWeakObjectPtr<class AVisexMenuDirector> Director;

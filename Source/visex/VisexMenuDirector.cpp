@@ -290,6 +290,16 @@ void AVisexMenuDirector::ShowMenu()
 	OnMenuShown();
 }
 
+void AVisexMenuDirector::SetPanelOpacity(float Alpha)
+{
+	UVisexMenuWidget* W = GetMenuWidget();
+	if (W && !FMath::IsNearlyEqual(W->GetRenderOpacity(), Alpha))
+	{
+		W->SetRenderOpacity(Alpha);
+		MarkPanel();
+	}
+}
+
 UCineCameraComponent* AVisexMenuDirector::GetLens() const
 {
 	const ACineCameraActor* Cine = Cast<ACineCameraActor>(MenuCamera);
