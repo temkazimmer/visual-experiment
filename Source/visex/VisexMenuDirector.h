@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "CineCameraSettings.h"
+#include "Animation/AnimEnums.h"
 #include "VisexMenuLayout.h"
 #include "VisexMenuDirector.generated.h"
 
@@ -458,10 +459,22 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0.1"))
 	float ReturnTurnTime = 1.4f;
 
-	/** Her feet's pace through those turns (cm/s, at the turn's middle): small steps, so
-	 *  they don't skate round on the sand. 0 turns her on still feet. */
+	/** Her feet's pace through a turn too small for a clip (cm/s, at the turn's middle). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0"))
 	float ReturnShuffleSpeed = 20.f;
+
+	/** The turn-in-place clips (Tools/char_turn_clips.py, root yaw only): the one whose turn is
+	 *  nearest the one she needs plays, its root yaw scaled to land her facing exactly that way. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
+	TArray<TSoftObjectPtr<class UAnimSequence>> TurnClips = {
+		TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Turn/A_Turn_90L.A_Turn_90L"))),
+		TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Turn/A_Turn_90R.A_Turn_90R"))),
+		TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Turn/A_Turn_180L.A_Turn_180L"))),
+		TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Turn/A_Turn_180R.A_Turn_180R")))};
+
+	/** Turns smaller than this (deg) skip the clips: she turns as she walks, or eases round. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0"))
+	float TurnClipMin = 40.f;
 
 	/** Closer to her spot than this (cm) she doesn't walk: she turns and settles back onto it. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0"))
@@ -674,6 +687,16 @@ private:
 	int32 ReturnPhase = 0;       // 0 turning to her spot, 1 walking there, 2 turning round on it
 	float PhaseClock = 0.f;
 	float TurnFrom = 0.f, TurnTo = 0.f, TurnTime = 0.f;   // yaw (deg) and seconds of this turn
+	// the turn clip playing (null: the eased fallback): its root yaw sampled over time, the
+	// scale onto the turn she needs, and the clip time she's done at
+	bool StartTurnClip(bool bThenWalk);
+	UPROPERTY(Transient) TObjectPtr<class UAnimSequence> TurnClip;
+	TArray<float> TurnCurve;
+	float TurnDt = 0.f, TurnScale = 1.f, TurnEnd = 0.f;
+	float TurnYawAt(float T) const;
+	TEnumAsByte<ERootMotionMode::Type> TurnRootMotion = ERootMotionMode::RootMotionFromMontagesOnly;
+	bool bTurnRootSaved = false;
+	void RestoreTurnRootMotion();
 	float HomeYaw = 0.f;         // her facing on the lean
 	float StepClock = 0.f;
 	FVector StepAway = FVector::ForwardVector;   // on the ground, from the drum toward her
