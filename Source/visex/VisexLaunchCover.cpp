@@ -165,12 +165,20 @@ bool UVisexLaunchCover::Tick(float DeltaTime)
 {
 	const double Now = FPlatformTime::Seconds();
 	// the first tick is the first frame after the film (nothing ticks while it plays)
-	if (StartTime == 0.0) { StartTime = Now; }
+	if (StartTime == 0.0)
+	{
+		// its delta spans the whole load: nothing to judge by yet
+		StartTime = Now;
+		return true;
+	}
 	UWorld* World = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr;
 	if (FadeStart < 0.0)
 	{
 		FString Wait = World ? Pending(World) : FString(TEXT("world"));
-		CalmFrames = (Wait.IsEmpty() && DeltaTime < HitchSeconds) ? CalmFrames + 1 : 0;
+		// calm: no spike against the recent frame rate (a slow machine is calm at its own pace)
+		const bool bSpike = AvgDelta > 0.f && DeltaTime > FMath::Max(HitchSeconds, AvgDelta * 1.6f);
+		AvgDelta = AvgDelta > 0.f ? FMath::Lerp(AvgDelta, DeltaTime, 0.2f) : DeltaTime;
+		CalmFrames = (Wait.IsEmpty() && !bSpike) ? CalmFrames + 1 : 0;
 		if (Wait.IsEmpty() && CalmFrames < SettleFrames)
 		{
 			Wait = TEXT("calm frames");
@@ -185,6 +193,7 @@ bool UVisexLaunchCover::Tick(float DeltaTime)
 			ReleaseReason = bSettled
 				? FString::Printf(TEXT("settled, last wait %s"), LastWait.IsEmpty() ? TEXT("none (min hold)") : *LastWait)
 				: FString::Printf(TEXT("max hold, still waiting on %s"), *Wait);
+			ReleaseReason += FString::Printf(TEXT(" (%.0f ms frames)"), AvgDelta * 1000.f);
 			UE_LOG(LogVisexLaunch, Display, TEXT("Launch cover held %.2f s, released: %s"), HeldSeconds, *ReleaseReason);
 			HoldMusic(World, false);
 		}

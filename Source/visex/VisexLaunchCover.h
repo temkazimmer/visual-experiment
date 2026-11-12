@@ -35,7 +35,7 @@ public:
 	UPROPERTY(config) float FadeTime = 1.5f;
 	/** Calm frames (all else settled, no hitch) before the fade: Lumen and shadows converge. */
 	UPROPERTY(config) int32 SettleFrames = 30;
-	/** Frames slower than this break the calm run. */
+	/** A frame this slow, or 1.6x the recent average if more, breaks the calm run. */
 	UPROPERTY(config) float HitchSeconds = 0.1f;
 	/** After the menu column is first fitted: the VSM cache stays off its first 0.5 s (e550725). */
 	UPROPERTY(config) float AfterColumn = 0.7f;
@@ -61,6 +61,7 @@ private:
 	double ColumnTime = -1.0;
 	double FadeStart = -1.0;
 	int32 CalmFrames = 0;
+	float AvgDelta = 0.f;
 	float Opacity = 1.f;
 	float HeldSeconds = 0.f;
 	FString ReleaseReason;
