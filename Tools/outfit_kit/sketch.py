@@ -181,7 +181,7 @@ def build_body(pose=None):
                 thigh_l=[round(float(v), 2) for v in Bn["thigh_l"]], foot_l=[round(float(v), 2) for v in Bn["foot_l"]],
                 forward=[0.0, -1.0, 0.0], her_left=[1.0, 0.0, 0.0], vertices=nv)
     skin["kit"] = json.dumps(info)
-    masks = dict(torso=(upperarm < 0.3) & (head < 0.5) & ((legs < 0.5) | (X[:, 2] > LM["crotch"] + 4)),
+    masks = dict(arms=(upperarm >= 0.5), torso=(upperarm < 0.3) & (head < 0.5) & ((legs < 0.5) | (X[:, 2] > LM["crotch"] + 4)),
                  leg_l=(legs >= 0.5) & (X[:, 0] > 0), leg_r=(legs >= 0.5) & (X[:, 0] < 0))
     return skin, X, info, masks
 
@@ -819,8 +819,9 @@ VIEWS = [("front", (0, -1, 0)), ("her left", (1, 0, 0)), ("back", (0, 1, 0)), ("
 def preview(d, pieces, w=900, h=1500):
     """preview.png: the body with every piece in its layer colour and its number, four views."""
     sc = bpy.context.scene
-    sk = bpy.data.objects["Sketch"]
-    sk.hide_render = True
+    sk = bpy.data.objects.get("Sketch")
+    if sk:
+        sk.hide_render = True
     objs = []
     for p in pieces:
         P = p["points"]
