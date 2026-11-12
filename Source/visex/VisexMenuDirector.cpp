@@ -2,6 +2,8 @@
 
 #include "VisexMenuWidget.h"
 #include "VisexBodyEditor.h"
+#include "VisexBodyComponent.h"
+#include "VisexBodyProfile.h"
 #include "VisexMenuLayoutEditor.h"
 #include "VisexPhotoMode.h"
 #include "VisexQATour.h"
@@ -554,6 +556,14 @@ void AVisexMenuDirector::OpenCharacterPage(int32 InPage)
 		bOpen = false;
 		FadeOut = 0.f;
 		DisableInput(PC);
+		if (LeanColumn)
+		{
+			// she pushes off, then walks clear of the stone: turning her on the page swept her
+			// legs into it. The page opens where she stops.
+			GetWorldTimerManager().SetTimer(StandTimer, this, &AVisexMenuDirector::BeginStepOut,
+				FMath::Clamp(Up * StandUpHandOver, 0.02f, FMath::Max(0.02f, WalkOffMaxDelay)), false);
+			return;
+		}
 		GetWorldTimerManager().SetTimer(StandTimer, this, &AVisexMenuDirector::OpenBodyNow, Up * 0.8f, false);
 		return;
 	}
@@ -593,6 +603,169 @@ void AVisexMenuDirector::OpenBodyNow()
 	bOpen = false;
 	Panel->SetVisibility(false);
 	DisableInput(PC);
+}
+
+float AVisexMenuDirector::ColumnGapAt(FVector Point) const
+{
+	const UStaticMeshComponent* Stone = LeanColumn ? LeanColumn->FindComponentByClass<UStaticMeshComponent>() : nullptr;
+	if (!Stone)
+	{
+		return BIG_NUMBER;
+	}
+	// the drum lies along its actor's X, its axis at the stone's pivot: square off it on the ground
+	const FVector Along = LeanColumn->GetActorForwardVector().GetSafeNormal2D();
+	FVector D = Point - Stone->GetComponentLocation();
+	D.Z = 0.f;
+	D -= Along * FVector::DotProduct(D, Along);
+	return D.Size() - LeanColumnSurfaceRadius;
+}
+
+float AVisexMenuDirector::MeasureReach() const
+{
+	const ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	const USkeletalMeshComponent* Mesh = Char ? Char->GetMesh() : nullptr;
+	if (!Mesh)
+	{
+		return 0.f;
+	}
+	// her farthest bone from the axis the page turns her on (fingers and toes too; the IK
+	// targets and virtual bones aren't her), then the flesh and cloth past it
+	const FVector Axis = Char->GetActorLocation();
+	float Reach = 0.f;
+	for (int32 i = 0; i < Mesh->GetNumBones(); ++i)
+	{
+		const FName Bone = Mesh->GetBoneName(i);
+		const FString Name = Bone.ToString();
+		if (Name.StartsWith(TEXT("ik_")) || Name.StartsWith(TEXT("VB ")) || Bone == TEXT("root"))
+		{
+			continue;
+		}
+		Reach = FMath::Max(Reach, FVector::Dist2D(Mesh->GetBoneLocation(Bone), Axis));
+	}
+	const float S = Mesh->GetComponentScale().Z / FMath::Max(LeanAuthoredScale, 0.01f);
+	return Reach + BodyReachMargin * S;
+}
+
+void AVisexMenuDirector::BeginStepOut()
+{
+	ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	if (!Char || !LeanColumn || bOpen)
+	{
+		OpenBodyNow();
+		return;
+	}
+	// away from the drum, square off its axis (her facing, give or take)
+	const FVector Along = LeanColumn->GetActorForwardVector().GetSafeNormal2D();
+	FVector Away = Char->GetActorLocation() - LeanColumn->GetActorLocation();
+	Away.Z = 0.f;
+	Away -= Along * FVector::DotProduct(Away, Along);
+	StepAway = Away.GetSafeNormal2D();
+	if (StepAway.IsNearlyZero())
+	{
+		StepAway = Char->GetActorForwardVector().GetSafeNormal2D();
+	}
+	// her reach with the sliders at their ends: Height scales all of her, Shoulders and Hips
+	// set where her arms hang. The page can take her there while she turns.
+	float Grow = 1.f, Wide = 1.f;
+	if (const UVisexBodyComponent* Body = Char->FindComponentByClass<UVisexBodyComponent>())
+	{
+		auto ToEnd = [Body](const TCHAR* Name)
+		{
+			const FVisexBodySlider* Row = FVisexBodyProfile::Find(Name);
+			const float Now = Body->GetValue(Name);
+			return Row && Now > KINDA_SMALL_NUMBER ? FMath::Max(1.f, Row->Max / Now) : 1.f;
+		};
+		Grow = ToEnd(TEXT("Height"));
+		Wide = FMath::Max(ToEnd(TEXT("Shoulders")), ToEnd(TEXT("Hips")));
+	}
+	const float Reach = MeasureReach();
+	BodyReach = Reach * Grow * (1.f + BodyReachWidthShare * (Wide - 1.f));
+	BodyStepTarget = BodyReach + BodyClearance;
+	UE_LOG(LogTemp, Log, TEXT("Body step-out: reach %.1f now, %.1f at the sliders' ends; gap %.1f -> %.1f"),
+		Reach, BodyReach, ColumnGapAt(Char->GetActorLocation()), BodyStepTarget);
+	// the rest of the push-off blends out under the first step (its root would hold her)
+	if (UAnimInstance* Anim = GetPawnAnim())
+	{
+		Anim->StopSlotAnimation(0.5f, FName(TEXT("DefaultSlot")));
+	}
+	UCharacterMovementComponent* Move = Char->GetCharacterMovement();
+	bStepOrient = Move->bOrientRotationToMovement;
+	Move->bOrientRotationToMovement = false;   // she keeps her facing, out and back
+	bSteppedOut = true;
+	StepClock = 0.f;
+	StepDir = 1;
+}
+
+void AVisexMenuDirector::BeginStepBack(float Wait, int32 Select)
+{
+	ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	bSteppedOut = false;
+	if (!Char || !StandIn)
+	{
+		BackToMenu(Wait, Select);
+		return;
+	}
+	// she backs onto the column while the camera blends home, then leans as she did
+	StepHome = StandIn->GetActorLocation();
+	StepSelect = Select;
+	StepMinTime = Wait;
+	UCharacterMovementComponent* Move = Char->GetCharacterMovement();
+	bStepOrient = Move->bOrientRotationToMovement;
+	Move->bOrientRotationToMovement = false;
+	StepClock = 0.f;
+	StepDir = -1;
+}
+
+void AVisexMenuDirector::TickStep(float DeltaSeconds)
+{
+	ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	if (!Char)
+	{
+		StepDir = 0;
+		return;
+	}
+	StepClock += DeltaSeconds;
+	FVector Dir = StepAway;
+	float Left = BodyStepTarget - ColumnGapAt(Char->GetActorLocation());
+	float Pace = BodyStepSpeed;
+	if (StepDir < 0)
+	{
+		FVector To = StepHome - Char->GetActorLocation();
+		To.Z = 0.f;
+		Left = To.Size();
+		Dir = To.GetSafeNormal2D();
+		Pace = BodyStepBackSpeed;
+	}
+	// a slow start, then the pace that settles to rest right on her mark: weighty, no skid
+	constexpr float Settle = 90.f;   // cm/s^2
+	const float Ramp = FMath::SmoothStep(0.f, 1.f, StepClock / FMath::Max(0.05f, WalkOffRamp));
+	const float Want = FMath::Min(Pace * Ramp, FMath::Sqrt(2.f * Settle * FMath::Max(0.f, Left)));
+	if (Left <= 1.5f || StepClock > 8.f)
+	{
+		EndStep();
+		return;
+	}
+	const UCharacterMovementComponent* Move = Char->GetCharacterMovement();
+	Char->AddMovementInput(Dir, FMath::Clamp(Want / FMath::Max(1.f, Move->GetMaxSpeed()), 0.02f, 1.f));
+}
+
+void AVisexMenuDirector::EndStep()
+{
+	const int32 Was = StepDir;
+	StepDir = 0;
+	if (ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0)))
+	{
+		Char->GetCharacterMovement()->bOrientRotationToMovement = bStepOrient;
+		UE_LOG(LogTemp, Log, TEXT("Body step %s: gap to the stone %.1f after %.2f s"),
+			Was > 0 ? TEXT("out") : TEXT("back"), ColumnGapAt(Char->GetActorLocation()), StepClock);
+	}
+	if (Was > 0)
+	{
+		OpenBodyNow();
+		return;
+	}
+	// home: the menu (and her lean) once the camera has blended back too
+	BackToMenu(FMath::Max(0.05f, StepMinTime - StepClock), StepSelect);
 }
 
 void AVisexMenuDirector::OpenPhoto()
@@ -713,7 +886,14 @@ void AVisexMenuDirector::HandlePhotoClosed()
 void AVisexMenuDirector::HandleBodyClosed()
 {
 	bStudio = false;
-	BackToMenu(BodyEditor ? BodyEditor->BlendTime : 0.f, CharacterPage == 1 ? ItemWardrobe : ItemBody);
+	const float Blend = BodyEditor ? BodyEditor->BlendTime : 0.f;
+	const int32 Row = CharacterPage == 1 ? ItemWardrobe : ItemBody;
+	if (bSteppedOut)
+	{
+		BeginStepBack(Blend, Row);
+		return;
+	}
+	BackToMenu(Blend, Row);
 }
 
 void AVisexMenuDirector::BackToMenu(float BlendTime, int32 Select)
@@ -1243,13 +1423,17 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 	{
 		TickWalkOff(DeltaSeconds);
 	}
+	if (StepDir != 0)
+	{
+		TickStep(DeltaSeconds);
+	}
 
 	if (bOrbiting)
 	{
 		TickOrbit(DeltaSeconds);
 	}
 	// after the camera moved: focus on her for this frame's view, through the landing blend too
-	if (bOpen || bOrbiting || (LandedFor >= 0.f && LandedFor <= LandingBlendTime + 0.1f))
+	if (bOpen || bOrbiting || StepDir != 0 || (LandedFor >= 0.f && LandedFor <= LandingBlendTime + 0.1f))
 	{
 		TickFocus();
 	}

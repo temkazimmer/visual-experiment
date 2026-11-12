@@ -393,6 +393,43 @@ public:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<class UAnimSequence>> LoadedLean;
 
+	/** Body/Wardrobe: after the push-off she walks clear of the column, far enough that a full
+	 *  turn on the page keeps every part of her this far off the stone (cm), even with the
+	 *  sliders at their ends. Measured from her bones when she sets off. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0"))
+	float BodyClearance = 30.f;
+
+	/** Flesh, fingertips and outfit past her outermost bones (cm, at her scale). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0"))
+	float BodyReachMargin = 10.f;
+
+	/** How much of her reach the width sliders (Shoulders, Hips) widen, up to their ends. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0", ClampMax = "1"))
+	float BodyReachWidthShare = 0.6f;
+
+	/** Her pace on those steps, out and back (cm/s): slow and weighty. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "10"))
+	float BodyStepSpeed = 100.f;
+
+	/** Her pace backing onto the column after the page closes (cm/s): a few slow steps. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "10"))
+	float BodyStepBackSpeed = 70.f;
+
+	/** Her farthest part from her own axis at the sliders' ends (cm), and the gap from her
+	 *  axis to the stone she stopped at: last measured on the way to the Body page. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Menu|Lean")
+	float BodyReach = 0.f;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Menu|Lean")
+	float BodyStepTarget = 0.f;
+
+	/** From a point on the ground plane to the drum's surface, horizontally (cm; <0 inside). */
+	UFUNCTION(BlueprintPure, Category = "Menu|Lean")
+	float ColumnGapAt(FVector Point) const;
+
+	/** Her farthest bone from her axis, plus BodyReachMargin (cm), as she stands now. */
+	UFUNCTION(BlueprintPure, Category = "Menu|Lean")
+	float MeasureReach() const;
+
 	/** Hides the menu and opens the body page; the menu comes back when it closes. */
 	UFUNCTION(BlueprintCallable, Category = "Menu")
 	void OpenBody() { OpenCharacterPage(0); }
@@ -563,6 +600,19 @@ private:
 	UPROPERTY(Transient) TObjectPtr<class AVisexMenuLayoutEditor> LayoutEditor;
 	void OpenBodyNow();
 	int32 CharacterPage = 0;   // the page OpenBodyNow opens: 0 body, 1 wardrobe
+	// Body/Wardrobe: she steps clear of the column first, and back onto it after
+	void BeginStepOut();
+	void BeginStepBack(float Wait, int32 Select);
+	void TickStep(float DeltaSeconds);
+	void EndStep();
+	int32 StepDir = 0;           // +1 walking out, -1 backing onto the column, 0 still
+	float StepClock = 0.f;
+	FVector StepAway = FVector::ForwardVector;   // on the ground, from the drum toward her
+	FVector StepHome = FVector::ZeroVector;      // where she backs to: the stand-in's spot
+	int32 StepSelect = 0;        // the row the menu returns on
+	float StepMinTime = 0.f;     // the camera's blend home: the menu waits for it too
+	bool bSteppedOut = false;
+	bool bStepOrient = true;     // her movement's own orient-to-movement, put back after
 
 	// photo mode
 	void OpenPhoto();
