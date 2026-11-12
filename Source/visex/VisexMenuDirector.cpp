@@ -46,6 +46,9 @@
 #include "Containers/Ticker.h"
 #include "HAL/IConsoleManager.h"
 
+static TAutoConsoleVariable<int32> CVarMenuArrival(TEXT("visex.Menu.Arrival"), 1,
+	TEXT("1: on the first menu after launch she walks in to the column and leans while the menu fades in. 0: she is already leaning."));
+
 AVisexMenuDirector::AVisexMenuDirector()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -219,7 +222,14 @@ void AVisexMenuDirector::ShowMenu()
 	SetCornerShade(1.f);
 	SpawnLeanColumn();
 	FitLeanColumn();
-	Lean(bHaveLeaned);
+	// the first menu after launch: the drum is placed (above, with her on her spot); now she
+	// starts out on the sand and walks in to it while the panel fades in
+	const bool bArrive = !bArrivalChecked && CVarMenuArrival.GetValueOnGameThread() != 0 && BeginArrival();
+	bArrivalChecked = true;
+	if (!bArrive)
+	{
+		Lean(bHaveLeaned);
+	}
 	bHaveLeaned = true;
 	bOrbiting = false;
 	WalkOffClock = -1.f;
@@ -244,9 +254,18 @@ void AVisexMenuDirector::ShowMenu()
 	Panel->SetVisibility(true);
 	if (UVisexMenuWidget* W = GetMenuWidget())
 	{
-		W->SetRenderOpacity(1.f);
+		W->SetRenderOpacity(bArriving ? 0.f : 1.f);
 		if (Page > 0) { CloseSettings(); }
 		W->SetSelected(0);
+	}
+	if (bArriving)
+	{
+		SetCornerShade(0.f);
+	}
+	else
+	{
+		PanelInAlpha = 1.f;
+		ArrivalClock = -1.f;
 	}
 	FadeOut = -1.f;
 	MarkPanel(10);   // first layout, fonts
@@ -472,7 +491,7 @@ void AVisexMenuDirector::ToggleLayoutEditor()
 
 void AVisexMenuDirector::MoveSelection(int32 Delta)
 {
-	if (!bOpen)
+	if (!bOpen || PanelInAlpha < 1.f)
 	{
 		return;
 	}
@@ -485,8 +504,14 @@ void AVisexMenuDirector::MoveSelection(int32 Delta)
 
 void AVisexMenuDirector::Confirm()
 {
-	if (!bOpen)
+	if (!bOpen || PanelInAlpha < 1.f)
 	{
+		return;
+	}
+	if (bArriving)
+	{
+		// the panel is in but she is still walking: it goes through once she is down
+		ArrivalQueued = 1;
 		return;
 	}
 	const UVisexMenuWidget* W = GetMenuWidget();
@@ -970,13 +995,14 @@ void AVisexMenuDirector::TickReturn(float DeltaSeconds)
 		// settles to rest right on it
 		constexpr float Settle = 90.f;   // cm/s^2
 		const float Ramp = FMath::SmoothStep(0.f, 1.f, PhaseClock / FMath::Max(0.05f, WalkOffRamp));
-		const float Want = FMath::Min(BodyStepBackSpeed * Ramp, FMath::Sqrt(2.f * Settle * FMath::Max(0.f, Left)));
+		const float Pace = bArriving ? ArrivalSpeed : BodyStepBackSpeed;
+		const float Want = FMath::Min(Pace * Ramp, FMath::Sqrt(2.f * Settle * FMath::Max(0.f, Left)));
 		if (Left > 8.f)
 		{
 			const float Yaw = FMath::FixedTurn(Char->GetActorRotation().Yaw, To.Rotation().Yaw, 160.f * DeltaSeconds);
 			Char->SetActorRotation(FRotator(0.f, Yaw, 0.f));
 		}
-		if (Left <= 2.f || StepClock > 12.f)
+		if (Left <= 2.f || StepClock > (bArriving ? 25.f : 12.f))
 		{
 			// on her spot: the half turn that puts the column at her back
 			ReturnPhase = 2;
@@ -1040,8 +1066,167 @@ void AVisexMenuDirector::EndStep()
 		OpenBodyNow();
 		return;
 	}
+	if (bArriving)
+	{
+		EndArrival();
+		return;
+	}
 	// home: the menu (and her lean) once the camera has blended back too
 	BackToMenu(FMath::Max(0.05f, StepMinTime - StepClock), StepSelect);
+}
+
+bool AVisexMenuDirector::BeginArrival()
+{
+	ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	if (!Char || !StandIn || !bLeanOnColumn || !LeanColumn || !LeanIdle.LoadSynchronous())
+	{
+		return false;
+	}
+	// her spot and facing on the lean, as PlacePawn puts her; she starts out on the sand
+	StepHome = StandIn->GetActorLocation();
+	HomeYaw = StandIn->GetActorRotation().Yaw + 90.f;
+	FVector Start = StepHome + FRotator(0.f, HomeYaw, 0.f).RotateVector(FVector(ArrivalStartOffset.X, ArrivalStartOffset.Y, 0.f));
+	FHitResult Hit;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(MenuArrival), false, Char);
+	Params.AddIgnoredActor(LeanColumn);
+	if (GetWorld()->LineTraceSingleByChannel(Hit, Start + FVector(0.f, 0.f, 300.f), Start - FVector(0.f, 0.f, 600.f), ECC_Visibility, Params))
+	{
+		Start.Z = Hit.Location.Z;
+	}
+	const FVector Dir = (StepHome - Start).GetSafeNormal2D();
+	const float Half = Char->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	Char->SetActorLocationAndRotation(Start + FVector(0.f, 0.f, Half), FRotator(0.f, Dir.Rotation().Yaw, 0.f), false, nullptr, ETeleportType::TeleportPhysics);
+	GetWorldTimerManager().ClearTimer(StandTimer);
+	GetWorldTimerManager().ClearTimer(BeatTimer);
+	if (UAnimInstance* Anim = GetPawnAnim())
+	{
+		Anim->StopSlotAnimation(0.f, FName(TEXT("DefaultSlot")));
+	}
+	bLeaning = false;
+	// the lean-return's walk (TickReturn), already at her pace as she comes into the frame
+	UCharacterMovementComponent* Move = Char->GetCharacterMovement();
+	bStepOrient = Move->bOrientRotationToMovement;
+	Move->bOrientRotationToMovement = false;
+	Move->Velocity = Dir * ArrivalSpeed;
+	bSteppedOut = false;
+	ReturnPhase = 1;
+	PhaseClock = WalkOffRamp;
+	StepClock = 0.f;
+	StepMinTime = 0.f;
+	StepSelect = 0;
+	StepDir = -1;
+	bArriving = true;
+	ArrivalClock = 0.f;
+	PanelInAlpha = 0.f;
+	ArrivalQueued = 0;
+	bPlanted[0] = bPlanted[1] = false;
+	SkateMax = SkateSum = 0.f;
+	SkateSteps = 0;
+	UE_LOG(LogTemp, Log, TEXT("Menu arrival: %.0f cm to her spot at %.0f cm/s, panel in %.1f-%.1f s"),
+		FVector::Dist2D(Start, StepHome), ArrivalSpeed, ArrivalPanelFadeStart, ArrivalPanelFadeStart + ArrivalPanelFadeTime);
+	return true;
+}
+
+void AVisexMenuDirector::EndArrival()
+{
+	bArriving = false;
+	PlacePawn();   // exactly on her spot (the turn held her within a couple of cm)
+	Lean(true);
+	UE_LOG(LogTemp, Log, TEXT("Menu arrival: leaning at %.2f s, panel %.2f; planted-foot skate mean %.1f max %.1f cm over %d steps"),
+		ArrivalClock, PanelInAlpha, SkateSteps ? SkateSum / SkateSteps : 0.f, SkateMax, SkateSteps);
+	const int32 Queued = ArrivalQueued;
+	ArrivalQueued = 0;
+	if (Queued == 1) { Confirm(); }
+	else if (Queued == 2) { ToggleMenu(); }
+}
+
+bool AVisexMenuDirector::IsArriving() const
+{
+	return bArriving || (!bArrivalChecked && bShowMenuOnPlay && CVarMenuArrival.GetValueOnGameThread() != 0);
+}
+
+void AVisexMenuDirector::PlayArrival()
+{
+	if (bOpen && !bArriving && StepDir == 0 && Page == 0 && !bSitting)
+	{
+		PlacePawn();
+		if (BeginArrival())
+		{
+			if (UVisexMenuWidget* W = GetMenuWidget()) { W->SetRenderOpacity(0.f); }
+			SetCornerShade(0.f);
+			MarkPanel();
+		}
+	}
+}
+
+void AVisexMenuDirector::TickArrivalPanel(float DeltaSeconds)
+{
+	ArrivalClock += DeltaSeconds;
+	if (PanelInAlpha < 1.f)
+	{
+		// the panel and its corner shade fade in together while she walks
+		const float A = FMath::Clamp((ArrivalClock - ArrivalPanelFadeStart) / FMath::Max(0.05f, ArrivalPanelFadeTime), 0.f, 1.f);
+		const float E = A >= 1.f ? 1.f : A * A * (3.f - 2.f * A);
+		if (E != PanelInAlpha)
+		{
+			PanelInAlpha = E;
+			if (UVisexMenuWidget* W = GetMenuWidget()) { W->SetRenderOpacity(E); }
+			SetCornerShade(E);
+			MarkPanel();
+			if (E >= 1.f)
+			{
+				UE_LOG(LogTemp, Log, TEXT("Menu arrival: panel in at %.2f s"), ArrivalClock);
+			}
+		}
+	}
+	if (bArriving)
+	{
+		TickFootSkate();
+	}
+	else if (PanelInAlpha >= 1.f)
+	{
+		ArrivalClock = -1.f;
+	}
+}
+
+void AVisexMenuDirector::TickFootSkate()
+{
+	// a foot counts as planted while it is low and nearly still; its skate is how far it
+	// moved on the ground from touch-down to lift-off
+	const ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	const USkeletalMeshComponent* Mesh = Char ? Char->GetMesh() : nullptr;
+	const float Dt = GetWorld()->GetDeltaSeconds();
+	if (!Mesh || Dt <= 0.f)
+	{
+		return;
+	}
+	const float FeetZ = Char->GetActorLocation().Z - Char->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	static const FName Bones[2] = {FName(TEXT("ball_l")), FName(TEXT("ball_r"))};
+	for (int32 F = 0; F < 2; ++F)
+	{
+		const FVector P = Mesh->GetSocketLocation(Bones[F]);
+		const float Speed = FVector::Dist2D(P, LastFoot[F]) / Dt;
+		LastFoot[F] = P;
+		const bool bDown = P.Z - FeetZ < 10.f && Speed < 25.f;
+		if (bDown && !bPlanted[F])
+		{
+			PlantAt[F] = P;
+			PlantFor[F] = 0.f;
+		}
+		else if (bDown)
+		{
+			PlantFor[F] += Dt;
+		}
+		else if (bPlanted[F] && PlantFor[F] > 0.12f)
+		{
+			const float Skate = FVector::Dist2D(P, PlantAt[F]);
+			SkateMax = FMath::Max(SkateMax, Skate);
+			SkateSum += Skate;
+			++SkateSteps;
+			UE_LOG(LogTemp, Log, TEXT("Menu arrival: %s planted %.2f s, skate %.1f cm"), *Bones[F].ToString(), PlantFor[F], Skate);
+		}
+		bPlanted[F] = bDown;
+	}
 }
 
 void AVisexMenuDirector::OpenPhoto()
@@ -1361,7 +1546,8 @@ void AVisexMenuDirector::ToggleMenu()
 	}
 	else if (bOpen)
 	{
-		StartGame();
+		if (PanelInAlpha >= 1.f && bArriving) { ArrivalQueued = 2; }
+		else if (PanelInAlpha >= 1.f) { StartGame(); }
 	}
 	else if (bPlaying)
 	{
@@ -1912,6 +2098,10 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 	if (StepDir != 0)
 	{
 		TickStep(DeltaSeconds);
+	}
+	if (ArrivalClock >= 0.f)
+	{
+		TickArrivalPanel(DeltaSeconds);
 	}
 
 	if (bOrbiting)

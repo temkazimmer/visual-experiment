@@ -451,7 +451,8 @@ void AVisexQATour::Tick(float DeltaSeconds)
 			C->AddMovementInput(Yaw.Vector(), 1.f);
 		}
 	}
-	Clock += DeltaSeconds;
+	// the first menu shot waits for her walk in to the column (visex.Menu.Arrival)
+	Clock = (Next == 0 && Director->IsArriving()) ? 0.f : Clock + DeltaSeconds;
 	if (Steps.IsValidIndex(Next) && Clock >= Steps[Next].Wait)
 	{
 		Clock = 0.f;

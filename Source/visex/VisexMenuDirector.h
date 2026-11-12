@@ -496,6 +496,25 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0"))
 	float ReturnWalkMax = 600.f;
 
+	// first launch: she walks in to the column and leans while the panel fades in (visex.Menu.Arrival)
+	/** Where she starts, from her lean spot in her lean facing (cm): X forward, Y right. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Arrival")
+	FVector2D ArrivalStartOffset = FVector2D(330.f, -330.f);
+	/** Her walking pace (cm/s); the lean-return walks at BodyStepBackSpeed. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Arrival", meta = (ClampMin = "10"))
+	float ArrivalSpeed = 85.f;
+	/** Seconds from the first frame until the panel starts to fade in, and the fade's length. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Arrival", meta = (ClampMin = "0"))
+	float ArrivalPanelFadeStart = 2.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Arrival", meta = (ClampMin = "0.05"))
+	float ArrivalPanelFadeTime = 2.5f;
+	/** Replays the arrival from the menu (for tuning). */
+	UFUNCTION(BlueprintCallable, Category = "Menu|Arrival")
+	void PlayArrival();
+	/** True from launch until she is down on the lean (and while a replay runs). */
+	UFUNCTION(BlueprintPure, Category = "Menu|Arrival")
+	bool IsArriving() const;
+
 	/** Her farthest part from her own axis at the sliders' ends (cm), and the gap from her
 	 *  axis to the stone she stopped at: last measured on the way to the Body page. */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Menu|Lean")
@@ -702,6 +721,22 @@ private:
 	void EndStep();
 	int32 StepDir = 0;           // +1 walking out, -1 returning to the column, 0 still
 	void TickReturn(float DeltaSeconds);
+	// the first-launch arrival: a walk-back (StepDir -1) from ArrivalStartOffset that ends in Lean
+	bool BeginArrival();
+	void EndArrival();
+	void TickArrivalPanel(float DeltaSeconds);
+	void TickFootSkate();
+	bool bArrivalChecked = false;   // the first ShowMenu has decided
+	bool bArriving = false;
+	float ArrivalClock = -1.f;      // seconds since the arrival began; <0 when no fade runs
+	float PanelInAlpha = 1.f;       // the panel's fade-in; input waits for 1
+	int32 ArrivalQueued = 0;        // pressed while she finished walking: 1 Confirm, 2 ToggleMenu
+	FVector PlantAt[2];             // the planted foot's spot on the ground, per foot
+	FVector LastFoot[2];
+	float PlantFor[2] = {0.f, 0.f};
+	bool bPlanted[2] = {false, false};
+	float SkateMax = 0.f, SkateSum = 0.f;
+	int32 SkateSteps = 0;
 	int32 ReturnPhase = 0;       // 0 turning to her spot, 1 walking there, 2 turning round on it
 	float PhaseClock = 0.f;
 	float TurnFrom = 0.f, TurnTo = 0.f, TurnTime = 0.f;   // yaw (deg) and seconds of this turn
