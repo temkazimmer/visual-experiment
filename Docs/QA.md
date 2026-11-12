@@ -7,6 +7,28 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-12 17:33 · VIS-EX-0485 Shipping (a1835b0) · PASS, Unopened Gate logo and one-line menu read well, she climbs onto the drum in Settings, build number nearly invisible
+
+- **Tour (b7ded30, unchanged):** two runs from the mounted DMG, clean cook. Both reached `VisexQA: done` with 57 shots and exit 0
+  (290 s, 283 s). On ground at every step (only photo motions 5/6/7/9 in mode 0, as 0464), no spectator, no new `.ips`.
+  Shots in `Saved/QA_0485ship_run{1,2}/` and `Tools/.bridge/shots/qa0485/` (run 2 in `run2/`, sheets in `crops/`), plus a 5 fps screen recording in `rec/`.
+- **Cook:** `0 error(s), 0 warning(s)`, 845 packages cooked. DMG md5 `f551ed2f…`. No `-stable` copy (main is rebuilding with outfit-kit).
+- **Menu (`01_menu`, `crops/menu_0464_vs_0485.jpg`):** the logo is pure white, cracks see-through to the haze. Logo, build number and
+  items start on one vertical line (left edges within ~3 px at 1080p; 0464's drifted right). No text shadows. No small dark patch;
+  the shade just evens out the yellow corner behind the text. **The build number `0485` is barely readable**: thin, low-contrast on bright orange (`crops/menu_buildnum.png`).
+- **Settings:** the camera dollies in at the same height (view z 68 → 67, x 9303 → 9430/9455). She pushes up off the lean with both hands
+  and lands crouched on the drum in ~0.8 s (`crops/settings_jump_mid_run1_f565.jpg`, `..._top_run1_f566.jpg`, `crops/rec1_jump_563.jpg`); reads more as a hoist than a jump at 5 fps.
+  Seated at 3.5 s: one leg hooked over the drum with the sole to the lens, the other hanging down the front (`11_settings_visuals`; run 2 the same).
+  The 1.5 s shot still catches her settling. The panel keeps the main page's on-screen shape and skew. Back: she slides down into the lean, menu returns (`crops/rec1_settings_560.jpg`).
+- **Silversuit default:** the tour doesn't run a fresh profile; after the outfit loop it resets to `FVisexBodyProfile().Outfit` and she's in Silversuit (`21`, `57`).
+- **Body:** walks clear, page opens standing in the proud idle (hand on hip, chest up). After Close she walks back, turns and settles on the lean; menu back ~6 s after Close, as 0464 (`crops/rec1_body_700.jpg`).
+- **Wardrobe NOT exercised again:** `wardrobe DID NOT OPEN` in both runs (same tour timing gap as 0464).
+- **Outfits:** all nine wearable on the lean. **Poses:** 11 motions as 0464. **Photo:** opens walking in place, `moved 0.0 cm in 1 s (PASS)`.
+- **Regressions:** none. First menu column lit. Start move 4:3 menu/mid/landing/play `fills the window`, fov 90, feet IN FRAME at 16:9 and 4:3. Forced GC fine, `layout save PASS, on disk` in both runs.
+- **Frame times:** run 1 quality 0/3/4: 16.7 / 16.6 / 33.8 ms; menu 21.9, settings 48, after body page 54, after photo 59 (0464: 52 / 59 / –).
+  Run 2: 16.7 / 16.7 / 34.5; settings 50, after body 58, after photo 64.
+- **Saves:** backed up `VisexBody.sav` (`bddfbe76…`) and `GameUserSettings.ini` (`06e783cf…`), restored after each run, both md5s match. No `Game.ini` before or after.
+
 ## 2026-11-12 14:59 · VIS-EX-0464 Shipping (29353f7) · PASS, she walks back and turns onto the lean, proud idle reads, tour's Wardrobe step now fires too early
 
 - **Tour (b7ded30, unchanged):** two runs from the mounted DMG, clean cook. Both reached `VisexQA: done` with 57 shots and exit 0
