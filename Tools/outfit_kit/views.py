@@ -108,8 +108,28 @@ cam = bpy.data.objects.new("Cam", bpy.data.cameras.new("Cam"))
 sc.collection.objects.link(cam)
 cam.data.type = "ORTHO"
 sc.camera = cam
+def schematic(col):
+    """Flat and outlined, for reading the cut: garment in its own colour, her body mid grey, and a
+    background on the far side of the garment's brightness (dark behind silver, light behind black)."""
+    lum = 0.2126 * col[0] + 0.7152 * col[1] + 0.0722 * col[2]
+    # linear values (the view transform lifts them): dark ~ sRGB 0.12, light ~ sRGB 0.95
+    bgc = (0.012, 0.013, 0.016) if lum > 0.4 else (0.88, 0.87, 0.85)
+    sh.light, sh.color_type = "STUDIO", "OBJECT"
+    sh.show_cavity, sh.show_specular_highlight = True, False
+    sh.show_object_outline, sh.object_outline_color = True, (0.0, 0.0, 0.0)
+    sh.background_type, sh.background_color = "VIEWPORT", bgc
+    body.color = (0.07, 0.07, 0.075, 1) if lum > 0.4 else (0.30, 0.30, 0.31, 1)
+    suit.color = (*col, 1)
+    return bgc
+
+
+LOOK = "dust" if "dust" in ARGS else "schematic"
+COLOR = tuple(float(c) for c in ARGS[ARGS.index("color") + 1].split(",")) if "color" in ARGS else (0.80, 0.83, 0.88)
 if suit:
-    dust_look()
+    if LOOK == "dust":
+        dust_look()
+    else:
+        print("KIT background", schematic(COLOR))
 meta = dict(px_per_cm=PX, z_top=Z1, z_bottom=Z0, landmarks=info["landmarks"], views={})
 for name, (d, right, (h0, h1)) in VIEWS.items():
     w, h = int((h1 - h0) * PX), int((Z1 - Z0) * PX)
@@ -124,7 +144,7 @@ for name, (d, right, (h0, h1)) in VIEWS.items():
                                                 ("%s_%s_only" % (name, OUTFIT.lower()), True)]
     for fn, alone in shots:
         body.hide_render = alone                 # alone: the garment by itself (shop render)
-        sc.render.film_transparent = alone
+        sc.render.film_transparent = alone and LOOK == "dust"     # schematic keeps its contrast backdrop
         sc.render.filepath = os.path.join(OUT, fn + ".png")
         bpy.ops.render.render(write_still=True)
     body.hide_render = False
