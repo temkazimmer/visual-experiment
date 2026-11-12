@@ -87,8 +87,16 @@ def kit_outfit(name):
             ("Tartan" if r > 0.4 and g < 0.3 else "Satin" if max(r, g, b) < 0.2 else ("Lace" if a > 0.8 else "Sheer"))
         bind = "bind" in base or ("panel" not in base and slot in ("Tartan", "Satin"))
         key = (slot, bind)
-        groups.setdefault(key, {}).setdefault({"f": "front", "s": "side", "b": "back"}[view], []).append(
-            np.array(flat, float).reshape(-1, 2))
+        poly = np.array(flat, float).reshape(-1, 2)
+        if view == "s":
+            # a shape the side view sees edge-on (the front panel's or thong's silhouette) is a thin
+            # sliver: it belongs to the front or back view, and filled it would put fabric on her hip
+            e = np.roll(poly, -1, 0) - poly
+            area = 0.5 * abs(np.sum(poly[:, 0] * np.roll(poly[:, 1], -1) - np.roll(poly[:, 0], -1) * poly[:, 1]))
+            if 2 * area / max(np.linalg.norm(e, axis=1).sum(), 1e-6) < 12.0:      # mean thickness < 1.2 cm
+                print("KIT %s: side-view sliver '%s' left to front/back" % (name, nm))
+                continue
+        groups.setdefault(key, {}).setdefault({"f": "front", "s": "side", "b": "back"}[view], []).append(poly)
     for (slot, bind), by_view in groups.items():
         field = np.full(nv, NEG)
         best = np.full(nv, -1.0)
@@ -114,6 +122,23 @@ def kit_outfit(name):
             sd = _sd_polys(Q[ids], polys) / vj["px_per_cm"]
             field[ids] = sd
             best[ids] = f[ids]
+        # skin no view sees head-on (the top of the foot, under the bust) takes its neighbours' value
+        known = best >= 0
+        near = (field > -6.0) | ~known
+        for _ in range(80):
+            todo = ~known & near
+            if not todo.any():
+                break
+            acc, cnt = np.zeros(nv), np.zeros(nv)
+            for a_, b_ in ((EDGES[:, 0], EDGES[:, 1]), (EDGES[:, 1], EDGES[:, 0])):
+                m_ = known[b_]
+                np.add.at(acc, a_[m_], field[b_[m_]])
+                np.add.at(cnt, a_[m_], 1.0)
+            grow = todo & (cnt > 0)
+            if not grow.any():
+                break
+            field[grow] = acc[grow] / cnt[grow]
+            known |= grow
         print("KIT %s %s%s: %d vertices inside" % (name, slot, " bind" if bind else "", int((field > 0).sum())))
         region(field, _OFFSET.get(slot, 0.3), slot, bind=("Binding", 0.55) if bind else None, min_loop=4.0)
     # straps: 3D lines from the import; side-view copies of a line the front or back already has are dropped
