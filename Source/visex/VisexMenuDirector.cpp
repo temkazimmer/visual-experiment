@@ -394,6 +394,7 @@ void AVisexMenuDirector::PushLayoutToWidget()
 		W->LogoGap = Layout.LogoGap;
 		W->ItemSize = Layout.ItemSize;
 		W->ItemGap = Layout.ItemGap;
+		W->BuildLabel = Layout.bBuildNumber ? GetDefault<UVisexMenuWidget>()->BuildLabel : FText::GetEmpty();
 		if (Page == 0)
 		{
 			W->Title = FText::FromString(Layout.LogoText());
