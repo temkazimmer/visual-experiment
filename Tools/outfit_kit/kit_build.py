@@ -59,7 +59,7 @@ def _sd_polys(Q, polys):
     return best
 
 
-def _sd_blurred(Q, polys, cell=2.0, radius=14.0):
+def _sd_blurred(Q, polys, cell=2.0, radius=20.0):
     """Signed distance to the union of the shapes, computed on a grid over them, blurred, and read
     back at Q: shapes drawn in halves merge without a notch where they meet, and every corner and
     kink of the drawn path rounds off into a smooth curve (radius in px, 10 px = 1 cm)."""
@@ -210,6 +210,18 @@ def kit_outfit(name):
             if 2 * area / max(np.linalg.norm(e, axis=1).sum(), 1e-6) < 12.0:      # mean thickness < 1.2 cm
                 print("KIT %s: side-view sliver '%s' left to front/back" % (name, nm))
                 continue
+        if poly[:, 1].min() > 1115 and poly[:, 1].max() <= 1850:
+            # wholly below the crotch: a band round the leg (a stocking's lace top), same tube rule
+            y0, y1 = poly[:, 1].min(), poly[:, 1].max()
+            poly = np.array([(poly[:, 0].min() - 60, y0), (poly[:, 0].max() + 60, y0),
+                             (poly[:, 0].max() + 60, y1), (poly[:, 0].min() - 60, y1)])
+        if poly[:, 1].max() > 1850:
+            # it runs down to her feet: a stocking or leg. The leg is a tube, so whatever the
+            # outline's width, everything below its top edge around that leg is covered (a drawn
+            # outline narrower than the calf left a bare strip down the back of the calf)
+            y0 = poly[:, 1].min()
+            poly = np.array([(poly[:, 0].min() - 60, y0), (poly[:, 0].max() + 60, y0),
+                             (poly[:, 0].max() + 60, 2000), (poly[:, 0].min() - 60, 2000)])
         groups.setdefault(key, {}).setdefault({"f": "front", "s": "side", "b": "back"}[view], []).append(poly)
     for (slot, bind), by_view in groups.items():
         field = kit_field(by_view, ctx)

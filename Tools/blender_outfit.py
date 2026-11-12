@@ -911,7 +911,8 @@ def catsuit_set(variant=None):
     BIND = ("Latex", 0.7)                                                            # self-coloured bindings: the edge reads by its gloss
     region(f, 0.25, "Latex", bind=BIND, min_loop=6.0)
     top = LM["shoulder"] + 5.0
-    seam(torso_line(0, top - 1.0, LM["crotch"] + 1, 0.28), 0.3, "Latex", f)           # zip tape, stops at the keyhole
+    if not kit:   # a scoop neck over the keyhole leaves only a stub of zip between them
+        seam(torso_line(0, top - 1.0, LM["crotch"] + 1, 0.28), 0.3, "Latex", f)       # zip tape, stops at the keyhole
     pull = ray(TORSO_BVH, pel_v, top - 3.5, 0.0, 0.0) if not kit else None   # a scoop neck has no collar to hang it on
     if pull:
         hardware(NP(pull), UP, (1.0, 2.4, 0.35), 0.5)                                  # zip pull under the collar
