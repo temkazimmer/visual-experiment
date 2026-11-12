@@ -4,18 +4,18 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Containers/Ticker.h"
 #include "Styling/SlateBrush.h"
-#include <atomic>
 
 class SWidget;
 #include "VisexLaunchCover.generated.h"
 
 /**
- * The launch hand-off from the intro film to the menu. The startup movie (DefaultGame.ini,
- * MoviePlayerSettings) ends exactly on the live menu shot. A still of that last frame covers
- * the screen (aspect-fill) from the film's end until the scene has settled (textures streamed,
- * PSOs compiled, the menu column fitted, a run of calm frames), then cross-fades into the live
- * menu while the menu music fades in. No still: a flat colour instead. Once per launch: never on returning to the menu, never
- * in the editor. Tunables in DefaultGame.ini under [/Script/visex.VisexLaunchCover].
+ * The launch: the intro film plays in-game, over the live scene, as soon as the world is up,
+ * while the world warms up behind it (textures streamed, PSOs compiled, the menu column fitted,
+ * a run of calm frames, her arrival held off frame). The film ends on black; the live scene
+ * fades up from black at once, and her arrival starts with the fade. Should the scene not be
+ * settled yet, black holds for the rest (logged). The music runs from its top with the film.
+ * Click or any key skips the film. Once per launch: never on returning to the menu, never in
+ * the editor. Tunables in DefaultGame.ini under [/Script/visex.VisexLaunchCover].
  */
 UCLASS(config = Game)
 class VISEX_API UVisexLaunchCover : public UGameInstanceSubsystem
@@ -28,67 +28,67 @@ public:
 
 	/** True once the cover has fully faded (or never showed). The QA tour waits on it. */
 	bool IsDone() const { return bDone; }
-	/** Still on the film's last frame (the arrival's frame 0): before the cross-fade begins. */
+	/** The film or the black is still up, before the fade: her arrival waits for it. */
 	bool IsHolding() const { return !bDone && FadeStart < 0.0; }
-	/** Seconds the cover held at full before its fade began, and what let it go. */
+	/** Seconds black held after the film before its fade began, and what let it go. */
 	float GetHeldSeconds() const { return HeldSeconds; }
 	const FString& GetReleaseReason() const { return ReleaseReason; }
 
-	/** The film's last frame, held from its end until the scene settles, then cross-faded into
-	 *  the live menu. A /Game texture path, or an image file relative to Content/. */
-	UPROPERTY(config) FString CoverImage = TEXT("Movies/VisexIntro_last.png");
-	/** Fallback when there's no still: a flat colour (linear). */
-	UPROPERTY(config) FLinearColor CoverColor = FLinearColor(0.92f, 0.62f, 0.36f, 1.f);
-	UPROPERTY(config) float MinHold = 0.5f;
+	/** The film, a file relative to Content/ (Content/Movies is staged as loose files). Empty: no film. */
+	UPROPERTY(config) FString FilmPath = TEXT("Movies/VisexIntro.mp4");
+	/** Its frame size: fitted to the window, black bars where the aspect differs. */
+	UPROPERTY(config) FVector2D FilmSize = FVector2D(3840.f, 2400.f);
+	/** Gives up on a film that hasn't opened by then (s), or runs this far past its length. */
+	UPROPERTY(config) float FilmTimeout = 5.f;
+	/** At most this long black after the film, waiting on the scene (s). */
 	UPROPERTY(config) float MaxHold = 8.f;
-	UPROPERTY(config) float FadeTime = 0.8f;
+	/** The fade up from black into the live scene (s). */
+	UPROPERTY(config) float FadeTime = 1.5f;
 	/** Calm frames (all else settled, no hitch) before the fade: Lumen and shadows converge. */
 	UPROPERTY(config) int32 SettleFrames = 30;
 	/** A frame this slow, or 1.6x the recent average if more, breaks the calm run. */
 	UPROPERTY(config) float HitchSeconds = 0.1f;
 	/** After the menu column is first fitted: the VSM cache stays off its first 0.5 s (e550725). */
 	UPROPERTY(config) float AfterColumn = 0.7f;
-	/** Music under this content path is held during the cover and faded in with the menu. */
+	/** Music under this content path waits for the film and starts from its top with it. */
 	UPROPERTY(config) FString MusicPath = TEXT("/Game/VisEx/Audio/");
-	/** The film carries this many seconds of the soundtrack's opening: the live music starts there,
-	 *  full volume, no fade, on the first frame after the film. 0: it fades in from its top with
-	 *  the cross-fade instead. */
-	UPROPERTY(config) float LaunchMusicOffset = 20.f;
-	/** After the cross-fade, the menu panel (not in the film) fades in over this long. */
+	/** After the fade, the menu panel fades in over this long (unless her arrival fades it in). */
 	UPROPERTY(config) float PanelFadeTime = 0.8f;
+
+	/** Ends the film now (click or key); the fade follows as at its end. False: no film up. */
+	bool SkipFilm();
 
 private:
 	void OnMapLoaded(UWorld* World);
-	/** Haze over the movie player's black border, from the film's end to the map's. */
-	void CoverFilmEnd();
-	void LoadStill();
-	TSharedRef<class SWidget> MakeCover(TAttribute<FSlateColor> Tint);
-	void OnFilmFinished();
+	UFUNCTION() void OnFilmEnd();
+	UFUNCTION() void OnFilmFailed(FString Url);
 	bool Tick(float DeltaTime);
-	/** Empty when settled, else what it still waits on. */
 	FString Pending(UWorld* World);
 	void HoldMusic(UWorld* World);
-	void ReleaseMusic(float StartAt, float Fade);
+	void ReleaseMusic();
+	void RemoveCover();
 
-	UPROPERTY() TObjectPtr<class UTexture2D> Still;
-	FSlateBrush StillBrush;
-	TSharedPtr<class SWidget> Cover;
-	/** Shared with the movie overlay on the loading thread: when the film's own viewport went. */
-	struct FFilmEnd { TWeakPtr<SWidget> Self; TWeakPtr<SWidget> Film; bool bSeen = false; std::atomic<double> EndTime{0.0}; };
-	TSharedPtr<FFilmEnd> FilmEnd;
-	FTSTicker::FDelegateHandle TickHandle;
+	UPROPERTY() TObjectPtr<class UMediaPlayer> Player;
+	UPROPERTY() TObjectPtr<class UFileMediaSource> Source;
+	UPROPERTY() TObjectPtr<class UMediaTexture> FilmTexture;
+	FSlateBrush FilmBrush;
+	TSharedPtr<SWidget> Cover;
+	TSharedPtr<class IInputProcessor> SkipInput;
 	TArray<TWeakObjectPtr<class UAudioComponent>> Music;
 	TWeakObjectPtr<class AVisexMenuDirector> Director;
+	FTSTicker::FDelegateHandle TickHandle;
 	bool bShown = false;
 	bool bDone = false;
-	double StartTime = 0.0;
+	bool bFilm = false;          // the film is up (opening or playing)
+	bool bFilmPlaying = false;   // its first frame has come
+	double FilmStart = 0.0;      // when it was opened, then when it started playing
+	double FilmEnd = -1.0;       // when it ended (or was skipped, or failed)
 	double ColumnTime = -1.0;
 	double FadeStart = -1.0;
 	int32 CalmFrames = 0;
 	float AvgDelta = 0.f;
 	float Opacity = 1.f;
 	float HeldSeconds = 0.f;
-	FString ReleaseReason;
-	/** The last thing it waited on: the condition whose clearing let the cover go. */
 	FString LastWait;
+	FString ReleaseReason;
 };

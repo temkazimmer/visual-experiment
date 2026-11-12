@@ -4,6 +4,7 @@
 #include "Engine/GameInstance.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
+#include "GameFramework/PlayerController.h"
 #include "Components/AudioComponent.h"
 #include "Sound/SoundBase.h"
 #include "ContentStreaming.h"
@@ -11,165 +12,58 @@
 #include "ShaderPipelineCache.h"
 #include "UObject/UObjectGlobals.h"
 #include "Widgets/Images/SImage.h"
-#include "Styling/CoreStyle.h"
-#include "MoviePlayer.h"
-#include "Engine/GameEngine.h"
-#include "Framework/Application/SlateApplication.h"
-#include "RenderingThread.h"
 #include "Widgets/SOverlay.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScaleBox.h"
-#include "Engine/Texture2D.h"
-#include "ImageUtils.h"
+#include "Styling/CoreStyle.h"
+#include "MediaPlayer.h"
+#include "MediaTexture.h"
+#include "FileMediaSource.h"
+#include "Framework/Application/IInputProcessor.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Misc/Paths.h"
 #include "UnrealClient.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogVisexLaunch, Log, All);
 
-/**
- * The still, drawn byte for byte. Slate would decode an sRGB texture with the sRGB curve and
- * re-encode with gamma 2.2 (Mac), lifting the darks; the film and the game viewport both go
- * to the screen ungamma'd, so the still does too: sampled raw (texture not sRGB), NoGamma.
- */
-class SVisexStill : public SLeafWidget
+/** A click or key while the film plays skips it, and goes no further (the menu never sees it). */
+class FVisexFilmSkip : public IInputProcessor
 {
 public:
-	SLATE_BEGIN_ARGS(SVisexStill) {}
-		SLATE_ARGUMENT(const FSlateBrush*, Brush)
-		SLATE_ATTRIBUTE(FSlateColor, Tint)
-	SLATE_END_ARGS()
-
-	void Construct(const FArguments& InArgs)
+	explicit FVisexFilmSkip(TWeakObjectPtr<UVisexLaunchCover> InCover) : Cover(InCover) {}
+	virtual void Tick(const float, FSlateApplication&, TSharedRef<ICursor>) override {}
+	virtual bool HandleKeyDownEvent(FSlateApplication&, const FKeyEvent& Event) override
 	{
-		Brush = InArgs._Brush;
-		Tint = InArgs._Tint;
+		return !Event.IsRepeat() && Skip();
 	}
-	virtual int32 OnPaint(const FPaintArgs&, const FGeometry& Geometry, const FSlateRect&, FSlateWindowElementList& Out,
-		int32 Layer, const FWidgetStyle& Style, bool) const override
-	{
-		const FLinearColor C = Style.GetColorAndOpacityTint() * Tint.Get().GetSpecifiedColor();
-		FSlateDrawElement::MakeBox(Out, Layer, Geometry.ToPaintGeometry(), Brush, ESlateDrawEffect::NoGamma, C);
-		return Layer;
-	}
-	virtual FVector2D ComputeDesiredSize(float) const override { return Brush ? Brush->ImageSize : FVector2D::ZeroVector; }
-
+	virtual bool HandleMouseButtonDownEvent(FSlateApplication&, const FPointerEvent&) override { return Skip(); }
+	virtual const TCHAR* GetDebugName() const override { return TEXT("VisexFilmSkip"); }
 private:
-	const FSlateBrush* Brush = nullptr;
-	TAttribute<FSlateColor> Tint;
+	bool Skip() const
+	{
+		UVisexLaunchCover* C = Cover.Get();
+		return C && C->SkipFilm();
+	}
+	TWeakObjectPtr<UVisexLaunchCover> Cover;
 };
 
 void UVisexLaunchCover::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
-	// launch only: in the editor there's no startup film and PIE would sit under the cover
+	// launch only: in the editor PIE would sit under the film
 	if (GIsEditor || IsRunningCommandlet())
 	{
 		bDone = true;
 		return;
 	}
-	LoadStill();
 	FCoreUObjectDelegates::PostLoadMapWithWorld.AddUObject(this, &UVisexLaunchCover::OnMapLoaded);
-	if (IsMoviePlayerEnabled() && GetMoviePlayer()->IsMovieCurrentlyPlaying())
-	{
-		CoverFilmEnd();
-	}
-}
-
-void UVisexLaunchCover::LoadStill()
-{
-	// a /Game texture, or a loose image under Content/ (Content/Movies is staged as files)
-	if (CoverImage.StartsWith(TEXT("/")))
-	{
-		Still = Cast<UTexture2D>(FSoftObjectPath(CoverImage).TryLoad());
-	}
-	else if (!CoverImage.IsEmpty())
-	{
-		const FString File = FPaths::ProjectContentDir() / CoverImage;
-		if (FPaths::FileExists(File))
-		{
-			Still = FImageUtils::ImportFileAsTexture2D(File);
-		}
-	}
-	if (Still)
-	{
-		// raw bytes, see SVisexStill
-		Still->SRGB = false;
-		Still->UpdateResource();
-		StillBrush.SetResourceObject(Still);
-		StillBrush.ImageSize = FVector2D(Still->GetSizeX(), Still->GetSizeY());
-		StillBrush.DrawAs = ESlateBrushDrawType::Image;
-	}
-	UE_LOG(LogVisexLaunch, Display, TEXT("Launch cover: %s"), Still
-		? *FString::Printf(TEXT("still %s (%dx%d)"), *CoverImage, Still->GetSizeX(), Still->GetSizeY())
-		: *FString::Printf(TEXT("no still at %s, flat colour"), *CoverImage));
-}
-
-TSharedRef<SWidget> UVisexLaunchCover::MakeCover(TAttribute<FSlateColor> Tint)
-{
-	if (!Still)
-	{
-		return SNew(SImage).Image(FCoreStyle::Get().GetBrush(TEXT("WhiteBrush"))).ColorAndOpacity(Tint);
-	}
-	// aspect-fill: the film's last frame, cropped to the window, never barred
-	return SNew(SScaleBox)
-		.Stretch(EStretch::ScaleToFill)
-		[
-			SNew(SVisexStill).Brush(&StillBrush).Tint(Tint)
-		];
-}
-
-void UVisexLaunchCover::CoverFilmEnd()
-{
-	// The map can still be loading when the film ends, and the movie player then shows its
-	// black border until it has. Lay the cover over that: an overlay that shows once the film's own
-	// viewport has gone (the Apple streamer sends no clip-finished event). It runs on the
-	// loading thread's Slate, so it only reads the widget tree.
-	TSharedRef<FFilmEnd> State = MakeShared<FFilmEnd>();
-	FilmEnd = State;
-	TSharedRef<SWidget> Haze = SNew(SBox)
-		.Visibility_Lambda([State]
-		{
-			if (!State->Film.IsValid())
-			{
-				// movie border > overlay > [film box > film viewport, DPI scaler > holder > this]
-				TSharedPtr<SWidget> W = State->Self.Pin();
-				while (W.IsValid() && W->GetType() != FName(TEXT("SOverlay"))) { W = W->GetParentWidget(); }
-				FChildren* Box = W.IsValid() && W->GetChildren()->Num() ? W->GetChildren()->GetChildAt(0)->GetChildren() : nullptr;
-				if (Box && Box->Num()) { State->Film = Box->GetChildAt(0); }
-			}
-			const TSharedPtr<SWidget> Film = State->Film.Pin();
-			const bool bPlaying = Film.IsValid() && Film->GetVisibility() == EVisibility::Visible;
-			State->bSeen |= bPlaying;
-			if (State->bSeen && !bPlaying && State->EndTime == 0.0) { State->EndTime = FPlatformTime::Seconds(); }
-			return State->bSeen && !bPlaying ? EVisibility::HitTestInvisible : EVisibility::Collapsed;
-		})
-		[
-			MakeCover(FSlateColor(Still ? FLinearColor::White : CoverColor))
-		];
-	State->Self = Haze;
-	GetMoviePlayer()->SetSlateOverlayWidget(Haze);
-	GetMoviePlayer()->OnMoviePlaybackFinished().AddUObject(this, &UVisexLaunchCover::OnFilmFinished);
-}
-
-void UVisexLaunchCover::OnFilmFinished()
-{
-	GetMoviePlayer()->OnMoviePlaybackFinished().RemoveAll(this);
-	// The movie player leaves its black border in the window until the end of the first game
-	// frame, which can take a second (first PSOs): hand the window to the game now and draw it
-	// once, so what shows meanwhile is the cover, already in the viewport.
-	UGameEngine* Game = Cast<UGameEngine>(GEngine);
-	if (Game && FSlateApplication::IsInitialized())
-	{
-		Game->SwitchGameWindowToUseGameViewport();
-		FSlateApplication::Get().Tick();
-		FlushRenderingCommands();
-	}
 }
 
 void UVisexLaunchCover::Deinitialize()
 {
 	FCoreUObjectDelegates::PostLoadMapWithWorld.RemoveAll(this);
 	FTSTicker::RemoveTicker(TickHandle);
+	if (Player) { Player->Close(); }
 	Super::Deinitialize();
 }
 
@@ -181,20 +75,83 @@ void UVisexLaunchCover::OnMapLoaded(UWorld* World)
 		return;
 	}
 	bShown = true;
-	// The map loads while the film still plays, and the world doesn't tick until it ends: the
-	// cover goes in now, so the first game frame after the film's last is already the cover.
-	// With the still, the fade is a cross-fade: the frozen last frame thins into the live shot.
-	Cover = SNew(SBox)
+	// black, the film fitted over it (bars where the window isn't 16:10), the world live beneath
+	const FString File = FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir() / FilmPath);
+	if (!FilmPath.IsEmpty() && FPaths::FileExists(File))
+	{
+		Player = NewObject<UMediaPlayer>(this);
+		Player->PlayOnOpen = true;
+		Player->SetLooping(false);
+		Player->OnEndReached.AddDynamic(this, &UVisexLaunchCover::OnFilmEnd);
+		Player->OnMediaOpenFailed.AddDynamic(this, &UVisexLaunchCover::OnFilmFailed);
+		FilmTexture = NewObject<UMediaTexture>(this);
+		FilmTexture->AutoClear = true;
+		FilmTexture->ClearColor = FLinearColor::Black;
+		FilmTexture->SetMediaPlayer(Player);
+		FilmTexture->UpdateResource();
+		FilmBrush.SetResourceObject(FilmTexture);
+		FilmBrush.ImageSize = FilmSize;
+		FilmBrush.DrawAs = ESlateBrushDrawType::Image;
+		Source = NewObject<UFileMediaSource>(this);
+		Source->SetFilePath(File);
+		bFilm = Player->OpenSource(Source);
+		// its sound is the music's opening, which plays live instead (ReleaseMusic)
+		Player->SetNativeVolume(0.f);
+	}
+	FilmStart = FPlatformTime::Seconds();
+	UE_LOG(LogVisexLaunch, Display, TEXT("Launch film: %s"), bFilm ? *File : TEXT("none, black"));
+	Cover = SNew(SOverlay)
 		.Visibility(EVisibility::HitTestInvisible)
+		+ SOverlay::Slot()
 		[
-			MakeCover(TAttribute<FSlateColor>::CreateLambda([this]
-			{
-				return FSlateColor((Still ? FLinearColor::White : CoverColor).CopyWithNewOpacity(Opacity));
-			}))
+			SNew(SImage).Image(FCoreStyle::Get().GetBrush(TEXT("WhiteBrush")))
+				.ColorAndOpacity_Lambda([this] { return FSlateColor(FLinearColor(0.f, 0.f, 0.f, Opacity)); })
+		]
+		+ SOverlay::Slot()
+		[
+			SNew(SScaleBox)
+				.Stretch(EStretch::ScaleToFit)
+				.Visibility_Lambda([this] { return bFilm && bFilmPlaying ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
+				[
+					SNew(SImage).Image(&FilmBrush)
+				]
 		];
 	Viewport->AddViewportWidgetContent(Cover.ToSharedRef(), 10000);
+	if (bFilm && FSlateApplication::IsInitialized())
+	{
+		SkipInput = MakeShared<FVisexFilmSkip>(this);
+		FSlateApplication::Get().RegisterInputPreProcessor(SkipInput, 0);
+	}
 	HoldMusic(World);
 	TickHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateUObject(this, &UVisexLaunchCover::Tick));
+}
+
+void UVisexLaunchCover::OnFilmEnd()
+{
+	if (bFilm)
+	{
+		bFilm = false;
+		FilmEnd = FPlatformTime::Seconds();
+		UE_LOG(LogVisexLaunch, Display, TEXT("Launch film ended after %.2f s"), float(FilmEnd - FilmStart));
+	}
+}
+
+void UVisexLaunchCover::OnFilmFailed(FString Url)
+{
+	UE_LOG(LogVisexLaunch, Warning, TEXT("Launch film failed to open: %s"), *Url);
+	OnFilmEnd();
+}
+
+bool UVisexLaunchCover::SkipFilm()
+{
+	if (!bFilm)
+	{
+		return false;
+	}
+	UE_LOG(LogVisexLaunch, Display, TEXT("Launch film skipped"));
+	if (Player) { Player->Pause(); }
+	OnFilmEnd();
+	return true;
 }
 
 void UVisexLaunchCover::HoldMusic(UWorld* World)
@@ -209,13 +166,12 @@ void UVisexLaunchCover::HoldMusic(UWorld* World)
 	}
 }
 
-void UVisexLaunchCover::ReleaseMusic(float StartAt, float Fade)
+void UVisexLaunchCover::ReleaseMusic()
 {
+	// from its top, full volume: the film carries the same opening, so it runs on unbroken
 	for (const TWeakObjectPtr<UAudioComponent>& M : Music)
 	{
-		if (!M.IsValid()) { continue; }
-		if (Fade > 0.f) { M->FadeIn(Fade, 1.f, StartAt); }
-		else { M->Play(StartAt); }
+		if (M.IsValid()) { M->Play(0.f); }
 	}
 	Music.Reset();
 }
@@ -254,71 +210,13 @@ FString UVisexLaunchCover::Pending(UWorld* World)
 	return FString();
 }
 
-bool UVisexLaunchCover::Tick(float DeltaTime)
+void UVisexLaunchCover::RemoveCover()
 {
-	const double Now = FPlatformTime::Seconds();
-	// the first tick is the first frame after the film (nothing ticks while it plays)
-	if (StartTime == 0.0)
+	if (SkipInput.IsValid() && FSlateApplication::IsInitialized())
 	{
-		// its delta spans the whole load: nothing to judge by yet
-		StartTime = Now;
-		if (LaunchMusicOffset > 0.f)
-		{
-			// the film carries the soundtrack's opening: pick it up where the film left it, at full
-			// volume, no fade
-			const double Ended = FilmEnd.IsValid() && FilmEnd->EndTime > 0.0 ? FilmEnd->EndTime.load() : Now;
-			UE_LOG(LogVisexLaunch, Display, TEXT("Launch music from %.2f s, %.2f s after the film's end"), LaunchMusicOffset, float(Now - Ended));
-			ReleaseMusic(LaunchMusicOffset, 0.f);
-		}
-		return true;
+		FSlateApplication::Get().UnregisterInputPreProcessor(SkipInput);
 	}
-	UWorld* World = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr;
-	// the film ends on the menu shot at the drift's start (and without the panel): hold both
-	// until the cross-fade is over
-	if (Director.IsValid() && (FadeStart < 0.0 || Now - FadeStart < FadeTime))
-	{
-		Director->HoldDrift();
-		if (!Director->FadesOwnPanel()) { Director->SetPanelOpacity(0.f); }
-	}
-	if (FadeStart < 0.0)
-	{
-		FString Wait = World ? Pending(World) : FString(TEXT("world"));
-		// calm: no spike against the recent frame rate (a slow machine is calm at its own pace)
-		const bool bSpike = AvgDelta > 0.f && DeltaTime > FMath::Max(HitchSeconds, AvgDelta * 1.6f);
-		AvgDelta = AvgDelta > 0.f ? FMath::Lerp(AvgDelta, DeltaTime, 0.2f) : DeltaTime;
-		CalmFrames = (Wait.IsEmpty() && !bSpike) ? CalmFrames + 1 : 0;
-		if (Wait.IsEmpty() && CalmFrames < SettleFrames)
-		{
-			Wait = TEXT("calm frames");
-		}
-		if (!Wait.IsEmpty()) { LastWait = Wait; }
-		const float Held = float(Now - StartTime);
-		const bool bSettled = Wait.IsEmpty();
-		if ((bSettled && Held >= MinHold) || Held >= MaxHold)
-		{
-			FadeStart = Now;
-			HeldSeconds = Held;
-			ReleaseReason = bSettled
-				? FString::Printf(TEXT("settled, last wait %s"), LastWait.IsEmpty() ? TEXT("none (min hold)") : *LastWait)
-				: FString::Printf(TEXT("max hold, still waiting on %s"), *Wait);
-			ReleaseReason += FString::Printf(TEXT(" (%.0f ms frames)"), AvgDelta * 1000.f);
-			UE_LOG(LogVisexLaunch, Display, TEXT("Launch cover held %.2f s, released: %s"), HeldSeconds, *ReleaseReason);
-			ReleaseMusic(0.f, FadeTime);
-			if (FParse::Param(FCommandLine::Get(), TEXT("visexqa")))
-			{
-				// the live frame the still fades into, without the cover: diff it against the still
-				FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("QA/00_live_at_release.png"), false, false);
-			}
-		}
-		return true;
-	}
-	Opacity = 1.f - FMath::Clamp(float(Now - FadeStart) / FMath::Max(FadeTime, 0.01f), 0.f, 1.f);
-	// eased: the haze thins slowly at first, like the fog lifting
-	Opacity = FMath::InterpEaseInOut(0.f, 1.f, Opacity, 2.f);
-	if (Now - FadeStart < FadeTime)
-	{
-		return true;
-	}
+	SkipInput.Reset();
 	if (Cover.IsValid())
 	{
 		if (UGameViewportClient* Viewport = GetGameInstance()->GetGameViewportClient())
@@ -327,9 +225,87 @@ bool UVisexLaunchCover::Tick(float DeltaTime)
 		}
 		Cover.Reset();
 	}
-	// then the menu panel, which the film doesn't have, fades in over the live shot
+	if (Player) { Player->Close(); }
+	Player = nullptr;
+	FilmTexture = nullptr;
+	Source = nullptr;
+	FilmBrush.SetResourceObject(nullptr);
+}
+
+bool UVisexLaunchCover::Tick(float DeltaTime)
+{
+	const double Now = FPlatformTime::Seconds();
+	UWorld* World = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr;
+	// the world warms up behind the film: the scene keeps settling, the camera's drift waits at
+	// its start and runs from the fade on, the panel stays out (unless her arrival fades it in)
+	FString Wait = World ? Pending(World) : FString(TEXT("world"));
+	if (Director.IsValid() && FadeStart < 0.0) { Director->HoldDrift(); }
+	if (Director.IsValid() && (FadeStart < 0.0 || Now - FadeStart < FadeTime) && !Director->FadesOwnPanel())
+	{
+		Director->SetPanelOpacity(0.f);
+	}
+	if (FadeStart < 0.0)
+	{
+		// calm: no spike against the recent frame rate (a slow machine is calm at its own pace)
+		const bool bSpike = AvgDelta > 0.f && DeltaTime > FMath::Max(HitchSeconds, AvgDelta * 1.6f);
+		AvgDelta = AvgDelta > 0.f ? FMath::Lerp(AvgDelta, DeltaTime, 0.2f) : FMath::Min(DeltaTime, 0.1f);
+		CalmFrames = (Wait.IsEmpty() && !bSpike) ? CalmFrames + 1 : 0;
+		if (Wait.IsEmpty() && CalmFrames < SettleFrames) { Wait = TEXT("calm frames"); }
+		if (!Wait.IsEmpty()) { LastWait = Wait; }
+	}
+	if (bFilm)
+	{
+		if (!bFilmPlaying && Player && Player->IsPlaying() && Player->GetTime() > FTimespan::Zero())
+		{
+			// its first frame: the music starts from its top with it
+			bFilmPlaying = true;
+			UE_LOG(LogVisexLaunch, Display, TEXT("Launch film playing %.2f s after the world came up (%s)"),
+				float(Now - FilmStart), *Player->GetPlayerName().ToString());
+			FilmStart = Now;
+			ReleaseMusic();
+		}
+		const double Length = Player ? Player->GetDuration().GetTotalSeconds() : 0.0;
+		if (Now - FilmStart > (bFilmPlaying ? Length : 0.0) + FilmTimeout)
+		{
+			UE_LOG(LogVisexLaunch, Warning, TEXT("Launch film timed out (%s)"), bFilmPlaying ? TEXT("playing") : TEXT("never opened"));
+			OnFilmEnd();
+		}
+		if (bFilm) { return true; }
+	}
+	if (FadeStart < 0.0)
+	{
+		// the film is over (it ends on black): up from black now, or once the scene has settled
+		if (FilmEnd < 0.0) { FilmEnd = Now; }
+		ReleaseMusic();
+		const float Held = float(Now - FilmEnd);
+		if (!Wait.IsEmpty() && Held < MaxHold)
+		{
+			return true;
+		}
+		FadeStart = Now;
+		HeldSeconds = Held;
+		ReleaseReason = Wait.IsEmpty()
+			? FString::Printf(TEXT("settled, last wait %s"), LastWait.IsEmpty() ? TEXT("none") : *LastWait)
+			: FString::Printf(TEXT("max hold, still waiting on %s"), *Wait);
+		ReleaseReason += FString::Printf(TEXT(" (%.0f ms frames)"), AvgDelta * 1000.f);
+		UE_LOG(LogVisexLaunch, Display, TEXT("Launch fade from black %.3f s after the film's end%s: %s"),
+			HeldSeconds, HeldSeconds > 0.1f ? TEXT(" (held for the scene)") : TEXT(""), *ReleaseReason);
+		if (FParse::Param(FCommandLine::Get(), TEXT("visexqa")))
+		{
+			FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("QA/00_live_at_release.png"), false, false);
+		}
+		return true;
+	}
+	// eased: the black thins slowly at first, like the fog lifting
+	const float T = FMath::Clamp(float(Now - FadeStart) / FMath::Max(FadeTime, 0.01f), 0.f, 1.f);
+	Opacity = FMath::InterpEaseInOut(0.f, 1.f, 1.f - T, 2.f);
+	if (T < 1.f)
+	{
+		return true;
+	}
+	RemoveCover();
+	// then the menu panel fades in over the live shot (unless her arrival fades it in itself)
 	const float PanelAlpha = FMath::Clamp(float(Now - FadeStart - FadeTime) / FMath::Max(PanelFadeTime, 0.01f), 0.f, 1.f);
-	// (unless her arrival walk fades it in itself)
 	if (Director.IsValid() && !Director->FadesOwnPanel()) { Director->SetPanelOpacity(FMath::InterpEaseInOut(0.f, 1.f, PanelAlpha, 2.f)); }
 	if (PanelAlpha < 1.f)
 	{

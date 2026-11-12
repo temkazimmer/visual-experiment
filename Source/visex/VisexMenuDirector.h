@@ -504,23 +504,28 @@ public:
 	float ReturnWalkMax = 600.f;
 
 	// first launch: she walks in to the column and leans while the panel fades in (visex.Menu.Arrival)
-	/** Frame 0: where she is (world XY, on the ground) and her yaw, mid-stride. The intro film's
-	 *  last frame lands here. */
+	/** Where she starts (world XY, on the ground), out of the menu camera's frame (left, the
+	 *  steps side: she crosses in profile, in frame ~1.6 s later); she walks
+	 *  in from there at her own pace, facing her spot. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Arrival")
-	FVector2D ArrivalStart = FVector2D(9560.f, -1010.f);
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Arrival")
+	FVector2D ArrivalStart = FVector2D(9529.f, -1322.f);
+	/** Unused (the start faces her spot); kept so saved levels load. */
+	UPROPERTY()
 	float ArrivalStartYaw = 75.f;
-	/** Her pace (cm/s): 0.6 of the walk's 190, as the film walks her. */
+	/** Her pace (cm/s): calm, about 0.6 of the walk's 190. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Arrival", meta = (ClampMin = "10"))
-	float ArrivalSpeed = 114.f;
-	/** Seconds of walk her pose is run through before frame 0, so frame 0 is mid-stride. */
+	float ArrivalSpeed = 115.f;
+	/** Seconds of walk her pose is run through before she starts, so she starts mid-stride. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Arrival", meta = (ClampMin = "0"))
 	float ArrivalPreRoll = 1.5f;
-	/** Seconds after frame 0 until the panel starts to fade in, and the fade's length. */
+	/** Seconds after she is first in frame until the panel starts to fade in, and the fade's
+	 *  length (it also starts by ArrivalPanelLatest s after the walk began, in frame or not). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Arrival", meta = (ClampMin = "0"))
 	float ArrivalPanelFadeStart = 1.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Arrival", meta = (ClampMin = "0.05"))
 	float ArrivalPanelFadeTime = 1.6f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Arrival", meta = (ClampMin = "0"))
+	float ArrivalPanelLatest = 5.f;
 	/** Replays the arrival from frame 0 (for tuning and the film); visex.Menu.ArrivalFreeze 1 holds it there. */
 	UFUNCTION(BlueprintCallable, Category = "Menu|Arrival")
 	void PlayArrival();
@@ -752,6 +757,7 @@ private:
 	bool bArrivalRan = false;
 	FVector FrozenVelocity = FVector::ZeroVector;
 	float ArrivalClock = -1.f;      // seconds since the arrival began; <0 when no fade runs
+	float ArrivalInFrame = -1.f;    // ArrivalClock when she first came into the menu camera's frame
 	float PanelInAlpha = 1.f;       // the panel's fade-in; input waits for 1
 	int32 ArrivalQueued = 0;        // pressed while she finished walking: 1 Confirm, 2 ToggleMenu
 	FVector PlantAt[2];             // the planted foot's spot on the ground, per foot
