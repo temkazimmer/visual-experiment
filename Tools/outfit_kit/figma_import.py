@@ -84,13 +84,19 @@ for i, k in enumerate(("leg_r", "leg_l", "torso")):
     reg[masks[k]] = 2 - i
 rows = json.load(open(os.path.join(D, "figma.json")))
 pieces, missed = [], 0
-for name, view, closed, weight, fill, flat in rows:
+# the side view shows her left; everything drawn there also goes on her right, mirrored
+# (the front and back views show both sides, so they are cast as drawn)
+for (name, view, closed, weight, fill, flat), mirrored in [(r, False) for r in rows] + [(r, True) for r in rows if r[1] == "s"]:
     view = {"f": "front", "s": "side", "b": "back"}[view]
+    if mirrored:
+        name = name + " · mirrored"
     P = resample(np.array(flat, float).reshape(-1, 2), bool(closed))
     layer, meta = classify(name, bool(closed), weight, fill)
     pts, nrm, anc, rg = [], [], [], []
     for u, v in P:
         o, d = ray(view, u, v)
+        if mirrored:
+            o, d = Vector((-o.x, o.y, o.z)), Vector((-d.x, d.y, d.z))
         loc, n, fi, _ = bvh.ray_cast(o, d, 600)
         if loc is None or n.dot(-d) < GRAZE:
             missed += 1

@@ -220,3 +220,62 @@ WARNING #36: jumps 61.0 cm: part of it landed on another body part
 - top: side her left, +67 deg, thigh_mid -2.0 cm (z 70.6)
 - bottom: side her left, +60 deg, ankle -7.9 cm (z 0.3)
 - outermost: side her left, +65 deg, ankle -6.6 cm (z 1.6)
+
+**#37 taut 1.0** (rgb 0.05 0.05 0.06): taut, open line, 15.8 cm, torso, as drawn in Figma (side view) {"slot": "Binding", "width_cm": 1.0}
+- start: front her right, -32 deg, underbust -3.0 cm (z 117.5)
+- middle: side her right, -79 deg, underbust -3.3 cm (z 117.2)
+- end: side her right, -111 deg, underbust -4.8 cm (z 115.7)
+
+WARNING #38: jumps 11.2 cm: part of it landed on another body part
+**#38 panel Tartan bind** (rgb 0.72 0.08 0.10): panel, closed outline, 28.8 cm, torso, as drawn in Figma (side view) {"slot": "Tartan", "bind": true}
+- start: side her right, -46 deg, underbust +3.3 cm (z 123.9)
+- top: side her right, -49 deg, bust +6.2 cm (z 134.9)
+- bottom: side her right, -46 deg, underbust +3.3 cm (z 123.9)
+- outermost: side her right, -64 deg, bust +1.1 cm (z 129.9)
+
+WARNING #39: jumps 4.8 cm: part of it landed on another body part
+**#39 panel Satin bind** (rgb 0.05 0.05 0.06): panel, closed outline, 24.0 cm, torso, as drawn in Figma (side view) {"slot": "Satin", "bind": true}
+- start: side her right, -103 deg, neck +4.1 cm (z 154.3)
+- top: back her right, -143 deg, neck +4.4 cm (z 154.6)
+- bottom: side her right, -94 deg, neck +0.6 cm (z 150.8)
+- outermost: side her right, -116 deg, neck +1.3 cm (z 151.5)
+
+**#40 panel Satin bind** (rgb 0.05 0.05 0.06): panel, closed outline, 0.0 cm, torso, as drawn in Figma (side view) {"slot": "Satin", "bind": true}
+- at: side her right, -93 deg, neck +0.5 cm (z 150.7)
+
+**#41 strap 0.9** (rgb 0.05 0.05 0.06): strap, open line, 3.2 cm, torso, as drawn in Figma (side view) {"slot": "Binding", "width_cm": 0.9}
+- start: side her right, -104 deg, neck +0.5 cm (z 150.7)
+- middle: side her right, -111 deg, neck +1.0 cm (z 151.2)
+- end: side her right, -119 deg, neck +1.5 cm (z 151.7)
+
+**#42 strap 0.9** (rgb 0.05 0.05 0.06): strap, open line, 13.1 cm, torso, as drawn in Figma (side view) {"slot": "Binding", "width_cm": 0.9}
+- start: side her right, -68 deg, bust -0.9 cm (z 127.9)
+- middle: side her right, -90 deg, bust -1.6 cm (z 127.2)
+- end: side her right, -118 deg, bust -3.5 cm (z 125.2)
+
+**#43 panel Tartan bind** (rgb 0.72 0.08 0.10): panel, closed outline, 3.8 cm, leg_r, as drawn in Figma (side view) {"slot": "Tartan", "bind": true}
+- start: side her right, -63 deg, crotch +2.1 cm (z 87.6)
+- top: side her right, -63 deg, crotch +2.1 cm (z 87.6)
+- bottom: side her right, -65 deg, crotch +0.3 cm (z 85.8)
+- outermost: side her right, -65 deg, crotch +0.7 cm (z 86.2)
+
+WARNING #44: jumps 8.1 cm: part of it landed on another body part
+**#44 panel Tartan bind** (rgb 0.72 0.08 0.10): panel, closed outline, 29.0 cm, torso, as drawn in Figma (side view) {"slot": "Tartan", "bind": true}
+- start: side her right, -133 deg, hip_top -8.0 cm (z 93.7)
+- top: back her right, -136 deg, hip_top -4.1 cm (z 97.6)
+- bottom: side her right, -110 deg, crotch +0.5 cm (z 86.0)
+- outermost: side her right, -109 deg, crotch +0.7 cm (z 86.2)
+
+WARNING #45: jumps 8.1 cm: part of it landed on another body part
+**#45 panel Lace** (rgb 1.00 1.00 1.00): panel, closed outline, 42.3 cm, leg_r, as drawn in Figma (side view) {"slot": "Lace", "bind": false}
+- start: side her right, -64 deg, thigh_mid +6.0 cm (z 78.6)
+- top: side her right, -64 deg, thigh_mid +6.0 cm (z 78.6)
+- bottom: side her right, -104 deg, thigh_mid -2.0 cm (z 70.6)
+- outermost: side her right, -86 deg, thigh_mid +6.0 cm (z 78.6)
+
+WARNING #46: jumps 61.0 cm: part of it landed on another body part
+**#46 panel Sheer** (rgb 1.00 1.00 1.00): panel, closed outline, 175.8 cm, leg_r, as drawn in Figma (side view) {"slot": "Sheer", "bind": false}
+- start: side her right, -67 deg, thigh_mid -2.0 cm (z 70.6)
+- top: side her right, -67 deg, thigh_mid -2.0 cm (z 70.6)
+- bottom: side her right, -60 deg, ankle -7.9 cm (z 0.3)
+- outermost: side her right, -65 deg, ankle -6.6 cm (z 1.6)
