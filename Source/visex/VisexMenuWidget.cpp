@@ -79,8 +79,8 @@ UTextBlock* UVisexMenuWidget::MakeText(const FText& Text, int32 Size, FName Type
 	Font.LetterSpacing = Spacing;
 	Block->SetFont(Font);
 	Block->SetColorAndOpacity(FSlateColor(Color));
-	// a soft dark shadow under every line, so the white reads on the bright haze (Tema)
-	Block->SetShadowOffset(ShadowOffset);
+	// an optional drop shadow (off by default)
+	Block->SetShadowOffset(ShadowOpacity > 0.f ? ShadowOffset : FVector2D::ZeroVector);
 	Block->SetShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, ShadowOpacity));
 	return Block;
 }

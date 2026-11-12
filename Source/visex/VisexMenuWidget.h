@@ -96,10 +96,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
 	FLinearColor AccentColor = FLinearColor::White;
 
-	/** A dark feathered plate behind the text, inside the panel so it tilts with it; works with
-	 * the menu camera's corner shade (AVisexMenuDirector::CornerShade). */
+	/** A dark feathered plate behind the text, inside the panel so it tilts with it. Off: Tema
+	 * wants one big soft darkening instead (AVisexMenuDirector::CornerShade). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
-	TSoftObjectPtr<class UMaterialInterface> ShadeMaterial = TSoftObjectPtr<class UMaterialInterface>(FSoftObjectPath(TEXT("/Game/VisEx/UI/M_MenuShade.M_MenuShade")));
+	TSoftObjectPtr<class UMaterialInterface> ShadeMaterial;
 
 	/** Room round the text (layout px) for the shade to fade out in; the director grows the
 	 * panel by twice this, so the text stays where it was. */
@@ -130,12 +130,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
 	float IdleOpacity = 0.6f;
 
-	/** Drop shadow under the text, in layout units before Supersample. */
+	/** Drop shadow under the text, in layout units before Supersample. Off (Tema: no shadows on
+	 * the items); the corner shade carries readability. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
 	FVector2D ShadowOffset = FVector2D(3.f, 4.f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
-	float ShadowOpacity = 0.9f;
+	float ShadowOpacity = 0.f;
 
 	UFUNCTION(BlueprintCallable, Category = "Menu")
 	void SetSelected(int32 Index);
