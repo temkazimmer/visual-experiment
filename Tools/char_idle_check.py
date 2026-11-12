@@ -74,7 +74,7 @@ def shoot(view, t):
     look = at + unreal.Vector(0, 0, -3)
     cap.set_actor_location_and_rotation(eye, unreal.MathLibrary.find_look_at_rotation(eye, look), False, False)
     comp.capture_scene()
-    name = "idle_%s_%s_%02d.png" % (TAG, view, int(t))
+    name = "idle_%s_%s_%s.png" % (TAG, view, t if isinstance(t, str) else "%02d" % int(t))
     unreal.RenderingLibrary.export_render_target(world, rt, shot_dir, name)
 
 
@@ -97,6 +97,17 @@ def sample():
         row["hand_" + s] = (h[0] - pel[0], h[1] - pel[1], h[2] - pel[2])
         row["gap_" + s] = gap(s)
     state["rows"].append(row)
+    # stills keyed to what she is doing, not the clock (the idle's phase at spawn varies)
+    when = {"left": row["hand_l"][2] > 8 and abs(row["head"]) < 6 and row["t"] > 2,
+            "look": row["hand_l"][2] > 8 and abs(row["head"]) > 28,
+            "right": row["hand_r"][2] > 10}
+    for name, views in globals().get("STATE_SHOTS", {}).items():
+        if when[name] and name not in state["done"]:
+            state["done"].add(name)
+            for v in views:
+                shoot(v, name)
+            print_name = "idle %s still at %.1f s" % (name, row["t"])
+            unreal.log(print_name)
 
 
 def report():
@@ -128,6 +139,13 @@ def tick(dt):
         if state["t"] >= state["next"]:
             sample()
             state["next"] += 0.5
+        loop = globals().get("LOOP", 37.8)   # shots keyed to the idle clip's own clock (she idles from spawn)
+        ct = pawn.get_game_time_since_creation() % loop
+        for ts, views in globals().get("CLIP_SHOTS", {}).items():
+            if ("c", ts) not in state["done"] and ts <= ct < ts + 1.0:
+                state["done"].add(("c", ts))
+                for v in views:
+                    shoot(v, ts)
         for ts, views in SHOTS.items():
             if ts not in state["done"] and state["t"] >= ts:
                 state["done"].add(ts)

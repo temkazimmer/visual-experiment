@@ -30,9 +30,9 @@ exec(compile(_kit, "char_pose_mermaid.py", "exec"), globals())
 UNARMED = "/Game/Characters/Mannequins/Anims/Unarmed"
 E = "/Game/FemaleEveryday/Volume1/Animations/AS_%s_Idle_F"
 CHAIN = ["LookAround", "Neutral_B", "WeightShift_Right"]          # each starts and ends on the rest pose
-POSTURE = globals().get("POSTURE", 9.0)       # deg the spine carries the chest back (walk: 11)
+POSTURE = globals().get("POSTURE", 4.0)       # deg the spine carries the chest back (the pack stands taller than the walk clip; this matches the walk)
 SHOULDERS = globals().get("SHOULDERS", 9.0)   # deg the collarbones draw back
-HIP_OUT = globals().get("HIP_OUT", 0.0)       # cm the hip hand sits further out than the pack's
+HIP_OUT = globals().get("HIP_OUT", {"l": -2.2, "r": -3.8})  # cm the hip hand sits further out than the pack's (measured: palm onto her skin)
 SCAN = globals().get("SCAN", 1.0)             # share of the look-around
 
 
@@ -123,7 +123,7 @@ def hip_hand(s, w):
     H = HIP[s]
     at = add(P, rot(Q, H["at"]))
     out = norm(perp(sub(at, P), Z))
-    at = add(at, mul(out, HIP_OUT))
+    at = add(at, mul(out, HIP_OUT[s]))
     reach(s, at, sub(add(P, rot(Q, H["elbow"])), pos("upperarm_" + s)))
     set_world_rot("hand_" + s, qmul(Q, H["q"]))
     for b, q in H["fingers"].items():
