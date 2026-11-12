@@ -152,6 +152,10 @@ for name, (d, right, (h0, h1)) in VIEWS.items():
                                h_range_cm=[h0, h1],
                                note="pixel (u, v) -> cm: along image_right = h0 + u / px, z = z_top - v / px")
 if not OUTFIT:
+  import numpy as np
+  # her T-posed skin, same vertex numbering as blender_outfit.py: the builder projects every
+  # skin vertex into the views with it (Tools/outfit_kit/kit_build.py)
+  np.save(os.path.join(OUT, "tpose.npy"), np.array([v.co[:] for v in body.data.vertices], np.float32))
   with open(os.path.join(OUT, "views.json"), "w") as f:
     json.dump(meta, f, indent=1)
 print("KIT views ->", OUT)

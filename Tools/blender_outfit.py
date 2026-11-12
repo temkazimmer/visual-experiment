@@ -1591,6 +1591,8 @@ OUTFITS = {"Noir": noir, "Garter": garter_set, "Cocoa": cocoa, "Fishnet": fishne
            "BodystockingSkirt": lambda: (bodystocking(), skirt()), "Tartan": tartan, "Harness": harness,
            "Mirror": mirror,   # premium bundle 01
            "Skirt": lambda: skirt(off=1.0, flare=1.5, swing=0.0, skin_to=LM["crotch"] + 2.0, tight=True, follow=True, cling=0.7)}   # the cloth skirt: follows her shape, only the hem moves (Tema 2026-11-10); 1 cm off at the top, 4 at the hem (the cloth gets no bounce morphs); skin weights to just above the crotch, so the hip front cannot push through
+# Outfit Kit (Tools/outfit_kit, Docs/OUTFIT_KIT.md): each OutfitKit/<Name>/ drawn in Figma builds as "Kit<Name>"
+exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "outfit_kit", "kit_build.py")).read())
 CLOTH = {"Skirt"}                                # simulated in UE: the default body's morphs baked into the rest shape
 
 
