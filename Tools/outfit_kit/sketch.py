@@ -388,6 +388,9 @@ class Snapper:
         if a:
             a.data.foreach_get("value", self.reg)
 
+    def dist(self, q):
+        return self.bvh.find_nearest(Vector(q))[3]
+
     def snap(self, q):
         loc, nrm, fi, _ = self.bvh.find_nearest(Vector(q))
         tri = self.T[fi]
@@ -414,6 +417,260 @@ def describe(p, info):
     return "%s %s, %+.0f deg, %s %+.1f cm (z %.1f)" % (face, side, ang, k, dz, p[2])
 
 
+AIR = 2.0           # cm: a point further than this from her skin was drawn in the air
+MERGE = 1.3         # cm: overdrawn strokes closer than this become one line
+SPUR = 2.5          # cm: loose ends and scribbles shorter than this are dropped
+STUB = 5.0          # cm: a cleaned line shorter than this is dropped
+KNOT = 7.0          # cm: a closed loop shorter than this is a mark, not an outline
+
+
+def split_off_skin(P, cyc, snap):
+    ok = np.array([snap.dist(q) <= AIR for q in P])
+    if ok.all():
+        return [(P, cyc)]
+    runs, cur = [], []
+    for q, k in zip(P, ok):
+        if k:
+            cur.append(q)
+        elif cur:
+            runs.append(cur)
+            cur = []
+    if cur:
+        runs.append(cur)
+    return [(np.array(r), False) for r in runs if len(r) >= 1]
+
+
+GAP = 3.0           # cm: loose ends this close to another line are joined; junctions this close merge
+TURN = 0.6          # cos of the largest bend a line may take to carry on through a junction (~53 deg)
+
+
+def continue_through(lines, C, adj):
+    """At each junction, a line carries on into the branch that continues it most straight, so a
+    bra band crossing a side seam stays one band. Returns joined (node path, closed) lines."""
+    from collections import defaultdict
+
+    def tangent(path, at_start):
+        P = C[path] if at_start else C[path[::-1]]
+        s = np.cumsum(np.r_[0, np.linalg.norm(np.diff(P, axis=0), axis=1)])
+        k = int(np.searchsorted(s, 3.0))
+        v = P[min(k, len(P) - 1)] - P[0]
+        return v / (np.linalg.norm(v) or 1)
+    ends = defaultdict(list)                    # junction node -> [(line index, at its start?)]
+    for i, (path, closed) in enumerate(lines):
+        if closed:
+            continue
+        ends[path[0]].append((i, True))
+        ends[path[-1]].append((i, False))
+    link = {}
+    for node, es in ends.items():
+        if len(es) < 2:
+            continue
+        cand = []
+        for x in range(len(es)):
+            for y in range(x + 1, len(es)):
+                (i, si), (j, sj) = es[x], es[y]
+                if i == j:
+                    continue
+                d = float(tangent(lines[i][0], si) @ tangent(lines[j][0], sj))
+                if d < -TURN:
+                    cand.append((d, es[x], es[y]))
+        for d, a, b in sorted(cand):
+            if a not in link and b not in link:
+                link[a], link[b] = b, a
+    out, done = [], set()
+    for i, (path, closed) in enumerate(lines):
+        if i in done:
+            continue
+        if closed:
+            out.append((path, True))
+            done.add(i)
+            continue
+        # walk back to the start of the chain this line belongs to
+        cur, at_start, seen = i, True, {i}
+        while (cur, at_start) in link:
+            j, sj = link[(cur, at_start)]
+            if j in seen:
+                break
+            seen.add(j)
+            cur, at_start = j, not sj
+        # now walk forward from (cur, at_start) collecting paths
+        seq, k, s_ = [], cur, at_start
+        loop = False
+        while True:
+            done.add(k)
+            p = lines[k][0] if s_ else lines[k][0][::-1]
+            seq = seq + (p[1:] if seq else p)
+            nxt = link.get((k, not s_))
+            if nxt is None:
+                break
+            if nxt[0] in done:
+                loop = nxt[0] == cur
+                break
+            k, s_ = nxt[0], nxt[1]
+        out.append((seq, loop or (len(seq) > 2 and seq[0] == seq[-1])))
+    return out
+
+
+def consolidate(strokes, snap):
+    """Sketchy, overdrawn strokes -> clean lines. Points closer than MERGE share a node; nodes
+    are linked along the strokes; zig-zag triangles, short loose ends and dots are removed; what
+    is left is cut into lines at the junctions (a loop comes out closed)."""
+    from collections import defaultdict
+    cen, cnt, grid, seqs = [], [], defaultdict(list), []
+    for P, cyc in strokes:
+        ids = []
+        for p in P:
+            c = tuple((p // MERGE).astype(int))
+            best, bd = None, MERGE
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    for dz in (-1, 0, 1):
+                        for k in grid.get((c[0] + dx, c[1] + dy, c[2] + dz), ()):
+                            dd = np.linalg.norm(cen[k] / cnt[k] - p)
+                            if dd < bd:
+                                best, bd = k, dd
+            if best is None:
+                best = len(cen)
+                cen.append(p.copy())
+                cnt.append(1)
+                grid[c].append(best)
+            else:
+                cen[best] = cen[best] + p
+                cnt[best] += 1
+            ids.append(best)
+        if cyc and len(ids) > 2:
+            ids.append(ids[0])
+        seqs.append(ids)
+    C = np.array([c / n for c, n in zip(cen, cnt)]) if cen else np.zeros((0, 3))
+    adj = defaultdict(set)
+    for ids in seqs:
+        for a, b in zip(ids[:-1], ids[1:]):
+            if a != b:
+                adj[a].add(b)
+                adj[b].add(a)
+    L = lambda a, b: float(np.linalg.norm(C[a] - C[b]))
+
+    def cut(a, b):
+        adj[a].discard(b)
+        adj[b].discard(a)
+    changed = True
+    while changed:                              # zig-zag triangles: drop their longest side
+        changed = False
+        for a in list(adj):
+            for b in list(adj[a]):
+                for c in list(adj[a] & adj[b]):
+                    e = max(((a, b), (b, c), (a, c)), key=lambda t: L(*t))
+                    cut(*e)
+                    changed = True
+                    break
+                if changed:
+                    break
+            if changed:
+                break
+
+    def walk(a, b):
+        """From node a through b along degree-2 nodes; returns the node list."""
+        path, prev, cur = [a, b], a, b
+        while len(adj[cur]) == 2 and cur != a:
+            nxt = next(n for n in adj[cur] if n != prev)
+            path.append(nxt)
+            prev, cur = cur, nxt
+        return path
+    changed = True
+    while changed:                              # loose ends and scribbles
+        changed = False
+        for a in [n for n in adj if len(adj[n]) == 1]:
+            if len(adj[a]) != 1:
+                continue
+            path = walk(a, next(iter(adj[a])))
+            length = sum(L(p, q) for p, q in zip(path[:-1], path[1:]))
+            end_deg = len(adj[path[-1]])
+            if length < SPUR and (end_deg >= 3 or end_deg == 1):
+                for p, q in zip(path[:-1], path[1:]):
+                    cut(p, q)
+                changed = True
+    # gaps: a loose end close to another line is joined to it (strokes that didn't quite touch)
+    ends = [n for n in adj if len(adj[n]) == 1]
+    for a in ends:
+        own = set(walk(a, next(iter(adj[a])))) if adj[a] else {a}
+        near = [n for n in adj if adj[n] and n not in own and L(a, n) < GAP]
+        if near:
+            b = min(near, key=lambda n: L(a, n))
+            adj[a].add(b)
+            adj[b].add(a)
+    # crossings drawn as a cluster of junctions a few mm apart become one junction
+    for _ in range(3):
+        parent = {n: n for n in adj}
+
+        def root(n):
+            while parent[n] != n:
+                parent[n] = parent[parent[n]]
+                n = parent[n]
+            return n
+        merged = False
+        for a in [n for n in adj if len(adj[n]) >= 3]:
+            for b in list(adj[a]):
+                path = walk(a, b)
+                length = sum(L(p, q) for p, q in zip(path[:-1], path[1:]))
+                if len(adj[path[-1]]) >= 3 and length < GAP and path[-1] != a:
+                    for p in path:
+                        parent[root(p)] = root(a)
+                    merged = True
+        if not merged:
+            break
+        groups = defaultdict(list)
+        for n in adj:
+            groups[root(n)].append(n)
+        for r, ns in groups.items():
+            if len(ns) > 1:
+                C[r] = C[ns].mean(0)
+        new = defaultdict(set)
+        for a in adj:
+            for b in adj[a]:
+                ra, rb = root(a), root(b)
+                if ra != rb:
+                    new[ra].add(rb)
+                    new[rb].add(ra)
+        adj.clear()
+        adj.update(new)
+    lines, used = [], set()
+    starts = [n for n in adj if len(adj[n]) not in (0, 2)]
+    for a in starts:
+        for b in list(adj[a]):
+            if (a, b) in used:
+                continue
+            path = walk(a, b)
+            for p, q in zip(path[:-1], path[1:]):
+                used.add((p, q))
+                used.add((q, p))
+            lines.append((path, path[0] == path[-1]))
+    for a in list(adj):                         # pure loops (no junction on them)
+        for b in list(adj[a]):
+            if (a, b) in used:
+                continue
+            path = walk(a, b)
+            for p, q in zip(path[:-1], path[1:]):
+                used.add((p, q))
+                used.add((q, p))
+            lines.append((path, True))
+    lines = continue_through(lines, C, adj)
+    out = []
+    for path, closed in lines:
+        if closed and path[0] == path[-1]:
+            path = path[:-1]
+        P = C[path]
+        if len(P) > 2:
+            P = smooth(resample(P, closed), closed, 6)       # (smoothing shrinks a jagged little knot)
+        length = np.linalg.norm(np.diff(np.vstack([P, P[:1]]) if closed else P, axis=0), axis=1).sum()
+        if closed and length < KNOT:                # a little knot of ink: a mark (bow, ring, clasp?)
+            out.append((P.mean(0)[None], False, "small mark: a knot of ink, likely hardware or a bow"))
+            continue
+        if length < STUB or len(P) < 2:
+            continue
+        out.append((P, closed, "cleaned"))
+    return out
+
+
 def layer_rgb(name):
     L = bpy.data.objects["Sketch"].data.layers.get(name)
     return tuple(L.tint_color) if L else (1, 1, 1)
@@ -431,21 +688,40 @@ def cmd_export():
         if L.name == "guides" or not len(L.frames):
             continue
         meta = parse_layer(L.name)
+        raw = []
         for st in L.frames[0].drawing.strokes:
             P = np.array([p.position[:] for p in st.points])
-            if not len(P):
-                continue
-            P = P @ Mw[:3, :3].T + Mw[:3, 3]
-            if meta["kind"] == "point":
+            if len(P):
+                raw.append((P @ Mw[:3, :3].T + Mw[:3, 3], bool(st.cyclic)))
+        on_skin, dropped = [], 0
+        for P, cyc in raw:                       # strokes that missed her land in the air: drop those points
+            for run, c in split_off_skin(P, cyc, snap):
+                on_skin.append((run, c))
+            dropped += sum(snap.dist(q) > AIR for q in P)
+        if dropped:
+            print("KIT %s: dropped %d points drawn off her body" % (L.name, dropped))
+        parts = []
+        if meta["kind"] == "point":
+            for P, _ in on_skin:
                 c = P.mean(0)
-                parts = [(c[None], False, "on the centre")] if abs(c[0]) < CENTRE or not mirror else \
-                        [(c[None], False, "mirrored pair"), ((c * (-1, 1, 1))[None], False, "mirror")]
-            else:
-                closed = bool(st.cyclic) or (meta["kind"] == "panel" and len(P) > 4
-                                              and np.linalg.norm(P[0] - P[-1]) < 3.0)
-                P = smooth(resample(P, closed), closed)
-                parts = mirror_parts(P, closed) if mirror else [(P, closed, "as drawn")]
-            for Q, closed, how in parts:
+                parts += [(c[None], False, "on the centre")] if abs(c[0]) < CENTRE or not mirror else \
+                         [(c[None], False, "mirrored pair"), ((c * (-1, 1, 1))[None], False, "mirror")]
+        else:
+            strokes = []
+            for P, cyc in on_skin:
+                P = resample(P, cyc) if len(P) > 1 else P
+                if mirror:
+                    for e in (0, -1):            # ends near the centre line sit on it, so halves meet
+                        if abs(P[e, 0]) < CENTRE:
+                            P[e, 0] = 0.0
+                strokes.append((P, cyc))
+                if mirror:
+                    strokes.append((P * np.array((-1.0, 1.0, 1.0)), cyc))
+            for Q, closed, how in consolidate(strokes, snap):
+                parts.append((Q, closed, how + (", mirrored" if mirror else "")))
+        for Q, closed, how in parts:
+            if True:
+                meta_p = dict(meta, kind="mark") if how.startswith("small mark") else meta
                 snapped = [snap.snap(q) for q in Q]
                 pos = np.array([s_[0] for s_ in snapped])
                 seg = np.linalg.norm(np.diff(np.vstack([pos, pos[:1]]) if closed else pos, axis=0), axis=1)
@@ -453,7 +729,7 @@ def cmd_export():
                 if gap > 4 * STEP:
                     print("KIT warning: %s jumps %.1f cm (a point snapped to another body part)" % (L.name, gap))
                 pieces.append(dict(
-                    id=len(pieces) + 1, layer=L.name, **meta, closed=closed, symmetry=how,
+                    id=len(pieces) + 1, layer=L.name, **meta_p, closed=closed, symmetry=how,
                     length_cm=round(float(seg.sum()), 1),
                     warning=("jumps %.1f cm between points: part of it snapped to another body part" % gap) if gap > 4 * STEP else None,
                     rgb=[round(c, 3) for c in layer_rgb(L.name)],
