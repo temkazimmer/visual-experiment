@@ -26,6 +26,38 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogVisexLaunch, Log, All);
 
+/**
+ * The still, drawn byte for byte. Slate would decode an sRGB texture with the sRGB curve and
+ * re-encode with gamma 2.2 (Mac), lifting the darks; the film and the game viewport both go
+ * to the screen ungamma'd, so the still does too: sampled raw (texture not sRGB), NoGamma.
+ */
+class SVisexStill : public SLeafWidget
+{
+public:
+	SLATE_BEGIN_ARGS(SVisexStill) {}
+		SLATE_ARGUMENT(const FSlateBrush*, Brush)
+		SLATE_ATTRIBUTE(FSlateColor, Tint)
+	SLATE_END_ARGS()
+
+	void Construct(const FArguments& InArgs)
+	{
+		Brush = InArgs._Brush;
+		Tint = InArgs._Tint;
+	}
+	virtual int32 OnPaint(const FPaintArgs&, const FGeometry& Geometry, const FSlateRect&, FSlateWindowElementList& Out,
+		int32 Layer, const FWidgetStyle& Style, bool) const override
+	{
+		const FLinearColor C = Style.GetColorAndOpacityTint() * Tint.Get().GetSpecifiedColor();
+		FSlateDrawElement::MakeBox(Out, Layer, Geometry.ToPaintGeometry(), Brush, ESlateDrawEffect::NoGamma, C);
+		return Layer;
+	}
+	virtual FVector2D ComputeDesiredSize(float) const override { return Brush ? Brush->ImageSize : FVector2D::ZeroVector; }
+
+private:
+	const FSlateBrush* Brush = nullptr;
+	TAttribute<FSlateColor> Tint;
+};
+
 void UVisexLaunchCover::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
@@ -60,6 +92,9 @@ void UVisexLaunchCover::LoadStill()
 	}
 	if (Still)
 	{
+		// raw bytes, see SVisexStill
+		Still->SRGB = false;
+		Still->UpdateResource();
 		StillBrush.SetResourceObject(Still);
 		StillBrush.ImageSize = FVector2D(Still->GetSizeX(), Still->GetSizeY());
 		StillBrush.DrawAs = ESlateBrushDrawType::Image;
@@ -79,7 +114,7 @@ TSharedRef<SWidget> UVisexLaunchCover::MakeCover(TAttribute<FSlateColor> Tint)
 	return SNew(SScaleBox)
 		.Stretch(EStretch::ScaleToFill)
 		[
-			SNew(SImage).Image(&StillBrush).ColorAndOpacity(Tint)
+			SNew(SVisexStill).Brush(&StillBrush).Tint(Tint)
 		];
 }
 
