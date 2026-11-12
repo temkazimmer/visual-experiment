@@ -28,6 +28,8 @@ public:
 
 	/** True once the cover has fully faded (or never showed). The QA tour waits on it. */
 	bool IsDone() const { return bDone; }
+	/** Still on the film's last frame (the arrival's frame 0): before the cross-fade begins. */
+	bool IsHolding() const { return !bDone && FadeStart < 0.0; }
 	/** Seconds the cover held at full before its fade began, and what let it go. */
 	float GetHeldSeconds() const { return HeldSeconds; }
 	const FString& GetReleaseReason() const { return ReleaseReason; }

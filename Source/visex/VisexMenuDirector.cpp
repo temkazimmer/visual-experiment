@@ -7,6 +7,7 @@
 #include "VisexMenuLayoutEditor.h"
 #include "VisexPhotoMode.h"
 #include "VisexQATour.h"
+#include "VisexLaunchCover.h"
 #include "VisexSettings.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
@@ -48,6 +49,8 @@
 
 static TAutoConsoleVariable<int32> CVarMenuArrival(TEXT("visex.Menu.Arrival"), 1,
 	TEXT("1: on the first menu after launch she walks in to the column and leans while the menu fades in. 0: she is already leaning."));
+static TAutoConsoleVariable<int32> CVarMenuArrivalFreeze(TEXT("visex.Menu.ArrivalFreeze"), 0,
+	TEXT("1: hold the arrival at its frame 0 (mid-stride, menu framing, no panel) for rendering; 0 lets it run on."));
 
 AVisexMenuDirector::AVisexMenuDirector()
 {
@@ -258,11 +261,8 @@ void AVisexMenuDirector::ShowMenu()
 		if (Page > 0) { CloseSettings(); }
 		W->SetSelected(0);
 	}
-	if (bArriving)
-	{
-		SetCornerShade(0.f);
-	}
-	else
+	// the corner shade stays: the film's last frame has it
+	if (!bArriving)
 	{
 		PanelInAlpha = 1.f;
 		ArrivalClock = -1.f;
@@ -1095,7 +1095,7 @@ bool AVisexMenuDirector::BeginArrival()
 	// her spot and facing on the lean, as PlacePawn puts her; she starts out on the sand
 	StepHome = StandIn->GetActorLocation();
 	HomeYaw = StandIn->GetActorRotation().Yaw + 90.f;
-	FVector Start = StepHome + FRotator(0.f, HomeYaw, 0.f).RotateVector(FVector(ArrivalStartOffset.X, ArrivalStartOffset.Y, 0.f));
+	FVector Start(ArrivalStart.X, ArrivalStart.Y, StepHome.Z);
 	FHitResult Hit;
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(MenuArrival), false, Char);
 	Params.AddIgnoredActor(LeanColumn);
@@ -1103,9 +1103,10 @@ bool AVisexMenuDirector::BeginArrival()
 	{
 		Start.Z = Hit.Location.Z;
 	}
-	const FVector Dir = (StepHome - Start).GetSafeNormal2D();
+	// mid-stride along her own heading; TickReturn steers her on to her spot from there
+	const FVector Dir = FRotator(0.f, ArrivalStartYaw, 0.f).Vector();
 	const float Half = Char->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
-	Char->SetActorLocationAndRotation(Start + FVector(0.f, 0.f, Half), FRotator(0.f, Dir.Rotation().Yaw, 0.f), false, nullptr, ETeleportType::TeleportPhysics);
+	Char->SetActorLocationAndRotation(Start + FVector(0.f, 0.f, Half), FRotator(0.f, ArrivalStartYaw, 0.f), false, nullptr, ETeleportType::TeleportPhysics);
 	GetWorldTimerManager().ClearTimer(StandTimer);
 	GetWorldTimerManager().ClearTimer(BeatTimer);
 	if (UAnimInstance* Anim = GetPawnAnim())
@@ -1126,14 +1127,20 @@ bool AVisexMenuDirector::BeginArrival()
 	StepSelect = 0;
 	StepDir = -1;
 	bArriving = true;
+	bArrivalRan = true;
 	ArrivalClock = 0.f;
 	PanelInAlpha = 0.f;
 	ArrivalQueued = 0;
 	bPlanted[0] = bPlanted[1] = false;
 	SkateMax = SkateSum = 0.f;
 	SkateSteps = 0;
-	UE_LOG(LogTemp, Log, TEXT("Menu arrival: %.0f cm to her spot at %.0f cm/s, panel in %.1f-%.1f s"),
-		FVector::Dist2D(Start, StepHome), ArrivalSpeed, ArrivalPanelFadeStart, ArrivalPanelFadeStart + ArrivalPanelFadeTime);
+	PreRollWalk(ArrivalPreRoll);
+	bArrivalFrozen = false;
+	FreezeHer(ArrivalHeld());
+	UE_LOG(LogTemp, Log, TEXT("Menu arrival: frame 0 at (%.1f, %.1f, %.1f) yaw %.1f, %.0f cm to her spot at %.0f cm/s, panel in %.1f-%.1f s%s"),
+		Char->GetActorLocation().X, Char->GetActorLocation().Y, Char->GetActorLocation().Z, ArrivalStartYaw,
+		FVector::Dist2D(Start, StepHome), ArrivalSpeed, ArrivalPanelFadeStart, ArrivalPanelFadeStart + ArrivalPanelFadeTime,
+		bArrivalFrozen ? TEXT(", held") : TEXT(""));
 	return true;
 }
 
@@ -1155,6 +1162,55 @@ bool AVisexMenuDirector::IsArriving() const
 	return bArriving || (!bArrivalChecked && bShowMenuOnPlay && CVarMenuArrival.GetValueOnGameThread() != 0);
 }
 
+bool AVisexMenuDirector::ArrivalHeld() const
+{
+	// the launch cover's still is the film's last frame, which is frame 0: hold it until it lets go
+	const UVisexLaunchCover* Cover = GetGameInstance() ? GetGameInstance()->GetSubsystem<UVisexLaunchCover>() : nullptr;
+	return CVarMenuArrivalFreeze.GetValueOnGameThread() != 0 || (Cover && Cover->IsHolding());
+}
+
+void AVisexMenuDirector::PreRollWalk(float Seconds)
+{
+	// frame 0 is mid-stride: walk her up to it in fixed steps (movement and pose) from behind,
+	// then put her exactly on it. Same steps every launch, so the same stride phase.
+	ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	USkeletalMeshComponent* Mesh = Char ? Char->GetMesh() : nullptr;
+	const int32 N = FMath::RoundToInt(Seconds * 60.f);
+	if (!Mesh || N <= 0)
+	{
+		return;
+	}
+	const FVector At = Char->GetActorLocation();
+	const FRotator Yaw = Char->GetActorRotation();
+	const FVector Dir = Yaw.Vector();
+	UCharacterMovementComponent* Move = Char->GetCharacterMovement();
+	const float Input = FMath::Clamp(ArrivalSpeed / FMath::Max(1.f, Move->GetMaxSpeed()), 0.f, 1.f);
+	Char->SetActorLocation(At - Dir * ArrivalSpeed * Seconds, false, nullptr, ETeleportType::TeleportPhysics);
+	Move->Velocity = Dir * ArrivalSpeed;
+	for (int32 I = 0; I < N; ++I)
+	{
+		Char->AddMovementInput(Dir, Input);
+		Move->TickComponent(1.f / 60.f, LEVELTICK_All, nullptr);
+		Char->SetActorRotation(Yaw);
+		Mesh->TickAnimation(1.f / 60.f, false);
+		Mesh->RefreshBoneTransforms();
+		Mesh->HandleExistingParallelEvaluationTask(true, true);
+	}
+	UE_LOG(LogTemp, Log, TEXT("Menu arrival: pre-rolled %.2f s, landed %.1f cm off frame 0, %.0f cm/s"),
+		Seconds, FVector::Dist2D(Char->GetActorLocation(), At), Move->Velocity.Size2D());
+	Char->SetActorLocation(FVector(At.X, At.Y, Char->GetActorLocation().Z), false, nullptr, ETeleportType::TeleportPhysics);
+}
+
+void AVisexMenuDirector::FreezeHer(bool bFreeze)
+{
+	if (APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0))
+	{
+		// her own clock stops: pose, stride and velocity wait exactly as they are
+		Pawn->CustomTimeDilation = bFreeze ? 0.f : 1.f;
+	}
+	bArrivalFrozen = bFreeze;
+}
+
 void AVisexMenuDirector::PlayArrival()
 {
 	if (bOpen && !bArriving && StepDir == 0 && Page == 0 && !bSitting)
@@ -1163,7 +1219,6 @@ void AVisexMenuDirector::PlayArrival()
 		if (BeginArrival())
 		{
 			if (UVisexMenuWidget* W = GetMenuWidget()) { W->SetRenderOpacity(0.f); }
-			SetCornerShade(0.f);
 			MarkPanel();
 		}
 	}
@@ -1181,7 +1236,6 @@ void AVisexMenuDirector::TickArrivalPanel(float DeltaSeconds)
 		{
 			PanelInAlpha = E;
 			if (UVisexMenuWidget* W = GetMenuWidget()) { W->SetRenderOpacity(E); }
-			SetCornerShade(E);
 			MarkPanel();
 			if (E >= 1.f)
 			{
@@ -2021,6 +2075,16 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	Clock += DeltaSeconds;
+	if (bArriving)
+	{
+		// the handheld drift waits at its start, the film's last frame, until she is leaning
+		Clock = 0.f;
+		if (bArrivalFrozen && !ArrivalHeld())
+		{
+			FreezeHer(false);
+			UE_LOG(LogTemp, Log, TEXT("Menu arrival: released from frame 0"));
+		}
+	}
 	UpdateAlign();
 
 	if (PanelDirty > 0 && Panel && Panel->IsVisible())
@@ -2106,11 +2170,11 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 	{
 		TickWalkOff(DeltaSeconds);
 	}
-	if (StepDir != 0)
+	if (StepDir != 0 && !bArrivalFrozen)
 	{
 		TickStep(DeltaSeconds);
 	}
-	if (ArrivalClock >= 0.f)
+	if (ArrivalClock >= 0.f && !bArrivalFrozen)
 	{
 		TickArrivalPanel(DeltaSeconds);
 	}

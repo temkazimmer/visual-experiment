@@ -504,23 +504,31 @@ public:
 	float ReturnWalkMax = 600.f;
 
 	// first launch: she walks in to the column and leans while the panel fades in (visex.Menu.Arrival)
-	/** Where she starts, from her lean spot in her lean facing (cm): X forward, Y right. */
+	/** Frame 0: where she is (world XY, on the ground) and her yaw, mid-stride. The intro film's
+	 *  last frame lands here. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Arrival")
-	FVector2D ArrivalStartOffset = FVector2D(330.f, -330.f);
-	/** Her walking pace (cm/s); the lean-return walks at BodyStepBackSpeed. */
+	FVector2D ArrivalStart = FVector2D(9560.f, -1010.f);
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Arrival")
+	float ArrivalStartYaw = 75.f;
+	/** Her pace (cm/s): 0.6 of the walk's 190, as the film walks her. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Arrival", meta = (ClampMin = "10"))
-	float ArrivalSpeed = 85.f;
-	/** Seconds from the first frame until the panel starts to fade in, and the fade's length. */
+	float ArrivalSpeed = 114.f;
+	/** Seconds of walk her pose is run through before frame 0, so frame 0 is mid-stride. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Arrival", meta = (ClampMin = "0"))
-	float ArrivalPanelFadeStart = 2.f;
+	float ArrivalPreRoll = 1.5f;
+	/** Seconds after frame 0 until the panel starts to fade in, and the fade's length. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Arrival", meta = (ClampMin = "0"))
+	float ArrivalPanelFadeStart = 1.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Arrival", meta = (ClampMin = "0.05"))
-	float ArrivalPanelFadeTime = 2.5f;
-	/** Replays the arrival from the menu (for tuning). */
+	float ArrivalPanelFadeTime = 1.6f;
+	/** Replays the arrival from frame 0 (for tuning and the film); visex.Menu.ArrivalFreeze 1 holds it there. */
 	UFUNCTION(BlueprintCallable, Category = "Menu|Arrival")
 	void PlayArrival();
 	/** True from launch until she is down on the lean (and while a replay runs). */
 	UFUNCTION(BlueprintPure, Category = "Menu|Arrival")
 	bool IsArriving() const;
+	/** The arrival fades the panel in during her walk: the launch cover leaves it alone. */
+	bool FadesOwnPanel() const { return bArrivalRan || IsArriving(); }
 
 	/** Her farthest part from her own axis at the sliders' ends (cm), and the gap from her
 	 *  axis to the stone she stopped at: last measured on the way to the Body page. */
@@ -729,13 +737,19 @@ private:
 	void EndStep();
 	int32 StepDir = 0;           // +1 walking out, -1 returning to the column, 0 still
 	void TickReturn(float DeltaSeconds);
-	// the first-launch arrival: a walk-back (StepDir -1) from ArrivalStartOffset that ends in Lean
+	// the first-launch arrival: a walk-back (StepDir -1) from ArrivalStart that ends in Lean
 	bool BeginArrival();
 	void EndArrival();
 	void TickArrivalPanel(float DeltaSeconds);
 	void TickFootSkate();
 	bool bArrivalChecked = false;   // the first ShowMenu has decided
 	bool bArriving = false;
+	/** Frame 0 is held: the launch cover still shows, or visex.Menu.ArrivalFreeze is 1. */
+	bool ArrivalHeld() const;
+	void FreezeHer(bool bFreeze);
+	void PreRollWalk(float Seconds);
+	bool bArrivalFrozen = false;
+	bool bArrivalRan = false;
 	float ArrivalClock = -1.f;      // seconds since the arrival began; <0 when no fade runs
 	float PanelInAlpha = 1.f;       // the panel's fade-in; input waits for 1
 	int32 ArrivalQueued = 0;        // pressed while she finished walking: 1 Confirm, 2 ToggleMenu

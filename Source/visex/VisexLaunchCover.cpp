@@ -278,7 +278,7 @@ bool UVisexLaunchCover::Tick(float DeltaTime)
 	if (Director.IsValid() && (FadeStart < 0.0 || Now - FadeStart < FadeTime))
 	{
 		Director->HoldDrift();
-		Director->SetPanelOpacity(0.f);
+		if (!Director->FadesOwnPanel()) { Director->SetPanelOpacity(0.f); }
 	}
 	if (FadeStart < 0.0)
 	{
@@ -329,7 +329,8 @@ bool UVisexLaunchCover::Tick(float DeltaTime)
 	}
 	// then the menu panel, which the film doesn't have, fades in over the live shot
 	const float PanelAlpha = FMath::Clamp(float(Now - FadeStart - FadeTime) / FMath::Max(PanelFadeTime, 0.01f), 0.f, 1.f);
-	if (Director.IsValid()) { Director->SetPanelOpacity(FMath::InterpEaseInOut(0.f, 1.f, PanelAlpha, 2.f)); }
+	// (unless her arrival walk fades it in itself)
+	if (Director.IsValid() && !Director->FadesOwnPanel()) { Director->SetPanelOpacity(FMath::InterpEaseInOut(0.f, 1.f, PanelAlpha, 2.f)); }
 	if (PanelAlpha < 1.f)
 	{
 		return true;
