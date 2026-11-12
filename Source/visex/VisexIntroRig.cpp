@@ -118,16 +118,20 @@ void AVisexIntroRig::Tick(float DeltaSeconds)
 	{
 		TakePlayer();
 	}
-	if (bMenuShown && bHideMenuPanel)
+	if (bMenuShown)
 	{
 		// the film's menu shot has no panel: its build number would never match the live one;
 		// the live menu brings the panel in after the cut
 		for (TActorIterator<AVisexMenuDirector> It(GetWorld()); It; ++It)
 		{
-			if (UWidgetComponent* Panel = It->FindComponentByClass<UWidgetComponent>())
+			UWidgetComponent* Panel = bHideMenuPanel ? It->FindComponentByClass<UWidgetComponent>() : nullptr;
+			if (Panel)
 			{
 				Panel->SetVisibility(false);
 			}
+			// the launch cover holds the handheld drift at its start pose while it cross-fades:
+			// the film's menu shot ends on exactly that frame
+			It->HoldDrift();
 		}
 	}
 	if (Her && bTookPlayer && !bMenuShown && Menu >= 0.5f)
