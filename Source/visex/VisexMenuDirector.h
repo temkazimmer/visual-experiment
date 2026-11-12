@@ -398,6 +398,9 @@ public:
 	AActor* GetLeanColumn() const { return LeanColumn; }
 	/** FitLeanColumn has placed the drum for her body: the launch cover waits on it. */
 	bool HasFittedColumn() const { return bColumnFitted; }
+	/** Keeps the handheld drift at its start, the frame the intro film ends on, while the launch
+	 *  cover holds and cross-fades. */
+	void HoldDrift() { Clock = 0.f; }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
 	TSoftObjectPtr<class UAnimSequence> LeanIdle = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Lean.A_Menu_Lean")));

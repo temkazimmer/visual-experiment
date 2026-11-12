@@ -22,6 +22,7 @@
 #include "Engine/Texture2D.h"
 #include "ImageUtils.h"
 #include "Misc/Paths.h"
+#include "UnrealClient.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogVisexLaunch, Log, All);
 
@@ -183,9 +184,11 @@ void UVisexLaunchCover::HoldMusic(UWorld* World, bool bHold)
 
 FString UVisexLaunchCover::Pending(UWorld* World)
 {
-	AVisexMenuDirector* Director = nullptr;
-	for (TActorIterator<AVisexMenuDirector> It(World); It; ++It) { Director = *It; break; }
-	if (Director)
+	if (!Director.IsValid())
+	{
+		for (TActorIterator<AVisexMenuDirector> It(World); It; ++It) { Director = *It; break; }
+	}
+	if (Director.IsValid())
 	{
 		if (!Director->HasFittedColumn())
 		{
@@ -224,6 +227,8 @@ bool UVisexLaunchCover::Tick(float DeltaTime)
 		return true;
 	}
 	UWorld* World = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr;
+	// the film ends on the menu shot at the drift's start: hold it there until the cover is gone
+	if (Director.IsValid()) { Director->HoldDrift(); }
 	if (FadeStart < 0.0)
 	{
 		FString Wait = World ? Pending(World) : FString(TEXT("world"));
@@ -248,6 +253,11 @@ bool UVisexLaunchCover::Tick(float DeltaTime)
 			ReleaseReason += FString::Printf(TEXT(" (%.0f ms frames)"), AvgDelta * 1000.f);
 			UE_LOG(LogVisexLaunch, Display, TEXT("Launch cover held %.2f s, released: %s"), HeldSeconds, *ReleaseReason);
 			HoldMusic(World, false);
+			if (FParse::Param(FCommandLine::Get(), TEXT("visexqa")))
+			{
+				// the live frame the still fades into, without the cover: diff it against the still
+				FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("QA/00_live_at_release.png"), false, false);
+			}
 		}
 		return true;
 	}

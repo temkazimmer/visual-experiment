@@ -63,6 +63,7 @@ private:
 	TSharedPtr<class SWidget> Cover;
 	FTSTicker::FDelegateHandle TickHandle;
 	TArray<TWeakObjectPtr<class UAudioComponent>> Music;
+	TWeakObjectPtr<class AVisexMenuDirector> Director;
 	bool bShown = false;
 	bool bDone = false;
 	double StartTime = 0.0;
