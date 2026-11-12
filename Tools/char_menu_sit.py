@@ -29,6 +29,7 @@ _sit_keep = dict(BUILD=BUILD, TWEAK=globals().get("TWEAK", {}))
 BUILD, SHOTS, TWEAK = False, [], {}
 exec(compile(open(os.path.join(_tools, "char_menu_lean.py")).read(), "char_menu_lean.py", "exec"), globals())
 globals().update(_sit_keep)
+PALM_OFF = globals().get("SIT_PALM_OFF", 4.0)   # 1 cm more than the lean: at Height 145 the crouch's palms touched 0.4 cm off the HD stone
 print("drum in her space: axis y %.1f z %.1f, radius %.1f, top %.1f" % (CY, CZ, RADIUS, TOP))
 
 def surface_y(z):
@@ -47,7 +48,7 @@ _a = math.radians(SEAT_DEG)
 SEAT_PELVIS = (1.0, CY + (RADIUS + SEAT_OFF) * math.sin(_a), CZ + (RADIUS + SEAT_OFF) * math.cos(_a))
 
 # the left leg hangs off the front toward the lens: thigh out over the edge, knee soft, foot relaxed
-HANG = globals().get("HANG", dict(ankle=(20.0, -4.0, 24.0), knee=(22.0, 30.0, 70.0), toe=(0.15, 0.4, -0.9)))   # long, knee soft, toes to the lens
+HANG = globals().get("HANG", dict(ankle=(22.0, 14.0, 30.0), knee=(24.0, 50.0, 75.0), toe=(0.15, 0.4, -0.9)))   # long and out: the knee clears the HD drum's flutes (~8 cm in Play)
 # the right leg hooks round the drum: the knee over its front, the shin down the bulge, the foot
 # tucked back under it, toes curled toward the stone
 HOOK = globals().get("HOOK", dict(ankle=(-15.0, -18.0, 56.0), knee=(-14.0, 25.0, 100.0), toe=(0.0, -0.3, -0.95)))   # knee 35 cm out over the edge, shin 12 cm back onto the stone
