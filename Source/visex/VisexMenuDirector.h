@@ -569,6 +569,8 @@ private:
 	/** The panel redraws its (large) render target only when it changes: frames left to redraw. */
 	int32 PanelDirty = 0;
 	void MarkPanel(int32 Frames = 2) { PanelDirty = FMath::Max(PanelDirty, Frames); }
+	/** Keep the rows' left edges on one vertical screen line (UVisexMenuWidget::AlignSlope). */
+	void UpdateAlign();
 	bool bStickXHeld = false;
 	void ShowSettingsPage(int32 Select);
 	void Left() { SettingsStep(-1); }

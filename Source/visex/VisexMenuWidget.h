@@ -155,8 +155,25 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Menu")
 	void OnSelectionChanged(int32 Index);
 
+	/** Left edges on one vertical line on screen (Tema): each row is moved right by AlignSlope x
+	 * (its centre - the first row's centre), layout px. The director sets the slope from the
+	 * panel's tilt and the camera; 0 = rows as laid out. */
+	float AlignSlope = 0.f;
+
+	/** Set when a tick moved a row; the director redraws the panel and clears it. */
+	bool bAlignChanged = false;
+
+	/** The first row's centre in the rows' layout space (from the last tick), for the director. */
+	float GetAlignY0() const { return AlignY0; }
+
+	/** Where the logo's letters start inside its image, as a fraction of its width. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Look")
+	float LogoInset = 0.083f;
+
 protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+	float AlignY0 = 0.f;
 
 private:
 	void Build();

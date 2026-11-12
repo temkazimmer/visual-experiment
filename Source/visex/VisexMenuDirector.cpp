@@ -1341,6 +1341,39 @@ void AVisexMenuDirector::ToggleMenu()
 	}
 }
 
+void AVisexMenuDirector::UpdateAlign()
+{
+	UVisexMenuWidget* W = bOpen && Panel ? GetMenuWidget() : nullptr;
+	UCineCameraComponent* Lens = GetLens();
+	if (!W || !Lens)
+	{
+		return;
+	}
+	// a vertical line on screen is the plane through the lens holding its up axis; find the line
+	// where that plane crosses the panel, as layout x per layout y (the panel is flat: affine)
+	const FTransform& T = Panel->GetComponentTransform();
+	const FVector2D Draw = Panel->GetCurrentDrawSize();
+	const FVector2D Piv = Panel->GetPivot();
+	const float SS = FMath::Max(1.f, W->Supersample);
+	const float Pad = W->ShadePadding;
+	const float Y0 = W->GetAlignY0();
+	auto ToWorld = [&](float X, float Y)
+	{
+		const double U = (Pad + X) * SS, V = (Pad + Y) * SS;
+		return T.TransformPosition(FVector(0., -(U - Draw.X * Piv.X), -(V - Draw.Y * Piv.Y)));
+	};
+	const FVector A = ToWorld(0.f, Y0);
+	const FVector N = FVector::CrossProduct(Lens->GetUpVector(), A - Lens->GetComponentLocation());
+	const double Dx = FVector::DotProduct(N, ToWorld(1.f, Y0) - A);
+	const float Slope = FMath::Abs(Dx) > UE_SMALL_NUMBER ? float(-FVector::DotProduct(N, ToWorld(0.f, Y0 + 1.f) - A) / Dx) : 0.f;
+	if (!FMath::IsNearlyEqual(W->AlignSlope, Slope, 1e-4f) || W->bAlignChanged)
+	{
+		W->AlignSlope = Slope;
+		W->bAlignChanged = false;
+		MarkPanel();
+	}
+}
+
 void AVisexMenuDirector::SetCornerShade(float Weight)
 {
 	// a post-process material's blendable weight doesn't fade it: any weight above 0 draws it at
@@ -1746,6 +1779,7 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	Clock += DeltaSeconds;
+	UpdateAlign();
 
 	if (PanelDirty > 0 && Panel && Panel->IsVisible())
 	{
