@@ -29,6 +29,11 @@ public:
 	UPROPERTY(EditAnywhere, Interp, BlueprintReadWrite, Category = "Intro")
 	float Walk = 0.f;
 
+	/** 1 shows her, 0 hides her (keyed in the sequence). Applied every tick, which also undoes
+	 *  the sequence player's hide-the-player for the possessed one. Hidden, she still moves. */
+	UPROPERTY(EditAnywhere, Interp, BlueprintReadWrite, Category = "Intro")
+	float Show = 1.f;
+
 	/** Possess her with player 0 (the sand footprints follow the player only). Off: she gets
 	 *  her own AI controller, so two rigs can walk at once around a cut. */
 	UPROPERTY(EditAnywhere, Category = "Intro")
@@ -43,6 +48,9 @@ public:
 
 protected:
 	float LogClock = 0.f;
+	bool bSpawned = false;
+
+	void SpawnHer();
 
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;

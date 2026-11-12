@@ -33,6 +33,14 @@ void AVisexIntroRig::BeginPlay()
 		It->SetActorTickEnabled(false);
 	}
 
+}
+
+void AVisexIntroRig::SpawnHer()
+{
+	// on the first tick, not in BeginPlay: a sequence spawnable begins play at the origin and
+	// only then takes its keyed transform
+	bSpawned = true;
+	UWorld* World = GetWorld();
 	UClass* Cls = CharacterClass.LoadSynchronous();
 	if (!Cls)
 	{
@@ -72,9 +80,18 @@ void AVisexIntroRig::BeginPlay()
 void AVisexIntroRig::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	if (!bSpawned && GetWorld() && GetWorld()->IsGameWorld() && !GetActorLocation().IsNearlyZero(1.f))
+	{
+		SpawnHer();
+	}
+	if (Her)
+	{
+		Her->SetActorHiddenInGame(Show < 0.5f);
+	}
 	if (Her && Walk > 0.001f)
 	{
-		Her->AddMovementInput(GetActorForwardVector(), FMath::Clamp(Walk, 0.f, 1.f));
+		// forced: sequence playback ignores the player's move input (cinematic mode)
+		Her->AddMovementInput(GetActorForwardVector(), FMath::Clamp(Walk, 0.f, 1.f), true);
 	}
 	// her real path, for framing the camera keys (Tools/intro_sequence.py)
 	LogClock += DeltaSeconds;
