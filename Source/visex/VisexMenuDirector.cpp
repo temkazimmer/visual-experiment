@@ -43,6 +43,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "TimerManager.h"
+#include "Containers/Ticker.h"
+#include "HAL/IConsoleManager.h"
 
 AVisexMenuDirector::AVisexMenuDirector()
 {
@@ -175,6 +177,7 @@ void AVisexMenuDirector::ShowMenu()
 		bHaveBase = true;
 	}
 	MenuCamera->SetActorTransform(CameraBase);
+	SettingsCamAlpha = 0.f;
 	// and its lens, which the Start move turns into the play camera's
 	if (UCineCameraComponent* Lens = GetLens())
 	{
@@ -458,6 +461,7 @@ void AVisexMenuDirector::OpenSettings()
 {
 	Page = 1;
 	ShowSettingsPage(0);
+	SitForSettings();
 }
 
 void AVisexMenuDirector::ShowSettingsPage(int32 Select)
@@ -477,6 +481,7 @@ void AVisexMenuDirector::CloseSettings()
 	MarkPanel();
 	FVisexSettings::Save();
 	Page = 0;
+	StandFromSettings();
 	if (UVisexMenuWidget* W = GetMenuWidget())
 	{
 		// back on the main menu, on the Settings item
@@ -1037,6 +1042,12 @@ void AVisexMenuDirector::TickFocus()
 			break;
 		}
 	}
+	// sitting for Settings the focus slides partway toward her raised foot, with the camera
+	if (SettingsCamAlpha > 0.f && Mesh->GetBoneIndex(SettingsFocusBone) != INDEX_NONE)
+	{
+		const FVector Foot = Mesh->GetSocketLocation(SettingsFocusBone);
+		Target = FMath::Lerp(Target, FMath::Lerp(Target, Foot, SettingsFocusMix), SettingsCamEase());
+	}
 	// the bones are last frame's (she animates after the director ticks): lead by her velocity
 	Target += Char->GetVelocity() * GetWorld()->GetDeltaSeconds();
 	// depth of field is sharp on a plane, so focus on her depth along the lens, not the
@@ -1063,7 +1074,12 @@ void AVisexMenuDirector::HandBack()
 
 void AVisexMenuDirector::ToggleMenu()
 {
-	if (bOpen)
+	if (bOpen && Page > 0)
+	{
+		// in Settings, Options is Back: she gets up and the camera climbs back to the menu
+		CloseSettings();
+	}
+	else if (bOpen)
 	{
 		StartGame();
 	}
@@ -1142,6 +1158,29 @@ void AVisexMenuDirector::SpawnLeanColumn()
 	if (!StoneMesh)
 	{
 		return;
+	}
+	// The first menu comes up on the second frame after launch. Shadow the virtual shadow map
+	// cached in those first frames went stale and was never invalidated (its own depth pyramid,
+	// which culls invalidations, isn't valid yet), so the drum and the sand under her stood in
+	// black until the camera left (QA 0401, 0441; with r.Shadow.Virtual.Cache 0 it's lit). Keep
+	// the cache off for the launch half second, so it starts from pages drawn with the menu in
+	// place. Costs a few uncached shadow frames once; on the core ticker so it comes back even
+	// if Play ends first.
+	if (IConsoleVariable* Cache = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Shadow.Virtual.Cache")))
+	{
+		const int32 Was = Cache->GetInt();
+		if (Was != 0)
+		{
+			Cache->Set(0, ECVF_SetByCode);
+			FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([Was](float)
+			{
+				if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Shadow.Virtual.Cache")))
+				{
+					V->Set(Was, ECVF_SetByCode);
+				}
+				return false;
+			}), 0.5f);
+		}
 	}
 	// A fallen drum lying across behind her, settled into the sand. Built so the animation side
 	// can read it exactly: actor tagged LeanColumn, scale 1, pivot on the top of the stone at the
@@ -1249,6 +1288,8 @@ void AVisexMenuDirector::SetColumnBlocksPawn(bool bBlock)
 void AVisexMenuDirector::Lean(bool bFromStanding)
 {
 	GetWorldTimerManager().ClearTimer(StandTimer);
+	GetWorldTimerManager().ClearTimer(SitTimer);
+	bSitting = false;
 	UAnimInstance* Anim = GetPawnAnim();
 	UAnimSequence* Idle = bLeanOnColumn ? LeanIdle.LoadSynchronous() : nullptr;
 	if (!Anim || !Idle)
@@ -1287,7 +1328,7 @@ void AVisexMenuDirector::Lean(bool bFromStanding)
 void AVisexMenuDirector::ScheduleIdleBeat()
 {
 	GetWorldTimerManager().ClearTimer(BeatTimer);
-	if (bLeaning && IdleBeats.Num() > 0)
+	if (bLeaning && !bSitting && IdleBeats.Num() > 0)
 	{
 		const float Rest = FMath::FRandRange(IdleBeatRest.X, FMath::Max(IdleBeatRest.X, IdleBeatRest.Y));
 		GetWorldTimerManager().SetTimer(BeatTimer, FTimerDelegate::CreateUObject(this, &AVisexMenuDirector::PlayIdleBeat, -1), Rest, false);
@@ -1297,7 +1338,7 @@ void AVisexMenuDirector::ScheduleIdleBeat()
 void AVisexMenuDirector::PlayIdleBeat(int32 Index)
 {
 	UAnimInstance* Anim = GetPawnAnim();
-	if (!bLeaning || !Anim || IdleBeats.Num() == 0)
+	if (!bLeaning || bSitting || !Anim || IdleBeats.Num() == 0)
 	{
 		return;
 	}
@@ -1333,7 +1374,7 @@ void AVisexMenuDirector::EndIdleBeat()
 {
 	UAnimInstance* Anim = GetPawnAnim();
 	UAnimSequence* Idle = LeanIdle.Get();   // loaded and held in LoadedLean by PlayIdleBeat
-	if (!bLeaning || !Anim || !Idle)
+	if (!bLeaning || bSitting || !Anim || !Idle)
 	{
 		return;
 	}
@@ -1367,6 +1408,101 @@ float AVisexMenuDirector::StandUp()
 	return 0.4f;
 }
 
+void AVisexMenuDirector::PlayLoopLater(UAnimSequence* Clip, float Delay, bool bThenBeats)
+{
+	// a short cross-fade just before the transition ends: both clips rest there (PAD), so no seam.
+	// The clip is held in LoadedLean; the timer only holds it weakly (0298)
+	GetWorldTimerManager().SetTimer(SitTimer, FTimerDelegate::CreateWeakLambda(this, [this, WeakClip = TWeakObjectPtr<UAnimSequence>(Clip), bThenBeats]()
+	{
+		UAnimSequence* Loop = WeakClip.Get();
+		UAnimInstance* A = GetPawnAnim();
+		if (Loop && A)
+		{
+			static const FName Slot(TEXT("DefaultSlot"));
+			A->PlaySlotAnimationAsDynamicMontage(Loop, Slot, 0.15f, 0.3f, 1.f, 1000000);
+		}
+		if (bThenBeats)
+		{
+			ScheduleIdleBeat();
+		}
+	}), FMath::Max(Delay - 0.15f, 0.05f), false);
+}
+
+void AVisexMenuDirector::SitForSettings()
+{
+	UAnimInstance* Anim = GetPawnAnim();
+	UAnimSequence* Sit = bSitForSettings && bLeaning && !bSitting ? SettingsSit.LoadSynchronous() : nullptr;
+	if (!Anim || !Sit)
+	{
+		return;
+	}
+	bSitting = true;
+	GetWorldTimerManager().ClearTimer(StandTimer);   // a lean-down still waiting to start its loop
+	GetWorldTimerManager().ClearTimer(BeatTimer);    // no glances or toe play while she sits
+	GetWorldTimerManager().ClearTimer(SitTimer);
+	LoadedLean.AddUnique(Sit);
+	static const FName Slot(TEXT("DefaultSlot"));
+	if (UAnimSequence* Down = SettingsSitDown.LoadSynchronous())
+	{
+		LoadedLean.AddUnique(Down);
+		// the way down opens on the lean's own pose: a beat in progress blends into it
+		Anim->PlaySlotAnimationAsDynamicMontage(Down, Slot, 0.4f, 0.f, 1.f, 1);
+		PlayLoopLater(Sit, Down->GetPlayLength(), false);
+	}
+	else
+	{
+		Anim->PlaySlotAnimationAsDynamicMontage(Sit, Slot, 0.8f, 0.3f, 1.f, 1000000);
+	}
+}
+
+void AVisexMenuDirector::StandFromSettings()
+{
+	if (!bSitting)
+	{
+		return;
+	}
+	bSitting = false;
+	GetWorldTimerManager().ClearTimer(SitTimer);
+	UAnimInstance* Anim = GetPawnAnim();
+	UAnimSequence* Idle = LeanIdle.LoadSynchronous();
+	if (!Anim || !Idle)
+	{
+		return;
+	}
+	LoadedLean.AddUnique(Idle);
+	static const FName Slot(TEXT("DefaultSlot"));
+	if (UAnimSequence* Up = SettingsSitUp.LoadSynchronous())
+	{
+		LoadedLean.AddUnique(Up);
+		// closed mid-way down: a longer blend carries her from wherever she is onto the way up
+		Anim->PlaySlotAnimationAsDynamicMontage(Up, Slot, 0.4f, 0.f, 1.f, 1);
+		PlayLoopLater(Idle, Up->GetPlayLength(), true);
+	}
+	else
+	{
+		Anim->PlaySlotAnimationAsDynamicMontage(Idle, Slot, 0.8f, 0.3f, 1.f, 1000000);
+		ScheduleIdleBeat();
+	}
+}
+
+FTransform AVisexMenuDirector::SettingsCameraTransform() const
+{
+	const ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	const USkeletalMeshComponent* Mesh = Char ? Char->GetMesh() : nullptr;
+	if (!Mesh)
+	{
+		return CameraBase;
+	}
+	// the menu shot, stepped a little in its own space, then turned onto a point on her
+	const FVector Loc = CameraBase.TransformPositionNoScale(SettingsCamOffset);
+	const FVector Aim = Mesh->GetComponentTransform().TransformPosition(SettingsCamAim);
+	FRotator Look = (Aim - Loc).Rotation();
+	Look.Pitch += SettingsCamLookUp;
+	Look.Yaw += SettingsCamPan;
+	Look.Roll = 0.f;
+	return FTransform(Look, Loc);
+}
+
 void AVisexMenuDirector::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
@@ -1393,17 +1529,39 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 		}
 	}
 
-	if (bOpen && MenuCamera && DriftPeriod > 0.f)
+	// Settings: the camera sinks onto her feet while she sits, and climbs back after
+	const float SitGoal = (bOpen && bSitting) ? 1.f : 0.f;
+	const float SitAlpha0 = SettingsCamAlpha;
+	SettingsCamAlpha = FMath::FInterpConstantTo(SettingsCamAlpha, SitGoal, DeltaSeconds, 1.f / FMath::Max(0.1f, SettingsCamTime));
+	const bool bSitCamMoved = SitAlpha0 != SettingsCamAlpha;
+	if (bOpen && MenuCamera && (DriftPeriod > 0.f || SettingsCamAlpha > 0.f || bSitCamMoved))
 	{
+		FTransform Base = CameraBase;
+		if (SettingsCamAlpha > 0.f)
+		{
+			// round her, not through her: angle, distance and height each eased from shot to shot
+			const float S = SettingsCamEase();
+			const FTransform Feet = SettingsCameraTransform();
+			const APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0);
+			const FVector C = Pawn ? Pawn->GetActorLocation() : Feet.GetLocation();
+			const FVector D0 = (CameraBase.GetLocation() - C) * FVector(1.f, 1.f, 0.f);
+			const FVector D1 = (Feet.GetLocation() - C) * FVector(1.f, 1.f, 0.f);
+			const float A0 = FMath::Atan2(D0.Y, D0.X);
+			const float A = A0 + FMath::FindDeltaAngleRadians(A0, FMath::Atan2(D1.Y, D1.X)) * S;
+			const float R = FMath::Lerp(D0.Size(), D1.Size(), S);
+			FVector Loc(C.X + R * FMath::Cos(A), C.Y + R * FMath::Sin(A), FMath::Lerp(CameraBase.GetLocation().Z, Feet.GetLocation().Z, S));
+			Base = FTransform(FQuat::Slerp(CameraBase.GetRotation(), Feet.GetRotation(), S), Loc);
+		}
+		const float W = DriftPeriod > 0.f ? 2.f * PI / DriftPeriod : 0.f;
+		const float Sway = DriftPeriod > 0.f ? 1.f : 0.f;
 		// slow, unsynchronised sways read as a handheld camera breathing, not a loop
-		const float W = 2.f * PI / DriftPeriod;
-		FRotator Rot = CameraBase.Rotator();
-		Rot.Yaw += DriftDegrees * FMath::Sin(Clock * W);
-		Rot.Pitch += 0.5f * DriftDegrees * FMath::Sin(Clock * W * 0.73f + 1.3f);
-		const FVector Right = CameraBase.GetRotation().GetRightVector();
-		const FVector Loc = CameraBase.GetLocation()
-			+ Right * DriftDistance * FMath::Sin(Clock * W * 1.21f + 0.4f)
-			+ FVector::UpVector * 0.5f * DriftDistance * FMath::Sin(Clock * W * 0.91f + 2.1f);
+		FRotator Rot = Base.Rotator();
+		Rot.Yaw += Sway * DriftDegrees * FMath::Sin(Clock * W);
+		Rot.Pitch += Sway * 0.5f * DriftDegrees * FMath::Sin(Clock * W * 0.73f + 1.3f);
+		const FVector Right = Base.GetRotation().GetRightVector();
+		const FVector Loc = Base.GetLocation()
+			+ Right * Sway * DriftDistance * FMath::Sin(Clock * W * 1.21f + 0.4f)
+			+ FVector::UpVector * Sway * 0.5f * DriftDistance * FMath::Sin(Clock * W * 0.91f + 2.1f);
 		MenuCamera->SetActorLocationAndRotation(Loc, Rot);
 	}
 	// the window changed shape under the menu: keep her whole height in the frame
