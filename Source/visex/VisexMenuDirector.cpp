@@ -1648,22 +1648,25 @@ float AVisexMenuDirector::StandUp()
 
 void AVisexMenuDirector::PlayLoopLater(UAnimSequence* Clip, float Delay, bool bThenBeats)
 {
-	// a short cross-fade just before the transition ends: both clips rest there (PAD), so no seam.
-	// The clip is held in LoadedLean; the timer only holds it weakly (0298)
-	GetWorldTimerManager().SetTimer(SitTimer, FTimerDelegate::CreateWeakLambda(this, [this, WeakClip = TWeakObjectPtr<UAnimSequence>(Clip), bThenBeats]()
+	// a cross-fade over the transition's last SitBlend seconds: both clips rest there (PAD), so no
+	// seam. The transition blends out over the same time, so the base idle never shows between
+	// them (0.15 s let her standing idle flash through the jump's landing). The clip is held in
+	// LoadedLean; the timer only holds it weakly (0298)
+	const float Blend = SitBlend;
+	GetWorldTimerManager().SetTimer(SitTimer, FTimerDelegate::CreateWeakLambda(this, [this, WeakClip = TWeakObjectPtr<UAnimSequence>(Clip), bThenBeats, Blend]()
 	{
 		UAnimSequence* Loop = WeakClip.Get();
 		UAnimInstance* A = GetPawnAnim();
 		if (Loop && A)
 		{
 			static const FName Slot(TEXT("DefaultSlot"));
-			A->PlaySlotAnimationAsDynamicMontage(Loop, Slot, 0.15f, 0.3f, 1.f, 1000000);
+			A->PlaySlotAnimationAsDynamicMontage(Loop, Slot, Blend, 0.3f, 1.f, 1000000);
 		}
 		if (bThenBeats)
 		{
 			ScheduleIdleBeat();
 		}
-	}), FMath::Max(Delay - 0.15f, 0.05f), false);
+	}), FMath::Max(Delay - Blend, 0.05f), false);
 }
 
 void AVisexMenuDirector::SitForSettings()
@@ -1684,7 +1687,7 @@ void AVisexMenuDirector::SitForSettings()
 	{
 		LoadedLean.AddUnique(Down);
 		// the way down opens on the lean's own pose: a beat in progress blends into it
-		Anim->PlaySlotAnimationAsDynamicMontage(Down, Slot, 0.4f, 0.f, 1.f, 1);
+		Anim->PlaySlotAnimationAsDynamicMontage(Down, Slot, 0.4f, SitBlend, 1.f, 1);
 		PlayLoopLater(Sit, Down->GetPlayLength(), false);
 	}
 	else
@@ -1713,7 +1716,7 @@ void AVisexMenuDirector::StandFromSettings()
 	{
 		LoadedLean.AddUnique(Up);
 		// closed mid-way down: a longer blend carries her from wherever she is onto the way up
-		Anim->PlaySlotAnimationAsDynamicMontage(Up, Slot, 0.4f, 0.f, 1.f, 1);
+		Anim->PlaySlotAnimationAsDynamicMontage(Up, Slot, 0.4f, SitBlend, 1.f, 1);
 		PlayLoopLater(Idle, Up->GetPlayLength(), true);
 	}
 	else

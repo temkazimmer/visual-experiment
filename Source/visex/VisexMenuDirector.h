@@ -669,6 +669,7 @@ private:
 	FTransform SettingsCameraTransform() const;
 	float SettingsCamEase() const { const float X = FMath::Clamp(SettingsCamAlpha, 0.f, 1.f); return X * X * X * (X * (6.f * X - 15.f) + 10.f); }
 	bool bSitting = false;
+	static constexpr float SitBlend = 0.3f;   // the sit clips hand over to each other this long
 	FTimerHandle SitTimer;
 	// idle beats: the rest timer, the beat's end, and the last one played
 	void ScheduleIdleBeat();
