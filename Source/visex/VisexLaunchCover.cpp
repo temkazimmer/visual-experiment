@@ -17,18 +17,24 @@
 #include "Framework/Application/SlateApplication.h"
 #include "RenderingThread.h"
 #include "Widgets/SOverlay.h"
+#include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SScaleBox.h"
+#include "Engine/Texture2D.h"
+#include "ImageUtils.h"
+#include "Misc/Paths.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogVisexLaunch, Log, All);
 
 void UVisexLaunchCover::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
-	// launch only: in the editor there's no startup film and PIE would sit under haze
+	// launch only: in the editor there's no startup film and PIE would sit under the cover
 	if (GIsEditor || IsRunningCommandlet())
 	{
 		bDone = true;
 		return;
 	}
+	LoadStill();
 	FCoreUObjectDelegates::PostLoadMapWithWorld.AddUObject(this, &UVisexLaunchCover::OnMapLoaded);
 	if (IsMoviePlayerEnabled() && GetMoviePlayer()->IsMovieCurrentlyPlaying())
 	{
@@ -36,17 +42,55 @@ void UVisexLaunchCover::Initialize(FSubsystemCollectionBase& Collection)
 	}
 }
 
+void UVisexLaunchCover::LoadStill()
+{
+	// a /Game texture, or a loose image under Content/ (Content/Movies is staged as files)
+	if (CoverImage.StartsWith(TEXT("/")))
+	{
+		Still = Cast<UTexture2D>(FSoftObjectPath(CoverImage).TryLoad());
+	}
+	else if (!CoverImage.IsEmpty())
+	{
+		const FString File = FPaths::ProjectContentDir() / CoverImage;
+		if (FPaths::FileExists(File))
+		{
+			Still = FImageUtils::ImportFileAsTexture2D(File);
+		}
+	}
+	if (Still)
+	{
+		StillBrush.SetResourceObject(Still);
+		StillBrush.ImageSize = FVector2D(Still->GetSizeX(), Still->GetSizeY());
+		StillBrush.DrawAs = ESlateBrushDrawType::Image;
+	}
+	UE_LOG(LogVisexLaunch, Display, TEXT("Launch cover: %s"), Still
+		? *FString::Printf(TEXT("still %s (%dx%d)"), *CoverImage, Still->GetSizeX(), Still->GetSizeY())
+		: *FString::Printf(TEXT("no still at %s, flat colour"), *CoverImage));
+}
+
+TSharedRef<SWidget> UVisexLaunchCover::MakeCover(TAttribute<FSlateColor> Tint)
+{
+	if (!Still)
+	{
+		return SNew(SImage).Image(FCoreStyle::Get().GetBrush(TEXT("WhiteBrush"))).ColorAndOpacity(Tint);
+	}
+	// aspect-fill: the film's last frame, cropped to the window, never barred
+	return SNew(SScaleBox)
+		.Stretch(EStretch::ScaleToFill)
+		[
+			SNew(SImage).Image(&StillBrush).ColorAndOpacity(Tint)
+		];
+}
+
 void UVisexLaunchCover::CoverFilmEnd()
 {
 	// The map can still be loading when the film ends, and the movie player then shows its
-	// black border until it has. Lay haze over that: an overlay that shows once the film's own
+	// black border until it has. Lay the cover over that: an overlay that shows once the film's own
 	// viewport has gone (the Apple streamer sends no clip-finished event). It runs on the
 	// loading thread's Slate, so it only reads the widget tree.
 	struct FFilmEnd { TWeakPtr<SWidget> Self; TWeakPtr<SWidget> Film; bool bSeen = false; };
 	TSharedRef<FFilmEnd> State = MakeShared<FFilmEnd>();
-	TSharedRef<SWidget> Haze = SNew(SImage)
-		.Image(FCoreStyle::Get().GetBrush(TEXT("WhiteBrush")))
-		.ColorAndOpacity(CoverColor)
+	TSharedRef<SWidget> Haze = SNew(SBox)
 		.Visibility_Lambda([State]
 		{
 			if (!State->Film.IsValid())
@@ -61,7 +105,10 @@ void UVisexLaunchCover::CoverFilmEnd()
 			const bool bPlaying = Film.IsValid() && Film->GetVisibility() == EVisibility::Visible;
 			State->bSeen |= bPlaying;
 			return State->bSeen && !bPlaying ? EVisibility::HitTestInvisible : EVisibility::Collapsed;
-		});
+		})
+		[
+			MakeCover(FSlateColor(Still ? FLinearColor::White : CoverColor))
+		];
 	State->Self = Haze;
 	GetMoviePlayer()->SetSlateOverlayWidget(Haze);
 	GetMoviePlayer()->OnMoviePlaybackFinished().AddUObject(this, &UVisexLaunchCover::OnFilmFinished);
@@ -98,11 +145,16 @@ void UVisexLaunchCover::OnMapLoaded(UWorld* World)
 	}
 	bShown = true;
 	// The map loads while the film still plays, and the world doesn't tick until it ends: the
-	// cover goes in now, so the first game frame after the film's last is already haze.
-	Cover = SNew(SImage)
-		.Image(FCoreStyle::Get().GetBrush(TEXT("WhiteBrush")))
+	// cover goes in now, so the first game frame after the film's last is already the cover.
+	// With the still, the fade is a cross-fade: the frozen last frame thins into the live shot.
+	Cover = SNew(SBox)
 		.Visibility(EVisibility::HitTestInvisible)
-		.ColorAndOpacity_Lambda([this] { return FSlateColor(CoverColor.CopyWithNewOpacity(Opacity)); });
+		[
+			MakeCover(TAttribute<FSlateColor>::CreateLambda([this]
+			{
+				return FSlateColor((Still ? FLinearColor::White : CoverColor).CopyWithNewOpacity(Opacity));
+			}))
+		];
 	Viewport->AddViewportWidgetContent(Cover.ToSharedRef(), 10000);
 	HoldMusic(World, true);
 	TickHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateUObject(this, &UVisexLaunchCover::Tick));

@@ -3,14 +3,15 @@
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Containers/Ticker.h"
+#include "Styling/SlateBrush.h"
 #include "VisexLaunchCover.generated.h"
 
 /**
  * The launch hand-off from the intro film to the menu. The startup movie (DefaultGame.ini,
- * MoviePlayerSettings) ends on a fade to the haze colour; the first map comes up under a
- * full-screen cover in that same colour, which holds until the scene has settled (textures
- * streamed, PSOs compiled, the menu column fitted, a run of calm frames), then fades into the
- * menu while the menu music fades in. Once per launch: never on returning to the menu, never
+ * MoviePlayerSettings) ends exactly on the live menu shot. A still of that last frame covers
+ * the screen (aspect-fill) from the film's end until the scene has settled (textures streamed,
+ * PSOs compiled, the menu column fitted, a run of calm frames), then cross-fades into the live
+ * menu while the menu music fades in. No still: a flat colour instead. Once per launch: never on returning to the menu, never
  * in the editor. Tunables in DefaultGame.ini under [/Script/visex.VisexLaunchCover].
  */
 UCLASS(config = Game)
@@ -28,11 +29,14 @@ public:
 	float GetHeldSeconds() const { return HeldSeconds; }
 	const FString& GetReleaseReason() const { return ReleaseReason; }
 
-	/** Linear; on screen it must equal the intro film's last frame. */
+	/** The film's last frame, held from its end until the scene settles, then cross-faded into
+	 *  the live menu. A /Game texture path, or an image file relative to Content/. */
+	UPROPERTY(config) FString CoverImage = TEXT("Movies/VisexIntro_last.png");
+	/** Fallback when there's no still: a flat colour (linear). */
 	UPROPERTY(config) FLinearColor CoverColor = FLinearColor(0.92f, 0.62f, 0.36f, 1.f);
 	UPROPERTY(config) float MinHold = 0.5f;
 	UPROPERTY(config) float MaxHold = 8.f;
-	UPROPERTY(config) float FadeTime = 1.5f;
+	UPROPERTY(config) float FadeTime = 0.8f;
 	/** Calm frames (all else settled, no hitch) before the fade: Lumen and shadows converge. */
 	UPROPERTY(config) int32 SettleFrames = 30;
 	/** A frame this slow, or 1.6x the recent average if more, breaks the calm run. */
@@ -46,12 +50,16 @@ private:
 	void OnMapLoaded(UWorld* World);
 	/** Haze over the movie player's black border, from the film's end to the map's. */
 	void CoverFilmEnd();
+	void LoadStill();
+	TSharedRef<class SWidget> MakeCover(TAttribute<FSlateColor> Tint);
 	void OnFilmFinished();
 	bool Tick(float DeltaTime);
 	/** Empty when settled, else what it still waits on. */
 	FString Pending(UWorld* World);
 	void HoldMusic(UWorld* World, bool bHold);
 
+	UPROPERTY() TObjectPtr<class UTexture2D> Still;
+	FSlateBrush StillBrush;
 	TSharedPtr<class SWidget> Cover;
 	FTSTicker::FDelegateHandle TickHandle;
 	TArray<TWeakObjectPtr<class UAudioComponent>> Music;
