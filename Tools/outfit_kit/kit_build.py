@@ -287,6 +287,8 @@ def kit_outfit(name):
             if merged:
                 break
     for run, width in all_runs:
+        if np.linalg.norm(np.diff(run, axis=0), axis=1).sum() < 5.0:    # scraps left after the joins
+            continue
         pts = [V3(q) + NV[nearest(V3(q))] * (0.2 + float(BRIDGE[nearest(V3(q))])) for q in run]
         tube(smooth_pts(pts, False, 3), 0.0, "Binding", flat=(width, 0.14), step=0.35)
 

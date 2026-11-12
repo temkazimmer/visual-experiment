@@ -924,7 +924,14 @@ def catsuit_set(variant=None):
         region(where(LEGMASK & (LEGS > 0.5), 1.6 - np.abs(Z - (LM["ankle"] + 7.5))), 0.5, "Latex", bind=("Latex", 0.5), min_loop=6.0)
                                                                                      # belt, buckle front and centre
     belt = kit_field(kit["belt"], kit["ctx"]) if kit and kit["belt"] else band(bz, bh, UPPERARM < 0.3)
-    region(where(UPPERARM < 0.3, belt), 0.6, "Latex", bind=("Latex", 0.5))       # a level cut all round
+    if kit:
+        # where the belt crosses an opening there is only skin under it: sit it close (0.3) and lift
+        # it over the suit's thickness only where the suit runs under it (at 0.6 everywhere it stood
+        # off her bare waist and hips like a hoop)
+        under = diffuse((f > 0).astype(float), 4)
+        region(where(UPPERARM < 0.3, belt), 0.3, "Latex", bind=("Latex", 0.4), lift=0.3 * under)
+    else:
+        region(where(UPPERARM < 0.3, belt), 0.6, "Latex", bind=("Latex", 0.5))       # a level cut all round
     # the buckle sits on the belly's front, square to it: a ray down the middle falls into the
     # navel (2.5 cm deep), and the skin's normal there tips inward, which buried it
     front = [q for q in (ray(TORSO_BVH, pel_v, bz, D(t), 0.0) for t in (-12, -8, -4, 4, 8, 12)) if q]
