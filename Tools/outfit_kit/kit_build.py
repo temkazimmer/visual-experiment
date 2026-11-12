@@ -15,6 +15,7 @@ _KIT = os.path.join(os.path.dirname(os.path.abspath(SRC)), "OutfitKit")     # ne
 _OFFSET = {"Tartan": 0.30, "Satin": 0.45, "Lace": 0.30, "Sheer": 0.24, "Latex": 0.30, "Nylon": 0.22,
            "Net": 0.22, "Jersey": 0.30}
 _FACE = 0.15         # a vertex must face a view at least this much to be judged from it
+_UNION_FACE = 0.3    # ... and this much for that view to count in the union (grazing views project badly)
 
 
 def _views():
@@ -58,6 +59,29 @@ def _sd_polys(Q, polys):
     return best
 
 
+def _sd_blurred(Q, polys, cell=2.0, radius=14.0):
+    """Signed distance to the union of the shapes, computed on a grid over them, blurred, and read
+    back at Q: shapes drawn in halves merge without a notch where they meet, and every corner and
+    kink of the drawn path rounds off into a smooth curve (radius in px, 10 px = 1 cm)."""
+    lo = np.min([p.min(0) for p in polys], 0) - 4 * radius
+    hi = np.max([p.max(0) for p in polys], 0) + 4 * radius
+    gx, gy = np.arange(lo[0], hi[0], cell), np.arange(lo[1], hi[1], cell)
+    G = np.stack(np.meshgrid(gx, gy), -1).reshape(-1, 2)
+    S = np.clip(_sd_polys(G, polys), -6 * radius, 6 * radius).reshape(len(gy), len(gx))
+    k = max(1, int(radius / cell / 1.7))
+    for _ in range(3):                                  # three box blurs ~ a gaussian
+        for ax in (0, 1):
+            c = np.cumsum(np.pad(S, [(k + 1, k) if a == ax else (0, 0) for a in (0, 1)], mode="edge"), axis=ax)
+            S = (np.take(c, range(2 * k + 1, c.shape[ax]), axis=ax) - np.take(c, range(0, c.shape[ax] - 2 * k - 1), axis=ax)) / (2 * k + 1)
+    u = np.clip((Q[:, 0] - lo[0]) / cell, 0, len(gx) - 1.001)
+    v = np.clip((Q[:, 1] - lo[1]) / cell, 0, len(gy) - 1.001)
+    i, j = v.astype(int), u.astype(int)
+    fu, fv = u - j, v - i
+    out = (S[i, j] * (1 - fu) * (1 - fv) + S[i, j + 1] * fu * (1 - fv) + S[i + 1, j] * (1 - fu) * fv + S[i + 1, j + 1] * fu * fv)
+    inside = (Q[:, 0] >= lo[0]) & (Q[:, 0] <= hi[0]) & (Q[:, 1] >= lo[1]) & (Q[:, 1] <= hi[1])
+    return np.where(inside, out, -6 * radius)
+
+
 def _visible(bvh, P, toward, ids):
     """Of the vertices ids (T-pose points P), which ones the view along -toward actually sees."""
     t = Vector(toward)
@@ -69,14 +93,104 @@ def _visible(bvh, P, toward, ids):
     return ok
 
 
+# the four ways a vertex can be seen: (view image, direction toward the camera, mirrored?)
+_SEEN = [("front", np.array((0., -1., 0.)), False), ("back", np.array((0., 1., 0.)), False),
+         ("side", np.array((1., 0., 0.)), False), ("side", np.array((-1., 0., 0.)), True)]
+
+
+def kit_field(by_view, ctx):
+    """Drawn shapes {view: [polygons in view pixels]} -> per skin vertex signed distance to the
+    drawn edge (cm, + inside). A vertex is inside if any view that sees it well has it inside
+    (where the side and back views meet, each used to own its half and the edge came out
+    toothed); the result is smoothed a little so the edge runs clean across the views' seam."""
+    vj, tp, vn, bvh = ctx
+    seen = _SEEN
+    field = np.full(nv, NEG)
+    best = np.full(nv, -1.0)
+    for vname, toward, mirror in seen:
+        if vname not in by_view:
+            continue
+        P = tp * np.array((-1.0, 1.0, 1.0)) if mirror else tp
+        N = vn * np.array((-1.0, 1.0, 1.0)) if mirror else vn
+        f = N @ (toward * np.array((-1.0, 1.0, 1.0)) if mirror else toward)
+        cand = f > _UNION_FACE
+        if vname == "side":
+            cand &= f >= np.abs(N[:, 1])
+        Q = _uv(vj, vname, P)
+        polys = by_view[vname]
+        lo, hi = np.min([p.min(0) for p in polys], 0) - 60, np.max([p.max(0) for p in polys], 0) + 60
+        cand &= (Q[:, 0] > lo[0]) & (Q[:, 0] < hi[0]) & (Q[:, 1] > lo[1]) & (Q[:, 1] < hi[1])
+        ids = np.nonzero(cand)[0]
+        if not len(ids):
+            continue
+        # occlusion is checked on the real (unmirrored) body from the real camera side
+        vis = _visible(bvh, tp, toward, ids)          # toward is the real camera side, mirrored or not
+        ids = ids[vis]
+        sd = _sd_blurred(Q[ids], polys) / vj["px_per_cm"]
+        field[ids] = np.maximum(field[ids], sd)
+        best[ids] = np.maximum(best[ids], f[ids])
+    # skin no view sees head-on (the top of the foot, under the bust) takes its neighbours' value
+    known = best >= 0
+    near = (field > -6.0) | ~known
+    for _ in range(80):
+        todo = ~known & near
+        if not todo.any():
+            break
+        acc, cnt = np.zeros(nv), np.zeros(nv)
+        for a_, b_ in ((EDGES[:, 0], EDGES[:, 1]), (EDGES[:, 1], EDGES[:, 0])):
+            m_ = known[b_]
+            np.add.at(acc, a_[m_], field[b_[m_]])
+            np.add.at(cnt, a_[m_], 1.0)
+        grow = todo & (cnt > 0)
+        if not grow.any():
+            break
+        field[grow] = acc[grow] / cnt[grow]
+        known |= grow
+    # a light smoothing over the skin: clamped first, so far-away values don't pull the edge
+    return np.where(field > -8.0, diffuse(np.clip(field, -8.0, 8.0), 10), field)
+
+def kit_smooth(poly, step=5.0, iters=20):
+    """A drawn outline relaxed into a smooth, even curve (Taubin smoothing: no shrinking), so the
+    cut reads as a clean oval-like line instead of every kink of the hand-drawn path."""
+    Q = np.vstack([poly, poly[:1]])
+    seg = np.linalg.norm(np.diff(Q, axis=0), axis=1)
+    sarc = np.r_[0, np.cumsum(seg)]
+    n = max(12, int(sarc[-1] / step))
+    t = np.linspace(0, sarc[-1], n, endpoint=False)
+    P = np.stack([np.interp(t, sarc, Q[:, 0]), np.interp(t, sarc, Q[:, 1])], 1)
+    for _ in range(iters):
+        for lam in (0.5, -0.53):
+            P = P + lam * (0.5 * (np.roll(P, 1, 0) + np.roll(P, -1, 0)) - P)
+    return P
+
+
+def kit_shapes(name):
+    """Shapes drawn over an existing outfit's renders (OutfitKit/<name>/figma.json), by role:
+    dark fills are openings ("cut"), light rectangles the belt ("belt"), other light shapes put
+    fabric back inside an opening ("keep", e.g. the shoulder points of a wide scoop neck)."""
+    path = os.path.join(_KIT, name, "figma.json")
+    if not os.path.exists(path):
+        return None
+    out = {"cut": {}, "keep": {}, "belt": {}}
+    for nm, view, closed, weight, fill, flat in _json.load(open(path)):
+        if not (closed and fill):
+            continue
+        role = "cut" if max(fill[:3]) < 0.35 else ("belt" if "rect" in nm.lower() or "belt" in nm.lower() else "keep")
+        poly = np.array(flat, float).reshape(-1, 2)
+        out[role].setdefault({"f": "front", "s": "side", "b": "back"}[view], []).append(
+            poly if role == "belt" else kit_smooth(poly))
+    out["ctx"] = _views()
+    belt = out["belt"].get("front")
+    out["belt_z"] = (out["ctx"][0]["z_top"] - np.mean([p[:, 1].mean() for p in belt]) / out["ctx"][0]["px_per_cm"]) if belt else None
+    out["belt_h"] = (np.mean([np.ptp(p[:, 1]) for p in belt]) / out["ctx"][0]["px_per_cm"]) if belt else None
+    return out
+
+
 def kit_outfit(name):
     d = os.path.join(_KIT, name)
     rows = _json.load(open(os.path.join(d, "figma.json")))
     sk = _json.load(open(os.path.join(d, "sketch.json")))
-    vj, tp, vn, bvh = _views()
-    # the four ways a vertex can be seen: (view image, direction toward the camera, mirrored?)
-    seen = [("front", np.array((0., -1., 0.)), False), ("back", np.array((0., 1., 0.)), False),
-            ("side", np.array((1., 0., 0.)), False), ("side", np.array((-1., 0., 0.)), True)]
+    ctx = _views()
     groups = {}
     for nm, view, closed, weight, fill, flat in rows:
         if not (closed and fill):
@@ -98,47 +212,7 @@ def kit_outfit(name):
                 continue
         groups.setdefault(key, {}).setdefault({"f": "front", "s": "side", "b": "back"}[view], []).append(poly)
     for (slot, bind), by_view in groups.items():
-        field = np.full(nv, NEG)
-        best = np.full(nv, -1.0)
-        for vname, toward, mirror in seen:
-            if vname not in by_view:
-                continue
-            P = tp * np.array((-1.0, 1.0, 1.0)) if mirror else tp
-            N = vn * np.array((-1.0, 1.0, 1.0)) if mirror else vn
-            f = N @ (toward * np.array((-1.0, 1.0, 1.0)) if mirror else toward)
-            cand = f > _FACE
-            if vname == "side":
-                cand &= f >= np.abs(N[:, 1])
-            Q = _uv(vj, vname, P)
-            polys = by_view[vname]
-            lo, hi = np.min([p.min(0) for p in polys], 0) - 60, np.max([p.max(0) for p in polys], 0) + 60
-            cand &= (Q[:, 0] > lo[0]) & (Q[:, 0] < hi[0]) & (Q[:, 1] > lo[1]) & (Q[:, 1] < hi[1])
-            ids = np.nonzero(cand & (f > best))[0]
-            if not len(ids):
-                continue
-            # occlusion is checked on the real (unmirrored) body from the real camera side
-            vis = _visible(bvh, tp, toward, ids)          # toward is the real camera side, mirrored or not
-            ids = ids[vis]
-            sd = _sd_polys(Q[ids], polys) / vj["px_per_cm"]
-            field[ids] = sd
-            best[ids] = f[ids]
-        # skin no view sees head-on (the top of the foot, under the bust) takes its neighbours' value
-        known = best >= 0
-        near = (field > -6.0) | ~known
-        for _ in range(80):
-            todo = ~known & near
-            if not todo.any():
-                break
-            acc, cnt = np.zeros(nv), np.zeros(nv)
-            for a_, b_ in ((EDGES[:, 0], EDGES[:, 1]), (EDGES[:, 1], EDGES[:, 0])):
-                m_ = known[b_]
-                np.add.at(acc, a_[m_], field[b_[m_]])
-                np.add.at(cnt, a_[m_], 1.0)
-            grow = todo & (cnt > 0)
-            if not grow.any():
-                break
-            field[grow] = acc[grow] / cnt[grow]
-            known |= grow
+        field = kit_field(by_view, ctx)
         print("KIT %s %s%s: %d vertices inside" % (name, slot, " bind" if bind else "", int((field > 0).sum())))
         region(field, _OFFSET.get(slot, 0.3), slot, bind=("Binding", 0.55) if bind else None, min_loop=4.0)
     # straps: 3D lines from the import; side-view copies of a line the front or back already has are dropped

@@ -769,10 +769,15 @@ def bodysuit(neck=None):
     return where((HEAD < 0.5) & (Z > LM["crotch"] - 4), f)
 
 
-def catsuit():
+def catsuit_base():
+    """The whole suit before any opening: neck to above the ankle, to the wrists."""
     f = np.minimum(LM["shoulder"] + 5.0 - Z, (0.25 - HANDS) * 25.0)
     f = np.minimum(f, (0.5 - HEAD) * 30.0)
-    f = np.minimum(f, Z - (LM["ankle"] + 5.0))            # ends above the ankle: her feet stay bare
+    return np.minimum(f, Z - (LM["ankle"] + 5.0))            # ends above the ankle: her feet stay bare
+
+
+def catsuit():
+    f = catsuit_base()
     for s in (1, -1):   # hip cutouts: from below the ribs down over the hip bone, the belt bridging them (Tema: bigger)
         side_pt = surface_near(PEL + LEFT * s * 30 + UP * (LM["waist"] - PEL[2] - 2), LEFT * s)
         r = np.sqrt(((Z - side_pt[2]) / 9.0) ** 2 + ((FW - (side_pt - PEL).dot(FWD) - 1.5) / 7.5) ** 2)   # from just under the belt to below the ribs
@@ -888,26 +893,37 @@ def fishnet():
         seam(leg_line(s, 180, LM["crotch"] - 6, LM["ankle"] + 3, 0.25), 0.14, "Satin")
 
 
-def catsuit_set():
+def catsuit_set(variant=None):
     """Glossy navy latex catsuit, all one colour: a teardrop keyhole, hip cutouts, every opening
     bound in the same latex, a front zip with a steel pull, torso panel seams, collar, cuffs and
     a belt with a steel buckle. Refreshed 2026-11-11 (Tema): bound edges instead of thin piping,
     a keyhole instead of the diamond, then no white anywhere and bigger hip cutouts."""
-    f = catsuit()
+    # variant: openings and belt drawn in Figma over the outfit's renders (Tools/outfit_kit,
+    # OutfitKit/<variant>/figma.json) replace the keyhole, hip cutouts, collar and belt height
+    kit = kit_shapes(variant) if variant else None
+    if kit:
+        f = catsuit_base()
+        cut = kit_field(kit["cut"], kit["ctx"]) if kit["cut"] else np.full(nv, NEG)
+        keep = kit_field(kit["keep"], kit["ctx"]) if kit["keep"] else np.full(nv, NEG)
+        f = np.minimum(f, np.maximum(-cut, keep))
+    else:
+        f = catsuit()
     BIND = ("Latex", 0.7)                                                            # self-coloured bindings: the edge reads by its gloss
     region(f, 0.25, "Latex", bind=BIND, min_loop=6.0)
     top = LM["shoulder"] + 5.0
     seam(torso_line(0, top - 1.0, LM["crotch"] + 1, 0.28), 0.3, "Latex", f)           # zip tape, stops at the keyhole
-    pull = ray(TORSO_BVH, pel_v, top - 3.5, 0.0, 0.0)
+    pull = ray(TORSO_BVH, pel_v, top - 3.5, 0.0, 0.0) if not kit else None   # a scoop neck has no collar to hang it on
     if pull:
         hardware(NP(pull), UP, (1.0, 2.4, 0.35), 0.5)                                  # zip pull under the collar
-    bz = LM["hip_top"] + 5.0
+    bz = kit["belt_z"] if kit and kit["belt_z"] else LM["hip_top"] + 5.0
+    bh = kit["belt_h"] if kit and kit["belt_h"] else 4.0
     for th in (34, -34, 150, -150):
-        seam(torso_line(th, LM["fold"] - 1, bz + 2.5, 0.28), 0.15, "Latex", f)       # panel seams end under the belt
+        seam(torso_line(th, LM["fold"] - 1, bz + bh * 0.5 + 0.5, 0.28), 0.15, "Latex", f)   # panel seams end under the belt
     for s in (1, -1):                                                                # ankle cuffs
         region(where(LEGMASK & (LEGS > 0.5), 1.6 - np.abs(Z - (LM["ankle"] + 7.5))), 0.5, "Latex", bind=("Latex", 0.5), min_loop=6.0)
                                                                                      # belt, buckle front and centre
-    region(band(bz, 4.0, UPPERARM < 0.3), 0.6, "Latex", bind=("Latex", 0.5))       # a level cut all round
+    belt = kit_field(kit["belt"], kit["ctx"]) if kit and kit["belt"] else band(bz, bh, UPPERARM < 0.3)
+    region(where(UPPERARM < 0.3, belt), 0.6, "Latex", bind=("Latex", 0.5))       # a level cut all round
     # the buckle sits on the belly's front, square to it: a ray down the middle falls into the
     # navel (2.5 cm deep), and the skin's normal there tips inward, which buried it
     front = [q for q in (ray(TORSO_BVH, pel_v, bz, D(t), 0.0) for t in (-12, -8, -4, 4, 8, 12)) if q]
@@ -924,7 +940,8 @@ def catsuit_set():
             clip(c + dv, fwd_v, along, size)
     wrist = np.minimum((0.62 - HANDS) * 25.0, (HANDS - 0.22) * 25.0)                 # cuff bands
     region(where(UPPERARM > 0.5, wrist), 0.5, "Latex", bind=("Latex", 0.5), min_loop=6.0)
-    region(band(top - 1.5, 3.0, UPPERARM < 0.3), 0.5, "Latex", bind=("Latex", 0.5))    # collar
+    if not kit:
+        region(band(top - 1.5, 3.0, UPPERARM < 0.3), 0.5, "Latex", bind=("Latex", 0.5))    # collar
 
 
 def sheer():
@@ -1587,7 +1604,7 @@ def mirror():
 
 
 OUTFITS = {"Noir": noir, "Garter": garter_set, "Cocoa": cocoa, "Fishnet": fishnet,
-           "Catsuit": catsuit_set, "Silversuit": catsuit_set, "Sheer": sheer, "Bodystocking": bodystocking,
+           "Catsuit": catsuit_set, "Silversuit": lambda: catsuit_set("Silversuit"), "Sheer": sheer, "Bodystocking": bodystocking,
            "BodystockingSkirt": lambda: (bodystocking(), skirt()), "Tartan": tartan, "Harness": harness,
            "Mirror": mirror,   # premium bundle 01
            "Skirt": lambda: skirt(off=1.0, flare=1.5, swing=0.0, skin_to=LM["crotch"] + 2.0, tight=True, follow=True, cling=0.7)}   # the cloth skirt: follows her shape, only the hem moves (Tema 2026-11-10); 1 cm off at the top, 4 at the hem (the cloth gets no bounce morphs); skin weights to just above the crotch, so the hip front cannot push through
