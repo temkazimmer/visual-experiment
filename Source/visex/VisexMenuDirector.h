@@ -322,23 +322,23 @@ public:
 	 *  left, Y forward, Z up) plus a look-up and a pan (deg), and its lens opens to
 	 *  SettingsFocalLength on the way. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
-	FVector SettingsCamOffset = FVector(110.f, 0.f, 0.f);
+	FVector SettingsCamOffset = FVector(150.f, 0.f, 0.f);
 	/** The Settings lens (mm), on the same scale as MenuFocalLength (the camera's own Super 35
 	 *  size filmback; MenuSensorScale multiplies both alike): 6 mm is a ~126 deg horizontal view,
 	 *  about a 9 mm on full frame. The panel moves in with it so it keeps its size on screen. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings", meta = (ClampMin = "0"))
 	float SettingsFocalLength = 6.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
-	FVector SettingsCamAim = FVector(0.f, 10.f, 75.f);
+	FVector SettingsCamAim = FVector(0.f, -20.f, 80.f);
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
 	float SettingsCamLookUp = 0.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
-	float SettingsCamPan = -16.f;
+	float SettingsCamPan = -10.f;
 	/** Focus slides this far (0..1) from her toward the raised foot's ball (SettingsFocusBone). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
 	FName SettingsFocusBone = TEXT("ball_l");
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings", meta = (ClampMin = "0", ClampMax = "1"))
-	float SettingsFocusMix = 0.5f;
+	float SettingsFocusMix = 0.f;   // at 6 mm and this close, f/2.8 cannot hold her face and a foot: keep her face
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings", meta = (ClampMin = "0.1"))
 	float SettingsCamTime = 2.2f;
 	/** 0 the menu framing, 1 the Settings framing; eased in Tick. */
