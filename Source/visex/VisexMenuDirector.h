@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "CineCameraSettings.h"
+#include "Animation/AnimEnums.h"
 #include "VisexMenuLayout.h"
 #include "VisexMenuDirector.generated.h"
 
@@ -395,6 +396,13 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Menu|Lean")
 	AActor* GetLeanColumn() const { return LeanColumn; }
+	/** FitLeanColumn has placed the drum for her body: the launch cover waits on it. */
+	bool HasFittedColumn() const { return bColumnFitted; }
+	/** Keeps the handheld drift at its start, the frame the intro film ends on, while the launch
+	 *  cover holds and cross-fades. */
+	void HoldDrift() { Clock = 0.f; }
+	/** The 3D menu panel's opacity: the launch cover fades it in after the film's last frame. */
+	void SetPanelOpacity(float Alpha);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
 	TSoftObjectPtr<class UAnimSequence> LeanIdle = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Lean.A_Menu_Lean")));
@@ -425,6 +433,78 @@ public:
 	 * (a raw pointer caught in the lean-down timer crashed Shipping 0298). */
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<class UAnimSequence>> LoadedLean;
+
+	/** Body/Wardrobe: after the push-off she walks clear of the column, far enough that a full
+	 *  turn on the page keeps every part of her this far off the stone (cm), even with the
+	 *  sliders at their ends. Measured from her bones when she sets off. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0"))
+	float BodyClearance = 30.f;
+
+	/** Flesh, fingertips and outfit past her outermost bones (cm, at her scale). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0"))
+	float BodyReachMargin = 10.f;
+
+	/** How much of her reach the width sliders (Shoulders, Hips) widen, up to their ends. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0", ClampMax = "1"))
+	float BodyReachWidthShare = 0.8f;
+
+	/** Her pace on those steps, out and back (cm/s): slow and weighty. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "10"))
+	float BodyStepSpeed = 75.f;
+
+	/** Body/Wardrobe: the least gap from her axis to the stone she walks out to (cm), so the
+	 *  way out and back is a real little walk, not a shuffle. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0"))
+	float BodyWalkGap = 140.f;
+
+	/** Her pace walking back to the column after Body, Wardrobe or photo mode (cm/s). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "10"))
+	float BodyStepBackSpeed = 75.f;
+
+	/** The return: she turns to the column in place, walks to her spot facing it, and turns
+	 *  round there before she sinks into the lean. Seconds for a half turn; less for less. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0.1"))
+	float ReturnTurnTime = 1.4f;
+
+	/** Her feet's pace through a turn too small for a clip (cm/s, at the turn's middle). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0"))
+	float ReturnShuffleSpeed = 20.f;
+
+	/** The turn-in-place clips (Tools/char_turn_clips.py, root yaw only): the one whose turn is
+	 *  nearest the one she needs plays, its root yaw scaled to land her facing exactly that way. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
+	TArray<TSoftObjectPtr<class UAnimSequence>> TurnClips = {
+		TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Turn/A_Turn_90L.A_Turn_90L"))),
+		TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Turn/A_Turn_90R.A_Turn_90R"))),
+		TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Turn/A_Turn_180L.A_Turn_180L"))),
+		TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Turn/A_Turn_180R.A_Turn_180R")))};
+
+	/** Turns smaller than this (deg) skip the clips: she turns as she walks, or eases round. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0"))
+	float TurnClipMin = 40.f;
+
+	/** Closer to her spot than this (cm) she doesn't walk: she turns and settles back onto it. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0"))
+	float ReturnWalkMin = 35.f;
+
+	/** Farther than this (cm, after photo mode) she isn't walked back: a dip to black instead. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0"))
+	float ReturnWalkMax = 600.f;
+
+	/** Her farthest part from her own axis at the sliders' ends (cm), and the gap from her
+	 *  axis to the stone she stopped at: last measured on the way to the Body page. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Menu|Lean")
+	float BodyReach = 0.f;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Menu|Lean")
+	float BodyStepTarget = 0.f;
+
+	/** From a point on the ground plane to the drum's surface, horizontally (cm; <0 inside). */
+	UFUNCTION(BlueprintPure, Category = "Menu|Lean")
+	float ColumnGapAt(FVector Point) const;
+
+	/** Her farthest bone from her axis, plus BodyReachMargin (cm), as she stands now. */
+	UFUNCTION(BlueprintPure, Category = "Menu|Lean")
+	float MeasureReach() const;
 
 	/** Hides the menu and opens the body page; the menu comes back when it closes. */
 	UFUNCTION(BlueprintCallable, Category = "Menu")
@@ -466,7 +546,7 @@ public:
 	UVisexMenuWidget* GetMenuWidget() const;
 
 	/** Item 0 starts, 1 opens the body page, 2 is photo mode, 3 quits. Override in Blueprint to change. */
-	UFUNCTION(BlueprintNativeEvent, Category = "Menu")
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Menu")
 	void OnItemChosen(int32 Index);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Menu")
@@ -558,6 +638,7 @@ private:
 	void SetMenuFocal(class UCineCameraComponent* Lens, float Focal);
 	float ViewAspect() const;
 	bool bOpen = false;
+	bool bColumnFitted = false;
 	bool bInputBound = false;
 	bool bStickHeld = false;
 	bool bPlaying = false;   // handed back to the player after Start
@@ -604,6 +685,34 @@ private:
 	UPROPERTY(Transient) TObjectPtr<class AVisexMenuLayoutEditor> LayoutEditor;
 	void OpenBodyNow();
 	int32 CharacterPage = 0;   // the page OpenBodyNow opens: 0 body, 1 wardrobe
+	// Body/Wardrobe: she steps clear of the column first, and back onto it after
+	void BeginStepOut();
+	void BeginStepBack(float Wait, int32 Select);
+	void TickStep(float DeltaSeconds);
+	void EndStep();
+	int32 StepDir = 0;           // +1 walking out, -1 returning to the column, 0 still
+	void TickReturn(float DeltaSeconds);
+	int32 ReturnPhase = 0;       // 0 turning to her spot, 1 walking there, 2 turning round on it
+	float PhaseClock = 0.f;
+	float TurnFrom = 0.f, TurnTo = 0.f, TurnTime = 0.f;   // yaw (deg) and seconds of this turn
+	// the turn clip playing (null: the eased fallback): its root yaw sampled over time, the
+	// scale onto the turn she needs, and the clip time she's done at
+	bool StartTurnClip(bool bThenWalk);
+	UPROPERTY(Transient) TObjectPtr<class UAnimSequence> TurnClip;
+	TArray<float> TurnCurve;
+	float TurnDt = 0.f, TurnScale = 1.f, TurnEnd = 0.f;
+	float TurnYawAt(float T) const;
+	TEnumAsByte<ERootMotionMode::Type> TurnRootMotion = ERootMotionMode::RootMotionFromMontagesOnly;
+	bool bTurnRootSaved = false;
+	void RestoreTurnRootMotion();
+	float HomeYaw = 0.f;         // her facing on the lean
+	float StepClock = 0.f;
+	FVector StepAway = FVector::ForwardVector;   // on the ground, from the drum toward her
+	FVector StepHome = FVector::ZeroVector;      // where she backs to: the stand-in's spot
+	int32 StepSelect = 0;        // the row the menu returns on
+	float StepMinTime = 0.f;     // the camera's blend home: the menu waits for it too
+	bool bSteppedOut = false;
+	bool bStepOrient = true;     // her movement's own orient-to-movement, put back after
 
 	// photo mode
 	void OpenPhoto();

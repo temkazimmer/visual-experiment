@@ -15,7 +15,7 @@ public class visex : ModuleRules
 		bUseUnity = false;
 		PublicDependencyModuleNames.AddRange(new string[] {
 			"Core", "CoreUObject", "Engine", "InputCore", "UMG", "Slate", "SlateCore", "CinematicCamera",
-			"EnhancedInput", "AssetRegistry", "ChaosClothAssetEngine", "RHI", "RenderCore"
+			"EnhancedInput", "AssetRegistry", "ChaosClothAssetEngine", "RHI", "RenderCore", "MoviePlayer"
 		});
 	}
 

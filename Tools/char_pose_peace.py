@@ -14,7 +14,7 @@ import os
 import shutil
 import unreal
 
-IDLE = "/Game/Characters/Mannequins/Anims/Unarmed/MM_Idle"
+IDLE = "/Game/Characters/Mannequins/Anims/Unarmed/MM_Idle_Template"  # frozen template idle; MM_Idle is her proud idle now
 OUT_DIR, OUT_NAME = "/Game/Characters/Poses", "A_Pose_Peace"
 BP_PATH = "/Game/ThirdPerson/Blueprints/BP_ThirdPersonCharacter"
 BUILD = globals().get("BUILD", True)

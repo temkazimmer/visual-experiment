@@ -33,7 +33,7 @@ print("column in her space: axis y %.1f z %.1f, radius %.1f, top %.1f" % (CY, CZ
 # (measured in Play 2026-11-12, her mesh space: the menu camera at (255, 98, -14), 69 deg to her left)
 def _dir(deg): return (math.sin(math.radians(deg)), math.cos(math.radians(deg)), 0.0)   # X is her left
 CAM_DEG = globals().get("CAM_DEG", 69.0)
-LEG_DEG = globals().get("LEG_DEG", 35.0)              # the leg a little off the lens line: the foot beside her, not over her
+LEG_DEG = globals().get("LEG_DEG", 15.0)              # mostly ahead: seen side-on, so the low lens reads the leg straight (QA 0451: at 35 it foreshortened into a bent knee)
 TO_CAM, TO_LEG = _dir(CAM_DEG), _dir(LEG_DEG)
 E, PL = ("r", "l") if CAM_DEG < 0 else ("l", "r")     # the raised leg on the lens's side, the other carries her
 SX = 1.0 if PL == "l" else -1.0                         # the planted side's X sign
@@ -48,7 +48,7 @@ PELVIS = (1.0, CY + (RADIUS + PERCH_OFF) * math.sin(_a), CZ + (RADIUS + PERCH_OF
 # the raised leg out long toward the lens, the foot raised, toes up, sole to the camera
 REACH = globals().get("REACH", 0.99)                    # of the leg's full length, hip to ankle: long, the knee just soft
 KNEE_UP = globals().get("KNEE_UP", 10.0)
-FOOT_Z = globals().get("FOOT_Z", 42.0)                  # the ankle's height over the sand
+FOOT_Z = globals().get("FOOT_Z", 66.0)                  # the ankle near hip height: the leg runs out level, not down toward the lens
 build(LEAN)
 _hip = pos("thigh_" + E)
 _leg = length(sub(pos("calf_" + E), pos("thigh_" + E))) + length(sub(pos("foot_" + E), pos("calf_" + E)))

@@ -2,6 +2,8 @@
 
 #include "VisexMenuWidget.h"
 #include "VisexBodyEditor.h"
+#include "VisexBodyComponent.h"
+#include "VisexBodyProfile.h"
 #include "VisexMenuLayoutEditor.h"
 #include "VisexPhotoMode.h"
 #include "VisexQATour.h"
@@ -65,6 +67,15 @@ AVisexMenuDirector::AVisexMenuDirector()
 void AVisexMenuDirector::BeginPlay()
 {
 	Super::BeginPlay();
+	// the turn clips load now: a clip loaded at the turn itself can still be compressing (in
+	// the editor) and reads as no turn at all
+	for (const TSoftObjectPtr<UAnimSequence>& Soft : TurnClips)
+	{
+		if (UAnimSequence* Clip = Soft.LoadSynchronous())
+		{
+			LoadedLean.AddUnique(Clip);
+		}
+	}
 	if (bMaxQualityOnPlay)
 	{
 		// the look is the point: Ultra (Cinematic) in Play and on a first launch; after that
@@ -277,6 +288,16 @@ void AVisexMenuDirector::ShowMenu()
 	}
 	bOpen = true;
 	OnMenuShown();
+}
+
+void AVisexMenuDirector::SetPanelOpacity(float Alpha)
+{
+	UVisexMenuWidget* W = GetMenuWidget();
+	if (W && !FMath::IsNearlyEqual(W->GetRenderOpacity(), Alpha))
+	{
+		W->SetRenderOpacity(Alpha);
+		MarkPanel();
+	}
 }
 
 UCineCameraComponent* AVisexMenuDirector::GetLens() const
@@ -559,6 +580,14 @@ void AVisexMenuDirector::OpenCharacterPage(int32 InPage)
 		bOpen = false;
 		FadeOut = 0.f;
 		DisableInput(PC);
+		if (LeanColumn)
+		{
+			// she pushes off, then walks clear of the stone: turning her on the page swept her
+			// legs into it. The page opens where she stops.
+			GetWorldTimerManager().SetTimer(StandTimer, this, &AVisexMenuDirector::BeginStepOut,
+				FMath::Clamp(Up * StandUpHandOver, 0.02f, FMath::Max(0.02f, WalkOffMaxDelay)), false);
+			return;
+		}
 		GetWorldTimerManager().SetTimer(StandTimer, this, &AVisexMenuDirector::OpenBodyNow, Up * 0.8f, false);
 		return;
 	}
@@ -598,6 +627,389 @@ void AVisexMenuDirector::OpenBodyNow()
 	bOpen = false;
 	Panel->SetVisibility(false);
 	DisableInput(PC);
+}
+
+float AVisexMenuDirector::ColumnGapAt(FVector Point) const
+{
+	const UStaticMeshComponent* Stone = LeanColumn ? LeanColumn->FindComponentByClass<UStaticMeshComponent>() : nullptr;
+	if (!Stone)
+	{
+		return BIG_NUMBER;
+	}
+	// the drum lies along its actor's X, its axis at the stone's pivot: square off it on the ground
+	const FVector Along = LeanColumn->GetActorForwardVector().GetSafeNormal2D();
+	FVector D = Point - Stone->GetComponentLocation();
+	D.Z = 0.f;
+	D -= Along * FVector::DotProduct(D, Along);
+	return D.Size() - LeanColumnSurfaceRadius;
+}
+
+float AVisexMenuDirector::MeasureReach() const
+{
+	const ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	const USkeletalMeshComponent* Mesh = Char ? Char->GetMesh() : nullptr;
+	if (!Mesh)
+	{
+		return 0.f;
+	}
+	// her farthest bone from the axis the page turns her on (fingers and toes too; the IK
+	// targets and virtual bones aren't her), then the flesh and cloth past it
+	const FVector Axis = Char->GetActorLocation();
+	float Reach = 0.f;
+	for (int32 i = 0; i < Mesh->GetNumBones(); ++i)
+	{
+		const FName Bone = Mesh->GetBoneName(i);
+		const FString Name = Bone.ToString();
+		if (Name.StartsWith(TEXT("ik_")) || Name.StartsWith(TEXT("VB ")) || Bone == TEXT("root"))
+		{
+			continue;
+		}
+		Reach = FMath::Max(Reach, FVector::Dist2D(Mesh->GetBoneLocation(Bone), Axis));
+	}
+	const float S = Mesh->GetComponentScale().Z / FMath::Max(LeanAuthoredScale, 0.01f);
+	return Reach + BodyReachMargin * S;
+}
+
+void AVisexMenuDirector::BeginStepOut()
+{
+	ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	if (!Char || !LeanColumn || bOpen)
+	{
+		OpenBodyNow();
+		return;
+	}
+	// away from the drum, square off its axis (her facing, give or take)
+	const FVector Along = LeanColumn->GetActorForwardVector().GetSafeNormal2D();
+	FVector Away = Char->GetActorLocation() - LeanColumn->GetActorLocation();
+	Away.Z = 0.f;
+	Away -= Along * FVector::DotProduct(Away, Along);
+	StepAway = Away.GetSafeNormal2D();
+	if (StepAway.IsNearlyZero())
+	{
+		StepAway = Char->GetActorForwardVector().GetSafeNormal2D();
+	}
+	// her reach with the sliders at their ends: Height scales all of her, Shoulders and Hips
+	// set where her arms hang. The page can take her there while she turns.
+	float Grow = 1.f, Wide = 1.f;
+	if (const UVisexBodyComponent* Body = Char->FindComponentByClass<UVisexBodyComponent>())
+	{
+		auto ToEnd = [Body](const TCHAR* Name)
+		{
+			const FVisexBodySlider* Row = FVisexBodyProfile::Find(Name);
+			const float Now = Body->GetValue(Name);
+			return Row && Now > KINDA_SMALL_NUMBER ? FMath::Max(1.f, Row->Max / Now) : 1.f;
+		};
+		Grow = ToEnd(TEXT("Height"));
+		Wide = FMath::Max(ToEnd(TEXT("Shoulders")), ToEnd(TEXT("Hips")));
+	}
+	const float Reach = MeasureReach();
+	BodyReach = Reach * Grow * (1.f + BodyReachWidthShare * (Wide - 1.f));
+	BodyStepTarget = FMath::Max(BodyReach + BodyClearance, BodyWalkGap);
+	UE_LOG(LogTemp, Log, TEXT("Body step-out: reach %.1f now, %.1f at the sliders' ends; gap %.1f -> %.1f"),
+		Reach, BodyReach, ColumnGapAt(Char->GetActorLocation()), BodyStepTarget);
+	// the rest of the push-off blends out under the first step (its root would hold her)
+	if (UAnimInstance* Anim = GetPawnAnim())
+	{
+		Anim->StopSlotAnimation(0.5f, FName(TEXT("DefaultSlot")));
+	}
+	UCharacterMovementComponent* Move = Char->GetCharacterMovement();
+	bStepOrient = Move->bOrientRotationToMovement;
+	Move->bOrientRotationToMovement = false;   // she keeps her facing, out and back
+	bSteppedOut = true;
+	StepClock = 0.f;
+	StepDir = 1;
+}
+
+void AVisexMenuDirector::BeginStepBack(float Wait, int32 Select)
+{
+	ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	bSteppedOut = false;
+	if (!Char || !StandIn)
+	{
+		BackToMenu(Wait, Select);
+		return;
+	}
+	// she turns to the column, walks to her spot while the camera blends home, turns round on
+	// it and leans as she did
+	StepHome = StandIn->GetActorLocation();
+	HomeYaw = StandIn->GetActorRotation().Yaw + 90.f;   // as PlacePawn faces her
+	FVector To = StepHome - Char->GetActorLocation();
+	To.Z = 0.f;
+	TurnFrom = Char->GetActorRotation().Yaw;
+	TurnTo = To.Size() >= ReturnWalkMin ? To.Rotation().Yaw : HomeYaw;
+	TurnTo = TurnFrom + FMath::FindDeltaAngleDegrees(TurnFrom, TurnTo);
+	TurnTime = ReturnTurnTime * FMath::Max(0.35f, FMath::Abs(TurnTo - TurnFrom) / 180.f);
+	ReturnPhase = To.Size() >= ReturnWalkMin ? 0 : 2;
+	PhaseClock = 0.f;
+	if (UAnimInstance* Anim = GetPawnAnim())
+	{
+		Anim->StopSlotAnimation(0.4f, FName(TEXT("DefaultSlot")));
+	}
+	StepSelect = Select;
+	StepMinTime = Wait;
+	UCharacterMovementComponent* Move = Char->GetCharacterMovement();
+	bStepOrient = Move->bOrientRotationToMovement;
+	Move->bOrientRotationToMovement = false;
+	StepClock = 0.f;
+	StepDir = -1;
+	if (!StartTurnClip(ReturnPhase == 0))
+	{
+		// too small a turn for a clip: she turns as she walks, or eases round on her spot
+		if (ReturnPhase == 0)
+		{
+			ReturnPhase = 1;
+		}
+	}
+}
+
+bool AVisexMenuDirector::StartTurnClip(bool bThenWalk)
+{
+	TurnClip = nullptr;
+	const float Need = TurnTo - TurnFrom;
+	UAnimInstance* Anim = GetPawnAnim();
+	if (!Anim || FMath::Abs(Need) < TurnClipMin)
+	{
+		UE_LOG(LogTemp, Log, TEXT("Return turn: need %.1f deg, eased (no clip)"), Need);
+		return false;
+	}
+	// her root yaw through each clip, unwrapped; the nearest turn (by ratio) on the same side wins
+	float BestErr = BIG_NUMBER;
+	for (const TSoftObjectPtr<UAnimSequence>& Soft : TurnClips)
+	{
+		UAnimSequence* Clip = Soft.LoadSynchronous();
+		if (!Clip)
+		{
+			continue;
+		}
+		LoadedLean.AddUnique(Clip);
+#if WITH_EDITOR
+		Clip->WaitOnExistingCompression();
+#endif
+		const float Len = Clip->GetPlayLength();
+		const int32 N = FMath::Max(8, FMath::CeilToInt(Len * 60.f));
+		TArray<float> Curve;
+		float Prev = 0.f, Acc = 0.f;
+		const FAnimExtractContext Ctx;
+		for (int32 I = 0; I <= N; ++I)
+		{
+			const float Yaw = Clip->ExtractRootMotionFromRange(0.0, Len * I / N, Ctx).Rotator().Yaw;
+			Acc += FMath::FindDeltaAngleDegrees(Prev, Yaw);
+			Prev = Yaw;
+			Curve.Add(Acc);
+		}
+		const float Total = Curve.Last();
+		if (Total * Need <= 0.f || FMath::Abs(Total) < 10.f)
+		{
+			continue;
+		}
+		const float Err = FMath::Abs(FMath::Loge(Need / Total));
+		if (Err < BestErr)
+		{
+			BestErr = Err;
+			TurnClip = Clip;
+			TurnCurve = MoveTemp(Curve);
+			TurnDt = Len / N;
+			TurnScale = Need / Total;
+		}
+	}
+	if (!TurnClip)
+	{
+		UE_LOG(LogTemp, Log, TEXT("Return turn: need %.1f deg, no clip turns that way"), Need);
+		return false;
+	}
+	// done once the yaw has all but landed: into the walk soon after, onto the lean at the
+	// clip's settle
+	const float Len = TurnClip->GetPlayLength();
+	const float Total = TurnCurve.Last();
+	float Landed = Len;
+	for (int32 I = 0; I < TurnCurve.Num(); ++I)
+	{
+		if (FMath::Abs(TurnCurve[I]) >= FMath::Abs(Total) * (bThenWalk ? 0.97f : 0.995f))
+		{
+			Landed = I * TurnDt;
+			break;
+		}
+	}
+	TurnEnd = bThenWalk ? FMath::Min(Landed + 0.1f, Len - 0.3f) : FMath::Min(Landed + 0.35f, Len - 0.2f);
+	if (!bTurnRootSaved)
+	{
+		TurnRootMotion = Anim->RootMotionMode;
+		bTurnRootSaved = true;
+	}
+	Anim->SetRootMotionMode(ERootMotionMode::IgnoreRootMotion);   // the yaw is put on her actor here
+	Anim->PlaySlotAnimationAsDynamicMontage(TurnClip, FName(TEXT("DefaultSlot")), 0.3f, bThenWalk ? 0.4f : 0.25f, 1.f, 1);
+	UE_LOG(LogTemp, Log, TEXT("Return turn: need %.1f deg, %s (%.1f deg, x%.2f), done at %.2f of %.2f s"),
+		Need, *TurnClip->GetName(), Total, TurnScale, TurnEnd, Len);
+	return true;
+}
+
+float AVisexMenuDirector::TurnYawAt(float T) const
+{
+	if (TurnCurve.Num() == 0)
+	{
+		return 0.f;
+	}
+	const float X = FMath::Clamp(T / FMath::Max(1e-4f, TurnDt), 0.f, float(TurnCurve.Num() - 1));
+	const int32 I = FMath::Min(FMath::FloorToInt(X), TurnCurve.Num() - 2);
+	return I < 0 ? TurnCurve[0] : FMath::Lerp(TurnCurve[I], TurnCurve[I + 1], X - I);
+}
+
+void AVisexMenuDirector::RestoreTurnRootMotion()
+{
+	if (bTurnRootSaved)
+	{
+		if (UAnimInstance* Anim = GetPawnAnim())
+		{
+			Anim->SetRootMotionMode(TurnRootMotion);
+		}
+		bTurnRootSaved = false;
+	}
+}
+
+void AVisexMenuDirector::TickStep(float DeltaSeconds)
+{
+	ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	if (!Char)
+	{
+		StepDir = 0;
+		return;
+	}
+	StepClock += DeltaSeconds;
+	if (StepDir < 0)
+	{
+		TickReturn(DeltaSeconds);
+		return;
+	}
+	FVector Dir = StepAway;
+	float Left = BodyStepTarget - ColumnGapAt(Char->GetActorLocation());
+	float Pace = BodyStepSpeed;
+	// a slow start, then the pace that settles to rest right on her mark: weighty, no skid
+	constexpr float Settle = 90.f;   // cm/s^2
+	const float Ramp = FMath::SmoothStep(0.f, 1.f, StepClock / FMath::Max(0.05f, WalkOffRamp));
+	const float Want = FMath::Min(Pace * Ramp, FMath::Sqrt(2.f * Settle * FMath::Max(0.f, Left)));
+	if (Left <= 1.5f || StepClock > 8.f)
+	{
+		EndStep();
+		return;
+	}
+	const UCharacterMovementComponent* Move = Char->GetCharacterMovement();
+	Char->AddMovementInput(Dir, FMath::Clamp(Want / FMath::Max(1.f, Move->GetMaxSpeed()), 0.02f, 1.f));
+}
+
+void AVisexMenuDirector::TickReturn(float DeltaSeconds)
+{
+	ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	PhaseClock += DeltaSeconds;
+	FVector To = StepHome - Char->GetActorLocation();
+	To.Z = 0.f;
+	const float Left = To.Size();
+	auto Ease = [](float X) { X = FMath::Clamp(X, 0.f, 1.f); return X * X * X * (X * (6.f * X - 15.f) + 10.f); };
+	const UCharacterMovementComponent* Move = Char->GetCharacterMovement();
+	const float MaxSpeed = FMath::Max(1.f, Move->GetMaxSpeed());
+	// a turn clip: her actor takes the clip's root yaw, scaled onto the turn she needs, and the
+	// last of it settles onto the exact facing
+	auto TickClipTurn = [&]() -> bool
+	{
+		const float T = FMath::Min(PhaseClock, TurnEnd);
+		const float Fix = FMath::Clamp((T - (TurnEnd - 0.35f)) / 0.35f, 0.f, 1.f);
+		const float Yaw = FMath::Lerp(TurnYawAt(T) * TurnScale, TurnTo - TurnFrom, Ease(Fix));
+		Char->SetActorRotation(FRotator(0.f, TurnFrom + Yaw, 0.f));
+		return PhaseClock >= TurnEnd;
+	};
+	if (ReturnPhase == 0)
+	{
+		// she turns to her spot in place (the clip's own steps), then walks
+		if (!TurnClip || TickClipTurn())
+		{
+			RestoreTurnRootMotion();
+			if (UAnimInstance* Anim = GetPawnAnim())
+			{
+				Anim->StopSlotAnimation(0.4f, FName(TEXT("DefaultSlot")));
+			}
+			TurnClip = nullptr;
+			ReturnPhase = 1;
+			PhaseClock = 0.f;
+		}
+		return;
+	}
+	if (ReturnPhase == 1)
+	{
+		// her normal walk to the spot, facing where she goes: a calm start, then the pace that
+		// settles to rest right on it
+		constexpr float Settle = 90.f;   // cm/s^2
+		const float Ramp = FMath::SmoothStep(0.f, 1.f, PhaseClock / FMath::Max(0.05f, WalkOffRamp));
+		const float Want = FMath::Min(BodyStepBackSpeed * Ramp, FMath::Sqrt(2.f * Settle * FMath::Max(0.f, Left)));
+		if (Left > 8.f)
+		{
+			const float Yaw = FMath::FixedTurn(Char->GetActorRotation().Yaw, To.Rotation().Yaw, 160.f * DeltaSeconds);
+			Char->SetActorRotation(FRotator(0.f, Yaw, 0.f));
+		}
+		if (Left <= 2.f || StepClock > 12.f)
+		{
+			// on her spot: the half turn that puts the column at her back
+			ReturnPhase = 2;
+			PhaseClock = 0.f;
+			TurnFrom = Char->GetActorRotation().Yaw;
+			TurnTo = TurnFrom + FMath::FindDeltaAngleDegrees(TurnFrom, HomeYaw);
+			TurnTime = ReturnTurnTime * FMath::Max(0.35f, FMath::Abs(TurnTo - TurnFrom) / 180.f);
+			StartTurnClip(false);
+			return;
+		}
+		Char->AddMovementInput(To.GetSafeNormal2D(), FMath::Clamp(Want / MaxSpeed, 0.02f, 1.f));
+		return;
+	}
+	if (TurnClip)
+	{
+		// turning round on her spot, held on it, into the lean
+		if (Left > 0.5f)
+		{
+			Char->AddActorWorldOffset(To * FMath::Min(1.f, DeltaSeconds * 4.f));
+		}
+		if (TickClipTurn())
+		{
+			EndStep();
+		}
+		return;
+	}
+	// a small turn: round on her spot through small side steps, drawn back onto it as they fade
+	const float A = PhaseClock / FMath::Max(0.05f, TurnTime);
+	Char->SetActorRotation(FRotator(0.f, FMath::Lerp(TurnFrom, TurnTo, Ease(A)), 0.f));
+	const float Side = FMath::Sign(TurnTo - TurnFrom) * ReturnShuffleSpeed * FMath::Sin(PI * FMath::Clamp(A, 0.f, 1.f));
+	const FVector Tangent = FVector::CrossProduct(FVector::UpVector, Char->GetActorForwardVector()).GetSafeNormal2D();
+	const FVector Want = Tangent * Side + To * 2.5f;
+	if (A < 0.85f && Want.Size() > 3.f)
+	{
+		Char->AddMovementInput(Want.GetSafeNormal2D(), FMath::Clamp(Want.Size() / MaxSpeed, 0.f, 1.f));
+	}
+	else if (Left > 0.5f)
+	{
+		Char->AddActorWorldOffset(To * FMath::Min(1.f, DeltaSeconds * 4.f));
+	}
+	if (A >= 1.f)
+	{
+		EndStep();
+	}
+}
+
+void AVisexMenuDirector::EndStep()
+{
+	const int32 Was = StepDir;
+	StepDir = 0;
+	RestoreTurnRootMotion();
+	TurnClip = nullptr;
+	if (ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0)))
+	{
+		Char->GetCharacterMovement()->bOrientRotationToMovement = bStepOrient;
+		UE_LOG(LogTemp, Log, TEXT("Body step %s: gap to the stone %.1f after %.2f s"),
+			Was > 0 ? TEXT("out") : TEXT("back"), ColumnGapAt(Char->GetActorLocation()), StepClock);
+	}
+	if (Was > 0)
+	{
+		OpenBodyNow();
+		return;
+	}
+	// home: the menu (and her lean) once the camera has blended back too
+	BackToMenu(FMath::Max(0.05f, StepMinTime - StepClock), StepSelect);
 }
 
 void AVisexMenuDirector::OpenPhoto()
@@ -709,16 +1121,32 @@ void AVisexMenuDirector::SetSceneStripped(bool bStrip)
 
 void AVisexMenuDirector::HandlePhotoClosed()
 {
-	// the scene returns; she walks back onto the column behind a quick dip to black
+	// the scene returns, and she goes back to the column
 	SetSceneStripped(false);
 	bStudio = false;
-	BackToMenu(PhotoMode ? PhotoMode->BlendTime : 0.f, ItemPhoto);
+	const float Blend = PhotoMode ? PhotoMode->BlendTime : 0.f;
+	// near enough, she walks back to the column as from the body page; far off, the dip
+	const APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0);
+	const float Off = Pawn && StandIn ? FVector::Dist2D(Pawn->GetActorLocation(), StandIn->GetActorLocation()) : 0.f;
+	if (bLeanOnColumn && LeanColumn && Off > 5.f && Off <= ReturnWalkMax)
+	{
+		BeginStepBack(Blend, ItemPhoto);
+		return;
+	}
+	BackToMenu(Blend, ItemPhoto);
 }
 
 void AVisexMenuDirector::HandleBodyClosed()
 {
 	bStudio = false;
-	BackToMenu(BodyEditor ? BodyEditor->BlendTime : 0.f, CharacterPage == 1 ? ItemWardrobe : ItemBody);
+	const float Blend = BodyEditor ? BodyEditor->BlendTime : 0.f;
+	const int32 Row = CharacterPage == 1 ? ItemWardrobe : ItemBody;
+	if (bSteppedOut)
+	{
+		BeginStepBack(Blend, Row);
+		return;
+	}
+	BackToMenu(Blend, Row);
 }
 
 void AVisexMenuDirector::BackToMenu(float BlendTime, int32 Select)
@@ -1094,6 +1522,7 @@ void AVisexMenuDirector::FitLeanColumn()
 	LeanColumnSurfaceRadius = Radii.Num() ? Radii.Last() : R;
 	UE_LOG(LogTemp, Log, TEXT("LeanColumn fit: body scale %.3f, seat %.1f up %.1f fwd -> radius %.1f (scale %.3f, traced outer %.1f from %d hits), axis %.1f behind her, top %.1f"),
 		S, SeatZ, SeatFwd, R, K, LeanColumnSurfaceRadius, Radii.Num(), -AxisFwd, R * 2.f - LeanColumnSettle);
+	bColumnFitted = true;
 }
 
 void AVisexMenuDirector::SetColumnBlocksPawn(bool bBlock)
@@ -1401,13 +1830,17 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 	{
 		TickWalkOff(DeltaSeconds);
 	}
+	if (StepDir != 0)
+	{
+		TickStep(DeltaSeconds);
+	}
 
 	if (bOrbiting)
 	{
 		TickOrbit(DeltaSeconds);
 	}
 	// after the camera moved: focus on her for this frame's view, through the landing blend too
-	if (bOpen || bOrbiting || (LandedFor >= 0.f && LandedFor <= LandingBlendTime + 0.1f))
+	if (bOpen || bOrbiting || StepDir != 0 || (LandedFor >= 0.f && LandedFor <= LandingBlendTime + 0.1f))
 	{
 		TickFocus();
 	}
