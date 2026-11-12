@@ -63,7 +63,7 @@ void AVisexIntroRig::SpawnHer()
 	}
 	if (USkeletalMeshComponent* Mesh = Her->GetMesh())
 	{
-		Mesh->AddRelativeLocation(FVector(0.f, 0.f, -SinkCm));
+		MeshBaseZ = Mesh->GetRelativeLocation().Z;
 	}
 	if (!Outfit.IsNone())
 	{
@@ -117,6 +117,12 @@ void AVisexIntroRig::Tick(float DeltaSeconds)
 	if (Her)
 	{
 		Her->SetActorHiddenInGame(Show < 0.5f);
+		if (USkeletalMeshComponent* Mesh = Her->GetMesh())
+		{
+			FVector R = Mesh->GetRelativeLocation();
+			R.Z = MeshBaseZ - SinkCm;
+			Mesh->SetRelativeLocation(R);
+		}
 	}
 	if (Her && !bTookPlayer && (Player >= 0.5f || (bAutoPlayer && Walk > 0.001f && Show >= 0.5f)))
 	{
@@ -154,11 +160,17 @@ void AVisexIntroRig::Tick(float DeltaSeconds)
 	}
 	// her real path, for framing the camera keys (Tools/intro_sequence.py)
 	LogClock += DeltaSeconds;
-	if (Her && LogClock >= 0.25f)
+	if (Her && LogClock >= 0.04f)
 	{
 		LogClock = 0.f;
-		UE_LOG(LogVisexIntro, Log, TEXT("Intro path t=%.2f pos=%s speed=%.0f"), GetWorld()->GetTimeSeconds(),
-			*Her->GetActorLocation().ToCompactString(), Her->GetVelocity().Size2D());
+		// the balls of her feet along her heading (cm ahead of her) and their height: her stride phase,
+		// to match the live arrival's frame 0
+		const FVector Fwd = Her->GetActorForwardVector();
+		const FVector P = Her->GetActorLocation();
+		const FVector BL = Her->GetMesh()->GetSocketLocation(TEXT("ball_l"));
+		const FVector BR = Her->GetMesh()->GetSocketLocation(TEXT("ball_r"));
+		UE_LOG(LogVisexIntro, Log, TEXT("Intro path t=%.3f pos=%s speed=%.0f ballL=%.1f/%.1f ballR=%.1f/%.1f"), GetWorld()->GetTimeSeconds(),
+			*P.ToCompactString(), Her->GetVelocity().Size2D(), FVector::DotProduct(BL - P, Fwd), BL.Z, FVector::DotProduct(BR - P, Fwd), BR.Z);
 	}
 }
 

@@ -56,8 +56,9 @@ public:
 	bool bHideMenuPanel = true;
 
 	/** cm her mesh sits lower than the game places it, so planted soles press into the soft
-	 *  sand instead of hovering over their prints (Tema: the feet must touch the sand). */
-	UPROPERTY(EditAnywhere, Category = "Intro")
+	 *  sand instead of hovering over their prints (Tema: the feet must touch the sand). Keyed:
+	 *  it eases to 0 before the hand-off, where the live arrival takes her as the game places her. */
+	UPROPERTY(EditAnywhere, Interp, Category = "Intro")
 	float SinkCm = 3.5f;
 
 	/** Outfit for the film (a name from FVisexBodyProfile::Outfits()); None keeps her saved one. */
@@ -74,6 +75,7 @@ public:
 protected:
 	float LogClock = 0.f;
 	bool bSpawned = false;
+	float MeshBaseZ = 0.f;
 	bool bTookPlayer = false;
 	bool bMenuShown = false;
 
