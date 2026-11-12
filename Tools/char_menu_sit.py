@@ -97,7 +97,8 @@ def breathing(seconds=12.0):
 # She gathers (both feet flat under her, hands back onto the drum), sinks into a crouch, springs:
 # the hips rise past the seat and back onto the top while both feet leave the sand and tuck,
 # then she lands seated, the hips compress 3 cm and settle while the legs swing into the
-# hook and the hang. Timings from a bench hop-up: ~0.3 s crouch, ~0.25 s in the air.
+# hook and the hang. QA 0485: it read as a push-up, so the crouch is deep (hips 24 cm down), the
+# feet clear the sand by ~35 cm and there is a beat of hang time at the top (~0.4 s off the sand).
 def feet(K, l, r):
     K.update(foot("l", l[0], l[1], l[2] if len(l) > 2 else (0.0, 0.0, -1.0)))
     K.update(foot("r", r[0], r[1], r[2] if len(r) > 2 else (0.0, 0.0, -1.0)))
@@ -106,16 +107,25 @@ FLAT_L, FLAT_R = ((13.0, -4.0, 8.5), (0.15, 0.98, -0.1)), ((-13.0, -4.0, 8.5), (
 GATHER = feet(dict(LEAN, pelvis=add(LEAN["pelvis"], (0.0, 4.0, -4.0)), pitch=6.0, yaw=-6.0, lean_fwd=4.0,
                    head_down=6.0, head_left=0.0, hand_deg=40.0, hand_x=28.0, knee_l=(16.0, 40.0, 50.0), knee_r=(-16.0, 40.0, 50.0)),
               FLAT_L, FLAT_R)
-CROUCH = dict(GATHER, pelvis=add(LEAN["pelvis"], (0.0, 12.0, -14.0)),   # forward: low down the drum's face comes out to meet her
-             pitch=10.0, lean_fwd=14.0, head_down=10.0, hand_deg=36.0)
-# in the air: hips up past the seat, knees tucked, feet off the sand; the hands leave the stone at the
-# top (nothing can reach it from there), arms half back toward hanging
-AIR = feet(dict(SEAT, pelvis=add(SEAT["pelvis"], (0.0, 4.0, 7.0)), pitch=4.0, yaw=-6.0, lean_fwd=10.0, twist_left=2.0,
-                head_down=6.0, head_left=-10.0, hand_deg=30.0, arms=0.5, knee_l=(16.0, 40.0, 70.0), knee_r=(-16.0, 40.0, 70.0)),
-           ((14.0, -6.0, 26.0), (0.1, 0.5, -0.86)), ((-14.0, -8.0, 30.0), (-0.1, 0.45, -0.89)))
-LAND = dict(SEAT, pelvis=add(SEAT["pelvis"], (0.0, 1.0, -3.0)), lean_fwd=4.0, head_down=8.0)   # weight arrives: hips compress
-carry_hands(GATHER, CROUCH, AIR, LAND)
-DOWN_KEYS = [(0.0, LEAN), (0.45, GATHER), (0.80, CROUCH), (1.08, AIR), (1.35, LAND), (1.95, SEAT)]
+# a deep load: hips well down and forward (low down, the drum's face comes out to meet her),
+# chest over the knees, hands pressing on the stone behind
+CROUCH = dict(GATHER, pelvis=add(LEAN["pelvis"], (0.0, 16.0, -24.0)),
+              pitch=14.0, lean_fwd=22.0, head_down=12.0, hand_deg=40.0, arms=0.15)   # arms free, hanging forward with the chest: pressing on the stone this low twists them past range, half-planted they swing into it
+# drive: legs extending, up on the balls of the feet, the last instant on the sand
+TAKEOFF = feet(dict(CROUCH, pelvis=add(LEAN["pelvis"], (0.0, 8.0, 2.0)), pitch=6.0, lean_fwd=12.0, head_down=6.0, hand_deg=36.0, arms=0.15),
+               ((13.0, -2.0, 15.0), (0.12, 0.5, -0.86)), ((-13.0, -2.0, 15.0), (-0.12, 0.5, -0.86)))
+# flight: hips up past the seat, knees tucked high, both feet clear of the sand by ~35 cm; the hands
+# leave the stone at the top (nothing can reach it from there), arms half back toward hanging
+AIR = feet(dict(SEAT, pelvis=add(SEAT["pelvis"], (0.0, 6.0, 14.0)), pitch=4.0, yaw=-6.0, lean_fwd=10.0, twist_left=2.0,
+                head_down=4.0, head_left=-10.0, hand_deg=30.0, arms=0.5, knee_l=(16.0, 40.0, 90.0), knee_r=(-16.0, 40.0, 90.0)),
+           ((14.0, -2.0, 42.0), (0.1, 0.5, -0.86)), ((-14.0, -4.0, 46.0), (-0.1, 0.45, -0.89)))
+# a beat of hang time at the top: the hips barely move while the legs start to part
+HANG_T = feet(dict(AIR, pelvis=add(SEAT["pelvis"], (0.0, 4.0, 12.0)), lean_fwd=8.0, head_left=-16.0, head_down=8.0),
+              (lerp(AIR["ball_l"], add(HANG["ankle"], (0.0, 0.0, 14.0)), 0.4), (0.12, 0.45, -0.88)),
+              (lerp(AIR["ball_r"], HOOK["ankle"], 0.4), (-0.05, 0.2, -0.98)))
+LAND = dict(SEAT, pelvis=add(SEAT["pelvis"], (0.0, 1.0, -4.0)), lean_fwd=4.0, head_down=8.0)   # weight arrives: hips compress
+carry_hands(GATHER, CROUCH, TAKEOFF, AIR, HANG_T, LAND)
+DOWN_KEYS = [(0.0, LEAN), (0.45, GATHER), (0.88, CROUCH), (1.02, TAKEOFF), (1.22, AIR), (1.40, HANG_T), (1.62, LAND), (2.25, SEAT)]
 
 # ---- the way down: she slides forward off the edge, lands on both feet, rises into the lean ----
 SLIP = feet(dict(SEAT, pelvis=add(SEAT["pelvis"], (0.0, 8.0, -2.0)), pitch=0.0, yaw=-6.0, lean_fwd=8.0, head_down=8.0, head_left=-6.0,
