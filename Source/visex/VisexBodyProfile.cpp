@@ -193,6 +193,8 @@ const TArray<FVisexOutfit>& FVisexBodyProfile::Outfits()
 		O(TEXT("Harness"), LOCTEXT("OutfitHarness", "Harness"), TEXT("/Game/Character/Clothes/SKM_Outfit_Harness.SKM_Outfit_Harness"), TEXT(""), 0.45f),
 		// bundle 03 (Tema's references, 2026-11-11): red tartan slingshot, collar and tie, white thigh-highs
 		O(TEXT("Tartan"), LOCTEXT("OutfitTartan", "Tartan"), TEXT("/Game/Character/Clothes/SKM_Outfit_Tartan.SKM_Outfit_Tartan"), TEXT(""), 0.25f),   // a triangle top: little support
+		// Outfit Kit: drawn in Figma (Docs/OUTFIT_KIT.md)
+		O(TEXT("KitTartan"), LOCTEXT("OutfitKitTartan", "Tartan (kit)"), TEXT("/Game/Character/Clothes/SKM_Outfit_KitTartan.SKM_Outfit_KitTartan"), TEXT(""), 0.25f),
 		// wardrobe order (Tema, 2026-11-11): the base set, then Noir, then the premium bundles
 		// the dressing room's locked costumes: listed, not wearable yet (unlocked in play or
 		// bought, later; Tema, 2026-11-11). Choosing one shows "under construction".

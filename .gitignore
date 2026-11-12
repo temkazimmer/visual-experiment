@@ -23,3 +23,6 @@ Content/FemaleEveryday/
 # licensed pack clips imported or retargeted for study only (movement), never committed
 Content/Study/
 __pycache__/
+
+# Blender backups of Outfit Kit sketches
+SourceArt/Character/OutfitKit/**/*.blend1
