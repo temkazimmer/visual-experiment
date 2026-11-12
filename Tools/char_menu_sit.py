@@ -1,17 +1,19 @@
-"""Menu Settings sit (Tema's sketch, 2026-11-12): she climbs from the lean up onto the drum and
-perches on its top-front edge, right foot down on the sand on its ball, left leg stretched out long
-toward the menu camera (69 deg to her left, measured in Play), toes up, sole to the lens, toes up, the sole to the lens. Hands on the stone behind her hips. Idempotent.
+"""Menu Settings sit (Tema, 2026-11-12): she jumps up onto the lean drum and sits on its top,
+the right leg hooked round the drum's front (shin on the stone, foot tucked under its bulge),
+the left leg hanging toward the menu camera, foot relaxed. Back: she slides off into the lean.
+Idempotent.
 
-  python3 Tools/ue.py Tools/char_menu_sit.py     # builds three clips, then shoots stills
+  python3 Tools/ue.py Tools/char_menu_sit.py     # builds three clips
 
 Writes /Game/Characters/Menu/A_Menu_Sit_Settings (a breathing loop), A_Menu_Sit_Settings_Down
-(lean to perch) and A_Menu_Sit_Settings_Up (perch to lean). All in place: the root never moves.
+(lean to seat) and A_Menu_Sit_Settings_Up (seat to lean). All in place: the root never moves.
 The menu director plays them while Settings is open (VisexMenuDirector.cpp, SitForSettings).
-The lean key, the column and the hands come from char_menu_lean.py; the solver from
-char_pose_mermaid.py.
-Globals: BUILD=False, SHOTS=[...] (seconds into _Down) or [], TWEAK={...} for the perch key,
-CAM_DEG (where the lens is, deg from her forward, + toward her left), LEG_DEG (where the
-raised leg points), REACH, FOOT_Z.
+The lean key, the drum and the hands come from char_menu_lean.py; the solver, the game's joint
+limits and ik_foot keying from char_pose_mermaid.py.
+Her mesh space: X her left, Y forward, Z up. The menu camera is 69 deg to her LEFT (measured in
+Play: (255, 98, -14)); a negative pelvis yaw turns her toward it.
+Globals: BUILD=False, TWEAK={...} for the seat key, SEAT_DEG, HANG, HOOK, SIT_HAND_DEG, SIT_HAND_X
+(not HAND_*: char_menu_lean.py owns those names).
 """
 import math
 import os
@@ -20,145 +22,137 @@ import unreal
 if unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).is_in_play_in_editor():
     raise RuntimeError("Play mode is running: stop PIE first")
 BUILD = globals().get("BUILD", True)
-SHOTS = globals().get("SHOTS", [0.0, 0.8, 1.6, 2.6])
 _tools = os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir()), "Tools")
-_sit_keep = dict(BUILD=BUILD, SHOTS=SHOTS, TWEAK=globals().get("TWEAK", {}), VIEWS=globals().get("VIEWS", ("side", "front", "left")))
-# the lean script defines LEAN, the column (CY, CZ, RADIUS) and the lean's arms; with BUILD off it writes nothing
+_sit_keep = dict(BUILD=BUILD, TWEAK=globals().get("TWEAK", {}))
+# the lean script defines LEAN, the drum (CY, CZ, RADIUS, TOP) and the lean's arms; BUILD off writes nothing.
+# It sets its own _keep, so ours has another name.
 BUILD, SHOTS, TWEAK = False, [], {}
 exec(compile(open(os.path.join(_tools, "char_menu_lean.py")).read(), "char_menu_lean.py", "exec"), globals())
-globals().update(_sit_keep)   # the lean script has its own _keep
-print("column in her space: axis y %.1f z %.1f, radius %.1f, top %.1f" % (CY, CZ, RADIUS, TOP))
+globals().update(_sit_keep)
+PALM_OFF = globals().get("SIT_PALM_OFF", 4.0)   # 1 cm more than the lean: at Height 145 the crouch's palms touched 0.4 cm off the HD stone
+print("drum in her space: axis y %.1f z %.1f, radius %.1f, top %.1f" % (CY, CZ, RADIUS, TOP))
 
-# where the menu lens is, seen from her (deg in the ground plane from her forward, + toward her left)
-# (measured in Play 2026-11-12, her mesh space: the menu camera at (255, 98, -14), 69 deg to her left)
-def _dir(deg): return (math.sin(math.radians(deg)), math.cos(math.radians(deg)), 0.0)   # X is her left
-CAM_DEG = globals().get("CAM_DEG", 69.0)
-LEG_DEG = globals().get("LEG_DEG", 15.0)              # mostly ahead: seen side-on, so the low lens reads the leg straight (QA 0451: at 35 it foreshortened into a bent knee)
-TO_CAM, TO_LEG = _dir(CAM_DEG), _dir(LEG_DEG)
-E, PL = ("r", "l") if CAM_DEG < 0 else ("l", "r")     # the raised leg on the lens's side, the other carries her
-SX = 1.0 if PL == "l" else -1.0                         # the planted side's X sign
+def surface_y(z):
+    """The drum's front surface at height z (its nearest point to her), or None above/below it."""
+    dz = z - CZ
+    return CY + math.sqrt(RADIUS * RADIUS - dz * dz) if abs(dz) < RADIUS else None
 
-# ---- the perch ----
-# higher up the drum than the lean: glutes on its top-front edge, pelvis bone ~11 cm off the stone
-PERCH_DEG = globals().get("PERCH_DEG", 29.0)           # from the drum's top toward her
-PERCH_OFF = globals().get("PERCH_OFF", 10.0)
-_a = math.radians(PERCH_DEG)
-PELVIS = (1.0, CY + (RADIUS + PERCH_OFF) * math.sin(_a), CZ + (RADIUS + PERCH_OFF) * math.cos(_a))
+def clearance(p):
+    """How far a point is outside the drum (cm, negative = inside the stone)."""
+    return math.hypot(p[1] - CY, p[2] - CZ) - RADIUS
 
-# the raised leg out long toward the lens, the foot raised, toes up, sole to the camera
-REACH = globals().get("REACH", 0.99)                    # of the leg's full length, hip to ankle: long, the knee just soft
-KNEE_UP = globals().get("KNEE_UP", 10.0)
-FOOT_Z = globals().get("FOOT_Z", 66.0)                  # the ankle near hip height: the leg runs out level, not down toward the lens
-build(LEAN)
-_hip = pos("thigh_" + E)
-_leg = length(sub(pos("calf_" + E), pos("thigh_" + E))) + length(sub(pos("foot_" + E), pos("calf_" + E)))
-_hip_p = add(_hip, sub(PELVIS, LEAN["pelvis"]))         # where the hip joint will be on the perch (near enough)
-_dz = FOOT_Z - _hip_p[2]
-_flat = math.sqrt(max((_leg * REACH) ** 2 - _dz * _dz, 1.0))
-ANKLE_X = (_hip_p[0] + TO_LEG[0] * _flat, _hip_p[1] + TO_LEG[1] * _flat, FOOT_Z)
-TOE_X = norm(add(mul(TO_CAM, 0.25), (0.0, 0.0, 1.0)))   # toes up, a little toward the lens
-SOLE_X = norm(perp(TO_CAM, TOE_X))                      # the sole faces the lens
-KNEE_X = add(lerp(_hip_p, ANKLE_X, 0.5), (0.0, 0.0, KNEE_UP))   # the knee bends up, never down
+# ---- the seat: on the drum's top, a little toward its front ----
+SEAT_DEG = globals().get("SEAT_DEG", 26.0)       # from the top toward her
+SEAT_OFF = globals().get("SEAT_OFF", 10.0)       # pelvis bone off the stone
+_a = math.radians(SEAT_DEG)
+SEAT_PELVIS = (1.0, CY + (RADIUS + SEAT_OFF) * math.sin(_a), CZ + (RADIUS + SEAT_OFF) * math.cos(_a))
 
-# the other foot down on the sand on its ball, heel up, a little out, carrying her
-ANKLE_P = globals().get("ANKLE_P", (SX * 16.0, -20.0, 11.5))   # under the hip: the leg just reaches
-TOE_P = norm((SX * 0.2, 0.55, -0.8))
+# the left leg hangs off the front toward the lens: thigh out over the edge, knee soft, foot relaxed
+HANG = globals().get("HANG", dict(ankle=(22.0, 14.0, 30.0), knee=(24.0, 50.0, 75.0), toe=(0.15, 0.4, -0.9)))   # long and out: the knee clears the HD drum's flutes (~8 cm in Play)
+# the right leg hooks round the drum: the knee over its front, the shin down the bulge, the foot
+# tucked back under it, toes curled toward the stone
+HOOK = globals().get("HOOK", dict(ankle=(-15.0, -18.0, 56.0), knee=(-14.0, 25.0, 100.0), toe=(0.0, -0.3, -0.95)))   # knee 35 cm out over the edge, shin 12 cm back onto the stone
 
-PERCH = dict(LEAN, pelvis=PELVIS, roll=-3.0, pitch=-9.0, yaw=SX * 20.0,   # hips turned toward the lens
-             **{"knee_" + PL: (SX * 22.0, 40.0, 50.0), "knee_" + E: KNEE_X},
-             lean_left=-2.0, lean_fwd=-13.0, twist_left=4.0, head_tilt=4.0, head_down=4.0, head_left=6.0,
-             hand_deg=globals().get("HAND_DEG_SIT", 30.0), hand_x=globals().get("HAND_X_SIT", 34.0),
-             arms=1.0, floor=0.0)
-PERCH.update(foot(PL, ANKLE_P, TOE_P))
-PERCH.update(foot(E, ANKLE_X, TOE_X, SOLE_X))
-PERCH.update(globals().get("TWEAK", {}))
+SEAT = dict(LEAN, pelvis=SEAT_PELVIS, roll=0.0, pitch=-4.0, yaw=-12.0,
+            knee_l=HANG["knee"], knee_r=HOOK["knee"],
+            lean_left=-1.0, lean_fwd=-6.0, twist_left=8.0, head_tilt=-4.0, head_down=12.0, head_left=-30.0,   # down and round toward the low lens (negative: toward it)
+            hand_deg=globals().get("SIT_HAND_DEG", 34.0), hand_x=globals().get("SIT_HAND_X", 26.0),   # ~5 cm off the stone, no wrist past its range
+            arms=1.0, floor=0.0)
+SEAT.update(foot("l", HANG["ankle"], HANG["toe"], (0.1, -0.9, -0.3)))
+SEAT.update(foot("r", HOOK["ankle"], HOOK["toe"], (0.0, 0.9, -0.3)))
+SEAT.update(globals().get("TWEAK", {}))
+carry_hands(SEAT)
 
-# on the way up: hands press, the hips rise and slide back onto the top, both feet still down
-CLIMB = dict(LEAN, pelvis=lerp(LEAN["pelvis"], PELVIS, 0.25),   # the lean's hip tilt, low enough that both feet stay on the sand
-             lean_fwd=4.0, head_down=4.0, hand_deg=0.5 * (LEAN["hand_deg"] + PERCH["hand_deg"]), arms=1.0, floor=0.0)
-# the raised leg starts to lift, knee first
-LIFT = dict(PERCH, lean_fwd=-2.0, head_down=6.0)
-LIFT["knee_" + E] = add(KNEE_X, (0.0, -12.0, 16.0))
-LIFT.update(foot(E, add(lerp(sub(LEAN["ball_" + E], mul(LEAN["toe_" + E], FOOT[E])), ANKLE_X, 0.5), (0.0, 0.0, 10.0)),
-                 lerp(LEAN["toe_" + E], TOE_X, 0.4), (0.0, 0.6, -0.8)))
+def report(tag):
+    """The pose's contacts: joints near the stone, the feet, what the game will clamp."""
+    pts = {b: pos(b) for b in ("pelvis", "thigh_l", "calf_l", "foot_l", "ball_l", "thigh_r", "calf_r", "foot_r", "ball_r", "hand_l", "hand_r")}
+    print("%s: pelvis %s | clearance cm: %s | over limits %s | hand miss l %.1f r %.1f" % (
+        tag, [round(v, 1) for v in pts["pelvis"]],
+        " ".join("%s %.0f" % (b, clearance(p)) for b, p in pts.items() if b != "pelvis"),
+        OVER[:4], ARM_MISS["l"], ARM_MISS["r"]))
 
-carry_hands(LEAN, CLIMB, LIFT, PERCH)
-
-DOWN_KEYS = [(0.0, LEAN), (0.75, CLIMB), (1.45, LIFT), (2.15, PERCH)]
-UP_KEYS = [(0.0, PERCH), (0.65, LIFT), (1.30, CLIMB), (2.00, LEAN)]
+build(SEAT)
+report("seat")
 
 def breathing(seconds=12.0):
-    """The perch, alive: three breaths, a slow sway, and the raised foot easing a little (whole
-    cycles, so it loops)."""
+    """The seat, alive: three breaths, a slow sway, the hanging foot swinging a little (loops)."""
     frames = []
     n = int(round(seconds * FPS))
     for f in range(n + 1):
         w = 2.0 * math.pi * f / n
         b = 3.0 * w
-        P = dict(PERCH)
-        P["lean_fwd"] = PERCH["lean_fwd"] - 1.2 * math.sin(b) - 1.2 * math.sin(w + 0.3)
-        P["pelvis"] = add(PERCH["pelvis"], (1.0 * math.sin(w + 0.6), 0.0, 0.3 * math.sin(b)))
-        P["roll"] = PERCH["roll"] + 1.2 * math.sin(w + 0.6)
-        P["twist_left"] = PERCH["twist_left"] + 1.5 * math.sin(w + 2.0)
-        P["head_left"] = PERCH["head_left"] + 3.0 * math.sin(w + 1.2) + 1.5 * math.sin(2 * w + 0.4)
-        P["head_tilt"] = PERCH["head_tilt"] + 1.5 * math.sin(2 * w)
-        P["ball_" + E] = add(PERCH["ball_" + E], (1.5 * math.sin(w + 0.9), 0.0, 1.2 * math.sin(2 * w + 0.2)))
-        P["toe_" + E] = norm(add(PERCH["toe_" + E], mul(TO_CAM, 0.06 * math.sin(2 * w + 1.4))))   # the foot flexes a touch
+        P = dict(SEAT)
+        P["lean_fwd"] = SEAT["lean_fwd"] - 1.2 * math.sin(b) - 1.0 * math.sin(w + 0.3)
+        P["pelvis"] = add(SEAT["pelvis"], (0.8 * math.sin(w + 0.6), 0.0, 0.3 * math.sin(b)))
+        P["roll"] = SEAT["roll"] + 1.0 * math.sin(w + 0.6)
+        P["twist_left"] = SEAT["twist_left"] + 1.5 * math.sin(w + 2.0)
+        P["head_left"] = SEAT["head_left"] + 3.0 * math.sin(w + 1.2) + 1.5 * math.sin(2 * w + 0.4)
+        P["head_tilt"] = SEAT["head_tilt"] + 1.5 * math.sin(2 * w)
+        P["ball_l"] = add(SEAT["ball_l"], (1.0 * math.sin(2 * w + 0.9), 2.5 * math.sin(2 * w + 0.2), 0.0))   # the dangling foot swings
         build(P)
         frames.append({b2: (local[b2][0], local[b2][1], local[b2][2]) for b2 in bones})
     return frames
 
-lift = build(PERCH)
-print("perch: lift %.1f, pelvis %s, raised ankle %s (asked %s), planted ball %s, hands %s %s, over limits %s" % (
-    lift, [round(v, 1) for v in pos("pelvis")], [round(v, 1) for v in pos("foot_" + E)], [round(v, 1) for v in ANKLE_X],
-    [round(v, 1) for v in pos("ball_" + PL)], [round(v, 1) for v in pos("hand_l")], [round(v, 1) for v in pos("hand_r")], OVER[:4]))
-print("hand miss l %.1f r %.1f cm" % (ARM_MISS["l"], ARM_MISS["r"]))
-frames_down = clip(DOWN_KEYS)
+# ---- the jump up: a real two-foot spring, hands pressing on the stone ----
+# She gathers (both feet flat under her, hands back onto the drum), sinks into a crouch, springs:
+# the hips rise past the seat and back onto the top while both feet leave the sand and tuck,
+# then she lands seated, the hips compress 3 cm and settle while the legs swing into the
+# hook and the hang. Timings from a bench hop-up: ~0.3 s crouch, ~0.25 s in the air.
+def feet(K, l, r):
+    K.update(foot("l", l[0], l[1], l[2] if len(l) > 2 else (0.0, 0.0, -1.0)))
+    K.update(foot("r", r[0], r[1], r[2] if len(r) > 2 else (0.0, 0.0, -1.0)))
+    return K
+FLAT_L, FLAT_R = ((13.0, -4.0, 8.5), (0.15, 0.98, -0.1)), ((-13.0, -4.0, 8.5), (-0.15, 0.98, -0.1))
+GATHER = feet(dict(LEAN, pelvis=add(LEAN["pelvis"], (0.0, 4.0, -4.0)), pitch=6.0, yaw=-6.0, lean_fwd=4.0,
+                   head_down=6.0, head_left=0.0, hand_deg=40.0, hand_x=28.0, knee_l=(16.0, 40.0, 50.0), knee_r=(-16.0, 40.0, 50.0)),
+              FLAT_L, FLAT_R)
+CROUCH = dict(GATHER, pelvis=add(LEAN["pelvis"], (0.0, 12.0, -14.0)),   # forward: low down the drum's face comes out to meet her
+             pitch=10.0, lean_fwd=14.0, head_down=10.0, hand_deg=36.0)
+# in the air: hips up past the seat, knees tucked, feet off the sand; the hands leave the stone at the
+# top (nothing can reach it from there), arms half back toward hanging
+AIR = feet(dict(SEAT, pelvis=add(SEAT["pelvis"], (0.0, 4.0, 7.0)), pitch=4.0, yaw=-6.0, lean_fwd=10.0, twist_left=2.0,
+                head_down=6.0, head_left=-10.0, hand_deg=30.0, arms=0.5, knee_l=(16.0, 40.0, 70.0), knee_r=(-16.0, 40.0, 70.0)),
+           ((14.0, -6.0, 26.0), (0.1, 0.5, -0.86)), ((-14.0, -8.0, 30.0), (-0.1, 0.45, -0.89)))
+LAND = dict(SEAT, pelvis=add(SEAT["pelvis"], (0.0, 1.0, -3.0)), lean_fwd=4.0, head_down=8.0)   # weight arrives: hips compress
+carry_hands(GATHER, CROUCH, AIR, LAND)
+DOWN_KEYS = [(0.0, LEAN), (0.45, GATHER), (0.80, CROUCH), (1.08, AIR), (1.35, LAND), (1.95, SEAT)]
+
+# ---- the way down: she slides forward off the edge, lands on both feet, rises into the lean ----
+SLIP = feet(dict(SEAT, pelvis=add(SEAT["pelvis"], (0.0, 8.0, -2.0)), pitch=0.0, yaw=-6.0, lean_fwd=8.0, head_down=8.0, head_left=-6.0,
+                  hand_deg=40.0, knee_l=(16.0, 40.0, 60.0), knee_r=(-16.0, 40.0, 60.0)),
+             ((14.0, 0.0, 16.0), (0.1, 0.6, -0.8)), ((-14.0, -2.0, 18.0), (-0.1, 0.6, -0.8)))
+TOUCH = dict(CROUCH, pelvis=add(LEAN["pelvis"], (0.0, 10.0, -10.0)), lean_fwd=10.0, hand_deg=44.0)
+carry_hands(SLIP, TOUCH)
+UP_KEYS = [(0.0, SEAT), (0.45, SLIP), (0.80, TOUCH), (1.45, LEAN)]
+
+def snappy(keys, scale=0.35, pad=0.12):
+    """clip() with the lead/follow offsets cut to a third: a jump is quick, every part on nearly one clock."""
+    global LEAD, PAD
+    keep = LEAD, PAD
+    LEAD, PAD = {k: v * scale for k, v in keep[0].items()}, pad
+    try:
+        return clip(keys)
+    finally:
+        LEAD, PAD = keep
+
+def ground_check(frames, tag):
+    """The lowest ball and ankle over the clip, and the closest any joint comes to the stone."""
+    lo, worst = 99.0, (99.0, "")
+    for fr in frames[::3]:
+        for b in bones:
+            local[b] = [fr[b][0], fr[b][1], fr[b][2]]
+        _cache.clear()
+        lo = min(lo, pos("ball_l")[2], pos("ball_r")[2])
+        for j in ("calf_l", "calf_r", "foot_l", "foot_r", "ball_l", "ball_r", "hand_l", "hand_r", "thigh_l", "thigh_r"):
+            c = clearance(pos(j))
+            if c < worst[0]:
+                worst = (c, j)
+    print("%s: %.2f s, lowest ball %.1f cm, closest to the stone %.1f cm (%s)" % (tag, (len(frames) - 1) / float(FPS), lo, worst[0], worst[1]))
+
+frames_down, frames_up = snappy(DOWN_KEYS), snappy(UP_KEYS)
+ground_check(frames_down, "jump up"); ground_check(frames_up, "slide down")
+
 if BUILD:
     write("A_Menu_Sit_Settings", breathing(), MENU_DIR)
     write("A_Menu_Sit_Settings_Down", frames_down, MENU_DIR)
-    write("A_Menu_Sit_Settings_Up", clip(UP_KEYS), MENU_DIR)
-shoot("sit", frames_down, SHOTS, VIEWS)
-
-def shoot_menu(frame, name="sit_menu", dist=200.0, height=14.0, look=70.0, pan=-16.0, fov=30.0):
-    """One still of `frame` from where the menu's floor camera stands (CAM_DEG, dist, height,
-    looking at `look` cm over her feet, turned by `pan`), to Tools/.bridge/<name>.png."""
-    eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
-    stand = {a.get_actor_label(): a for a in eas.get_all_level_actors()}["MenuModel"]
-    bp = unreal.load_asset(BP_PATH)
-    hh = unreal.get_default_object(bp.generated_class()).get_editor_property("capsule_component").get_unscaled_capsule_half_height()
-    stand.set_is_temporarily_hidden_in_editor(True)
-    still = write("A_Shot_M", [frame], "/Game/Characters/Scratch", False)
-    char, props = None, []
-    try:
-        char = eas.spawn_actor_from_class(bp.generated_class(), stand.get_actor_location() + unreal.Vector(0, 0, hh),
-                                          unreal.Rotator(roll=0, pitch=0, yaw=stand.get_actor_rotation().yaw + 90.0))
-        body = char.get_editor_property("mesh")
-        body.override_animation_data(still)
-        xf = body.get_world_transform()
-        for mesh_path, centre, axis, scale in PROPS:
-            prop = eas.spawn_actor_from_class(unreal.StaticMeshActor, xf.transform_location(unreal.Vector(*centre)),
-                                              unreal.MathLibrary.make_rot_from_z(xf.transform_direction(unreal.Vector(*axis))))
-            prop.static_mesh_component.set_static_mesh(unreal.load_asset(mesh_path))
-            prop.set_actor_scale3d(unreal.Vector(*scale))
-            props.append(prop)
-        feet = xf.transform_location(unreal.Vector(0, 0, 0))
-        d = xf.transform_direction(unreal.Vector(*TO_CAM)); d.z = 0.0; d = d.normal()
-        cam = feet + d * dist + unreal.Vector(0, 0, height)
-        aim = feet + unreal.Vector(0, 0, look) - cam
-        p = math.radians(pan); aim = unreal.Vector(aim.x * math.cos(p) - aim.y * math.sin(p), aim.x * math.sin(p) + aim.y * math.cos(p), aim.z)
-        tgt = cam + aim
-        g = {"__name__": "__bridge__", "VIEW": ((cam.x, cam.y, cam.z), (tgt.x, tgt.y, tgt.z), fov)}
-        exec(compile(open(os.path.join(TOOLS, "capture.py")).read(), "capture.py", "exec"), g)
-        shutil.move(os.path.join(TOOLS, ".bridge", "capture.png"), os.path.join(TOOLS, ".bridge", name + ".png"))
-    finally:
-        for prop in props:
-            eas.destroy_actor(prop)
-        if char:
-            eas.destroy_actor(char)
-        unreal.EditorAssetLibrary.delete_asset("/Game/Characters/Scratch/A_Shot_M")
-        stand.set_is_temporarily_hidden_in_editor(False)
-
-if globals().get("MENU_SHOT", True):
-    build(PERCH)
-    shoot_menu({b: (local[b][0], local[b][1], local[b][2]) for b in bones})
+    write("A_Menu_Sit_Settings_Up", frames_up, MENU_DIR)

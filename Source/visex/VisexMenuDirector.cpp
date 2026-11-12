@@ -187,6 +187,7 @@ void AVisexMenuDirector::ShowMenu()
 	}
 	MenuCamera->SetActorTransform(CameraBase);
 	SettingsCamAlpha = 0.f;
+	PanelLensK = 1.f;
 	// and its lens, which the Start move turns into the play camera's
 	if (UCineCameraComponent* Lens = GetLens())
 	{
@@ -372,8 +373,7 @@ void AVisexMenuDirector::PlacePanel()
 	PushLayoutToWidget();
 	// PanelOffset is set for the camera's own lens: a wider menu lens brings the panel in to keep its size on screen
 	const float LensScale = (MenuFocalLength > 0.f && MenuFocal > 0.f) ? MenuFocalLength / MenuFocal : 1.f;
-	Panel->SetRelativeLocation(PanelOffset * LensScale);
-	Panel->SetRelativeRotation(FRotator(PanelPitch, 180.f + PanelYaw, PanelRoll));
+
 	// draw the panel's texture larger and shrink it back to the same size on screen
 	const UVisexMenuWidget* MenuDefaults = Panel->GetWidgetClass()
 		? Cast<UVisexMenuWidget>(Panel->GetWidgetClass()->GetDefaultObject()) : nullptr;
@@ -382,7 +382,41 @@ void AVisexMenuDirector::PlacePanel()
 	// the widget pads its text for the shade to fade out in: grow the panel to match
 	const float Pad = GetMenuWidget() ? GetMenuWidget()->ShadePadding : MenuDefaults ? MenuDefaults->ShadePadding : 0.f;
 	Panel->SetDrawSize((FVector2D(1100.f, 1000.f) + FVector2D(2.f * Pad)) * SS);
+	Panel->SetRelativeLocation(PanelOffset * LensScale);
+	Panel->SetRelativeRotation(FRotator(PanelPitch, 180.f + PanelYaw, PanelRoll));
 	Panel->SetRelativeScale3D(FVector(PanelScale * LensScale / SS));
+}
+
+void AVisexMenuDirector::ApplyPanelLens(float K)
+{
+	// The panel rides with the camera. When the lens goes from focal f to K * f, a point at camera
+	// space (depth, right, up) lands on the same pixel if its depth is scaled by K. No rectangle
+	// can do that for a panel both turned and rolled (best fit: 26 px off), so it is done per vertex:
+	// while K < 1 the panel draws with M_MenuPanelLens, whose World Position Offset scales each
+	// vertex's depth toward the camera by K, and its silhouette on screen is the main page's to
+	// the pixel, whatever the widget draws. At K = 1 it is back on the plain panel material.
+	PanelLensK = K;
+	if (!Panel || !MenuCamera)
+	{
+		return;
+	}
+	UMaterialInterface* Base = PanelMaterial.LoadSynchronous();
+	UMaterialInterface* Lens = K < 0.9999f ? SettingsPanelMaterial.LoadSynchronous() : nullptr;
+	UMaterialInterface* Want = Lens ? Lens : Base;
+	if (Want && Panel->GetMaterial(0) != Want)
+	{
+		Panel->SetMaterial(0, Want);
+	}
+	if (Lens)
+	{
+		if (UMaterialInstanceDynamic* MID = Panel->GetMaterialInstance())
+		{
+			const FTransform Cam = GetLens() ? GetLens()->GetComponentTransform() : MenuCamera->GetActorTransform();
+			MID->SetScalarParameterValue(TEXT("LensK"), K);
+			MID->SetVectorParameterValue(TEXT("LensCamPos"), FLinearColor(Cam.GetLocation()));
+			MID->SetVectorParameterValue(TEXT("LensCamFwd"), FLinearColor(Cam.GetRotation().GetForwardVector()));
+		}
+	}
 }
 
 void AVisexMenuDirector::PushLayoutToWidget()
@@ -469,6 +503,13 @@ void AVisexMenuDirector::Confirm()
 
 void AVisexMenuDirector::OpenSettings()
 {
+	// only from the open menu with her settled: not while she steps out to or walks back from the
+	// column (StepDir), where ShowMenu would later reset the page under a sitting figure. Input
+	// already waits for bOpen; this also covers Blueprint and script callers
+	if (!bOpen || StepDir != 0 || Page > 0)
+	{
+		return;
+	}
 	Page = 1;
 	ShowSettingsPage(0);
 	SitForSettings();
@@ -1682,22 +1723,25 @@ float AVisexMenuDirector::StandUp()
 
 void AVisexMenuDirector::PlayLoopLater(UAnimSequence* Clip, float Delay, bool bThenBeats)
 {
-	// a short cross-fade just before the transition ends: both clips rest there (PAD), so no seam.
-	// The clip is held in LoadedLean; the timer only holds it weakly (0298)
-	GetWorldTimerManager().SetTimer(SitTimer, FTimerDelegate::CreateWeakLambda(this, [this, WeakClip = TWeakObjectPtr<UAnimSequence>(Clip), bThenBeats]()
+	// a cross-fade over the transition's last SitBlend seconds: both clips rest there (PAD), so no
+	// seam. The transition blends out over the same time, so the base idle never shows between
+	// them (0.15 s let her standing idle flash through the jump's landing). The clip is held in
+	// LoadedLean; the timer only holds it weakly (0298)
+	const float Blend = SitBlend;
+	GetWorldTimerManager().SetTimer(SitTimer, FTimerDelegate::CreateWeakLambda(this, [this, WeakClip = TWeakObjectPtr<UAnimSequence>(Clip), bThenBeats, Blend]()
 	{
 		UAnimSequence* Loop = WeakClip.Get();
 		UAnimInstance* A = GetPawnAnim();
 		if (Loop && A)
 		{
 			static const FName Slot(TEXT("DefaultSlot"));
-			A->PlaySlotAnimationAsDynamicMontage(Loop, Slot, 0.15f, 0.3f, 1.f, 1000000);
+			A->PlaySlotAnimationAsDynamicMontage(Loop, Slot, Blend, 0.3f, 1.f, 1000000);
 		}
 		if (bThenBeats)
 		{
 			ScheduleIdleBeat();
 		}
-	}), FMath::Max(Delay - 0.15f, 0.05f), false);
+	}), FMath::Max(Delay - Blend, 0.05f), false);
 }
 
 void AVisexMenuDirector::SitForSettings()
@@ -1718,7 +1762,7 @@ void AVisexMenuDirector::SitForSettings()
 	{
 		LoadedLean.AddUnique(Down);
 		// the way down opens on the lean's own pose: a beat in progress blends into it
-		Anim->PlaySlotAnimationAsDynamicMontage(Down, Slot, 0.4f, 0.f, 1.f, 1);
+		Anim->PlaySlotAnimationAsDynamicMontage(Down, Slot, 0.4f, SitBlend, 1.f, 1);
 		PlayLoopLater(Sit, Down->GetPlayLength(), false);
 	}
 	else
@@ -1747,7 +1791,7 @@ void AVisexMenuDirector::StandFromSettings()
 	{
 		LoadedLean.AddUnique(Up);
 		// closed mid-way down: a longer blend carries her from wherever she is onto the way up
-		Anim->PlaySlotAnimationAsDynamicMontage(Up, Slot, 0.4f, 0.f, 1.f, 1);
+		Anim->PlaySlotAnimationAsDynamicMontage(Up, Slot, 0.4f, SitBlend, 1.f, 1);
 		PlayLoopLater(Idle, Up->GetPlayLength(), true);
 	}
 	else
@@ -1765,8 +1809,9 @@ FTransform AVisexMenuDirector::SettingsCameraTransform() const
 	{
 		return CameraBase;
 	}
-	// the menu shot, stepped a little in its own space, then turned onto a point on her
-	const FVector Loc = CameraBase.TransformPositionNoScale(SettingsCamOffset);
+	// the menu shot dollied along the ground in its own heading (no climb), then turned onto her
+	const FTransform Heading(FRotator(0.f, CameraBase.Rotator().Yaw, 0.f), CameraBase.GetLocation());
+	const FVector Loc = Heading.TransformPositionNoScale(SettingsCamOffset);
 	const FVector Aim = Mesh->GetComponentTransform().TransformPosition(SettingsCamAim);
 	FRotator Look = (Aim - Loc).Rotation();
 	Look.Pitch += SettingsCamLookUp;
@@ -1802,28 +1847,33 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 		}
 	}
 
-	// Settings: the camera sinks onto her feet while she sits, and climbs back after
+	// Settings: the camera dollies in at its own height while she sits, the lens opening wide,
+	// and back out after
 	const float SitGoal = (bOpen && bSitting) ? 1.f : 0.f;
 	const float SitAlpha0 = SettingsCamAlpha;
 	SettingsCamAlpha = FMath::FInterpConstantTo(SettingsCamAlpha, SitGoal, DeltaSeconds, 1.f / FMath::Max(0.1f, SettingsCamTime));
 	const bool bSitCamMoved = SitAlpha0 != SettingsCamAlpha;
+	if (bOpen && MenuCamera && bSitCamMoved && bHaveLens)
+	{
+		// focal eased in log space, so the field of view opens evenly
+		const float Ratio = (SettingsFocalLength > 0.f && MenuFocalLength > 0.f) ? SettingsFocalLength / MenuFocalLength : 1.f;
+		const float K = FMath::Exp(FMath::Loge(Ratio) * SettingsCamEase());
+		if (UCineCameraComponent* Lens = GetLens())
+		{
+			SetMenuFocal(Lens, MenuLensFocal() * K);
+		}
+		PanelLensK = K;   // the panel follows once the camera has moved (below)
+	}
 	if (bOpen && MenuCamera && (DriftPeriod > 0.f || SettingsCamAlpha > 0.f || bSitCamMoved))
 	{
 		FTransform Base = CameraBase;
 		if (SettingsCamAlpha > 0.f)
 		{
-			// round her, not through her: angle, distance and height each eased from shot to shot
+			// a straight dolly: it stops short of her, so it never passes through her
 			const float S = SettingsCamEase();
-			const FTransform Feet = SettingsCameraTransform();
-			const APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0);
-			const FVector C = Pawn ? Pawn->GetActorLocation() : Feet.GetLocation();
-			const FVector D0 = (CameraBase.GetLocation() - C) * FVector(1.f, 1.f, 0.f);
-			const FVector D1 = (Feet.GetLocation() - C) * FVector(1.f, 1.f, 0.f);
-			const float A0 = FMath::Atan2(D0.Y, D0.X);
-			const float A = A0 + FMath::FindDeltaAngleRadians(A0, FMath::Atan2(D1.Y, D1.X)) * S;
-			const float R = FMath::Lerp(D0.Size(), D1.Size(), S);
-			FVector Loc(C.X + R * FMath::Cos(A), C.Y + R * FMath::Sin(A), FMath::Lerp(CameraBase.GetLocation().Z, Feet.GetLocation().Z, S));
-			Base = FTransform(FQuat::Slerp(CameraBase.GetRotation(), Feet.GetRotation(), S), Loc);
+			const FTransform Shot = SettingsCameraTransform();
+			Base = FTransform(FQuat::Slerp(CameraBase.GetRotation(), Shot.GetRotation(), S),
+				FMath::Lerp(CameraBase.GetLocation(), Shot.GetLocation(), S));
 		}
 		const float W = DriftPeriod > 0.f ? 2.f * PI / DriftPeriod : 0.f;
 		const float Sway = DriftPeriod > 0.f ? 1.f : 0.f;
@@ -1836,6 +1886,11 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 			+ Right * Sway * DriftDistance * FMath::Sin(Clock * W * 1.21f + 0.4f)
 			+ FVector::UpVector * Sway * 0.5f * DriftDistance * FMath::Sin(Clock * W * 0.91f + 2.1f);
 		MenuCamera->SetActorLocationAndRotation(Loc, Rot);
+		if (SettingsCamAlpha > 0.f || bSitCamMoved)
+		{
+			// every frame while it is wide: the camera sways, and the offset is taken from where it is now
+			ApplyPanelLens(PanelLensK);
+		}
 	}
 	// the window changed shape under the menu: keep her whole height in the frame
 	if (bOpen && !bOrbiting && bHaveLens && bMenuFillsWindow && !FMath::IsNearlyEqual(ViewAspect(), MenuViewAspect, 0.001f))

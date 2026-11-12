@@ -316,22 +316,34 @@ public:
 	TSoftObjectPtr<class UAnimSequence> SettingsSitDown = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Sit_Settings_Down.A_Menu_Sit_Settings_Down")));
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
 	TSoftObjectPtr<class UAnimSequence> SettingsSitUp = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Sit_Settings_Up.A_Menu_Sit_Settings_Up")));
-	/** The Settings shot is the menu shot moved a little: the camera steps by this much in its own
-	 *  space (X ahead, Y right, Z up, cm) and turns onto SettingsCamAim, a point in her mesh space
-	 *  (X her left, Y forward, Z up), then by a look-up and a pan (deg). */
+	/** The Settings shot (Tema 2026-11-12): the menu camera dollies in along the ground toward her,
+	 *  at its own low height, by SettingsCamOffset (cm, in the menu camera's heading: X ahead,
+	 *  Y right, Z up; Z 0 keeps the height), turns onto SettingsCamAim (her mesh space: X her
+	 *  left, Y forward, Z up) plus a look-up and a pan (deg), and its lens opens to
+	 *  SettingsFocalLength on the way. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
-	FVector SettingsCamOffset = FVector(-40.f, 0.f, 45.f);
+	FVector SettingsCamOffset = FVector(150.f, 0.f, 0.f);
+	/** The Settings lens (mm), on the same scale as MenuFocalLength (the camera's own Super 35
+	 *  size filmback; MenuSensorScale multiplies both alike): 6 mm is a ~126 deg horizontal view,
+	 *  about a 9 mm on full frame. The panel keeps its exact on-screen shape (ApplyPanelLens). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings", meta = (ClampMin = "0"))
+	float SettingsFocalLength = 6.f;
+	/** The panel's material while the Settings lens is wide: M_MenuPanel plus a per-vertex depth
+	 *  scale that keeps the panel's on-screen shape exact (Tools/menu_panel_lens.py rebuilds it from
+	 *  M_MenuPanel: rerun it when M_MenuPanel changes). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
-	FVector SettingsCamAim = FVector(0.f, 10.f, 75.f);
+	TSoftObjectPtr<class UMaterialInterface> SettingsPanelMaterial = TSoftObjectPtr<class UMaterialInterface>(FSoftObjectPath(TEXT("/Game/VisEx/UI/M_MenuPanelLens.M_MenuPanelLens")));
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
+	FVector SettingsCamAim = FVector(0.f, -20.f, 80.f);
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
 	float SettingsCamLookUp = 0.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
-	float SettingsCamPan = -16.f;
+	float SettingsCamPan = -17.f;   // her slightly right of centre (Tema)
 	/** Focus slides this far (0..1) from her toward the raised foot's ball (SettingsFocusBone). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings")
 	FName SettingsFocusBone = TEXT("ball_l");
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings", meta = (ClampMin = "0", ClampMax = "1"))
-	float SettingsFocusMix = 0.5f;
+	float SettingsFocusMix = 0.f;   // at 6 mm and this close, f/2.8 cannot hold her face and a foot: keep her face
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Settings", meta = (ClampMin = "0.1"))
 	float SettingsCamTime = 2.2f;
 	/** 0 the menu framing, 1 the Settings framing; eased in Tick. */
@@ -664,6 +676,10 @@ private:
 	FTransform SettingsCameraTransform() const;
 	float SettingsCamEase() const { const float X = FMath::Clamp(SettingsCamAlpha, 0.f, 1.f); return X * X * X * (X * (6.f * X - 15.f) + 10.f); }
 	bool bSitting = false;
+	static constexpr float SitBlend = 0.3f;   // the sit clips hand over to each other this long
+	// the panel's layout transform before any lens compensation, and the compensation in force
+	void ApplyPanelLens(float K);
+	float PanelLensK = 1.f;
 	FTimerHandle SitTimer;
 	// idle beats: the rest timer, the beat's end, and the last one played
 	void ScheduleIdleBeat();
