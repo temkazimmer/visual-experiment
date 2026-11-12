@@ -80,7 +80,9 @@ WARDROBE = {
                    Satin=dict(Color=(0.008, 0.008, 0.01), Roughness=0.55, RoughnessVariation=0.1, NormalStrength=0.4, SeamStrength=1.0),
                    Binding=dict(_base="Satin", Color=(0.006, 0.006, 0.008), Roughness=0.7, RoughnessVariation=0.1, NormalStrength=0.5)),
 }
-MESH_DIR = {"Sheer": "/Game/Character/Clothes", "Bodystocking": "/Game/Character/Clothes", "BodystockingSkirt": "/Game/Character/Clothes", "Skirt": "/Game/Character/Clothes", "Silversuit": "/Game/Character/Clothes", "Tartan": "/Game/Character/Clothes", "Harness": "/Game/Character/Clothes", "Mirror": "/Game/Character/Clothes"}       # the rest: /Game/Character/Outfits
+# the Outfit Kit's tartan (drawn in Figma, Docs/OUTFIT_KIT.md): the same fabrics and colours
+WARDROBE["KitTartan"] = dict(WARDROBE["Tartan"])
+MESH_DIR = {"Sheer": "/Game/Character/Clothes", "Bodystocking": "/Game/Character/Clothes", "BodystockingSkirt": "/Game/Character/Clothes", "Skirt": "/Game/Character/Clothes", "Silversuit": "/Game/Character/Clothes", "Tartan": "/Game/Character/Clothes", "Harness": "/Game/Character/Clothes", "Mirror": "/Game/Character/Clothes", "KitTartan": "/Game/Character/Clothes"}       # the rest: /Game/Character/Outfits
 DIR = "/Game/Character/Clothes"
 SKELETON = "/Game/Characters/Mannequins/Meshes/SK_Mannequin"
 ONLY = globals().get("ONLY")
