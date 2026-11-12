@@ -860,13 +860,11 @@ void AVisexMenuDirector::TickFocus()
 			break;
 		}
 	}
-	// sitting for Settings the focus slides down to her crossed feet with the camera
-	if (SettingsCamAlpha > 0.f)
+	// sitting for Settings the focus slides partway toward her raised foot, with the camera
+	if (SettingsCamAlpha > 0.f && Mesh->GetBoneIndex(SettingsFocusBone) != INDEX_NONE)
 	{
-		const bool bBalls = Mesh->GetBoneIndex(TEXT("ball_l")) != INDEX_NONE && Mesh->GetBoneIndex(TEXT("ball_r")) != INDEX_NONE;
-		const FVector Feet = bBalls ? 0.5f * (Mesh->GetSocketLocation(TEXT("ball_l")) + Mesh->GetSocketLocation(TEXT("ball_r")))
-			: Mesh->GetComponentTransform().TransformPosition(SettingsFeet);
-		Target = FMath::Lerp(Target, Feet, SettingsCamEase());
+		const FVector Foot = Mesh->GetSocketLocation(SettingsFocusBone);
+		Target = FMath::Lerp(Target, FMath::Lerp(Target, Foot, SettingsFocusMix), SettingsCamEase());
 	}
 	// the bones are last frame's (she animates after the director ticks): lead by her velocity
 	Target += Char->GetVelocity() * GetWorld()->GetDeltaSeconds();
@@ -1290,17 +1288,10 @@ FTransform AVisexMenuDirector::SettingsCameraTransform() const
 	{
 		return CameraBase;
 	}
-	const FTransform Xf = Mesh->GetComponentTransform();
-	const FVector Feet = Xf.TransformPosition(SettingsFeet);
-	const float Ground = Xf.TransformPosition(FVector(SettingsFeet.X, SettingsFeet.Y, 0.f)).Z;
-	// along her legs, soles on, turned toward the menu camera's side by SettingsCamYaw
-	const FVector Legs = Xf.TransformVectorNoScale(FVector(0.f, 1.f, 0.f)).GetSafeNormal2D();
-	const FVector MenuSide = (CameraBase.GetLocation() - Feet).GetSafeNormal2D();
-	const float Sign = FVector::CrossProduct(Legs, MenuSide).Z >= 0.f ? 1.f : -1.f;
-	const FVector Dir = Legs.RotateAngleAxis(Sign * SettingsCamYaw, FVector::UpVector);
-	FVector Loc = Feet + Dir * SettingsCamDistance;
-	Loc.Z = Ground + SettingsCamHeight;
-	FRotator Look = (Feet - Loc).Rotation();
+	// the menu shot, stepped a little in its own space, then turned onto a point on her
+	const FVector Loc = CameraBase.TransformPositionNoScale(SettingsCamOffset);
+	const FVector Aim = Mesh->GetComponentTransform().TransformPosition(SettingsCamAim);
+	FRotator Look = (Aim - Loc).Rotation();
 	Look.Pitch += SettingsCamLookUp;
 	Look.Yaw += SettingsCamPan;
 	Look.Roll = 0.f;
