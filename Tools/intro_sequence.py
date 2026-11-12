@@ -46,6 +46,14 @@ def ground(x, y):
     return r.to_tuple()[4].z if r and r.to_tuple()[0] else 0.0
 
 
+# right after the editor starts, the dunes' collision isn't there yet and every trace falls
+# through to the lower ground (-1000): cameras and walkers end up under the sand
+_probe = unreal.SystemLibrary.line_trace_single(world, unreal.Vector(8000, -3000, 3000), unreal.Vector(8000, -3000, -3000),
+                                                unreal.TraceTypeQuery.TRACE_TYPE_QUERY1, False, IGNORE, unreal.DrawDebugTrace.NONE, True)
+if not (_probe and _probe.to_tuple()[0] and _probe.to_tuple()[9].get_actor_label() == "Dunes"):
+    raise RuntimeError("dune collision not ready yet: run again in a few seconds")
+
+
 def fr(t):
     return unreal.FrameNumber(int(round(t * FPS)))
 
