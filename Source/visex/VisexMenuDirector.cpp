@@ -41,6 +41,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "TimerManager.h"
+#include "Containers/Ticker.h"
+#include "HAL/IConsoleManager.h"
 
 AVisexMenuDirector::AVisexMenuDirector()
 {
@@ -976,6 +978,29 @@ void AVisexMenuDirector::SpawnLeanColumn()
 	if (!StoneMesh)
 	{
 		return;
+	}
+	// The first menu comes up on the second frame after launch. Shadow the virtual shadow map
+	// cached in those first frames went stale and was never invalidated (its own depth pyramid,
+	// which culls invalidations, isn't valid yet), so the drum and the sand under her stood in
+	// black until the camera left (QA 0401, 0441; with r.Shadow.Virtual.Cache 0 it's lit). Keep
+	// the cache off for the launch half second, so it starts from pages drawn with the menu in
+	// place. Costs a few uncached shadow frames once; on the core ticker so it comes back even
+	// if Play ends first.
+	if (IConsoleVariable* Cache = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Shadow.Virtual.Cache")))
+	{
+		const int32 Was = Cache->GetInt();
+		if (Was != 0)
+		{
+			Cache->Set(0, ECVF_SetByCode);
+			FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([Was](float)
+			{
+				if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Shadow.Virtual.Cache")))
+				{
+					V->Set(Was, ECVF_SetByCode);
+				}
+				return false;
+			}), 0.5f);
+		}
 	}
 	// A fallen drum lying across behind her, settled into the sand. Built so the animation side
 	// can read it exactly: actor tagged LeanColumn, scale 1, pivot on the top of the stone at the
