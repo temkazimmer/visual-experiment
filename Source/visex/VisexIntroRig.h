@@ -55,6 +55,11 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Intro")
 	bool bHideMenuPanel = true;
 
+	/** cm her mesh sits lower than the game places it, so planted soles press into the soft
+	 *  sand instead of hovering over their prints (Tema: the feet must touch the sand). */
+	UPROPERTY(EditAnywhere, Category = "Intro")
+	float SinkCm = 3.5f;
+
 	/** Outfit for the film (a name from FVisexBodyProfile::Outfits()); None keeps her saved one. */
 	UPROPERTY(EditAnywhere, Category = "Intro")
 	FName Outfit = TEXT("Silversuit");

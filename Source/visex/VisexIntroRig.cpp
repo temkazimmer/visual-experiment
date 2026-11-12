@@ -61,6 +61,10 @@ void AVisexIntroRig::SpawnHer()
 	{
 		return;
 	}
+	if (USkeletalMeshComponent* Mesh = Her->GetMesh())
+	{
+		Mesh->AddRelativeLocation(FVector(0.f, 0.f, -SinkCm));
+	}
 	if (!Outfit.IsNone())
 	{
 		if (UVisexBodyComponent* Body = Her->FindComponentByClass<UVisexBodyComponent>())
