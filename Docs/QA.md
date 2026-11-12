@@ -7,6 +7,31 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-12 12:35 · VIS-EX-0451 Shipping (65be362) · PASS, first menu column lit, Settings sit and Body step-out work, menu frame times a little up
+
+- **Tour (b7ded30, unchanged):** two runs from the mounted DMG, clean cook. Both reached `VisexQA: done` with 57 shots and exit 0
+  (292 s, 282 s). On ground at every step, no spectator, no new `.ips`. Shots in `Saved/QA_0451ship{,_run2}/` and
+  `Tools/.bridge/shots/qa0451/` (run 2 in `run2/`, sheets in `crops/`).
+- **Cook:** `0 error(s), 0 warning(s)`, 845 packages cooked, 837 in the IoStore. DMG md5 `6c893ee8…`, copied to `VIS-EX-0451-stable.dmg`.
+- **First menu (fixed):** the drum is lit on the first menu now, flutes and pitting read as on `05_menu_again`
+  (`crops/first_menu_0441_vs_0451.png`: 0441 black, 0451 first menu, 0451 menu again). Same in run 2.
+- **Settings sit:** at 1.5 s she's mid-climb, hip on the drum's front edge (`10_settings`). At 3.5 s (after the 2.15 s perch
+  key) she's perched: right foot on the sand, left leg raised with the sole to the lens, hand on the stone behind her
+  (`11_settings_visuals`, `crops/settings_sit.png`). The left knee reads bent rather than stretched long. Camera frames
+  her head and both feet in both shots. After Back she's on the lean again (`12_outfit_None`). Same in run 2.
+- **Body page:** opens at 4 s, frames her as on 0441, head to thighs (`crops/body_page.png`). The step-out walk and
+  "no foot lift" aren't visible: the tour shoots only after the page opens, feet out of frame. Back at the lean after
+  closing (`after body page` at 9500 -900, on ground).
+- **Outfits:** all nine wearable on the menu lean (`crops/outfits.png`). Wardrobe order as on 0441, `wardrobe open`.
+- **Poses (11 motions):** as 0441 (`crops/photo_poses.png`). Crown and Peace still cut her head, Ledge end pose still not caught.
+- **Start move:** 4:3 menu, mid-move, landing and play all `fills the window`, landing at fov 90. Feet IN FRAME at 16:9 and 4:3.
+- **Regressions:** none. GC and `layout save PASS, on disk` in both runs. Photo mode opens walking in place: `moved 0.0 cm in 1 s (PASS)`.
+  The dark patch with specks under her feet on the menu was there on 0441 too.
+- **Frame times:** quality 0/3/4: 16.7 / 16.7 / 34.8 ms (run 2: 16.7 / 19.5 / 43.5). Menu after quality 4 runs 2–9 ms
+  above 0441 (settings 56 vs 53, after body page 68 vs 59): cause unknown, could be noise, worth a look.
+- **Saves:** backed up `VisexBody.sav` (`bddfbe76…`) and `GameUserSettings.ini` (`06e783cf…`), restored after each run, both
+  md5s match. No `Game.ini` before or after.
+
 ## 2026-11-11 23:25 · VIS-EX-0441 Shipping (e9f0adf) · STABLE PASS, new fluted menu column reads well once lit, Mirror and Silversuit wearable, Ledge end pose still not caught
 
 - **Tour (b7ded30, unchanged):** two runs from the mounted DMG, clean cook. Both reached `VisexQA: done` with 57 shots and exit 0
