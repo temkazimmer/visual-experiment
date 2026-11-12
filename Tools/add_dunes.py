@@ -12,6 +12,7 @@ Settled: no face stands steeper than the angle of repose (REPOSE, 34 deg), so
 every slope is walkable and there are no sheer slip-face cliffs.
 
 Run live: python3 Tools/ue.py Tools/add_dunes.py
+Mesh only (no level edits): python3 Tools/ue.py -c "MESH_ONLY=True; exec(open('Tools/add_dunes.py').read())"
 """
 import math
 import os
@@ -36,6 +37,11 @@ WAVELENGTH = 6500                            # cm between main ridges
 CLEAN_CENTRE = (1000, -2800)                 # the steps: no sand here
 CLEAN_RADIUS, FULL_RADIUS = 3500, 17000      # sand fades in between these
 SINK = 8                                     # cm below the floor where there's no sand
+# the menu stairs (Tema, intro film): the upper treads below the menu show through the sand,
+# which laps onto them from the south and the ends; the plaza above keeps its drifts
+STAIR_CLEAR = (6800, 10800, -2700, -1550)    # x0, x1, y0, y1 of bare treads
+STAIR_SOFT = 1100                            # cm over which the sand comes back
+MESH_ONLY = globals().get("MESH_ONLY", False)  # reimport SM_Dunes in place; leave the level alone
 
 ASSET_DIR, ASSET_NAME = "/Game/VisEx", "SM_Dunes"
 eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
@@ -124,6 +130,12 @@ def sand(x, y):
     # off the west end of the steps and plaza; the dunes come back beyond the set
     env *= 1 - (1 - smooth(DUNES_X0 - 3000, DUNES_X0, x)) * (1 - smooth(0, 8000, out))
     env = max(env, smooth(0, 20000, out))
+    # bare treads below the menu, with a ragged sand edge (steps only, not the plaza)
+    x0, x1, y0, y1 = STAIR_CLEAR
+    dist = math.hypot(max(x0 - x, 0, x - x1), max(y0 - y, 0, y - y1))
+    dist += 900 * (fbm(x / 1800 + 2.3, y / 1400 - 5.1, 3) - 0.5)
+    on_steps = 1 - smooth(STEPS_TOP - 150, STEPS_TOP + 50, y)
+    env *= 1 - on_steps * (1 - smooth(0, STAIR_SOFT, dist))
     dunes = env * (HEIGHT * (main * amp * (0.35 + 0.65 * breaks) + 0.16 * small) + sheet)
     # sand banked against the colonnade wall, even close by
     bank = 260 * smooth(400, 2600, y) * smooth(DUNES_X0, 7000, x)
@@ -242,7 +254,7 @@ def write_obj(path):
 
 def import_mesh(path):
     full = ASSET_DIR + "/" + ASSET_NAME
-    if unreal.EditorAssetLibrary.does_asset_exist(full):
+    if unreal.EditorAssetLibrary.does_asset_exist(full) and not MESH_ONLY:
         for a in eas.get_all_level_actors():
             if a.get_actor_label() == "Dunes":
                 eas.destroy_actor(a)
@@ -295,34 +307,39 @@ def dune_material():
     return mi
 
 
-for a in eas.get_all_level_actors():
-    if a.get_actor_label().startswith("Drift_"):
-        eas.destroy_actor(a)
+if MESH_ONLY:
+    obj = os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir()), "Tools", ".bridge", "dunes.obj")
+    print("dunes (mesh only): %d verts" % write_obj(obj))
+    import_mesh(obj)
+else:
+    for a in eas.get_all_level_actors():
+        if a.get_actor_label().startswith("Drift_"):
+            eas.destroy_actor(a)
 
-obj = os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir()), "Tools", ".bridge", "dunes.obj")
-verts = write_obj(obj)
-mesh = import_mesh(obj)
-actor = eas.spawn_actor_from_object(mesh, unreal.Vector(0, 0, 0))
-actor.set_actor_label("Dunes")
-actor.set_editor_property("tags", [unreal.Name("Sand")])     # footprints (add_footprints.py)
+    obj = os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir()), "Tools", ".bridge", "dunes.obj")
+    verts = write_obj(obj)
+    mesh = import_mesh(obj)
+    actor = eas.spawn_actor_from_object(mesh, unreal.Vector(0, 0, 0))
+    actor.set_actor_label("Dunes")
+    actor.set_editor_property("tags", [unreal.Name("Sand")])     # footprints (add_footprints.py)
 
-# invisible walls BOUND outside the set: block the player only, deep in opaque fog
-CR = unreal.CollisionResponseType
-for a in eas.get_all_level_actors():
-    if a.get_actor_label().startswith("Dunes_Bound_"):
-        eas.destroy_actor(a)
-cube = unreal.load_asset("/Engine/BasicShapes/Cube")
-x0, x1, y0, y1 = CORE[0] - BOUND, CORE[1] + BOUND, CORE[2] - BOUND, CORE[3] + BOUND
-for name, centre, size in (("W", (x0, (y0 + y1) / 2), (100, y1 - y0)), ("E", (x1, (y0 + y1) / 2), (100, y1 - y0)),
-                           ("S", ((x0 + x1) / 2, y0), (x1 - x0, 100)), ("N", ((x0 + x1) / 2, y1), (x1 - x0, 100))):
-    w = eas.spawn_actor_from_class(unreal.StaticMeshActor, unreal.Vector(centre[0], centre[1], 5000))
-    w.set_actor_label("Dunes_Bound_" + name)
-    w.static_mesh_component.set_static_mesh(cube)
-    w.set_actor_scale3d(unreal.Vector(size[0] / 100, size[1] / 100, 200))   # 200 m tall
-    w.static_mesh_component.set_visibility(False)
-    w.set_actor_hidden_in_game(True)
-    w.static_mesh_component.set_collision_response_to_all_channels(CR.ECR_IGNORE)
-    w.static_mesh_component.set_collision_response_to_channel(unreal.CollisionChannel.ECC_PAWN, CR.ECR_BLOCK)
-actor.static_mesh_component.set_material(0, dune_material())
-o, e = actor.get_actor_bounds(False)
-print("dunes: %d verts; bounds centre %s extent %s" % (verts, o, e))
+    # invisible walls BOUND outside the set: block the player only, deep in opaque fog
+    CR = unreal.CollisionResponseType
+    for a in eas.get_all_level_actors():
+        if a.get_actor_label().startswith("Dunes_Bound_"):
+            eas.destroy_actor(a)
+    cube = unreal.load_asset("/Engine/BasicShapes/Cube")
+    x0, x1, y0, y1 = CORE[0] - BOUND, CORE[1] + BOUND, CORE[2] - BOUND, CORE[3] + BOUND
+    for name, centre, size in (("W", (x0, (y0 + y1) / 2), (100, y1 - y0)), ("E", (x1, (y0 + y1) / 2), (100, y1 - y0)),
+                               ("S", ((x0 + x1) / 2, y0), (x1 - x0, 100)), ("N", ((x0 + x1) / 2, y1), (x1 - x0, 100))):
+        w = eas.spawn_actor_from_class(unreal.StaticMeshActor, unreal.Vector(centre[0], centre[1], 5000))
+        w.set_actor_label("Dunes_Bound_" + name)
+        w.static_mesh_component.set_static_mesh(cube)
+        w.set_actor_scale3d(unreal.Vector(size[0] / 100, size[1] / 100, 200))   # 200 m tall
+        w.static_mesh_component.set_visibility(False)
+        w.set_actor_hidden_in_game(True)
+        w.static_mesh_component.set_collision_response_to_all_channels(CR.ECR_IGNORE)
+        w.static_mesh_component.set_collision_response_to_channel(unreal.CollisionChannel.ECC_PAWN, CR.ECR_BLOCK)
+    actor.static_mesh_component.set_material(0, dune_material())
+    o, e = actor.get_actor_bounds(False)
+    print("dunes: %d verts; bounds centre %s extent %s" % (verts, o, e))

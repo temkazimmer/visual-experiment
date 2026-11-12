@@ -310,6 +310,16 @@ void AVisexMenuDirector::ShowMenu()
 	OnMenuShown();
 }
 
+void AVisexMenuDirector::SetPanelOpacity(float Alpha)
+{
+	UVisexMenuWidget* W = GetMenuWidget();
+	if (W && !FMath::IsNearlyEqual(W->GetRenderOpacity(), Alpha))
+	{
+		W->SetRenderOpacity(Alpha);
+		MarkPanel();
+	}
+}
+
 UCineCameraComponent* AVisexMenuDirector::GetLens() const
 {
 	const ACineCameraActor* Cine = Cast<ACineCameraActor>(MenuCamera);
@@ -1773,6 +1783,7 @@ void AVisexMenuDirector::FitLeanColumn()
 	LeanColumnSurfaceRadius = Radii.Num() ? Radii.Last() : R;
 	UE_LOG(LogTemp, Log, TEXT("LeanColumn fit: body scale %.3f, seat %.1f up %.1f fwd -> radius %.1f (scale %.3f, traced outer %.1f from %d hits), axis %.1f behind her, top %.1f"),
 		S, SeatZ, SeatFwd, R, K, LeanColumnSurfaceRadius, Radii.Num(), -AxisFwd, R * 2.f - LeanColumnSettle);
+	bColumnFitted = true;
 }
 
 void AVisexMenuDirector::SetColumnBlocksPawn(bool bBlock)

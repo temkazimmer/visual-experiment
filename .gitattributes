@@ -9,3 +9,4 @@
 # Outfit Kit sketches (Tools/outfit_kit)
 SourceArt/Character/OutfitKit/**/*.blend filter=lfs diff=lfs merge=lfs -text
 SourceArt/Character/OutfitKit/**/*.npy filter=lfs diff=lfs merge=lfs -text
+*.mp4    filter=lfs diff=lfs merge=lfs -text

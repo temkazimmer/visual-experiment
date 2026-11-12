@@ -1,5 +1,6 @@
 #include "VisexQATour.h"
 #include "VisexMenuDirector.h"
+#include "VisexLaunchCover.h"
 #include "VisexPhotoMode.h"
 #include "VisexBodyEditor.h"
 #include "VisexBodyComponent.h"
@@ -451,7 +452,18 @@ void AVisexQATour::Tick(float DeltaSeconds)
 			C->AddMovementInput(Yaw.Vector(), 1.f);
 		}
 	}
-	// the first menu shot waits for her walk in to the column (visex.Menu.Arrival)
+	// the tour starts once the launch cover has faded into the menu (VisexLaunchCover.h)
+	if (!bCoverLogged)
+	{
+		const UVisexLaunchCover* Cover = GetGameInstance() ? GetGameInstance()->GetSubsystem<UVisexLaunchCover>() : nullptr;
+		if (Cover && !Cover->IsDone())
+		{
+			return;
+		}
+		bCoverLogged = true;
+		QA_LOG(TEXT("VisexQA: launch cover held %.2f s, released: %s"), Cover ? Cover->GetHeldSeconds() : 0.f, Cover ? *Cover->GetReleaseReason() : TEXT("no cover"));
+	}
+	// the first menu shot also waits for her walk in to the column (visex.Menu.Arrival)
 	Clock = (Next == 0 && Director->IsArriving()) ? 0.f : Clock + DeltaSeconds;
 	if (Steps.IsValidIndex(Next) && Clock >= Steps[Next].Wait)
 	{
