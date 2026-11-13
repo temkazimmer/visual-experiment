@@ -8,10 +8,13 @@
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "ImageUtils.h"
 #include "Misc/Paths.h"
 #include "Misc/FileHelper.h"
 #include "TextureResource.h"
+#include "Rendering/SkeletalMeshRenderData.h"
 
 namespace
 {
@@ -61,6 +64,7 @@ void FVisexFootMeter::Tick(ACharacter* Her, float Dt)
 		return;
 	}
 	Clock += Dt;
+	LastHer = Her;
 	if (RefHeel < 0.f)
 	{
 		// the body reshape scales the foot (ankle to sole) by Feet (VisexBodyComponent)
@@ -71,6 +75,8 @@ void FVisexFootMeter::Tick(ACharacter* Her, float Dt)
 		Log(FString::Printf(TEXT("VisexFeet: sole reference: heel (foot bone) %.2f cm, ball %.2f cm over the sole (Feet %.3f)"), RefHeel, RefBall, FeetScale));
 	}
 	static const FName Heels[2] = {TEXT("foot_l"), TEXT("foot_r")}, Balls[2] = {TEXT("ball_l"), TEXT("ball_r")};
+	float VG[2];
+	SoleGaps(Her, VG);
 	for (int32 S = 0; S < 2; ++S)
 	{
 		FFoot& F = Feet[S];
@@ -79,8 +85,8 @@ void FVisexFootMeter::Tick(ACharacter* Her, float Dt)
 		const float GH = GapAt(Her, H, RefHeel, &Surface), GB = GapAt(Her, B, RefBall, nullptr);
 		const float G = FMath::Min(GH, GB);
 		PhaseGapSum += G;
-		Csv.Add(FString::Printf(TEXT("%.4f,%s,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.1f"), Clock, *Phase, S, H.X, H.Y, H.Z, GH, B.X, B.Y, B.Z, GB,
-			Her->GetVelocity().Size2D()));
+		Csv.Add(FString::Printf(TEXT("%.4f,%s,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.1f,%.2f"), Clock, *Phase, S, H.X, H.Y, H.Z, GH, B.X, B.Y, B.Z, GB,
+			Her->GetVelocity().Size2D(), VG[S]));
 		++PhaseGapN;
 		if (G > StepGap)
 		{
@@ -94,6 +100,7 @@ void FVisexFootMeter::Tick(ACharacter* Her, float Dt)
 			F.Surface = Surface;
 		}
 		F.Time += Dt;
+		F.VGap = FMath::Min(F.VGap, VG[S]);
 		F.H.Add(FVector4f(FVector3f(H), GH));
 		F.B.Add(FVector4f(FVector3f(B), GB));
 	}
@@ -135,8 +142,8 @@ void FVisexFootMeter::EndStep(int32 Side)
 	F.GapMax = BallFloor;
 	PhaseDrift.Add(Drift);
 	PhaseGap.Add(Gap);
-	Log(FString::Printf(TEXT("VisexFeet: %s %s step at %.2f s, %.2f s down: drift %.2f cm (heel %.2f, ball %.2f), sole gap %.2f cm (heel %.2f, ball %.2f) on %s"),
-		*Phase, Side ? TEXT("R") : TEXT("L"), Clock - F.Time, F.Time, Drift, F.Heel.Drift, F.Ball.Drift, Gap, F.GapMin, F.GapMax, *F.Surface));
+	Log(FString::Printf(TEXT("VisexFeet: %s %s step at %.2f s, %.2f s down: drift %.2f cm (heel %.2f, ball %.2f), sole gap %.2f cm (heel %.2f, ball %.2f, mesh %.2f) on %s"),
+		*Phase, Side ? TEXT("R") : TEXT("L"), Clock - F.Time, F.Time, Drift, F.Heel.Drift, F.Ball.Drift, Gap, F.GapMin, F.GapMax, F.VGap, *F.Surface));
 }
 
 void FVisexFootMeter::SetPhase(const FString& Name)
@@ -161,6 +168,7 @@ void FVisexFootMeter::SetPhase(const FString& Name)
 		Log(FString::Printf(TEXT("VisexFeet: SUMMARY %s: no planted steps"), *Phase));
 	}
 	Log(FString::Printf(TEXT("VisexFeet: SUMMARY %s: lower sole over the phase, mean gap %.2f cm"), *Phase, PhaseGapN ? float(PhaseGapSum / PhaseGapN) : 0.f));
+	if (LastHer.IsValid()) { LogGround(LastHer.Get()); }
 	PhaseGapSum = 0.0;
 	PhaseGapN = 0;
 	PhaseDrift.Reset();
@@ -169,7 +177,7 @@ void FVisexFootMeter::SetPhase(const FString& Name)
 	if (Name == TEXT("done"))
 	{
 		const FString File = FPaths::ProjectSavedDir() / TEXT("QA/feet.csv");
-		FFileHelper::SaveStringToFile(TEXT("t,phase,side,hx,hy,hz,hgap,bx,by,bz,bgap,speed\n") + FString::Join(Csv, TEXT("\n")), *File);
+		FFileHelper::SaveStringToFile(TEXT("t,phase,side,hx,hy,hz,hgap,bx,by,bz,bgap,speed,vgap\n") + FString::Join(Csv, TEXT("\n")), *File);
 		Log(FString::Printf(TEXT("VisexFeet: frames %s"), *File));
 	}
 }
@@ -234,5 +242,68 @@ void FVisexFootMeter::Shoot(UWorld* World, ACharacter* Her, const FString& Name,
 		const FString File = FPaths::ProjectSavedDir() / TEXT("QA") / FString::Printf(TEXT("fp_%s.jpg"), *Name);
 		FImageUtils::SaveImageByExtension(*File, FImageView(Strip.GetData(), FrameW * 2, FrameH * 2), 90);
 		Log(FString::Printf(TEXT("VisexFeet: strip %s"), *File));
+	}
+}
+
+void FVisexFootMeter::LogGround(ACharacter* Her) const
+{
+	const USkeletalMeshComponent* Mesh = Her->GetMesh();
+	const UCharacterMovementComponent* Move = Her->GetCharacterMovement();
+	const float Half = Her->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	const FVector At = Her->GetActorLocation();
+	auto Hit = [Her, At, Half](ECollisionChannel Ch, bool bComplex)
+	{
+		FCollisionQueryParams Q(TEXT("VisexFootMeterGround"), bComplex, Her);
+		FHitResult H;
+		return Her->GetWorld()->LineTraceSingleByChannel(H, At, At - FVector(0.f, 0.f, 400.f), Ch, Q)
+			? FString::Printf(TEXT("%.2f %s"), H.ImpactPoint.Z - (At.Z - Half), H.GetActor() ? *H.GetActor()->GetActorNameOrLabel() : TEXT("?")) : FString(TEXT("none"));
+	};
+	Log(FString::Printf(TEXT("VisexFeet: ground %s: actor %s, mesh %s rot %s scale %.3f, foot_l component %s"), *Phase, *Her->GetActorLocation().ToCompactString(),
+		*Mesh->GetComponentLocation().ToCompactString(), *Mesh->GetComponentRotation().ToCompactString(), Mesh->GetComponentScale().Z,
+		*Mesh->GetBoneLocation(TEXT("foot_l"), EBoneSpaces::ComponentSpace).ToCompactString()));
+	Log(FString::Printf(TEXT("VisexFeet: ground %s: lowest sole vertex over the mesh origin L %.2f R %.2f cm"), *Phase, SoleOverOrigin[0], SoleOverOrigin[1]));
+	Log(FString::Printf(TEXT("VisexFeet: ground %s: capsule half %.2f, mesh rel Z %.2f (origin %.2f under the capsule bottom), floor dist %.2f; surface vs capsule bottom: FootTrace complex %s, Visibility simple %s, complex %s"),
+		*Phase, Half, Mesh->GetRelativeLocation().Z, -(Mesh->GetComponentLocation().Z - (At.Z - Half)), Move->CurrentFloor.FloorDist,
+		*Hit(VisexFootTraceChannel, true), *Hit(ECC_Visibility, false), *Hit(ECC_Visibility, true)));
+}
+
+void FVisexFootMeter::SoleGaps(ACharacter* Her, float Out[2])
+{
+	Out[0] = Out[1] = 99.f;
+	USkeletalMeshComponent* Mesh = Her->GetMesh();
+	FSkeletalMeshRenderData* RD = Mesh ? Mesh->GetSkeletalMeshRenderData() : nullptr;
+	if (!RD || RD->LODRenderData.Num() == 0)
+	{
+		return;
+	}
+	const FSkeletalMeshLODRenderData& LOD = RD->LODRenderData[0];
+	if (LOD.StaticVertexBuffers.PositionVertexBuffer.GetNumVertices() == 0 || !LOD.StaticVertexBuffers.PositionVertexBuffer.GetVertexData())
+	{
+		return;
+	}
+	TArray<FMatrix44f> RefToLocal;
+	Mesh->CacheRefToLocalMatrices(RefToLocal);
+	TArray<FVector3f> P;
+	USkinnedMeshComponent::ComputeSkinnedPositions(Mesh, P, RefToLocal, LOD, LOD.SkinWeightVertexBuffer);
+	const FTransform X = Mesh->GetComponentTransform();
+	static const FName Heels[2] = {TEXT("foot_l"), TEXT("foot_r")}, Balls[2] = {TEXT("ball_l"), TEXT("ball_r")};
+	for (int32 S = 0; S < 2; ++S)
+	{
+		const FVector H = Mesh->GetSocketLocation(Heels[S]), B = Mesh->GetSocketLocation(Balls[S]);
+		const FVector Mid = (H + B) * 0.5f;
+		FVector Low(0.f, 0.f, 1e9f);
+		for (const FVector3f& V : P)
+		{
+			const FVector W = X.TransformPosition(FVector(V));
+			if (W.Z < Low.Z && W.Z < H.Z && FVector::Dist2D(W, Mid) < 16.f)
+			{
+				Low = W;
+			}
+		}
+		if (Low.Z < 1e8f)
+		{
+			Out[S] = GapAt(Her, Low, 0.f, nullptr);
+			SoleOverOrigin[S] = float(Low.Z - Mesh->GetComponentLocation().Z);
+		}
 	}
 }

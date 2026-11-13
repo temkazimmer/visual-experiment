@@ -7,6 +7,7 @@
 #include "HAL/IConsoleManager.h"
 
 // Catwalk tuning. Live in the console (also during Play): e.g. `visex.Catwalk.HipRoll 9`.
+static TAutoConsoleVariable<int32> CVarKeepFeet(TEXT("visex.Body.KeepFeet"), 1, TEXT("Legs/Feet reshape keeps her feet where the foot IK planted them (pelvis drops by the leg change, legs reach back)"));
 static TAutoConsoleVariable<float> CVarCatwalk(TEXT("visex.Catwalk"), 1.f, TEXT("Catwalk layer on the walk: 0 off, 1 full"));
 static TAutoConsoleVariable<float> CVarCatwalkHipRoll(TEXT("visex.Catwalk.HipRoll"), 11.f, TEXT("Degrees the swing-side hip drops"));
 static TAutoConsoleVariable<float> CVarCatwalkHipYaw(TEXT("visex.Catwalk.HipYaw"), 7.f, TEXT("Degrees the hip turns forward with the leading leg"));
@@ -132,9 +133,28 @@ bool FVisexAnimProxy::Evaluate_WithRoot(FPoseContext& Output, FAnimNode_Base* In
 		{
 			Reshape(Output.Pose);
 		}
+		auto FootZ = [&Output]()
+		{
+			const FBoneContainer& B = Output.Pose.GetBoneContainer();
+			const int32 M = B.GetPoseBoneIndexForBoneName(FName(TEXT("foot_l")));
+			if (M == INDEX_NONE) { return 0.f; }
+			FCompactPoseBoneIndex I = B.MakeCompactPoseIndex(FMeshPoseBoneIndex(M));
+			FTransform T = Output.Pose[I];
+			for (FCompactPoseBoneIndex P = B.GetParentBoneIndex(I); P.IsValid(); P = B.GetParentBoneIndex(P)) { T = T * Output.Pose[P]; }
+			return float(T.GetLocation().Z);
+		};
+		const bool bTrace = CVarKeepFeet.GetValueOnAnyThread() > 2;
+		const float Z0 = bTrace ? FootZ() : 0.f;
 		Contact(Output.Pose); // hands onto the surface, measured on the reshaped body
+		const float Z1 = bTrace ? FootZ() : 0.f;
 		Limits(Output.Pose);  // nothing bends past human range of motion
+		const float Z2 = bTrace ? FootZ() : 0.f;
 		SteadyHead(Output.Pose); // after the limits, which clamp the spine but not the neck's counter-turn
+		static int32 Every = 0;
+		if (bTrace && (Every++ % 60) == 0)
+		{
+			UE_LOG(LogTemp, Log, TEXT("KeepFeet trace: foot_l Z after reshape %.2f, contact %.2f, limits %.2f, head %.2f"), Z0, Z1, Z2, FootZ());
+		}
 	}
 	return true;
 }
@@ -280,6 +300,80 @@ namespace
 	};
 }
 
+namespace
+{
+	/** A leg as the graph left it, before the reshape: its foot, and how far it reached. */
+	struct FLegWas
+	{
+		FTransform Foot;
+		float Reach = 1.f;   // hip-to-ankle over thigh + calf
+	};
+
+	float LegLength(const FShaper& S, const FCompactPoseBoneIndex (&Leg)[3])
+	{
+		const FVector A = S.Component(Leg[0]).GetLocation(), B = S.Component(Leg[1]).GetLocation(), C = S.Component(Leg[2]).GetLocation();
+		return FMath::Max(1.f, float((B - A).Size() + (C - B).Size()));
+	}
+
+	/** Legs and Feet reshape after the graph's foot IK (Foot Placement, Leg IK), so shorter legs
+	 *  lifted her planted soles off the sand by the change (1.7 cm on the default body). Instead
+	 *  the feet stay where the graph put them: each ankle moves by the foot's own scale about the
+	 *  sole point carrying her weight (heel or ball), the pelvis moves along the legs so each
+	 *  reaches as far as it did (straight down for a standing leg), and the legs reach back. Her
+	 *  mesh origin sits on the floor (VisexBodyComponent). */
+	void KeepFeet(FShaper& S, const FCompactPoseBoneIndex (&Leg)[2][3], const FLegWas (&Was)[2], float Feet)
+	{
+		const FCompactPoseBoneIndex Pelvis = S.Find(TEXT("pelvis"));
+		const FCompactPoseBoneIndex Balls[2] = {S.Find(TEXT("ball_l")), S.Find(TEXT("ball_r"))};
+		for (int32 F = 0; F < 2; ++F)
+		{
+			if (!Pelvis.IsValid() || !Leg[F][0].IsValid() || !Leg[F][1].IsValid() || !Leg[F][2].IsValid() || !Balls[F].IsValid()) { return; }
+		}
+		auto RefZ = [&S](FCompactPoseBoneIndex I)
+		{
+			FTransform T = S.Bones.GetRefPoseTransform(I);
+			for (FCompactPoseBoneIndex P = S.Bones.GetParentBoneIndex(I); P.IsValid(); P = S.Bones.GetParentBoneIndex(P)) { T = T * S.Bones.GetRefPoseTransform(P); }
+			return float(T.GetLocation().Z);
+		};
+		const float Ankle = RefZ(Leg[0][2]), Ball = RefZ(Balls[0]);
+		FVector Target[2];
+		for (int32 F = 0; F < 2; ++F)
+		{
+			const FVector AnkleWas = Was[F].Foot.GetLocation();
+			const FVector BallWas = Was[F].Foot.TransformPosition(S.Pose[Balls[F]].GetTranslation());
+			const FVector Heel = AnkleWas - FVector(0.f, 0.f, Ankle), Toe = BallWas - FVector(0.f, 0.f, Ball);
+			const FVector Pivot = Heel.Z <= Toe.Z ? Heel : Toe;
+			Target[F] = AnkleWas + (1.f - Feet) * (Pivot - AnkleWas);
+		}
+		// the pelvis along the legs, the straighter leg (the one carrying her) counting most
+		for (int32 Pass = 0; Pass < 2; ++Pass)
+		{
+			FVector Move = FVector::ZeroVector;
+			float Weights = 0.f;
+			for (int32 F = 0; F < 2; ++F)
+			{
+				const FVector Hip = S.Component(Leg[F][0]).GetLocation();
+				const float Dist = float((Target[F] - Hip).Size());
+				const float W = FMath::Pow(FMath::Clamp(Was[F].Reach, 0.05f, 1.f), 8.f);
+				Move += W * (Target[F] - Hip).GetSafeNormal() * (Dist - Was[F].Reach * LegLength(S, Leg[F]));
+				Weights += W;
+			}
+			S.TranslateCS(Pelvis, Move / FMath::Max(Weights, 1e-4f));
+		}
+		for (int32 F = 0; F < 2; ++F)
+		{
+			S.Reach(Leg[F][0], Leg[F][1], Leg[F][2], Target[F], Was[F].Foot.GetRotation(), 1.f);
+		}
+		static int32 Every = 0;
+		if (CVarKeepFeet.GetValueOnAnyThread() > 1 && (Every++ % 60) == 0)
+		{
+			UE_LOG(LogTemp, Log, TEXT("KeepFeet: feet %.3f; L ankle target %s now %s (reach %.3f), R target %s now %s (reach %.3f); pelvis %s"), Feet,
+				*Target[0].ToCompactString(), *S.Component(Leg[0][2]).GetLocation().ToCompactString(), Was[0].Reach,
+				*Target[1].ToCompactString(), *S.Component(Leg[1][2]).GetLocation().ToCompactString(), Was[1].Reach, *S.Component(Pelvis).GetLocation().ToCompactString());
+		}
+	}
+}
+
 void FVisexAnimProxy::Reshape(FCompactPose& Pose) const
 {
 	FShaper S{Pose, Pose.GetBoneContainer()};
@@ -292,6 +386,22 @@ void FVisexAnimProxy::Reshape(FCompactPose& Pose) const
 			Fn(*FString::Printf(TEXT("%s%s"), Base, Side));
 		}
 	};
+
+	// the feet as the graph left them (Foot Placement and Leg IK planted them on the ground,
+	// before this reshape): Legs and Feet must not lift them off it (KeepFeet, below)
+	const float Legs = P.Get("Legs"), Feet = P.Get("Feet");
+	const bool bKeepFeet = CVarKeepFeet.GetValueOnAnyThread() != 0 && (Legs != 1.f || Feet != 1.f);
+	FLegWas LegsWere[2];
+	const FCompactPoseBoneIndex LegBones[2][3] = {{S.Find(TEXT("thigh_l")), S.Find(TEXT("calf_l")), S.Find(TEXT("foot_l"))},
+		{S.Find(TEXT("thigh_r")), S.Find(TEXT("calf_r")), S.Find(TEXT("foot_r"))}};
+	for (int32 F = 0; F < 2; ++F)
+	{
+		if (bKeepFeet && LegBones[F][0].IsValid() && LegBones[F][1].IsValid() && LegBones[F][2].IsValid())
+		{
+			LegsWere[F].Foot = S.Component(LegBones[F][2]);
+			LegsWere[F].Reach = float((LegsWere[F].Foot.GetLocation() - S.Component(LegBones[F][0]).GetLocation()).Size()) / LegLength(S, LegBones[F]);
+		}
+	}
 
 	// torso: depth moves less than width, so the body stays elegant at the extremes
 	const float Chest = P.Get("Chest"), Waist = P.Get("Waist"), Hips = P.Get("Hips");
@@ -312,14 +422,18 @@ void FVisexAnimProxy::Reshape(FCompactPose& Pose) const
 	Both(TEXT("upperarm"), [&](const TCHAR* B) { S.Offset(B, Shoulders); });
 
 	// limbs: length along the bone, girth around it
-	const float Legs = P.Get("Legs"), Thighs = P.Get("Thighs"), Calves = P.Get("Calves");
+	const float Thighs = P.Get("Thighs"), Calves = P.Get("Calves");
 	const float ArmLength = P.Get("ArmLength"), Arms = P.Get("Arms");
 	Both(TEXT("thigh"), [&](const TCHAR* B) { S.Segment(B, Legs, Thighs, Thighs, true); });
 	Both(TEXT("calf"), [&](const TCHAR* B) { S.Segment(B, Legs, Calves, Calves, true); });
 	Both(TEXT("upperarm"), [&](const TCHAR* B) { S.Segment(B, ArmLength, Arms, Arms, true); });
 	Both(TEXT("lowerarm"), [&](const TCHAR* B) { S.Segment(B, ArmLength, Arms, Arms, true); });
 	Both(TEXT("hand"), [&](const TCHAR* B) { S.Uniform(B, P.Get("Hands")); });
-	Both(TEXT("foot"), [&](const TCHAR* B) { S.Uniform(B, P.Get("Feet")); });
+	Both(TEXT("foot"), [&](const TCHAR* B) { S.Uniform(B, Feet); });
+	if (bKeepFeet)
+	{
+		KeepFeet(S, LegBones, LegsWere, Feet);
+	}
 }
 
 /**

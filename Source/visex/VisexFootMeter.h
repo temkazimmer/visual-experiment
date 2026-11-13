@@ -29,6 +29,7 @@ private:
 		bool bStep = false;
 		float Time = 0.f, GapSum = 0.f, GapMin = 0.f, GapMax = 0.f;
 		int32 N = 0;
+		float VGap = 99.f;   // the lowest skinned sole vertex's gap over the step
 		FPoint Heel, Ball;
 		TArray<FVector4f> H, B;   // per frame: the point (xyz) and its gap (w)
 		FString Surface;
@@ -43,6 +44,12 @@ private:
 	TArray<FString> Csv;   // every frame, both feet: written to Saved/QA/feet.csv on the phase "done"
 	TArray<FColor> Strip;
 	TWeakObjectPtr<ASceneCapture2D> Capture;
+	TWeakObjectPtr<ACharacter> LastHer;
+	/** Where her mesh origin and capsule sit against the surfaces under her (the base float). */
+	void LogGround(ACharacter* Her) const;
+	/** Her soles' real gap: the lowest skinned vertex of each foot over the surface under it (cm). */
+	void SoleGaps(ACharacter* Her, float Out[2]);
+	float SoleOverOrigin[2] = {0.f, 0.f};
 
 	void EndStep(int32 Side);
 	float GapAt(ACharacter* Her, const FVector& P, float Ref, FString* Surface) const;

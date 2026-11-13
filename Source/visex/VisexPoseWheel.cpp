@@ -420,6 +420,7 @@ static TAutoConsoleVariable<float> CVarFootPelvisMax(TEXT("visex.Feet.PelvisMax"
 static TAutoConsoleVariable<float> CVarFootPelvisStiff(TEXT("visex.Feet.PelvisStiff"), 150.f, TEXT("Foot Placement: pelvis spring stiffness (150 ~ interp speed 12)"));
 static TAutoConsoleVariable<float> CVarFootStiff(TEXT("visex.Feet.FootStiff"), 450.f, TEXT("Foot Placement: foot unplant/floor spring stiffness (450 ~ interp speed 21)"));
 static TAutoConsoleVariable<int32> CVarFootLock(TEXT("visex.Feet.Lock"), 1, TEXT("Foot Placement lock: 0 unlocked, 1 pivot around the ball, 2 pivot around the ankle"));
+static TAutoConsoleVariable<int32> CVarFootOff(TEXT("visex.Feet.Off"), 0, TEXT("Hold the foot IK (Copy Bone, Foot Placement, Leg IK) off: the clips' own feet, for checks"));
 static TAutoConsoleVariable<int32> CVarFootMenuOff(TEXT("visex.Feet.MenuOff"), 1, TEXT("Fade the foot IK out during the menu's lean and sit clips, which plant their own feet"));
 
 static float FootTuneStamp()
@@ -467,7 +468,7 @@ void UVisexPoseWheelComponent::UpdateFootIK(float DeltaTime)
 	// Menu clips that plant their own feet (FootIKOffForMenuClip) fade it out too.
 	const bool bOnFloor = Phase != EPhase::None && PoseIns.IsValidIndex(Current) && PoseIns[Current];
 	UAnimInstance* Anim = GetAnim();
-	const bool bOff = bOnFloor || (Anim && FootIKOffForMenuClip(Anim));
+	const bool bOff = bOnFloor || (Anim && FootIKOffForMenuClip(Anim)) || CVarFootOff.GetValueOnGameThread() != 0;
 	const float WasAlpha = FootIKAlpha;
 	FootIKAlpha = FMath::FInterpConstantTo(FootIKAlpha, bOff ? 0.f : 1.f, DeltaTime, 4.f);
 	if ((WasAlpha < 0.5f) != (FootIKAlpha < 0.5f))
