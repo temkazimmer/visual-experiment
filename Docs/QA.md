@@ -7,6 +7,39 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-13 12:25 · VIS-EX-0558 Shipping (49c8994) · STABLE PASS, every page opens in ~3.1 s at real speed in one walk; exits bring the menu back at 3.0 s but she's on the lean only at ~5.5 s
+
+- **Cook:** `Success - 0 error(s), 0 warning(s)`, 854 packages. DMG md5 `63046835…` (1.7 GB), copied to `VIS-EX-0558-stable.dmg`. Editor target built first (`Result: Succeeded`).
+- **Real-speed transitions** (packaged, no `-visexqa`, 1920×1080 fullscreen, menu ~50 fps; keys sent by `osascript`, `screencapture -x` every 0.2 s from 0.7 s before the key;
+  end = her motion goes flat in a crop around her, ±0.2 s). Frames and `sheet.jpg` per transition in `qa0558/real/<name>/` (8 per row = 1.6 s, first frame −0.7 s).
+
+  | | in (page up, she's settled) | out: menu back | out: settled on the lean |
+  |---|---|---|---|
+  | Body | 3.2 s | 3.1 s | 5.5 s |
+  | Wardrobe | 3.2 s | 3.1 s | 5.6 s |
+  | Photo mode | 3.1 s | 3.1 s | 5.7 s |
+  | Settings | 3.1 s | (panel swaps at once) | 3.0 s |
+
+  - **Ins hit the target.** Body, Wardrobe and Photo use the same walk: she pushes off the lean (~0.5 s), long athletic strides with the camera following, then the page.
+    No different walk for Body. Photo cuts to the dunes at 1.7 s and opens washed-out bright, exposure settles by ~2.9 s.
+  - **Outs miss it by ~2.5 s.** She walks back in ~2.5 s and the menu returns at ~3.0 s (what the dev log times), then she turns ~180° in place facing the lens (~1 s)
+    and sinks into the lean (~1.2 s), settled ~5.5 s (`body_out/lean_zoom.jpg`). The 45 fps clip agrees: key → flat at 5.6 s (`real/video/body_out.mov`).
+  - **Settings jump** (`settings_in/jump_zoom.jpg`): slow crouch 0.5–1.3 s, both feet off the sand at 1.5 s, seated on the drum at 1.7 s, dolly settles by 3.1 s. Smooth, not sudden.
+    Back: she slides down into the lean and is still at 3.0 s.
+  - No backward steps, no foot sliding visible at 0.2 s. **Two small pops in the Body exit** (45 fps clip, `video/spike1.jpg`, `spike2.jpg`): a one-frame camera
+    jump mid-walk (~1.5 s after the key) and a one-frame motion-blur smear as the menu returns (~3.0 s).
+- **Launch** (`launch/launch_contact_sheet.jpg`, 0.5 s per cell from 4 s): film ~4–10 s, full frame, black ≤0.5 s, then the plaza fades up empty; she walks in, the panel fades in
+  during the walk, she sinks into the lean, settled ~19 s after launch. No pop after: frame diff 1–2.6 for 15 s.
+- **Tour:** two runs from the mounted DMG, `-visexqa` 1920×1080 windowed. Both `VisexQA: done`, 58 shots, exit 0 (303 s, 294 s). Launch cover held 0.01 s, `settled`.
+  On ground at every step (only photo motions 5/6/7/9 in mode 0, as 0550), no spectator, no `.ips`. **Wardrobe opens in the tour now** (`wardrobe open` both runs,
+  the shorter exits closed the timing gap). Shots in `Saved/QA_0558ship_run{1,2}/` and `Tools/.bridge/shots/qa0558/run{1,2}/`, sheets in `sheets/`.
+- **Menu, outfits** (`sheets/flow_sheet.jpg`, `outfits_sheet.jpg`): Unopened Gate logo and the one-line menu as 0550. All ten outfits wear on the lean. Wardrobe: list with
+  Silversuit WORN, a locked costume shows UNDER CONSTRUCTION. In the tour's `menu_after_wardrobe` (4 s after Close) she's still turning, consistent with the 5.5 s exit.
+- **Regressions:** none. Start move 4:3 `fills the window`, feet IN FRAME at 16:9 and 4:3, forced GC fine, `layout save PASS, on disk` in both runs, photo `moved 0.0 cm`.
+- **Frame times** (machine idle): run 1 quality 0/3/4: 8.3 / 15.3 / 31.3 ms; menu 17.6, settings 39.1, after body 38.9, after wardrobe 38.6, after photo 39.6.
+  Run 2: 8.3 / 15.7 / 31.5; menu 18.7, settings 40.0, after body 38.8, after photo 39.9. About 20 % faster than 0550.
+- **Saves:** backed up `VisexBody.sav` (`7ac129aa…`, changed since 0550) and `GameUserSettings.ini` (`06e783cf…`), restored after every launch, both md5s match. No `Game.ini` before or after.
+
 ## 2026-11-12 21:10 · VIS-EX-0550 Shipping (d799e54) · STABLE PASS, the intro film plays in-game, any key skips it, she walks on and leans with no pop; cook clean again
 
 - **Cook:** `Success - 0 error(s), 0 warning(s)`, 854 packages; dca6395 keeps `/MovieRenderPipeline` out. DMG md5 `3f69708c…` (1.6 GB), copied to `VIS-EX-0550-stable.dmg`.
