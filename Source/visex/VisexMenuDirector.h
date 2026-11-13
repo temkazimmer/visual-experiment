@@ -481,7 +481,7 @@ public:
 
 	/** Share of the first return turn landed when she sets off walking (the walk takes the rest). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0.5", ClampMax = "1"))
-	float TurnIntoWalk = 0.78f;
+	float TurnIntoWalk = 0.72f;
 
 	/** The catwalk posture (chest up, shoulders back) held at least this much through the menu's
 	 *  turns and walks, where her speed alone would let it drop (0..1). */

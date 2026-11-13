@@ -1068,7 +1068,7 @@ void AVisexMenuDirector::TickReturn(float DeltaSeconds)
 		// past her spot (a long frame) counts as on it: never a step back onto it
 		const bool bPast = Left < 15.f && FVector::DotProduct(To, Char->GetActorForwardVector()) < 0.f;
 		// (from a page she turns as she comes to rest: the turn's first step is her last)
-		if (Left <= (bArriving ? 2.f : 6.f) || bPast || StepClock > (bArriving ? 25.f : 12.f) || (!bArriving && PhaseClock > WalkTime + 0.8f))
+		if (Left <= (bArriving ? 2.f : 9.f) || bPast || StepClock > (bArriving ? 25.f : 12.f) || (!bArriving && PhaseClock > WalkTime + 0.8f))
 		{
 			// on her spot: the half turn that puts the column at her back
 			ReturnPhase = 2;
