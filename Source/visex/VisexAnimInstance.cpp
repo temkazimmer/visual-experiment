@@ -26,6 +26,9 @@ static TAutoConsoleVariable<float> CVarCatwalkClear(TEXT("visex.Catwalk.Clear"),
 static TAutoConsoleVariable<float> CVarCatwalkSprint(TEXT("visex.Catwalk.Sprint"), 0.35f, TEXT("Share of the layer kept when sprinting (0..1)"));
 
 // Moving hold, from the Female Everyday idles (learning log 2026-11-10). Live: `visex.Hold.Breath 2`.
+static TAutoConsoleVariable<int32> CVarReshape(TEXT("visex.Reshape"), 1, TEXT("Body reshape layer (bone lengths, KeepFeet): 0 off, for measuring"));
+static TAutoConsoleVariable<int32> CVarSteadyHead(TEXT("visex.SteadyHead"), 1, TEXT("SteadyHead layer: 0 off, for measuring"));
+static TAutoConsoleVariable<int32> CVarContact(TEXT("visex.Contact"), 1, TEXT("Hand contact layer: 0 off, for measuring"));
 static TAutoConsoleVariable<float> CVarLimits(TEXT("visex.Limits"), 1.f, TEXT("Human joint limits on every pose, applied last: 0 off, 1 on"));
 static TAutoConsoleVariable<float> CVarHold(TEXT("visex.Hold"), 1.f, TEXT("Moving-hold layer on held poses: 0 off, 1 full"));
 static TAutoConsoleVariable<float> CVarHoldBreath(TEXT("visex.Hold.Breath"), 2.4f, TEXT("Degrees the chest opens back on each breath in"));
@@ -129,7 +132,7 @@ bool FVisexAnimProxy::Evaluate_WithRoot(FPoseContext& Output, FAnimNode_Base* In
 		Catwalk(Output.Pose);
 		Alive(Output.Pose);
 		Toes(Output.Pose);
-		if (bHasProfile)
+		if (bHasProfile && CVarReshape.GetValueOnAnyThread() != 0)
 		{
 			Reshape(Output.Pose);
 		}
@@ -145,11 +148,11 @@ bool FVisexAnimProxy::Evaluate_WithRoot(FPoseContext& Output, FAnimNode_Base* In
 		};
 		const bool bTrace = CVarKeepFeet.GetValueOnAnyThread() > 2;
 		const float Z0 = bTrace ? FootZ() : 0.f;
-		Contact(Output.Pose); // hands onto the surface, measured on the reshaped body
+		if (CVarContact.GetValueOnAnyThread() != 0) { Contact(Output.Pose); } // hands onto the surface, measured on the reshaped body
 		const float Z1 = bTrace ? FootZ() : 0.f;
 		Limits(Output.Pose);  // nothing bends past human range of motion
 		const float Z2 = bTrace ? FootZ() : 0.f;
-		SteadyHead(Output.Pose); // after the limits, which clamp the spine but not the neck's counter-turn
+		if (CVarSteadyHead.GetValueOnAnyThread() != 0) { SteadyHead(Output.Pose); } // after the limits, which clamp the spine but not the neck's counter-turn
 		static int32 Every = 0;
 		if (bTrace && (Every++ % 60) == 0)
 		{

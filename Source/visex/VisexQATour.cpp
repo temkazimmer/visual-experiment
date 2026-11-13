@@ -483,7 +483,11 @@ void AVisexQATour::BuildGaps()
 	}
 	// the clock holds through her walk in: six seconds into the lean, two seconds measured
 	Add(6.f, [this] { Feet.SetPhase(TEXT("lean")); });
-	Add(2.f, [this, D] { Feet.SetPhase(TEXT("start")); D->OnItemChosen(AVisexMenuDirector::ItemStart); });
+	// Settings: she climbs onto the drum and perches; eight seconds to settle, three measured
+	Add(2.f, [this, D] { Feet.SetPhase(TEXT("sitdown")); D->OpenSettings(); });
+	Add(8.f, [this] { Feet.SetPhase(TEXT("sit")); });
+	Add(3.f, [this, D] { Feet.SetPhase(TEXT("standup")); D->CloseSettings(); });
+	Add(8.f, [this, D] { Feet.SetPhase(TEXT("start")); D->OnItemChosen(AVisexMenuDirector::ItemStart); });
 	// Start: she stands up, walks off and stops on the open sand
 	Add(14.f, [this] { Feet.SetPhase(TEXT("idle")); });
 	Add(2.f, [this]
