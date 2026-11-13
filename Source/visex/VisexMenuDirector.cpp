@@ -687,7 +687,10 @@ void AVisexMenuDirector::OpenBodyNow()
 	if (BodyEditor)
 	{
 		BodyEditor->BlendTime = PageBlendTime;   // the same camera move onto every page, and back
-		UnboxPageCamera(false);   // its own lens back
+		// the page fills the window from the first frame of the blend onto it, as the menu does:
+		// a blend letterboxes while either view does, so the bars snapped on as it started
+		UnboxPageCamera(false);
+		UnboxLens(BodyEditor->FindComponentByClass<UCineCameraComponent>());
 		BodyEditor->OpenPage(CharacterPage);
 	}
 	if (!BodyEditor || !BodyEditor->IsOpen())
@@ -1012,9 +1015,10 @@ void AVisexMenuDirector::UnboxPageCamera(bool bUnbox)
 	// a blend between two views letterboxes while either does (FMinimalViewInfo::BlendViewInfo
 	// ORs bConstrainAspectRatio): the page cameras box to their 16:9 sensor, the menu camera fills
 	// the window, so the bars snapped off as the blend home finished, a jump mid-walk (QA 0558).
-	// As the page closes its camera fills the window too, keeping its horizontal field (a taller
-	// sensor where the window is narrower than 16:9: the bars turn into more of the same shot),
-	// and the blend runs unboxed throughout. The page gets its own lens back when it opens.
+	// (and on as the blend onto a page started). The page's camera fills the window too, from the
+	// blend onto it to the blend home, keeping its horizontal field (a taller sensor where the
+	// window is narrower than 16:9: the bars turn into more of the same shot). Each open starts
+	// from the page's own lens.
 	if (!bUnbox)
 	{
 		if (UCineCameraComponent* Lens = UnboxedLens.Get())
@@ -1027,9 +1031,15 @@ void AVisexMenuDirector::UnboxPageCamera(bool bUnbox)
 	}
 	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
 	APlayerCameraManager* Cam = PC ? PC->PlayerCameraManager.Get() : nullptr;
-	// the outgoing view, mid-blend home (GetViewTarget returns the incoming one while blending)
-	AActor* PageView = Cam ? Cam->ViewTarget.Target.Get() : nullptr;
-	UCineCameraComponent* Lens = PageView && PageView != MenuCamera ? PageView->FindComponentByClass<UCineCameraComponent>() : nullptr;
+	// the page's view: incoming while the blend onto it runs, else the current (or outgoing,
+	// mid-blend home: GetViewTarget would return the incoming menu camera then)
+	AActor* PageView = Cam ? (Cam->PendingViewTarget.Target && Cam->PendingViewTarget.Target != MenuCamera
+		? Cam->PendingViewTarget.Target.Get() : Cam->ViewTarget.Target.Get()) : nullptr;
+	UnboxLens(PageView && PageView != MenuCamera ? PageView->FindComponentByClass<UCineCameraComponent>() : nullptr);
+}
+
+void AVisexMenuDirector::UnboxLens(UCineCameraComponent* Lens)
+{
 	if (!Lens || !bMenuFillsWindow || !Lens->bConstrainAspectRatio || Lens->Filmback.SensorHeight <= 0.f)
 	{
 		return;
@@ -1525,6 +1535,7 @@ void AVisexMenuDirector::OpenPhotoNow()
 		PhotoMode->BlendTime = PageBlendTime;
 		UnboxPageCamera(false);
 		PhotoMode->Open();
+		UnboxPageCamera(true);   // its camera is made in Open: unboxed as the blend onto it starts
 	}
 	if (!PhotoMode || !PhotoMode->IsOpen())
 	{

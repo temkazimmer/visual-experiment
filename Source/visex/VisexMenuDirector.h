@@ -855,7 +855,8 @@ private:
 	bool bGaitHeld = false;      // the catwalk posture is held through the transition
 	void HoldGait(bool bHold);
 	FTransform Drifted(const FTransform& Base) const;   // the menu camera's handheld sway on Base
-	void UnboxPageCamera(bool bUnbox);   // the closing page's camera fills the window; false: put it back
+	void UnboxPageCamera(bool bUnbox);   // the page's camera fills the window; false: put it back
+	void UnboxLens(class UCineCameraComponent* Lens);
 	TWeakObjectPtr<class UCineCameraComponent> UnboxedLens;
 	FCameraFilmbackSettings UnboxedFilmback;
 	bool bUnboxedConstrain = true;
