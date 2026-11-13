@@ -33,6 +33,7 @@ static TAutoConsoleVariable<float> CVarCatwalkSprint(TEXT("visex.Catwalk.Sprint"
 
 // Moving hold, from the Female Everyday idles (learning log 2026-11-10). Live: `visex.Hold.Breath 2`.
 static TAutoConsoleVariable<float> CVarPlant(TEXT("visex.Plant"), 1.f, TEXT("Plant pass, last of all: planted soles onto the visible sand. 0 off, 1 on"));
+static TAutoConsoleVariable<float> CVarPlantClear(TEXT("visex.Plant.Clear"), 0.2f, TEXT("Centimetres the plant pass leaves between her lowest sole vertex and the sand"));
 static TAutoConsoleVariable<int32> CVarPlantLog(TEXT("visex.Plant.Log"), 0, TEXT("1 logs the plant pass about twice a second"));
 static TAutoConsoleVariable<int32> CVarReshape(TEXT("visex.Reshape"), 1, TEXT("Body reshape layer (bone lengths, KeepFeet): 0 off, for measuring"));
 static TAutoConsoleVariable<int32> CVarSteadyHead(TEXT("visex.SteadyHead"), 1, TEXT("SteadyHead layer: 0 off, for measuring"));
@@ -1088,7 +1089,7 @@ void FVisexAnimProxy::Plant(FCompactPose& Pose)
 		}
 		const FVector Low = S.Component(Leg[F][2]).GetLocation() + FVector(0.f, 0.f, SoleUnder[F]);
 		// planted: standing, any foot within reach of the sand; walking, only a foot that is down
-		const float Gap = float(Low.Z) - GroundZ[F];
+		const float Gap = float(Low.Z) - GroundZ[F] - CVarPlantClear.GetValueOnAnyThread();   // the sole rests just on the sand
 		const float Stand = 1.f - FMath::SmoothStep(6.f, 12.f, Gap), Walk = 1.f - FMath::SmoothStep(1.f, 4.f, Gap);
 		const float W = (Gap < 0.f ? 1.f : FMath::Lerp(Stand, Walk, PlantMoving)) * PlantTarget * (1.f - Hold);
 		Want[F] = -Gap * W;
