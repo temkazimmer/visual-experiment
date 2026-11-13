@@ -50,6 +50,10 @@ private:
 	/** Her soles' real gap: the lowest skinned vertex of each foot over the surface under it (cm). */
 	void SoleGaps(ACharacter* Her, float Out[2]);
 	float SoleOverOrigin[2] = {0.f, 0.f};
+	// the phase's means, per foot: sole vertex gap, sole vertex and foot bone over the mesh origin
+	double StillGap[2] = {0.0, 0.0}, StillSole[2] = {0.0, 0.0}, StillBone[2] = {0.0, 0.0};
+	float StillMin[2] = {99.f, 99.f}, StillMax[2] = {-99.f, -99.f}, StillSpeed = 0.f;
+	int32 StillN = 0;
 
 	void EndStep(int32 Side);
 	float GapAt(ACharacter* Her, const FVector& P, float Ref, FString* Surface) const;

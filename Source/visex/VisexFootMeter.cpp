@@ -79,6 +79,16 @@ void FVisexFootMeter::Tick(ACharacter* Her, float Dt)
 	SoleGaps(Her, VG);
 	for (int32 S = 0; S < 2; ++S)
 	{
+		StillGap[S] += VG[S];
+		StillSole[S] += SoleOverOrigin[S];
+		StillBone[S] += Mesh->GetSocketLocation(Heels[S]).Z - Mesh->GetComponentLocation().Z;
+		StillMin[S] = FMath::Min(StillMin[S], VG[S]);
+		StillMax[S] = FMath::Max(StillMax[S], VG[S]);
+	}
+	StillSpeed = FMath::Max(StillSpeed, float(Her->GetVelocity().Size()));
+	++StillN;
+	for (int32 S = 0; S < 2; ++S)
+	{
 		FFoot& F = Feet[S];
 		const FVector H = Mesh->GetSocketLocation(Heels[S]), B = Mesh->GetSocketLocation(Balls[S]);
 		FString Surface;
@@ -168,6 +178,16 @@ void FVisexFootMeter::SetPhase(const FString& Name)
 		Log(FString::Printf(TEXT("VisexFeet: SUMMARY %s: no planted steps"), *Phase));
 	}
 	Log(FString::Printf(TEXT("VisexFeet: SUMMARY %s: lower sole over the phase, mean gap %.2f cm"), *Phase, PhaseGapN ? float(PhaseGapSum / PhaseGapN) : 0.f));
+	if (StillN > 0)
+	{
+		const double N = StillN;
+		Log(FString::Printf(TEXT("VisexFeet: STILL %s: sole vertex gap L %.2f (%.2f..%.2f) R %.2f (%.2f..%.2f) cm; sole over origin L %.2f R %.2f; foot bone over origin L %.2f R %.2f; top speed %.1f, %d frames"),
+			*Phase, StillGap[0] / N, StillMin[0], StillMax[0], StillGap[1] / N, StillMin[1], StillMax[1],
+			StillSole[0] / N, StillSole[1] / N, StillBone[0] / N, StillBone[1] / N, StillSpeed, StillN));
+	}
+	for (int32 S = 0; S < 2; ++S) { StillGap[S] = StillSole[S] = StillBone[S] = 0.0; StillMin[S] = 99.f; StillMax[S] = -99.f; }
+	StillSpeed = 0.f;
+	StillN = 0;
 	if (LastHer.IsValid()) { LogGround(LastHer.Get()); }
 	PhaseGapSum = 0.0;
 	PhaseGapN = 0;

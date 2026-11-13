@@ -461,16 +461,50 @@ void AVisexQATour::BuildFeet()
 	});
 }
 
+void AVisexQATour::BuildGaps()
+{
+	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
+	AVisexMenuDirector* D = Director;
+	FString Setting, Var, Value;
+	if (FParse::Value(FCommandLine::Get(), TEXT("visexcvar="), Setting) && Setting.Split(TEXT("="), &Var, &Value))
+	{
+		IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(*Var);
+		if (V) { V->Set(*Value, ECVF_SetByConsole); }
+		// the body reads visex.Body.KeepFeet when it places the mesh
+		if (ACharacter* C = Her())
+		{
+			if (UVisexBodyComponent* B = C->FindComponentByClass<UVisexBodyComponent>()) { B->Apply(); }
+		}
+		QA_LOG(TEXT("VisexGaps: setting %s, reads %s"), *Setting, V ? *V->GetString() : TEXT("NO SUCH CVAR"));
+	}
+	else
+	{
+		QA_LOG(TEXT("VisexGaps: setting default"));
+	}
+	// the clock holds through her walk in: six seconds into the lean, two seconds measured
+	Add(6.f, [this] { Feet.SetPhase(TEXT("lean")); });
+	Add(2.f, [this, D] { Feet.SetPhase(TEXT("start")); D->OnItemChosen(AVisexMenuDirector::ItemStart); });
+	// Start: she stands up, walks off and stops on the open sand
+	Add(14.f, [this] { Feet.SetPhase(TEXT("idle")); });
+	Add(2.f, [this]
+	{
+		Feet.SetPhase(TEXT("done"));
+		QA_LOG(TEXT("VisexQA: done"));
+		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
+	});
+}
+
 void AVisexQATour::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	if (!Director) { return; }
 	if (!bBuilt)
 	{
-		bFeet = FParse::Param(FCommandLine::Get(), TEXT("visexfeet"));
+		const bool bGaps = FParse::Param(FCommandLine::Get(), TEXT("visexgaps"));
+		bFeet = bGaps || FParse::Param(FCommandLine::Get(), TEXT("visexfeet"));
 		FeetClock = 2e5f;   // until she first moves
 		Feet.Log = [](const FString& Line) { QA_LOG(TEXT("%s"), *Line); };
-		bFeet ? BuildFeet() : Build();
+		bGaps ? BuildGaps() : bFeet ? BuildFeet() : Build();
 		bBuilt = true;
 	}
 	if (bFeet)
