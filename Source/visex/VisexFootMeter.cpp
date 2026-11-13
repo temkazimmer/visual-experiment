@@ -202,9 +202,16 @@ void FVisexFootMeter::Shoot(UWorld* World, ACharacter* Her, const FString& Name,
 	// from her side, low, at the sand: the sole line and the sand in one frame
 	const FVector Mid = (Mesh->GetSocketLocation(TEXT("ball_l")) + Mesh->GetSocketLocation(TEXT("ball_r"))) * 0.5f;
 	const FVector Side = Her->GetActorRightVector();
-	const FVector Eye = Mid + Side * 190.f + FVector(0.f, 0.f, 6.f);
+	// the eye just over the sand under her feet, level: any gap under a sole shows as a sliver of
+	// sand beyond it
+	FHitResult Hit;
+	FCollisionQueryParams Q(TEXT("VisexFootShot"), true, Her);
+	const float GroundZ = World->LineTraceSingleByChannel(Hit, Mid + FVector(0, 0, 30.f), Mid - FVector(0, 0, 80.f), VisexFootTraceChannel, Q)
+		? float(Hit.ImpactPoint.Z) : float(Mid.Z) - RefBall;
+	const FVector Look(Mid.X, Mid.Y, GroundZ + 1.5f);
+	const FVector Eye = Look + Side * 190.f;
 	USceneCaptureComponent2D* C = Capture->GetCaptureComponent2D();
-	Capture->SetActorLocationAndRotation(Eye, (Mid + FVector(0.f, 0.f, 4.f) - Eye).Rotation());
+	Capture->SetActorLocationAndRotation(Eye, (Look - Eye).Rotation());
 	C->CaptureScene();
 	TArray<FColor> Pixels;
 	C->TextureTarget->GameThread_GetRenderTargetResource()->ReadPixels(Pixels);
