@@ -31,6 +31,7 @@
 #include "Animation/AnimMontage.h"
 #include "VisexAnimInstance.h"
 #include "visex.h"
+#include "VisexFootTrace.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "EngineUtils.h"
@@ -1987,26 +1988,8 @@ void AVisexMenuDirector::TickWalkClip(float DeltaSeconds, bool bMenuWalk)
 
 void AVisexMenuDirector::SetUpFootTrace()
 {
-	// Her Foot Placement traces FootTrace (visex.h). Every visible surface with query collision
-	// that blocks Visibility blocks it too: the dunes, the plaza slabs, the steps, the rubble,
-	// the drum. The invisible walking ramp under the steps doesn't, so her soles meet the stone
-	// she is seen on, not a surface 10 cm under it. Set at runtime, so Lvl_Dust is unchanged.
-	int32 Count = 0;
-	for (TObjectIterator<UStaticMeshComponent> It; It; ++It)
-	{
-		UStaticMeshComponent* C = *It;
-		if (C->GetWorld() != GetWorld() || !C->IsVisible() || C->bHiddenInGame || (C->GetOwner() && C->GetOwner()->IsHidden())
-			|| !C->IsQueryCollisionEnabled() || C->GetCollisionResponseToChannel(ECC_Visibility) != ECR_Block)
-		{
-			continue;
-		}
-		if (C->GetCollisionResponseToChannel(VisexFootTraceChannel) != ECR_Block)
-		{
-			C->SetCollisionResponseToChannel(VisexFootTraceChannel, ECR_Block);
-			++Count;
-		}
-	}
-	UE_LOG(LogTemp, Log, TEXT("Foot trace: %d visible surfaces block FootTrace"), Count);
+	// the scene got it at BeginPlay (UVisexFootTrace); this adds what the menu spawned since
+	UVisexFootTrace::SetUp(GetWorld());
 }
 
 void AVisexMenuDirector::SpawnLeanColumn()
