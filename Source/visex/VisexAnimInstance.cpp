@@ -33,6 +33,7 @@ static TAutoConsoleVariable<float> CVarCatwalkSprint(TEXT("visex.Catwalk.Sprint"
 
 // Moving hold, from the Female Everyday idles (learning log 2026-11-10). Live: `visex.Hold.Breath 2`.
 static TAutoConsoleVariable<float> CVarPlant(TEXT("visex.Plant"), 1.f, TEXT("Plant pass, last of all: planted soles onto the visible sand. 0 off, 1 on"));
+static TAutoConsoleVariable<int32> CVarPlantLog(TEXT("visex.Plant.Log"), 0, TEXT("1 logs the plant pass about twice a second"));
 static TAutoConsoleVariable<int32> CVarReshape(TEXT("visex.Reshape"), 1, TEXT("Body reshape layer (bone lengths, KeepFeet): 0 off, for measuring"));
 static TAutoConsoleVariable<int32> CVarSteadyHead(TEXT("visex.SteadyHead"), 1, TEXT("SteadyHead layer: 0 off, for measuring"));
 static TAutoConsoleVariable<float> CVarLimits(TEXT("visex.Limits"), 1.f, TEXT("Human joint limits on every pose, applied last: 0 off, 1 on"));
@@ -1030,7 +1031,7 @@ void FVisexAnimProxy::PlantGround(UAnimInstance* Instance)
 	const ACharacter* Her = Cast<ACharacter>(Instance->TryGetPawnOwner());
 	bGround[0] = bGround[1] = false;
 	if (PlantTarget < 0.005f || !Mesh || !Mesh->GetWorld()) { return; }
-	if (SoleMesh.Get() != Mesh->GetSkeletalMeshAsset()) { BuildSole(Mesh); }
+	MeasureSole(Mesh);
 	const UCharacterMovementComponent* Move = Her ? Her->GetCharacterMovement() : nullptr;
 	PlantMoving = Her ? FMath::SmoothStep(10.f, 60.f, float(Her->GetVelocity().Size2D())) : 0.f;
 	if (Move && Move->IsFalling()) { PlantTarget = 0.f; return; }
@@ -1062,38 +1063,27 @@ void FVisexAnimProxy::Plant(FCompactPose& Pose)
 	const FCompactPoseBoneIndex Leg[2][3] = {{S.Find(TEXT("thigh_l")), S.Find(TEXT("calf_l")), S.Find(TEXT("foot_l"))},
 		{S.Find(TEXT("thigh_r")), S.Find(TEXT("calf_r")), S.Find(TEXT("foot_r"))}};
 	if (!Pelvis.IsValid()) { return; }
-	// each foot's lowest skinned sole point, as the graph and the layers left it
-	TMap<int32, FTransform> CS;
-	auto BoneCS = [&](int32 MeshBone, FTransform& Out)
-	{
-		if (const FTransform* Got = CS.Find(MeshBone)) { Out = *Got; return true; }
-		const FCompactPoseBoneIndex I = S.Bones.MakeCompactPoseIndex(FMeshPoseBoneIndex(MeshBone));
-		if (!I.IsValid()) { return false; }
-		Out = CS.Add(MeshBone, S.Component(I));
-		return true;
-	};
+	// each foot's lowest sole point: its foot bone as the graph and the layers left it, plus the
+	// lowest skinned sole vertex's depth under that bone last frame (MeasureSole)
 	float Want[2] = {0.f, 0.f};
 	for (int32 F = 0; F < 2; ++F)
 	{
-		FVector Low(0.f, 0.f, 1e9);
-		for (const FSoleVert& V : Sole[F])
+		if (!bSole[F] || !bGround[F] || !Leg[F][0].IsValid() || !Leg[F][1].IsValid() || !Leg[F][2].IsValid())
 		{
-			FVector P = FVector::ZeroVector;
-			float Sum = 0.f;
-			FTransform T;
-			for (int32 i = 0; i < 4 && V.Bone[i] != INDEX_NONE; ++i)
-			{
-				if (BoneCS(V.Bone[i], T)) { P += V.W[i] * T.TransformPosition(FVector(V.Local[i])); Sum += V.W[i]; }
-			}
-			if (Sum > 0.5f && P.Z / Sum < Low.Z) { Low = P / Sum; }
+			if (CVarPlantLog.GetValueOnAnyThread() != 0 && (GFrameCounter % 30) == 0) { UE_LOG(LogTemp, Log, TEXT("Plant %d: skipped, sole %d ground %d"), F, bSole[F], bGround[F]); }
+			continue;
 		}
-		if (Low.Z > 1e8 || !bGround[F] || !Leg[F][0].IsValid() || !Leg[F][1].IsValid() || !Leg[F][2].IsValid()) { continue; }
-		SoleAt[F] = Low;
+		const FVector Low = S.Component(Leg[F][2]).GetLocation() + FVector(0.f, 0.f, SoleUnder[F]);
 		// planted: standing, any foot within reach of the sand; walking, only a foot that is down
 		const float Gap = float(Low.Z) - GroundZ[F];
 		const float Stand = 1.f - FMath::SmoothStep(6.f, 12.f, Gap), Walk = 1.f - FMath::SmoothStep(1.f, 4.f, Gap);
 		const float W = (Gap < 0.f ? 1.f : FMath::Lerp(Stand, Walk, PlantMoving)) * PlantTarget * (1.f - Hold);
 		Want[F] = -Gap * W;
+		if (CVarPlantLog.GetValueOnAnyThread() != 0 && (GFrameCounter % 30) == 0)
+		{
+			UE_LOG(LogTemp, Log, TEXT("Plant %d: target %.2f hold %.2f moving %.2f sole under %.2f, low %s ground %.2f gap %.2f w %.2f fix %.2f pelvis %.2f"),
+				F, PlantTarget, Hold, PlantMoving, SoleUnder[F], *Low.ToCompactString(), GroundZ[F], Gap, W, PlantFix[F], PelvisFix);
+		}
 	}
 	// eased, so nothing pops; then the ankles' targets, and how far the pelvis must drop for a leg to reach
 	const float Ease = Dt > 0.f ? FMath::Min(1.f, Dt * 20.f) : 0.f;
@@ -1123,39 +1113,32 @@ void FVisexAnimProxy::Plant(FCompactPose& Pose)
 	}
 }
 
-void FVisexAnimProxy::BuildSole(const USkeletalMeshComponent* Mesh)
+
+void FVisexAnimProxy::MeasureSole(const USkeletalMeshComponent* Mesh)
 {
-	const USkeletalMesh* Asset = Mesh ? Mesh->GetSkeletalMeshAsset() : nullptr;
-	FSkeletalMeshRenderData* RD = Mesh ? Mesh->GetSkeletalMeshRenderData() : nullptr;
-	SoleMesh = Asset;
-	Sole[0].Reset(); Sole[1].Reset();
-	if (!Asset || !RD || RD->LODRenderData.Num() == 0) { return; }
+	// the feet meter's sole (VisexFootMeter): the lowest skinned vertex below the foot bone,
+	// within 16 cm of the heel-ball middle, in component space
+	bSole[0] = bSole[1] = false;
+	FSkeletalMeshRenderData* RD = Mesh->GetSkeletalMeshRenderData();
+	if (!RD || RD->LODRenderData.Num() == 0) { return; }
 	const FSkeletalMeshLODRenderData& LOD = RD->LODRenderData[0];
-	const FPositionVertexBuffer& Pos = LOD.StaticVertexBuffers.PositionVertexBuffer;
-	if (Pos.GetNumVertices() == 0 || !Pos.GetVertexData()) { return; }
-	const FReferenceSkeleton& Ref = Asset->GetRefSkeleton();
-	const TArray<FMatrix44f>& Inv = Asset->GetRefBasesInvMatrix();
-	const int32 Feet[2] = {Ref.FindBoneIndex(TEXT("foot_l")), Ref.FindBoneIndex(TEXT("foot_r"))};
-	if (Feet[0] == INDEX_NONE || Feet[1] == INDEX_NONE) { return; }
-	auto SideOf = [&](int32 B) { for (; B != INDEX_NONE; B = Ref.GetParentIndex(B)) { if (B == Feet[0]) return 0; if (B == Feet[1]) return 1; } return -1; };
-	const float AnkleZ = FMatrix44f(Inv[Feet[0]].Inverse()).GetOrigin().Z;
-	const uint32 MaxInf = LOD.SkinWeightVertexBuffer.GetMaxBoneInfluences();
-	for (uint32 V = 0; V < Pos.GetNumVertices(); ++V)
+	if (LOD.StaticVertexBuffers.PositionVertexBuffer.GetNumVertices() == 0 || !LOD.StaticVertexBuffers.PositionVertexBuffer.GetVertexData()) { return; }
+	TArray<FMatrix44f> RefToLocal;
+	Mesh->CacheRefToLocalMatrices(RefToLocal);
+	TArray<FVector3f> P;
+	USkinnedMeshComponent::ComputeSkinnedPositions(const_cast<USkeletalMeshComponent*>(Mesh), P, RefToLocal, LOD, LOD.SkinWeightVertexBuffer);
+	static const FName Heels[2] = {TEXT("foot_l"), TEXT("foot_r")}, Balls[2] = {TEXT("ball_l"), TEXT("ball_r")};
+	const float Near = 16.f / FMath::Max(0.1f, float(Mesh->GetComponentScale().Z));
+	for (int32 F = 0; F < 2; ++F)
 	{
-		const FVector3f P = Pos.VertexPosition(V);
-		if (P.Z > AnkleZ) { continue; }
-		int32 Sec = 0, SecV = 0;
-		LOD.GetSectionFromVertexIndex(V, Sec, SecV);
-		FSoleVert S;
-		float OnFoot[2] = {0.f, 0.f};
-		for (uint32 I = 0, N = 0; I < MaxInf && N < 4; ++I)
+		const FVector H = Mesh->GetSocketTransform(Heels[F], RTS_Component).GetLocation(), B = Mesh->GetSocketTransform(Balls[F], RTS_Component).GetLocation();
+		const FVector Mid = (H + B) * 0.5f;
+		FVector Low(0.f, 0.f, 1e9);
+		for (const FVector3f& V3 : P)
 		{
-			const float W = LOD.SkinWeightVertexBuffer.GetBoneWeight(V, I) / 65535.f;
-			if (W <= 0.f) { continue; }
-			const int32 B = LOD.RenderSections[Sec].BoneMap[LOD.SkinWeightVertexBuffer.GetBoneIndex(V, I)];
-			S.Bone[N] = B; S.W[N] = W; S.Local[N] = Inv[B].TransformPosition(P); ++N;
-			if (const int32 Side = SideOf(B); Side >= 0) { OnFoot[Side] += W; }
+			const FVector V(V3);
+			if (V.Z < Low.Z && V.Z < H.Z && FVector::Dist2D(V, Mid) < Near) { Low = V; }
 		}
-		if (OnFoot[0] >= 0.5f) { Sole[0].Add(S); } else if (OnFoot[1] >= 0.5f) { Sole[1].Add(S); }
+		if (Low.Z < 1e8) { bSole[F] = true; SoleUnder[F] = float(Low.Z - H.Z); SoleAt[F] = Low; }
 	}
 }
