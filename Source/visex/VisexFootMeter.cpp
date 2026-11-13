@@ -87,6 +87,11 @@ void FVisexFootMeter::Tick(ACharacter* Her, float Dt)
 	}
 	StillSpeed = FMath::Max(StillSpeed, float(Her->GetVelocity().Size()));
 	++StillN;
+	const float Pelvis = Mesh->GetSocketLocation(TEXT("pelvis")).Z;
+	BobMin = FMath::Min(BobMin, Pelvis);
+	BobMax = FMath::Max(BobMax, Pelvis);
+	BobTime += Dt;
+	BobSlowest = FMath::Min(BobSlowest, float(Her->GetVelocity().Size2D()));
 	for (int32 S = 0; S < 2; ++S)
 	{
 		FFoot& F = Feet[S];
@@ -107,6 +112,13 @@ void FVisexFootMeter::Tick(ACharacter* Her, float Dt)
 		{
 			F = FFoot();
 			F.bStep = true;
+			// a touch-down closes the last step's hip bob (walking steps only, not starts and stops)
+			if (BobTime > 0.25f && BobTime < 1.5f && BobSlowest > 40.f)
+			{
+				PhaseBob.Add(BobMax - BobMin);
+				Log(FString::Printf(TEXT("VisexFeet: %s hip bob %.2f cm over a %.2f s step"), *Phase, BobMax - BobMin, BobTime));
+			}
+			BobMin = 1e9f; BobMax = -1e9f; BobTime = 0.f; BobSlowest = 1e9f;
 			F.Surface = Surface;
 		}
 		F.Time += Dt;
@@ -177,6 +189,13 @@ void FVisexFootMeter::SetPhase(const FString& Name)
 	{
 		Log(FString::Printf(TEXT("VisexFeet: SUMMARY %s: no planted steps"), *Phase));
 	}
+	if (PhaseBob.Num() > 0)
+	{
+		TArray<float> B = PhaseBob;
+		B.Sort();
+		Log(FString::Printf(TEXT("VisexFeet: SUMMARY %s: hip bob median %.2f max %.2f cm over %d walking steps"), *Phase, B[B.Num() / 2], B.Last(), B.Num()));
+	}
+	PhaseBob.Reset();
 	Log(FString::Printf(TEXT("VisexFeet: SUMMARY %s: lower sole over the phase, mean gap %.2f cm"), *Phase, PhaseGapN ? float(PhaseGapSum / PhaseGapN) : 0.f));
 	if (StillN > 0)
 	{

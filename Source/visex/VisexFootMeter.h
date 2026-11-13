@@ -38,7 +38,9 @@ private:
 	float RefHeel = -1.f, RefBall = -1.f;   // the heel (foot) and ball bones' height over the sole, ref pose
 	float Clock = 0.f;
 	FString Phase = TEXT("held");
-	TArray<float> PhaseDrift, PhaseGap;
+	TArray<float> PhaseDrift, PhaseGap, PhaseBob;
+	// her hip bob per step: the pelvis's height range from one touch-down to the next, while she walks
+	float BobMin = 1e9f, BobMax = -1e9f, BobTime = 0.f, BobSlowest = 1e9f;
 	double PhaseGapSum = 0.0;   // every frame's lower sole gap, both feet, whether stepping or not
 	int32 PhaseGapN = 0;
 	TArray<FString> Csv;   // every frame, both feet: written to Saved/QA/feet.csv on the phase "done"
