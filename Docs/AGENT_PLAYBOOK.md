@@ -33,6 +33,9 @@ often while writing a big file or reading a big one in one go. What worked:
 
 ## Traps that cost real time
 
+- **Feet/locomotion:** never hand-roll ground IK. Follow [Research/FOOT_IK.md](Research/FOOT_IK.md):
+  Warping → Foot Placement → Leg IK last, one IK owner, `ik_foot` snapped to `foot`, play rate matched to speed.
+  Verify foot drift and sole gap at real speed (a background editor runs ~6 fps; use `-game` or a packaged run).
 - **`pgrep -f <pattern>` matches its own command line**, so a wait loop on it never
   ends. Use `pgrep -x <name>`, or `ps -axo pid,args | grep … | grep -v grep`.
 - **Raw `UObject*` held across frames or captured in a timer** crashed Shipping twice

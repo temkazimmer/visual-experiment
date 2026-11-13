@@ -95,6 +95,12 @@ Tema wants to **watch you work in the open editor**. A folder bridge makes that 
 
 ## Gotchas learned the hard way
 
+- **Feet and locomotion follow the standard UE5 pipeline** ([Docs/Research/FOOT_IK.md](Docs/Research/FOOT_IK.md)):
+  Orientation/Stride Warping → Foot Placement (traces, plant/foot lock, pelvis) → Leg IK last, with
+  exactly ONE ground-IK owner (never a C++ pass plus an AnimBP/Control Rig IK node). Snap `ik_foot` to
+  `foot` on pack/retargeted clips, match walk play rate to capsule speed (stride-warp the rest, ≤15–20%),
+  use Distance Matching for starts/stops, and give walkable decor collision on a dedicated trace channel.
+  No floating soles, no moonwalk, no foot slip: check foot drift (≤1 cm) and sole gap (≤0.5 cm) in Play at real speed.
 - **Play mode:** check `unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).is_in_play_in_editor()`
   first, and **never stop a Play session you didn't start**: it's probably Tema playing.
   Abort the whole run, not just the step. While he's playing, actor queries return nothing
