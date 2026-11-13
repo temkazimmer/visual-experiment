@@ -252,12 +252,20 @@ namespace
 			}
 		}
 
+		/** Component space the way the engine fills it, root down (child * parent's component
+		 *  space): with the reshape's non-uniform scales, composing child-first put the feet up
+		 *  to 5 cm from where she is drawn. */
 		FTransform Component(FCompactPoseBoneIndex Index) const
 		{
-			FTransform T = Pose[Index];
-			for (FCompactPoseBoneIndex P = Bones.GetParentBoneIndex(Index); P.IsValid(); P = Bones.GetParentBoneIndex(P))
+			TArray<FCompactPoseBoneIndex, TInlineAllocator<32>> Chain;
+			for (FCompactPoseBoneIndex P = Index; P.IsValid(); P = Bones.GetParentBoneIndex(P))
 			{
-				T = T * Pose[P];
+				Chain.Add(P);
+			}
+			FTransform T = FTransform::Identity;
+			for (int32 i = Chain.Num() - 1; i >= 0; --i)
+			{
+				T = Pose[Chain[i]] * T;
 			}
 			return T;
 		}
@@ -1032,6 +1040,11 @@ void FVisexAnimProxy::PlantGround(UAnimInstance* Instance)
 	bGround[0] = bGround[1] = false;
 	if (PlantTarget < 0.005f || !Mesh || !Mesh->GetWorld()) { return; }
 	MeasureSole(Mesh);
+	if (CVarPlantLog.GetValueOnGameThread() != 0 && (GFrameCounter % 30) == 1)
+	{
+		UE_LOG(LogTemp, Log, TEXT("Plant mesh: frame %llu foot_l Z %.2f foot_r Z %.2f, %s"), GFrameCounter, Mesh->GetSocketTransform(TEXT("foot_l"), RTS_Component).GetLocation().Z,
+			Mesh->GetSocketTransform(TEXT("foot_r"), RTS_Component).GetLocation().Z, *Mesh->GetName());
+	}
 	const UCharacterMovementComponent* Move = Her ? Her->GetCharacterMovement() : nullptr;
 	PlantMoving = Her ? FMath::SmoothStep(10.f, 60.f, float(Her->GetVelocity().Size2D())) : 0.f;
 	if (Move && Move->IsFalling()) { PlantTarget = 0.f; return; }
@@ -1109,6 +1122,10 @@ void FVisexAnimProxy::Plant(FCompactPose& Pose)
 		if (Leg[F][0].IsValid() && Leg[F][1].IsValid() && Leg[F][2].IsValid() && (FMath::Abs(PlantFix[F]) > 0.01f || PelvisFix > 0.01f))
 		{
 			S.Reach(Leg[F][0], Leg[F][1], Leg[F][2], Target[F], Keep[F], 1.f);
+		}
+		if (CVarPlantLog.GetValueOnAnyThread() != 0 && (GFrameCounter % 30) == 0 && Leg[F][2].IsValid())
+		{
+			UE_LOG(LogTemp, Log, TEXT("Plant %d out: frame %llu foot Z %.2f target Z %.2f"), F, GFrameCounter, S.Component(Leg[F][2]).GetLocation().Z, Target[F].Z);
 		}
 	}
 }
