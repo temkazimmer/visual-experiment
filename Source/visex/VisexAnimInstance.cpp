@@ -916,6 +916,10 @@ void FVisexAnimProxy::PostUpdate(UAnimInstance* InAnimInstance) const
 		Visex->LimitExcess = LimitWorst;
 		Visex->LimitBone = LimitWorstBone;
 		Visex->LimitReport = LimitReportBuf;
+		Visex->SoleGapL = OutGap[0];
+		Visex->SoleGapR = OutGap[1];
+		Visex->PlantedL = OutPlant[0];
+		Visex->PlantedR = OutPlant[1];
 	}
 }
 
@@ -1070,6 +1074,8 @@ void FVisexAnimProxy::Plant(FCompactPose& Pose)
 	if (PlantTarget < 0.005f)
 	{
 		PlantFix[0] = PlantFix[1] = PelvisFix = 0.f;
+		OutGap[0] = OutGap[1] = 1e4f;
+		OutPlant[0] = OutPlant[1] = 0.f;
 		return;
 	}
 	FShaper S{Pose, Pose.GetBoneContainer()};
@@ -1079,9 +1085,10 @@ void FVisexAnimProxy::Plant(FCompactPose& Pose)
 	if (!Pelvis.IsValid()) { return; }
 	// each foot's lowest sole point: its foot bone as the graph and the layers left it, plus the
 	// lowest skinned sole vertex's depth under that bone last frame (MeasureSole)
-	float Want[2] = {0.f, 0.f};
+	float Want[2] = {0.f, 0.f}, Before[2] = {1e4f, 1e4f};
 	for (int32 F = 0; F < 2; ++F)
 	{
+		OutPlant[F] = 0.f;
 		if (!bSole[F] || !bGround[F] || !Leg[F][0].IsValid() || !Leg[F][1].IsValid() || !Leg[F][2].IsValid())
 		{
 			if (CVarPlantLog.GetValueOnAnyThread() != 0 && (GFrameCounter % 30) == 0) { UE_LOG(LogTemp, Log, TEXT("Plant %d: skipped, sole %d ground %d"), F, bSole[F], bGround[F]); }
@@ -1093,6 +1100,8 @@ void FVisexAnimProxy::Plant(FCompactPose& Pose)
 		const float Stand = 1.f - FMath::SmoothStep(6.f, 12.f, Gap), Walk = 1.f - FMath::SmoothStep(1.f, 4.f, Gap);
 		const float W = (Gap < 0.f ? 1.f : FMath::Lerp(Stand, Walk, PlantMoving)) * PlantTarget * (1.f - Hold);
 		Want[F] = -Gap * W;
+		Before[F] = Gap + CVarPlantClear.GetValueOnAnyThread();
+		OutPlant[F] = W;
 		if (CVarPlantLog.GetValueOnAnyThread() != 0 && (GFrameCounter % 30) == 0)
 		{
 			UE_LOG(LogTemp, Log, TEXT("Plant %d: target %.2f hold %.2f moving %.2f sole under %.2f, low %s ground %.2f gap %.2f w %.2f fix %.2f pelvis %.2f"),
@@ -1107,6 +1116,7 @@ void FVisexAnimProxy::Plant(FCompactPose& Pose)
 	for (int32 F = 0; F < 2; ++F)
 	{
 		PlantFix[F] = FMath::Lerp(PlantFix[F], Want[F], Ease);
+		OutGap[F] = Before[F] < 1e3f ? Before[F] + PlantFix[F] : 1e4f;   // where the sole ends up
 		if (!Leg[F][2].IsValid()) { continue; }
 		const FTransform Foot = S.Component(Leg[F][2]);
 		Target[F] = Foot.GetLocation() + FVector(0.f, 0.f, PlantFix[F]);

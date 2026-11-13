@@ -101,6 +101,9 @@ private:
 	bool bSole[2] = {false, false};
 	float SoleUnder[2] = {0.f, 0.f};
 	void MeasureSole(const USkeletalMeshComponent* Mesh);
+	// what the plant pass did this frame, for the footprints' mounds (copied to the instance in PostUpdate)
+	float OutGap[2] = {1e4f, 1e4f};   // cm between the planted sole and the sand, component space
+	float OutPlant[2] = {0.f, 0.f};   // how planted each foot is, 0..1
 };
 
 UCLASS(Transient, Blueprintable)
@@ -151,6 +154,18 @@ public:
 	 *  sits for Settings, photo mode while its motions key their own feet. */
 	UPROPERTY(BlueprintReadWrite, Category = "Plant")
 	float PlantAlpha = 1.f;
+
+	/** Set by the plant pass each frame: cm between each foot's lowest sole vertex and the sand
+	 *  (component space; 1e4 when unknown), and how planted it is (0..1). AVisexFootprints
+	 *  forms a sand mound on contact from these. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Plant")
+	float SoleGapL = 1e4f;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Plant")
+	float SoleGapR = 1e4f;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Plant")
+	float PlantedL = 0.f;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Plant")
+	float PlantedR = 0.f;
 
 protected:
 	virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override { return new FVisexAnimProxy(this); }
