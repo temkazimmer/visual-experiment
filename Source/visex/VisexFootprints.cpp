@@ -1,5 +1,8 @@
 #include "VisexFootprints.h"
 
+#include "visex.h"
+#include "VisexAnimInstance.h"
+
 #include "Components/DecalComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -35,23 +38,6 @@ AVisexFootprints::AVisexFootprints()
 void AVisexFootprints::BeginPlay()
 {
 	Super::BeginPlay();
-	for (int32 f = 0; f < 2; ++f)
-	{
-		UStaticMeshComponent* M = NewObject<UStaticMeshComponent>(this);
-		M->SetStaticMesh(MoundMesh);
-		if (MoundMaterial)
-		{
-			M->SetMaterial(0, MoundMaterial);
-		}
-		M->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		M->SetCollisionProfileName(TEXT("NoCollision"));
-		M->SetGenerateOverlapEvents(false);
-		M->SetMobility(EComponentMobility::Movable);
-		M->SetupAttachment(RootComponent);
-		M->SetVisibility(false);
-		M->RegisterComponent();
-		Mounds[f] = M;
-	}
 }
 
 void AVisexFootprints::Tick(float DeltaSeconds)
@@ -78,24 +64,29 @@ void AVisexFootprints::Tick(float DeltaSeconds)
 
 	ACharacter* Pawn = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
 	USkeletalMeshComponent* Mesh = Pawn ? Pawn->GetMesh() : nullptr;
-	// mounds settle back unless a standing foot raises them again below
-	MoundTarget[0] = MoundTarget[1] = 0.f;
 	if (Mesh && Material && !Pawn->IsHidden())
 	{
 		Feet(Pawn, Mesh);
 	}
-	for (int32 f = 0; f < 2; ++f)
+	// mounds stay where they formed: they push out, hold, then settle flat and go
+	for (int32 i = Mounds.Num() - 1; i >= 0; --i)
 	{
-		UStaticMeshComponent* M = Mounds[f];
-		if (!M)
+		UStaticMeshComponent* M = Mounds[i];
+		MoundAge[i] += DeltaSeconds;
+		if (!M || MoundAge[i] >= MoundLife)
 		{
+			if (M) { M->DestroyComponent(); }
+			Mounds.RemoveAt(i);
+			MoundAge.RemoveAt(i);
 			continue;
 		}
-		MoundH[f] = FMath::FInterpConstantTo(MoundH[f], MoundTarget[f], DeltaSeconds, MoundRate);
-		M->SetVisibility(MoundH[f] > 0.05f);
-		FVector S = M->GetRelativeScale3D();
-		S.Z = MoundH[f] / 10.f;     // SM_SandMound is 10 cm high
-		M->SetWorldScale3D(S);
+		if (M == Held[0].Get() || M == Held[1].Get())
+		{
+			MoundAge[i] = FMath::Min(MoundAge[i], 0.35f * MoundLife);   // a standing foot keeps its sand pushed out
+		}
+		const float T = MoundAge[i];
+		const float H = FMath::SmoothStep(0.f, MoundGrow, T) * (1.f - FMath::SmoothStep(0.35f * MoundLife, MoundLife, T));
+		M->SetRelativeScale3D(FVector(1.f, 1.f, FMath::Max(H, 0.01f)));
 	}
 }
 
@@ -103,7 +94,18 @@ void AVisexFootprints::Feet(ACharacter* Pawn, USkeletalMeshComponent* Mesh)
 {
 	static const FName FootBones[2] = { TEXT("foot_l"), TEXT("foot_r") };
 	static const FName Balls[2] = { TEXT("ball_l"), TEXT("ball_r") };
-	FCollisionQueryParams Q(TEXT("Footprints"), false, Pawn);
+	FCollisionQueryParams Q(TEXT("Footprints"), true, Pawn);
+	// the instance that runs the plant pass (on the body mesh, or a layer under it)
+	const UVisexAnimInstance* Plant = Cast<UVisexAnimInstance>(Mesh->GetAnimInstance());
+	if (!Plant)
+	{
+		TArray<USkeletalMeshComponent*> Skins;
+		Pawn->GetComponents(Skins);
+		for (const USkeletalMeshComponent* K : Skins)
+		{
+			if ((Plant = Cast<UVisexAnimInstance>(K->GetAnimInstance())) != nullptr) { break; }
+		}
+	}
 	for (int32 f = 0; f < 2; ++f)
 	{
 		if (Mesh->GetBoneIndex(FootBones[f]) == INDEX_NONE)
@@ -120,29 +122,39 @@ void AVisexFootprints::Feet(ACharacter* Pawn, USkeletalMeshComponent* Mesh)
 		}
 		const float Height = Ankle.Z - Hit.ImpactPoint.Z;
 		const bool bOnSand = Hit.GetActor() && Hit.GetActor()->ActorHasTag(TEXT("Sand"));
-		// standing on sand: a mound under this foot, its top MoundCover above the sole
-		if (bMounds && bOnSand && Mounds[f] && Pawn->GetVelocity().Size2D() < StandSpeed && Height < PlantHeight + LiftMargin)
+		// a mound once per contact: the plant pass has this sole down, on the sand
+		if (bMounds && MoundMesh && Plant)
 		{
-			FVector Fwd = Ball - Ankle;
-			Fwd.Z = 0;
-			if (!Fwd.Normalize())
+			const float Gap = (f == 0 ? Plant->SoleGapL : Plant->SoleGapR) * float(Plant->GetSkelMeshComponent()->GetComponentScale().Z);
+			const float Down = f == 0 ? Plant->PlantedL : Plant->PlantedR;
+			if (Gap > MoundLift)
 			{
-				Fwd = Pawn->GetActorForwardVector();
+				bMounded[f] = false;
+				Held[f] = nullptr;
 			}
-			const FVector Mid = FVector(Ankle.X, Ankle.Y, Hit.ImpactPoint.Z) + Fwd * SoleOffset;
-			FHitResult Under;
-			const FVector Floor = GetWorld()->LineTraceSingleByChannel(Under, Mid + FVector(0, 0, 40), Mid - FVector(0, 0, 60), ECC_Visibility, Q)
-				? Under.ImpactPoint : Mid;
-			const FVector Up = Under.bBlockingHit ? Under.ImpactNormal : FVector::UpVector;
-			const float Gap = FMath::Max(0.f, Height - AnkleRest);
-			MoundTarget[f] = FMath::Clamp(Gap + MoundCover, MoundHeightRange.X, MoundHeightRange.Y);
-			if (MoundH[f] <= 0.05f || FVector::DistSquared2D(Mounds[f]->GetComponentLocation(), Floor) > 25.f * 25.f)
+			else if (!bMounded[f] && bOnSand && Gap <= MoundGap && Down >= MoundPlanted)
 			{
-				MoundH[f] = FMath::Min(MoundH[f], 0.05f);    // a new stance: grow from flat
+				FVector Fwd = Ball - Ankle;
+				Fwd.Z = 0;
+				if (!Fwd.Normalize()) { Fwd = Pawn->GetActorForwardVector(); }
+				const FVector Mid = FVector(Ankle.X, Ankle.Y, Hit.ImpactPoint.Z) + Fwd * SoleOffset;
+				FHitResult Under;
+				if (GetWorld()->LineTraceSingleByChannel(Under, Mid + FVector(0, 0, 40), Mid - FVector(0, 0, 60), VisexFootTraceChannel, Q))
+				{
+					// a re-plant inside the same stance keeps the sand already pushed out there
+					UStaticMeshComponent* Near = nullptr;
+					for (UStaticMeshComponent* M : Mounds)
+					{
+						if (M && FVector::DistSquared(M->GetComponentLocation(), Under.ImpactPoint) < 10.f * 10.f) { Near = M; }
+					}
+					if (!Near)
+					{
+						Mound(Under.ImpactPoint, Under.ImpactNormal, Fwd);
+					}
+					bMounded[f] = true;
+					Held[f] = Near ? Near : (Mounds.Num() ? Mounds.Last().Get() : nullptr);
+				}
 			}
-			// slightly sunk, so its rim meets the sand without a seam
-			Mounds[f]->SetWorldLocationAndRotation(Floor - Up * 0.3f, FRotationMatrix::MakeFromZX(Up, Fwd).Rotator());
-			Mounds[f]->SetWorldScale3D(FVector(MoundSize.X / 100.f, MoundSize.Y / 100.f, FMath::Max(MoundH[f], 0.05f) / 10.f));
 		}
 		if (bDebug)
 		{
@@ -223,4 +235,39 @@ UDecalComponent* AVisexFootprints::Stamp(const FVector& Where, const FVector& Fo
 		UE_LOG(LogTemp, Log, TEXT("footprint %s at %s"), bLeft ? TEXT("L") : TEXT("R"), *Where.ToString());
 	}
 	return D;
+}
+
+void AVisexFootprints::Mound(const FVector& Where, const FVector& Up, const FVector& Forward)
+{
+	if (Mounds.Num() >= FMath::Max(1, MoundMax))
+	{
+		if (Mounds[0]) { Mounds[0]->DestroyComponent(); }
+		Mounds.RemoveAt(0);
+		MoundAge.RemoveAt(0);
+	}
+	UStaticMeshComponent* M = NewObject<UStaticMeshComponent>(this);
+	M->SetStaticMesh(MoundMesh);
+	if (MoundMaterial) { M->SetMaterial(0, MoundMaterial); }
+	// never collides: nothing plants on it, nothing traces it, FootTrace included
+	M->SetCollisionProfileName(TEXT("NoCollision"));
+	M->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	M->SetGenerateOverlapEvents(false);
+	// a centimetre of sand: no shadow or distance-field darkening of its own, the sand's shading only
+	M->SetCastShadow(false);
+	M->bAffectDistanceFieldLighting = false;
+	M->bAffectDynamicIndirectLighting = false;
+	M->SetMobility(EComponentMobility::Movable);
+	M->SetupAttachment(RootComponent);
+	M->SetUsingAbsoluteLocation(true);
+	M->SetUsingAbsoluteRotation(true);
+	M->SetUsingAbsoluteScale(true);
+	M->SetWorldLocationAndRotation(Where - Up * MoundSink, FRotationMatrix::MakeFromZX(Up, Forward).Rotator());
+	M->SetRelativeScale3D(FVector(1.f, 1.f, 0.01f));
+	M->RegisterComponent();
+	Mounds.Add(M);
+	MoundAge.Add(0.f);
+	if (bDebug)
+	{
+		UE_LOG(LogTemp, Log, TEXT("mound at %s (%d alive)"), *Where.ToString(), Mounds.Num());
+	}
 }

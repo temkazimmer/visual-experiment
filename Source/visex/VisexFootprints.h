@@ -16,9 +16,9 @@ class UStaticMeshComponent;
  * it landed. Only the last Keep prints exist: each new step makes the older ones
  * shallower, so the trail fades out over ~8 steps.
  *
- * Standing still, each foot also sinks into a small sand mound (SM_SandMound, the dune
- * material) that rises just above the sole: it hides any gap between foot and sand and
- * gives her weight. The mounds settle back when she walks off. Place one in the level.
+ * Where a sole really touches the sand, a low rim of sand (SM_SandMound, the dune
+ * material) forms once around it and stays there, settling flat over a few seconds.
+ * Place one in the level.
  */
 UCLASS()
 class VISEX_API AVisexFootprints : public AActor
@@ -70,38 +70,36 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Footprints")
 	bool bDebug = false;
 
-	/** Sand mounds under standing feet: they hide the small gap between sole and sand. */
+	/** Sand mounds: on real contact (the plant pass has the foot down, its sole within
+	 *  MoundGap of the sand) a low rim of sand forms once around the sole, on the sand,
+	 *  and stays put there, settling flat over MoundLife seconds. */
 	UPROPERTY(EditAnywhere, Category = "Mounds")
 	bool bMounds = true;
-
-	/** A unit mound: 100 cm across, 100 cm high, zero slope at its rim. */
+	/** The rim at its real size (cm), its pivot on the sand under the sole's middle. */
 	UPROPERTY(EditAnywhere, Category = "Mounds")
 	TObjectPtr<UStaticMesh> MoundMesh;
-
 	UPROPERTY(EditAnywhere, Category = "Mounds")
 	TObjectPtr<UMaterialInterface> MoundMaterial;
-
-	/** cm: the ankle bone's height over the sole when the foot is flat. */
+	/** cm: contact is a planted sole at most this far over the sand... */
 	UPROPERTY(EditAnywhere, Category = "Mounds")
-	float AnkleRest = 7.0f;
-
-	/** cm the mound rises above the sole, and its height limits. */
+	float MoundGap = 0.5f;
+	/** ...and the foot counts as lifted again (a new contact may form) above this. */
 	UPROPERTY(EditAnywhere, Category = "Mounds")
-	float MoundCover = 2.0f;
+	float MoundLift = 2.f;
+	/** Plant weight (0..1) that counts as planted. */
 	UPROPERTY(EditAnywhere, Category = "Mounds")
-	FVector2D MoundHeightRange = FVector2D(1.5f, 6.f);
-
-	/** cm: mound length (along the foot) and width. */
+	float MoundPlanted = 0.5f;
+	/** Seconds the sand takes to push out, and a mound's whole life. */
 	UPROPERTY(EditAnywhere, Category = "Mounds")
-	FVector2D MoundSize = FVector2D(42.f, 28.f);
-
-	/** cm/s: she counts as standing below this speed. */
+	float MoundGrow = 0.25f;
 	UPROPERTY(EditAnywhere, Category = "Mounds")
-	float StandSpeed = 15.f;
-
-	/** cm/s the mounds grow and settle. */
+	float MoundLife = 8.f;
+	/** Mounds alive at once; the oldest goes first. */
 	UPROPERTY(EditAnywhere, Category = "Mounds")
-	float MoundRate = 8.f;
+	int32 MoundMax = 12;
+	/** cm the rim sits sunk, so its feathered edge meets the sand below the surface. */
+	UPROPERTY(EditAnywhere, Category = "Mounds")
+	float MoundSink = 0.3f;
 
 protected:
 	virtual void BeginPlay() override;
@@ -124,10 +122,11 @@ private:
 	TWeakObjectPtr<UDecalComponent> Active[2];
 
 	UPROPERTY(Transient)
-	TObjectPtr<UStaticMeshComponent> Mounds[2];
-	float MoundH[2] = { 0.f, 0.f };
-	float MoundTarget[2] = { 0.f, 0.f };
-
+	TArray<TObjectPtr<UStaticMeshComponent>> Mounds;   // oldest first
+	TArray<float> MoundAge;
+	bool bMounded[2] = { false, false };   // this contact already left its mound
+	TWeakObjectPtr<UStaticMeshComponent> Held[2];   // the mound a still-planted foot stands in: it holds until she steps off
+	void Mound(const FVector& Where, const FVector& Up, const FVector& Forward);
 	void Feet(class ACharacter* Pawn, class USkeletalMeshComponent* Mesh);
 	UDecalComponent* Stamp(const FVector& Where, const FVector& Forward, bool bLeft);
 	FRotator PrintRotation(const FVector& Forward) const;

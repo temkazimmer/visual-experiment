@@ -196,6 +196,7 @@ void AVisexPhotoMode::ClearMotion()
 		if (UVisexAnimInstance* Visex = Cast<UVisexAnimInstance>(Anim))
 		{
 			Visex->PhotoGait = -1.f;
+			Visex->PlantAlpha = 1.f;
 		}
 	}
 }
@@ -324,6 +325,7 @@ void AVisexPhotoMode::SetMotion(int32 Index)
 	if (UVisexAnimInstance* Visex = Cast<UVisexAnimInstance>(Anim))
 	{
 		Visex->PhotoGait = Loop ? M.Gait : -1.f;
+		Visex->PlantAlpha = 0.f;   // photo motions key their own feet
 	}
 	// the Ledge pose is shot on the stone slab; any other motion puts her back where she stood
 	if (M.Pose != INDEX_NONE && IsLedgeMotion(M.Name))

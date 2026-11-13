@@ -30,6 +30,9 @@ private:
 	void Contact(FCompactPose& Pose);
 	void Limits(FCompactPose& Pose);
 	void SteadyHead(FCompactPose& Pose);
+	/** Last of all: planted soles onto the visible sand (visex.Plant). */
+	void Plant(FCompactPose& Pose);
+	void PlantGround(UAnimInstance* Instance);   // game thread: the traces
 
 public:
 	virtual void PostUpdate(UAnimInstance* InAnimInstance) const override;
@@ -86,6 +89,21 @@ private:
 	float LimitWorst = 0.f;
 	FName LimitWorstBone;
 	FString LimitReportBuf;
+	// plant pass (visex.Plant): ground under each foot (component space), traced on the game thread
+	float PlantTarget = 0.f;          // the instance's PlantAlpha times the cvar
+	float PlantMoving = 0.f;          // 0 standing, 1 walking (by speed)
+	bool bGround[2] = {false, false};
+	float GroundZ[2] = {0.f, 0.f};
+	FVector SoleAt[2] = {FVector::ZeroVector, FVector::ZeroVector}; // each foot's lowest sole point last frame
+	float PlantFix[2] = {0.f, 0.f};   // cm each ankle moves up, eased
+	float PelvisFix = 0.f;            // cm the pelvis drops so a leg can reach, eased
+	// each foot's lowest skinned sole vertex last frame, under its foot bone (component space, cm)
+	bool bSole[2] = {false, false};
+	float SoleUnder[2] = {0.f, 0.f};
+	void MeasureSole(const USkeletalMeshComponent* Mesh);
+	// what the plant pass did this frame, for the footprints' mounds (copied to the instance in PostUpdate)
+	float OutGap[2] = {1e4f, 1e4f};   // cm between the planted sole and the sand, component space
+	float OutPlant[2] = {0.f, 0.f};   // how planted each foot is, 0..1
 };
 
 UCLASS(Transient, Blueprintable)
@@ -131,6 +149,23 @@ public:
 	/** Every limited joint this frame: "bone bend/side/twist" in degrees, for the audit scripts. */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Limits")
 	FString LimitReport;
+
+	/** 1 plants her soles on the sand after every other layer; the menu sets it to 0 while she
+	 *  sits for Settings, photo mode while its motions key their own feet. */
+	UPROPERTY(BlueprintReadWrite, Category = "Plant")
+	float PlantAlpha = 1.f;
+
+	/** Set by the plant pass each frame: cm between each foot's lowest sole vertex and the sand
+	 *  (component space; 1e4 when unknown), and how planted it is (0..1). AVisexFootprints
+	 *  forms a sand mound on contact from these. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Plant")
+	float SoleGapL = 1e4f;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Plant")
+	float SoleGapR = 1e4f;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Plant")
+	float PlantedL = 0.f;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Plant")
+	float PlantedR = 0.f;
 
 protected:
 	virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override { return new FVisexAnimProxy(this); }

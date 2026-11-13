@@ -431,11 +431,99 @@ void AVisexQATour::Build()
 	});
 }
 
+void AVisexQATour::BuildFeet()
+{
+	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
+	AVisexMenuDirector* D = Director;
+	auto Editor = [this]() -> AVisexBodyEditor* { for (TActorIterator<AVisexBodyEditor> It(GetWorld()); It; ++It) { return *It; } return nullptr; };
+	// one move: the phase starts with Run, four frames of her feet 0.6 s apart, then it settles
+	auto Move = [this, &Add](const FString& Name, float Settle, TFunction<void()> Run)
+	{
+		Add(0.5f, [this, Name, Run] { Feet.SetPhase(Name); QA_LOG(TEXT("VisexFeet: phase %s"), *Name); Run(); });
+		for (int32 I = 0; I < 4; ++I)
+		{
+			Add(0.6f, [this, Name, I] { Feet.Shoot(GetWorld(), Her(), Name.Replace(TEXT(" "), TEXT("_")), I); });
+		}
+		Add(Settle, [] {});
+	};
+	// the clock holds through her walk in (Tick), so this is the menu with her on her spot
+	Move(TEXT("standing"), 2.f, [] {});
+	Move(TEXT("body out"), 2.5f, [D] { D->OpenBody(); });
+	Move(TEXT("body back"), 3.f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
+	Move(TEXT("wardrobe out"), 2.5f, [D] { D->OpenWardrobe(); });
+	Move(TEXT("wardrobe back"), 3.f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
+	Move(TEXT("photo enter"), 3.f, [D] { D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
+	Add(0.5f, [this]
+	{
+		Feet.SetPhase(TEXT("done"));
+		QA_LOG(TEXT("VisexQA: done"));
+		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
+	});
+}
+
+void AVisexQATour::BuildGaps()
+{
+	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
+	AVisexMenuDirector* D = Director;
+	FString Setting, Var, Value;
+	if (FParse::Value(FCommandLine::Get(), TEXT("visexcvar="), Setting) && Setting.Split(TEXT("="), &Var, &Value))
+	{
+		IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(*Var);
+		if (V) { V->Set(*Value, ECVF_SetByConsole); }
+		// the body reads visex.Body.KeepFeet when it places the mesh
+		if (ACharacter* C = Her())
+		{
+			if (UVisexBodyComponent* B = C->FindComponentByClass<UVisexBodyComponent>()) { B->Apply(); }
+		}
+		QA_LOG(TEXT("VisexGaps: setting %s, reads %s"), *Setting, V ? *V->GetString() : TEXT("NO SUCH CVAR"));
+	}
+	else
+	{
+		QA_LOG(TEXT("VisexGaps: setting default"));
+	}
+	// the clock holds through her walk in: six seconds into the lean, two seconds measured
+	Add(6.f, [this] { Feet.SetPhase(TEXT("lean")); });
+	// Settings: she climbs onto the drum and perches; eight seconds to settle, three measured
+	Add(2.f, [this, D] { Feet.SetPhase(TEXT("sitdown")); D->OpenSettings(); });
+	Add(8.f, [this] { Feet.SetPhase(TEXT("sit")); });
+	Add(3.f, [this, D] { Feet.SetPhase(TEXT("standup")); D->CloseSettings(); });
+	Add(8.f, [this, D] { Feet.SetPhase(TEXT("start")); D->OnItemChosen(AVisexMenuDirector::ItemStart); });
+	// Start: she stands up, walks off and stops on the open sand
+	Add(14.f, [this] { Feet.SetPhase(TEXT("idle")); });
+	Add(2.f, [this]
+	{
+		Feet.SetPhase(TEXT("done"));
+		QA_LOG(TEXT("VisexQA: done"));
+		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
+	});
+}
+
 void AVisexQATour::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	if (!Director) { return; }
-	if (!bBuilt) { Build(); bBuilt = true; }
+	if (!bBuilt)
+	{
+		const bool bGaps = FParse::Param(FCommandLine::Get(), TEXT("visexgaps"));
+		bFeet = bGaps || FParse::Param(FCommandLine::Get(), TEXT("visexfeet"));
+		FeetClock = 2e5f;   // until she first moves
+		Feet.Log = [](const FString& Line) { QA_LOG(TEXT("%s"), *Line); };
+		bGaps ? BuildGaps() : bFeet ? BuildFeet() : Build();
+		bBuilt = true;
+	}
+	if (bFeet)
+	{
+		FeetClock += FeetClock < 1e5f ? DeltaSeconds : 0.f;
+		Feet.Tick(Her(), DeltaSeconds);
+		// the arrival, as she walks in: four frames 0.6 s apart once she moves (before that she
+		// is held under the launch cover, and that is not measured)
+		const ACharacter* C = Her();
+		if (Next == 0 && C && C->GetVelocity().Size2D() > 20.f && FeetClock > 1e5f) { FeetClock = 0.f; Feet.SetPhase(TEXT("arrival")); }
+		if (Next == 0 && FeetClock < 1e5f && ArrivalShots < 4 && FeetClock > 0.6f * ArrivalShots)
+		{
+			Feet.Shoot(GetWorld(), Her(), TEXT("arrival"), ArrivalShots++);
+		}
+	}
 	FrameSum += DeltaSeconds * 1000.0;
 	FrameMax = FMath::Max(FrameMax, double(DeltaSeconds) * 1000.0);
 	GpuSum += FPlatformTime::ToMilliseconds(RHIGetGPUFrameCycles(0));

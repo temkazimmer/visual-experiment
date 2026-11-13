@@ -1,8 +1,9 @@
 """Footprints in the sand: builds M_Footprint (a normal-only deferred decal: a
 procedural bare footprint, heel, sole edge, ball and toes, a soft dish ~2 cm deep, with a pushed-up rim) and places the
 Footprints actor (AVisexFootprints, C++), which stamps one per step on surfaces
-tagged "Sand" and fades the trail out over ~8 steps; standing, each foot sinks into a small sand mound
-(SM_SandMound, built here) that hides any gap under the sole. Tags the dunes as sand.
+tagged "Sand" and fades the trail out over ~8 steps; where a sole touches the sand a low rim of
+sand (SM_SandMound, built here) forms once and settles. Tags the dunes as sand.
+MOUND_ONLY = True (a global set before running) rebuilds just the mound mesh.
 Idempotent.
 
 Run live: python3 Tools/ue.py Tools/add_footprints.py   (after add_dunes.py)
@@ -125,25 +126,33 @@ MOUND = "/Game/VisEx/SM_SandMound"
 
 
 def mound_mesh():
-    """A unit mound: 100 cm across and 10 cm high (close to its real proportions, so
-    the actor's scale stays near uniform and the normals hold up). Profile
-    h = (1 - r^2)^3: a broad soft top and a long feathered skirt with no slope at the
-    rim, so it melts into the sand. Analytic normals, UVs from x/y. Scaled per foot."""
+    """The sand a sole pushes out, at its real size (cm): an elliptic rim 46 x 22 cm whose
+    crest (1.3 cm) runs just outside the sole's outline, a soft Gaussian ridge that falls to
+    nothing inside (the print) and outside (the dune), with zero slope at the rim, so sunk a
+    few mm it melts into the sand. Pivot on the sand under the sole's middle, +X forward.
+    Analytic normals; the dune material is world-aligned, so the UVs don't matter."""
     import math, os
     path = os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir()), "Tools", ".bridge", "sand_mound.obj")
-    R, H, rings, segs = 50.0, 10.0, 24, 48
-    v, t, n, f = ["v 0 0 %.3f" % H], ["vt 0.5 0.5"], ["vn 0 0 1"], []
+    A, B, PEAK, CREST, WIDTH, rings, segs = 23.0, 11.0, 1.3, 0.62, 0.17, 40, 72
+
+    def g(r):   # ridge profile over the normalised elliptic radius, 0 at the middle and the rim
+        return math.exp(-((r - CREST) / WIDTH) ** 2) * (1 - min(r, 1.0) ** 2) ** 2
+
+    top = max(g(i / 1000.0) for i in range(1001))
+    hgt = lambda r: PEAK * g(r) / top
+    v, t, n, f = ["v 0 0 %.4f" % hgt(0.0)], ["vt 0.5 0.5"], ["vn 0 0 1"], []
     for i in range(1, rings + 1):
         r = i / rings
-        h = H * (1 - r * r) ** 3
-        dh = H * 3 * (1 - r * r) ** 2 * (-2 * r) / R          # dh/dR, R in cm
+        h = hgt(r)
+        dr = (hgt(min(r + 1e-3, 1.0)) - hgt(r - 1e-3)) / (min(r + 1e-3, 1.0) - (r - 1e-3))
         for j in range(segs):
             a = 2 * math.pi * j / segs
-            x, y = R * r * math.cos(a), -R * r * math.sin(a)
-            v.append("v %.3f %.3f %.3f" % (x, y, h))
-            t.append("vt %.4f %.4f" % (0.5 + x / (2 * R), 0.5 + y / (2 * R)))
-            ln = math.sqrt(dh * dh + 1)
-            n.append("vn %.5f %.5f %.5f" % (-dh * math.cos(a) / ln, dh * math.sin(a) / ln, 1 / ln))
+            x, y = A * r * math.cos(a), -B * r * math.sin(a)
+            dx, dy = dr * x / (A * A * r), dr * y / (B * B * r)   # dh/dx, dh/dy in cm
+            ln = math.sqrt(dx * dx + dy * dy + 1)
+            v.append("v %.4f %.4f %.4f" % (x, y, h))
+            t.append("vt %.4f %.4f" % (0.5 + x / (2 * A), 0.5 + y / (2 * B)))
+            n.append("vn %.5f %.5f %.5f" % (-dx / ln, -dy / ln, 1 / ln))
     for j in range(segs):
         a, b = 2 + j, 2 + (j + 1) % segs
         f.append("f 1/1/1 %d/%d/%d %d/%d/%d" % (b, b, b, a, a, a))
@@ -168,23 +177,27 @@ def mound_mesh():
     return mesh
 
 
-mat = build()
-mound = mound_mesh()
-eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
-for a in eas.get_all_level_actors():
-    lab = a.get_actor_label()
-    if lab == "Dunes":
-        tags = list(a.get_editor_property("tags"))
-        if "Sand" not in [str(t) for t in tags]:
-            a.set_editor_property("tags", tags + [unreal.Name("Sand")])
-    if lab == "Footprints":
-        eas.destroy_actor(a)
-fp = eas.spawn_actor_from_class(unreal.VisexFootprints, unreal.Vector(0, 0, 0))
-fp.set_actor_label("Footprints")
-fp.set_editor_property("material", mat)
-fp.set_editor_property("half_size", unreal.Vector2D(HALF[1], HALF[0]))
-fp.set_editor_property("plant_height", 12.5)     # ankle bone: ~7-11 cm planted, ~17-21 cm mid-swing
-fp.set_editor_property("lift_margin", 3.5)
-fp.set_editor_property("mound_mesh", mound)
-fp.set_editor_property("mound_material", unreal.load_asset("/Game/VisEx/MI_Dunes"))
-print("footprints ready")
+if globals().get("MOUND_ONLY"):          # only rebuild SM_SandMound, leave the level alone
+    mound_mesh()
+    print("mound ready")
+else:
+    mat = build()
+    mound = mound_mesh()
+    eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    for a in eas.get_all_level_actors():
+        lab = a.get_actor_label()
+        if lab == "Dunes":
+            tags = list(a.get_editor_property("tags"))
+            if "Sand" not in [str(t) for t in tags]:
+                a.set_editor_property("tags", tags + [unreal.Name("Sand")])
+        if lab == "Footprints":
+            eas.destroy_actor(a)
+    fp = eas.spawn_actor_from_class(unreal.VisexFootprints, unreal.Vector(0, 0, 0))
+    fp.set_actor_label("Footprints")
+    fp.set_editor_property("material", mat)
+    fp.set_editor_property("half_size", unreal.Vector2D(HALF[1], HALF[0]))
+    fp.set_editor_property("plant_height", 12.5)     # ankle bone: ~7-11 cm planted, ~17-21 cm mid-swing
+    fp.set_editor_property("lift_margin", 3.5)
+    fp.set_editor_property("mound_mesh", mound)
+    fp.set_editor_property("mound_material", unreal.load_asset("/Game/VisEx/MI_Dunes"))
+    print("footprints ready")
