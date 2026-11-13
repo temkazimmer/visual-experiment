@@ -2,6 +2,10 @@
 
 #include "Animation/AnimNodeBase.h"
 #include "BonePose.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
+#include "Rendering/SkeletalMeshRenderData.h"
+#include "visex.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "HAL/IConsoleManager.h"
@@ -1022,6 +1026,28 @@ void FVisexAnimProxy::PlantGround(UAnimInstance* Instance)
 {
 	const UVisexAnimInstance* Inst = Cast<UVisexAnimInstance>(Instance);
 	PlantTarget = Inst ? FMath::Clamp(Inst->PlantAlpha, 0.f, 1.f) * CVarPlant.GetValueOnGameThread() : 0.f;
+	const USkeletalMeshComponent* Mesh = Instance->GetSkelMeshComponent();
+	const ACharacter* Her = Cast<ACharacter>(Instance->TryGetPawnOwner());
+	bGround[0] = bGround[1] = false;
+	if (PlantTarget < 0.005f || !Mesh || !Mesh->GetWorld()) { return; }
+	if (SoleMesh.Get() != Mesh->GetSkeletalMeshAsset()) { BuildSole(Mesh); }
+	const UCharacterMovementComponent* Move = Her ? Her->GetCharacterMovement() : nullptr;
+	PlantMoving = Her ? FMath::SmoothStep(10.f, 60.f, float(Her->GetVelocity().Size2D())) : 0.f;
+	if (Move && Move->IsFalling()) { PlantTarget = 0.f; return; }
+	// straight down at each foot's lowest sole point (last frame), onto the visible sand only
+	const FTransform X = Mesh->GetComponentTransform();
+	FCollisionQueryParams Q(TEXT("VisexPlant"), true, Mesh->GetOwner());
+	static const FName Bones[2] = {TEXT("foot_l"), TEXT("foot_r")};
+	for (int32 F = 0; F < 2; ++F)
+	{
+		const FVector At = SoleAt[F].IsZero() ? Mesh->GetSocketLocation(Bones[F]) : X.TransformPosition(SoleAt[F]);
+		FHitResult Hit;
+		if (Mesh->GetWorld()->LineTraceSingleByChannel(Hit, At + FVector(0.f, 0.f, 40.f), At - FVector(0.f, 0.f, 80.f), VisexFootTraceChannel, Q))
+		{
+			bGround[F] = true;
+			GroundZ[F] = float(X.InverseTransformPosition(Hit.ImpactPoint).Z);
+		}
+	}
 }
 
 void FVisexAnimProxy::Plant(FCompactPose& Pose)
@@ -1030,5 +1056,42 @@ void FVisexAnimProxy::Plant(FCompactPose& Pose)
 	{
 		PlantFix[0] = PlantFix[1] = PelvisFix = 0.f;
 		return;
+	}
+}
+
+void FVisexAnimProxy::BuildSole(const USkeletalMeshComponent* Mesh)
+{
+	const USkeletalMesh* Asset = Mesh ? Mesh->GetSkeletalMeshAsset() : nullptr;
+	FSkeletalMeshRenderData* RD = Mesh ? Mesh->GetSkeletalMeshRenderData() : nullptr;
+	SoleMesh = Asset;
+	Sole[0].Reset(); Sole[1].Reset();
+	if (!Asset || !RD || RD->LODRenderData.Num() == 0) { return; }
+	const FSkeletalMeshLODRenderData& LOD = RD->LODRenderData[0];
+	const FPositionVertexBuffer& Pos = LOD.StaticVertexBuffers.PositionVertexBuffer;
+	if (Pos.GetNumVertices() == 0 || !Pos.GetVertexData()) { return; }
+	const FReferenceSkeleton& Ref = Asset->GetRefSkeleton();
+	const TArray<FMatrix44f>& Inv = Asset->GetRefBasesInvMatrix();
+	const int32 Feet[2] = {Ref.FindBoneIndex(TEXT("foot_l")), Ref.FindBoneIndex(TEXT("foot_r"))};
+	if (Feet[0] == INDEX_NONE || Feet[1] == INDEX_NONE) { return; }
+	auto SideOf = [&](int32 B) { for (; B != INDEX_NONE; B = Ref.GetParentIndex(B)) { if (B == Feet[0]) return 0; if (B == Feet[1]) return 1; } return -1; };
+	const float AnkleZ = FMatrix44f(Inv[Feet[0]].Inverse()).GetOrigin().Z;
+	const uint32 MaxInf = LOD.SkinWeightVertexBuffer.GetMaxBoneInfluences();
+	for (uint32 V = 0; V < Pos.GetNumVertices(); ++V)
+	{
+		const FVector3f P = Pos.VertexPosition(V);
+		if (P.Z > AnkleZ) { continue; }
+		int32 Sec = 0, SecV = 0;
+		LOD.GetSectionFromVertexIndex(V, Sec, SecV);
+		FSoleVert S;
+		float OnFoot[2] = {0.f, 0.f};
+		for (uint32 I = 0, N = 0; I < MaxInf && N < 4; ++I)
+		{
+			const float W = LOD.SkinWeightVertexBuffer.GetBoneWeight(V, I) / 65535.f;
+			if (W <= 0.f) { continue; }
+			const int32 B = LOD.RenderSections[Sec].BoneMap[LOD.SkinWeightVertexBuffer.GetBoneIndex(V, I)];
+			S.Bone[N] = B; S.W[N] = W; S.Local[N] = Inv[B].TransformPosition(P); ++N;
+			if (const int32 Side = SideOf(B); Side >= 0) { OnFoot[Side] += W; }
+		}
+		if (OnFoot[0] >= 0.5f) { Sole[0].Add(S); } else if (OnFoot[1] >= 0.5f) { Sole[1].Add(S); }
 	}
 }

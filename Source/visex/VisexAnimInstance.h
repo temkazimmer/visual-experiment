@@ -97,6 +97,11 @@ private:
 	FVector SoleAt[2] = {FVector::ZeroVector, FVector::ZeroVector}; // each foot's lowest sole point last frame
 	float PlantFix[2] = {0.f, 0.f};   // cm each ankle moves up, eased
 	float PelvisFix = 0.f;            // cm the pelvis drops so a leg can reach, eased
+	// each foot's sole vertices (LOD 0, below the ankle): up to 4 bones, the point in each bone's ref space
+	struct FSoleVert { int32 Bone[4] = {INDEX_NONE, INDEX_NONE, INDEX_NONE, INDEX_NONE}; FVector3f Local[4]; float W[4] = {0.f, 0.f, 0.f, 0.f}; };
+	TArray<FSoleVert> Sole[2];
+	TWeakObjectPtr<const USkeletalMesh> SoleMesh;
+	void BuildSole(const USkeletalMeshComponent* Mesh);
 };
 
 UCLASS(Transient, Blueprintable)
