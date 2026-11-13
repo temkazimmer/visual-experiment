@@ -1057,6 +1057,70 @@ void FVisexAnimProxy::Plant(FCompactPose& Pose)
 		PlantFix[0] = PlantFix[1] = PelvisFix = 0.f;
 		return;
 	}
+	FShaper S{Pose, Pose.GetBoneContainer()};
+	const FCompactPoseBoneIndex Pelvis = S.Find(TEXT("pelvis"));
+	const FCompactPoseBoneIndex Leg[2][3] = {{S.Find(TEXT("thigh_l")), S.Find(TEXT("calf_l")), S.Find(TEXT("foot_l"))},
+		{S.Find(TEXT("thigh_r")), S.Find(TEXT("calf_r")), S.Find(TEXT("foot_r"))}};
+	if (!Pelvis.IsValid()) { return; }
+	// each foot's lowest skinned sole point, as the graph and the layers left it
+	TMap<int32, FTransform> CS;
+	auto BoneCS = [&](int32 MeshBone, FTransform& Out)
+	{
+		if (const FTransform* Got = CS.Find(MeshBone)) { Out = *Got; return true; }
+		const FCompactPoseBoneIndex I = S.Bones.MakeCompactPoseIndex(FMeshPoseBoneIndex(MeshBone));
+		if (!I.IsValid()) { return false; }
+		Out = CS.Add(MeshBone, S.Component(I));
+		return true;
+	};
+	float Want[2] = {0.f, 0.f};
+	for (int32 F = 0; F < 2; ++F)
+	{
+		FVector Low(0.f, 0.f, 1e9);
+		for (const FSoleVert& V : Sole[F])
+		{
+			FVector P = FVector::ZeroVector;
+			float Sum = 0.f;
+			FTransform T;
+			for (int32 i = 0; i < 4 && V.Bone[i] != INDEX_NONE; ++i)
+			{
+				if (BoneCS(V.Bone[i], T)) { P += V.W[i] * T.TransformPosition(FVector(V.Local[i])); Sum += V.W[i]; }
+			}
+			if (Sum > 0.5f && P.Z / Sum < Low.Z) { Low = P / Sum; }
+		}
+		if (Low.Z > 1e8 || !bGround[F] || !Leg[F][0].IsValid() || !Leg[F][1].IsValid() || !Leg[F][2].IsValid()) { continue; }
+		SoleAt[F] = Low;
+		// planted: standing, any foot within reach of the sand; walking, only a foot that is down
+		const float Gap = float(Low.Z) - GroundZ[F];
+		const float Stand = 1.f - FMath::SmoothStep(6.f, 12.f, Gap), Walk = 1.f - FMath::SmoothStep(1.f, 4.f, Gap);
+		const float W = (Gap < 0.f ? 1.f : FMath::Lerp(Stand, Walk, PlantMoving)) * PlantTarget * (1.f - Hold);
+		Want[F] = -Gap * W;
+	}
+	// eased, so nothing pops; then the ankles' targets, and how far the pelvis must drop for a leg to reach
+	const float Ease = Dt > 0.f ? FMath::Min(1.f, Dt * 20.f) : 0.f;
+	FVector Target[2];
+	FQuat Keep[2];
+	float Drop = 0.f;
+	for (int32 F = 0; F < 2; ++F)
+	{
+		PlantFix[F] = FMath::Lerp(PlantFix[F], Want[F], Ease);
+		if (!Leg[F][2].IsValid()) { continue; }
+		const FTransform Foot = S.Component(Leg[F][2]);
+		Target[F] = Foot.GetLocation() + FVector(0.f, 0.f, PlantFix[F]);
+		Keep[F] = Foot.GetRotation();
+		const FVector Hip = S.Component(Leg[F][0]).GetLocation();
+		const float Reach = 0.995f * (float((S.Component(Leg[F][1]).GetLocation() - Hip).Size()) + float((Foot.GetLocation() - S.Component(Leg[F][1]).GetLocation()).Size()));
+		const float R = float(FVector::Dist2D(Hip, Target[F])), Up = float(Hip.Z - Target[F].Z);
+		if (R < Reach && FMath::Abs(PlantFix[F]) > 0.01f) { Drop = FMath::Max(Drop, Up - FMath::Sqrt(Reach * Reach - R * R)); }
+	}
+	PelvisFix = FMath::Lerp(PelvisFix, Drop, Ease);
+	if (PelvisFix > 0.01f) { S.TranslateCS(Pelvis, FVector(0.f, 0.f, -PelvisFix)); }
+	for (int32 F = 0; F < 2; ++F)
+	{
+		if (Leg[F][0].IsValid() && Leg[F][1].IsValid() && Leg[F][2].IsValid() && (FMath::Abs(PlantFix[F]) > 0.01f || PelvisFix > 0.01f))
+		{
+			S.Reach(Leg[F][0], Leg[F][1], Leg[F][2], Target[F], Keep[F], 1.f);
+		}
+	}
 }
 
 void FVisexAnimProxy::BuildSole(const USkeletalMeshComponent* Mesh)
