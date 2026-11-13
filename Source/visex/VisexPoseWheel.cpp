@@ -1,10 +1,12 @@
 #include "VisexPoseWheel.h"
 #include "VisexAnimInstance.h"
+#include "visex.h"
 
 #include "Animation/AnimClassInterface.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimSequence.h"
+#include "BoneControllers/AnimNode_FootPlacement.h"
 #include "Misc/PackageName.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Components/CapsuleComponent.h"
@@ -408,28 +410,95 @@ void UVisexPoseWheelComponent::StopPose()
 	}
 }
 
+// Foot Placement (ABP_Unarmed) is tuned here at runtime, so the values live in code, not in
+// the binary Anim Blueprint (Docs/Research/FOOT_IK.md). Springs: stiffness k ~ an interp speed of sqrt(k).
+static TAutoConsoleVariable<int32> CVarFootTune(TEXT("visex.Feet.Tune"), 1, TEXT("Tune the ABP's Foot Placement from code: 0 leaves the node on its own settings"));
+static TAutoConsoleVariable<float> CVarFootSpeed(TEXT("visex.Feet.Speed"), 40.f, TEXT("Foot Placement: a ball slower than this (cm/s) plants"));
+static TAutoConsoleVariable<float> CVarFootUnalign(TEXT("visex.Feet.Unalign"), 120.f, TEXT("Foot Placement: a foot faster than this (cm/s) no longer aligns to the ground"));
+static TAutoConsoleVariable<float> CVarFootDist(TEXT("visex.Feet.Dist"), 6.f, TEXT("Foot Placement: a foot closer to the ground than this (cm) can plant"));
+static TAutoConsoleVariable<float> CVarFootPelvisMax(TEXT("visex.Feet.PelvisMax"), 20.f, TEXT("Foot Placement: how far (cm) the pelvis may move to keep the feet planted"));
+static TAutoConsoleVariable<float> CVarFootPelvisStiff(TEXT("visex.Feet.PelvisStiff"), 150.f, TEXT("Foot Placement: pelvis spring stiffness (150 ~ interp speed 12)"));
+static TAutoConsoleVariable<float> CVarFootStiff(TEXT("visex.Feet.FootStiff"), 450.f, TEXT("Foot Placement: foot unplant/floor spring stiffness (450 ~ interp speed 21)"));
+static TAutoConsoleVariable<int32> CVarFootLock(TEXT("visex.Feet.Lock"), 1, TEXT("Foot Placement lock: 0 unlocked, 1 pivot around the ball, 2 pivot around the ankle"));
+static TAutoConsoleVariable<int32> CVarFootMenuOff(TEXT("visex.Feet.MenuOff"), 1, TEXT("Fade the foot IK out during the menu's lean and sit clips, which plant their own feet"));
+
+static float FootTuneStamp()
+{
+	return CVarFootSpeed.GetValueOnGameThread() + 3.f * CVarFootUnalign.GetValueOnGameThread() + 7.f * CVarFootDist.GetValueOnGameThread()
+		+ 11.f * CVarFootPelvisMax.GetValueOnGameThread() + 13.f * CVarFootPelvisStiff.GetValueOnGameThread()
+		+ 17.f * CVarFootStiff.GetValueOnGameThread() + 19.f * CVarFootLock.GetValueOnGameThread();
+}
+
+static void TuneFootPlacement(FAnimNode_FootPlacement& FP)
+{
+	// Manual mode with no speed curve reads every foot as moving, so nothing ever plants:
+	// Graph mode takes each ball's speed from the pose plus root motion.
+	FP.PlantSpeedMode = EWarpingEvaluationMode::Graph;
+	FP.PlantSettings.SpeedThreshold = CVarFootSpeed.GetValueOnGameThread();
+	FP.PlantSettings.UnalignmentSpeedThreshold = FMath::Max(CVarFootUnalign.GetValueOnGameThread(), FP.PlantSettings.SpeedThreshold + 1.f);
+	FP.PlantSettings.DistanceToGround = CVarFootDist.GetValueOnGameThread();
+	FP.PlantSettings.LockType = static_cast<EFootPlacementLockType>(FMath::Clamp(CVarFootLock.GetValueOnGameThread(), 0, 2));
+	FP.PelvisSettings.MaxOffset = CVarFootPelvisMax.GetValueOnGameThread();
+	FP.PelvisSettings.PelvisHeightMode = EPelvisHeightMode::AllPlantedFeet;
+	FP.PelvisSettings.bEnableInterpolation = true;
+	FP.PelvisSettings.LinearStiffness = CVarFootPelvisStiff.GetValueOnGameThread();
+	FP.InterpolationSettings.UnplantLinearStiffness = CVarFootStiff.GetValueOnGameThread();
+	FP.InterpolationSettings.FloorLinearStiffness = CVarFootStiff.GetValueOnGameThread();
+	// the visible surfaces block FootTrace (AVisexMenuDirector::SetUpFootTrace); the walking
+	// ramp under the steps and the hidden dune collision don't
+	const ETraceTypeQuery Trace = UEngineTypes::ConvertToTraceType(VisexFootTraceChannel);
+	FP.TraceSettings.ComplexTraceChannel = Trace;
+	FP.TraceSettings.SimpleTraceChannel = Trace;
+	FP.TraceSettings.SweepRadius = 2.f;
+}
+
+static bool PlaysMenuClip(const UAnimInstance* Anim);
+
+static bool FootIKOffForMenuClip(const UAnimInstance* Anim)
+{
+	return CVarFootMenuOff.GetValueOnGameThread() != 0 && PlaysMenuClip(Anim);
+}
+
 void UVisexPoseWheelComponent::UpdateFootIK(float DeltaTime)
 {
-	// The Anim Blueprint's foot IK (a Control Rig node after the pose slot) plants both feet on
-	// the ground. On the floor poses that drags a raised leg down, so it fades out while she
-	// is down there and back in once she is up. Standing poses keep it.
+	// The Anim Blueprint's foot IK (Copy Bone foot -> ik_foot, Foot Placement, Leg IK after the
+	// pose slot) plants both feet on the ground. On the floor poses that drags a raised leg down,
+	// so it fades out while she is down there and back in once she is up. Standing poses keep it.
+	// Menu clips that plant their own feet (FootIKOffForMenuClip) fade it out too.
 	const bool bOnFloor = Phase != EPhase::None && PoseIns.IsValidIndex(Current) && PoseIns[Current];
-	FootIKAlpha = FMath::FInterpConstantTo(FootIKAlpha, bOnFloor ? 0.f : 1.f, DeltaTime, 4.f);
 	UAnimInstance* Anim = GetAnim();
+	const bool bOff = bOnFloor || (Anim && FootIKOffForMenuClip(Anim));
+	FootIKAlpha = FMath::FInterpConstantTo(FootIKAlpha, bOff ? 0.f : 1.f, DeltaTime, 4.f);
 	IAnimClassInterface* AnimClass = Anim ? IAnimClassInterface::GetFromClass(Anim->GetClass()) : nullptr;
 	if (!AnimClass)
 	{
 		return;
 	}
+	const bool bTune = CVarFootTune.GetValueOnGameThread() != 0;
+	bool bRetuned = false;
 	for (const FStructProperty* Node : AnimClass->GetAnimNodeProperties())
 	{
-		if (Node->Struct->GetFName() == TEXT("AnimNode_ControlRig"))
+		const FName Type = Node->Struct->GetFName();
+		void* Data = Node->ContainerPtrToValuePtr<void>(Anim);
+		if (Type == TEXT("AnimNode_FootPlacement") && bTune && (TunedAnim.Get() != Anim || TunedStamp != FootTuneStamp()))
+		{
+			TuneFootPlacement(*static_cast<FAnimNode_FootPlacement*>(Data));
+			bRetuned = true;
+		}
+		if (Type == TEXT("AnimNode_FootPlacement") || Type == TEXT("AnimNode_LegIK") || Type == TEXT("AnimNode_CopyBone")
+			|| Type == TEXT("AnimNode_ControlRig"))
 		{
 			if (const FFloatProperty* Alpha = FindFProperty<FFloatProperty>(Node->Struct, TEXT("Alpha")))
 			{
-				Alpha->SetPropertyValue_InContainer(Node->ContainerPtrToValuePtr<void>(Anim), FootIKAlpha);
+				Alpha->SetPropertyValue_InContainer(Data, FootIKAlpha);
 			}
 		}
+	}
+	if (bRetuned)
+	{
+		TunedAnim = Anim;
+		TunedStamp = FootTuneStamp();
+		Anim->RecalcRequiredBones();   // Foot Placement caches the pelvis max offset when it caches its bones
 	}
 }
 

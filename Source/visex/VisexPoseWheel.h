@@ -137,6 +137,8 @@ private:
 	float EnterLength = 0.f;      // the clip taking her into the pose: its _In, or a flow from the last one
 	bool bFlowing = false;        // moving from one floor pose to another, already down
 	float FootIKAlpha = 1.f;      // the Anim Blueprint's foot IK, off while she is on the floor
+	TWeakObjectPtr<class UAnimInstance> TunedAnim;   // whose Foot Placement node was last tuned (TuneFootPlacement)
+	float TunedStamp = 0.f;       // the visex.Feet.* values it was tuned with
 	float GroundAlpha = 0.f;      // how far the body is tilted onto the slope under her
 	FVector MeshBaseLocation = FVector::ZeroVector;   // the body's own placement, put back when she is up
 	FQuat MeshBaseRotation = FQuat::Identity;
