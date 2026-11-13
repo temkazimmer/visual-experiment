@@ -431,11 +431,57 @@ void AVisexQATour::Build()
 	});
 }
 
+void AVisexQATour::BuildFeet()
+{
+	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
+	AVisexMenuDirector* D = Director;
+	auto Editor = [this]() -> AVisexBodyEditor* { for (TActorIterator<AVisexBodyEditor> It(GetWorld()); It; ++It) { return *It; } return nullptr; };
+	// one move: the phase starts with Run, four frames of her feet 0.6 s apart, then it settles
+	auto Move = [this, &Add](const FString& Name, float Settle, TFunction<void()> Run)
+	{
+		Add(0.5f, [this, Name, Run] { Feet.SetPhase(Name); QA_LOG(TEXT("VisexFeet: phase %s"), *Name); Run(); });
+		for (int32 I = 0; I < 4; ++I)
+		{
+			Add(0.6f, [this, Name, I] { Feet.Shoot(GetWorld(), Her(), Name.Replace(TEXT(" "), TEXT("_")), I); });
+		}
+		Add(Settle, [] {});
+	};
+	// the clock holds through her walk in (Tick), so this is the menu with her on her spot
+	Move(TEXT("standing"), 2.f, [] {});
+	Move(TEXT("body out"), 2.5f, [D] { D->OpenBody(); });
+	Move(TEXT("body back"), 3.f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
+	Move(TEXT("wardrobe out"), 2.5f, [D] { D->OpenWardrobe(); });
+	Move(TEXT("wardrobe back"), 3.f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
+	Move(TEXT("photo enter"), 3.f, [D] { D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
+	Add(0.5f, [this]
+	{
+		Feet.SetPhase(TEXT("done"));
+		QA_LOG(TEXT("VisexQA: done"));
+		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
+	});
+}
+
 void AVisexQATour::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	if (!Director) { return; }
-	if (!bBuilt) { Build(); bBuilt = true; }
+	if (!bBuilt)
+	{
+		bFeet = FParse::Param(FCommandLine::Get(), TEXT("visexfeet"));
+		Feet.Log = [](const FString& Line) { QA_LOG(TEXT("%s"), *Line); };
+		bFeet ? BuildFeet() : Build();
+		bBuilt = true;
+	}
+	if (bFeet)
+	{
+		FeetClock += DeltaSeconds;
+		Feet.Tick(Her(), DeltaSeconds);
+		// the arrival, as she walks in: four frames 0.9 s apart from her first second
+		if (Next == 0 && ArrivalShots < 4 && FeetClock > 1.f + 0.9f * ArrivalShots)
+		{
+			Feet.Shoot(GetWorld(), Her(), TEXT("arrival"), ArrivalShots++);
+		}
+	}
 	FrameSum += DeltaSeconds * 1000.0;
 	FrameMax = FMath::Max(FrameMax, double(DeltaSeconds) * 1000.0);
 	GpuSum += FPlatformTime::ToMilliseconds(RHIGetGPUFrameCycles(0));

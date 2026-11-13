@@ -29,9 +29,11 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimSequence.h"
 #include "VisexAnimInstance.h"
+#include "visex.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "EngineUtils.h"
+#include "UObject/UObjectIterator.h"
 #include "Materials/MaterialInterface.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/CollisionProfile.h"
@@ -229,6 +231,7 @@ void AVisexMenuDirector::ShowMenu()
 	SetCornerShade(1.f);
 	SpawnLeanColumn();
 	FitLeanColumn();
+	SetUpFootTrace();   // the drum is placed now too
 	// the first menu after launch: the drum is placed (above, with her on her spot); now she
 	// starts out on the sand and walks in to it while the panel fades in
 	const bool bArrive = !bArrivalChecked && CVarMenuArrival.GetValueOnGameThread() != 0 && BeginArrival();
@@ -1924,6 +1927,30 @@ UAnimInstance* AVisexMenuDirector::GetPawnAnim() const
 {
 	const ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
 	return Char && Char->GetMesh() ? Char->GetMesh()->GetAnimInstance() : nullptr;
+}
+
+void AVisexMenuDirector::SetUpFootTrace()
+{
+	// Her Foot Placement traces FootTrace (visex.h). Every visible surface with query collision
+	// that blocks Visibility blocks it too: the dunes, the plaza slabs, the steps, the rubble,
+	// the drum. The invisible walking ramp under the steps doesn't, so her soles meet the stone
+	// she is seen on, not a surface 10 cm under it. Set at runtime, so Lvl_Dust is unchanged.
+	int32 Count = 0;
+	for (TObjectIterator<UStaticMeshComponent> It; It; ++It)
+	{
+		UStaticMeshComponent* C = *It;
+		if (C->GetWorld() != GetWorld() || !C->IsVisible() || C->bHiddenInGame || (C->GetOwner() && C->GetOwner()->IsHidden())
+			|| !C->IsQueryCollisionEnabled() || C->GetCollisionResponseToChannel(ECC_Visibility) != ECR_Block)
+		{
+			continue;
+		}
+		if (C->GetCollisionResponseToChannel(VisexFootTraceChannel) != ECR_Block)
+		{
+			C->SetCollisionResponseToChannel(VisexFootTraceChannel, ECR_Block);
+			++Count;
+		}
+	}
+	UE_LOG(LogTemp, Log, TEXT("Foot trace: %d visible surfaces block FootTrace"), Count);
 }
 
 void AVisexMenuDirector::SpawnLeanColumn()

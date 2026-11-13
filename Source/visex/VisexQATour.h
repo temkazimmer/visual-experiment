@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "VisexFootMeter.h"
 #include "VisexQATour.generated.h"
 
 /**
@@ -38,6 +39,13 @@ private:
 	mutable int32 FrameN = 0;
 
 	void Build();
+	/** -visexfeet: only the menu's walks (arrival, Body, Wardrobe, photo), her planted steps
+	 *  measured and her feet shot in close-up strips (VisexFootMeter.h). */
+	void BuildFeet();
+	bool bFeet = false;
+	float FeetClock = 0.f;
+	int32 ArrivalShots = 0;
+	FVisexFootMeter Feet;
 	void Shot(const FString& Name);
 	class ACharacter* Her() const;
 	class AVisexPhotoMode* Photo() const;

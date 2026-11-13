@@ -819,6 +819,8 @@ private:
 	void BeginMotion(const TCHAR* Name);
 	void EndMotion(float SettleIn = 0.f);
 	void ResetSkate();
+	/** Visible surfaces block the FootTrace channel her Foot Placement traces (visex.h). */
+	void SetUpFootTrace();
 	FString MotionName;
 	double MotionStart = -1.0;
 	FTimerHandle MotionTimer;
