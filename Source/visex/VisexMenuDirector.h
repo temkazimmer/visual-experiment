@@ -822,6 +822,7 @@ private:
 	FString MotionName;
 	double MotionStart = -1.0;
 	FTimerHandle MotionTimer;
+	bool bMotionBoxed = false;
 	int32 ReturnPhase = 0;       // 0 turning to her spot, 1 walking there, 2 turning round on it
 	float PhaseClock = 0.f;
 	float TurnFrom = 0.f, TurnTo = 0.f, TurnTime = 0.f;   // yaw (deg) and seconds of this turn
@@ -854,7 +855,10 @@ private:
 	bool bGaitHeld = false;      // the catwalk posture is held through the transition
 	void HoldGait(bool bHold);
 	FTransform Drifted(const FTransform& Base) const;   // the menu camera's handheld sway on Base
-	void UnboxPageCamera();      // a page's cine camera fills the window, as the menu's does
+	void UnboxPageCamera(bool bUnbox);   // the closing page's camera fills the window; false: put it back
+	TWeakObjectPtr<class UCineCameraComponent> UnboxedLens;
+	FCameraFilmbackSettings UnboxedFilmback;
+	bool bUnboxedConstrain = true;
 
 	// photo mode
 	void OpenPhoto();

@@ -687,8 +687,8 @@ void AVisexMenuDirector::OpenBodyNow()
 	if (BodyEditor)
 	{
 		BodyEditor->BlendTime = PageBlendTime;   // the same camera move onto every page, and back
+		UnboxPageCamera(false);   // its own lens back
 		BodyEditor->OpenPage(CharacterPage);
-		UnboxPageCamera();
 	}
 	if (!BodyEditor || !BodyEditor->IsOpen())
 	{
@@ -1007,24 +1007,41 @@ void AVisexMenuDirector::HoldGait(bool bHold)
 	bGaitHeld = bHold;
 }
 
-void AVisexMenuDirector::UnboxPageCamera()
+void AVisexMenuDirector::UnboxPageCamera(bool bUnbox)
 {
 	// a blend between two views letterboxes while either does (FMinimalViewInfo::BlendViewInfo
-	// ORs bConstrainAspectRatio): a cine camera boxes to its 16:9 sensor by default, the menu
-	// camera fills the window, so the bars snapped off as the blend home finished (QA 0558, the
-	// jump mid-walk) and on at the start of the blend out. The page fills the window too
-	// (vertical field kept, as the menu and play cameras)
+	// ORs bConstrainAspectRatio): the page cameras box to their 16:9 sensor, the menu camera fills
+	// the window, so the bars snapped off as the blend home finished, a jump mid-walk (QA 0558).
+	// As the page closes its camera fills the window too, keeping its horizontal field (a taller
+	// sensor where the window is narrower than 16:9: the bars turn into more of the same shot),
+	// and the blend runs unboxed throughout. The page gets its own lens back when it opens.
+	if (!bUnbox)
+	{
+		if (UCineCameraComponent* Lens = UnboxedLens.Get())
+		{
+			Lens->Filmback = UnboxedFilmback;
+			Lens->bConstrainAspectRatio = bUnboxedConstrain;
+		}
+		UnboxedLens = nullptr;
+		return;
+	}
 	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
 	APlayerCameraManager* Cam = PC ? PC->PlayerCameraManager.Get() : nullptr;
-	AActor* PageView = Cam ? (Cam->PendingViewTarget.Target ? Cam->PendingViewTarget.Target.Get() : Cam->GetViewTarget()) : nullptr;
-	UCineCameraComponent* Lens = PageView ? PageView->FindComponentByClass<UCineCameraComponent>() : nullptr;
-	// (only on a window as wide as its sensor or wider: narrower, the kept vertical field would
-	// crop the page's panel off the sides, so it stays boxed there)
-	if (Lens && bMenuFillsWindow && Lens->Filmback.SensorHeight > 0.f
-		&& ViewAspect() >= Lens->Filmback.SensorWidth / Lens->Filmback.SensorHeight - 0.01f)
+	AActor* PageView = Cam ? Cam->GetViewTarget() : nullptr;   // the outgoing view, mid-blend home
+	UCineCameraComponent* Lens = PageView && PageView != MenuCamera ? PageView->FindComponentByClass<UCineCameraComponent>() : nullptr;
+	if (!Lens || !bMenuFillsWindow || !Lens->bConstrainAspectRatio || Lens->Filmback.SensorHeight <= 0.f)
 	{
-		Lens->bConstrainAspectRatio = false;
+		return;
 	}
+	UnboxedLens = Lens;
+	UnboxedFilmback = Lens->Filmback;
+	bUnboxedConstrain = Lens->bConstrainAspectRatio;
+	const float Window = ViewAspect();
+	if (Window < Lens->Filmback.SensorWidth / Lens->Filmback.SensorHeight)
+	{
+		Lens->Filmback.SensorHeight = Lens->Filmback.SensorWidth / Window;
+	}
+	Lens->bConstrainAspectRatio = false;
 }
 
 void AVisexMenuDirector::PlanWalk(float Dist, float From)
@@ -1503,8 +1520,8 @@ void AVisexMenuDirector::OpenPhotoNow()
 	if (PhotoMode)
 	{
 		PhotoMode->BlendTime = PageBlendTime;
+		UnboxPageCamera(false);
 		PhotoMode->Open();
-		UnboxPageCamera();
 	}
 	if (!PhotoMode || !PhotoMode->IsOpen())
 	{
@@ -1583,6 +1600,7 @@ void AVisexMenuDirector::HandlePhotoClosed()
 {
 	// the scene returns, and she goes back to the column
 	BeginMotion(TEXT("photo out"));
+	UnboxPageCamera(true);
 	SetSceneStripped(false);
 	bStudio = false;
 	const float Blend = PhotoMode ? PhotoMode->BlendTime : 0.f;
@@ -1603,6 +1621,7 @@ void AVisexMenuDirector::HandleBodyClosed()
 	const float Blend = BodyEditor ? BodyEditor->BlendTime : 0.f;
 	const int32 Row = CharacterPage == 1 ? ItemWardrobe : ItemBody;
 	BeginMotion(CharacterPage == 1 ? TEXT("wardrobe out") : TEXT("body out"));
+	UnboxPageCamera(true);
 	if (bSteppedOut)
 	{
 		BeginStepBack(Blend, Row);
@@ -2421,6 +2440,18 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 	if (MotionStart >= 0.0 && !bArriving)
 	{
 		TickFootSkate();
+		// a letterbox snapping on or off reads as a camera jump: log each change of it
+		const APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+		if (const APlayerCameraManager* Cam = PC ? PC->PlayerCameraManager.Get() : nullptr)
+		{
+			const bool bBoxed = Cam->GetCameraCacheView().bConstrainAspectRatio;
+			if (bBoxed != bMotionBoxed)
+			{
+				UE_LOG(LogTemp, Log, TEXT("Menu motion: %s view %s at %.2f s"), *MotionName,
+					bBoxed ? TEXT("letterboxed") : TEXT("fills the window"), GetWorld()->GetTimeSeconds() - MotionStart);
+				bMotionBoxed = bBoxed;
+			}
+		}
 	}
 	if (ArrivalClock >= 0.f && !bArrivalFrozen)
 	{
