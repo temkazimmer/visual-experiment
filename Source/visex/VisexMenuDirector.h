@@ -766,6 +766,14 @@ private:
 	bool bPlanted[2] = {false, false};
 	float SkateMax = 0.f, SkateSum = 0.f;
 	int32 SkateSteps = 0;
+	// menu motion timing: one transition at a time (enter or exit a page), click to settled,
+	// with the planted-foot skate over it. Logged as "Menu motion: <name> ..."
+	void BeginMotion(const TCHAR* Name);
+	void EndMotion(float SettleIn = 0.f);
+	void ResetSkate();
+	FString MotionName;
+	double MotionStart = -1.0;
+	FTimerHandle MotionTimer;
 	int32 ReturnPhase = 0;       // 0 turning to her spot, 1 walking there, 2 turning round on it
 	float PhaseClock = 0.f;
 	float TurnFrom = 0.f, TurnTo = 0.f, TurnTime = 0.f;   // yaw (deg) and seconds of this turn

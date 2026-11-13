@@ -546,6 +546,7 @@ void AVisexMenuDirector::OpenSettings()
 		return;
 	}
 	Page = 1;
+	BeginMotion(TEXT("settings in"));
 	ShowSettingsPage(0);
 	SitForSettings();
 }
@@ -567,6 +568,7 @@ void AVisexMenuDirector::CloseSettings()
 	MarkPanel();
 	FVisexSettings::Save();
 	Page = 0;
+	BeginMotion(TEXT("settings out"));
 	StandFromSettings();
 	if (UVisexMenuWidget* W = GetMenuWidget())
 	{
@@ -640,6 +642,7 @@ void AVisexMenuDirector::OpenCharacterPage(int32 InPage)
 	{
 		return;
 	}
+	BeginMotion(InPage == 1 ? TEXT("wardrobe in") : TEXT("body in"));
 	// she pushes off the column first; the page opens as she finds her feet
 	const float Up = StandUp();
 	if (Up > 0.f)
@@ -690,6 +693,7 @@ void AVisexMenuDirector::OpenBodyNow()
 	}
 	bStudio = true;
 	StudioStrength = 1.f;
+	EndMotion(BodyEditor->BlendTime);   // the page's camera blend
 	// the menu steps aside while the body page has the screen
 	bOpen = false;
 	Panel->SetVisibility(false);
@@ -1279,6 +1283,43 @@ void AVisexMenuDirector::TickArrivalPanel(float DeltaSeconds)
 	}
 }
 
+void AVisexMenuDirector::ResetSkate()
+{
+	bPlanted[0] = bPlanted[1] = false;
+	SkateMax = SkateSum = 0.f;
+	SkateSteps = 0;
+}
+
+void AVisexMenuDirector::BeginMotion(const TCHAR* Name)
+{
+	GetWorldTimerManager().ClearTimer(MotionTimer);
+	MotionName = Name;
+	MotionStart = GetWorld()->GetTimeSeconds();
+	ResetSkate();
+}
+
+void AVisexMenuDirector::EndMotion(float SettleIn)
+{
+	if (MotionStart < 0.0)
+	{
+		return;
+	}
+	// settled once the last move (a camera blend, a clip's hand-off) has run out too
+	auto Log = [this]()
+	{
+		if (MotionStart < 0.0) { return; }
+		UE_LOG(LogTemp, Log, TEXT("Menu motion: %s %.2f s, planted-foot skate mean %.1f max %.1f cm over %d steps"),
+			*MotionName, GetWorld()->GetTimeSeconds() - MotionStart, SkateSteps ? SkateSum / SkateSteps : 0.f, SkateMax, SkateSteps);
+		MotionStart = -1.0;
+	};
+	if (SettleIn > 0.01f)
+	{
+		GetWorldTimerManager().SetTimer(MotionTimer, FTimerDelegate::CreateWeakLambda(this, Log), SettleIn, false);
+		return;
+	}
+	Log();
+}
+
 void AVisexMenuDirector::TickFootSkate()
 {
 	// a foot counts as planted while it is low and nearly still; its skate is how far it
@@ -1313,7 +1354,7 @@ void AVisexMenuDirector::TickFootSkate()
 			SkateMax = FMath::Max(SkateMax, Skate);
 			SkateSum += Skate;
 			++SkateSteps;
-			UE_LOG(LogTemp, Log, TEXT("Menu arrival: %s planted %.2f s, skate %.1f cm"), *Bones[F].ToString(), PlantFor[F], Skate);
+			UE_LOG(LogTemp, Log, TEXT("Menu step: %s planted %.2f s, skate %.1f cm"), *Bones[F].ToString(), PlantFor[F], Skate);
 		}
 		bPlanted[F] = bDown;
 	}
@@ -1329,6 +1370,7 @@ void AVisexMenuDirector::OpenPhoto()
 	bOpen = false;
 	FadeOut = 0.f;
 	DisableInput(PC);
+	BeginMotion(TEXT("photo in"));
 	// she pushes off the column, then the photo camera takes over
 	const float Up = StandUp();
 	if (Up > 0.f)
@@ -1368,6 +1410,7 @@ void AVisexMenuDirector::OpenPhotoNow()
 	SetSceneStripped(true);
 	bStudio = true;
 	StudioStrength = PhotoStudioStrength;
+	EndMotion(PhotoMode->BlendTime);
 	OnPhotoMode();
 }
 
@@ -1429,6 +1472,7 @@ void AVisexMenuDirector::SetSceneStripped(bool bStrip)
 void AVisexMenuDirector::HandlePhotoClosed()
 {
 	// the scene returns, and she goes back to the column
+	BeginMotion(TEXT("photo out"));
 	SetSceneStripped(false);
 	bStudio = false;
 	const float Blend = PhotoMode ? PhotoMode->BlendTime : 0.f;
@@ -1448,6 +1492,7 @@ void AVisexMenuDirector::HandleBodyClosed()
 	bStudio = false;
 	const float Blend = BodyEditor ? BodyEditor->BlendTime : 0.f;
 	const int32 Row = CharacterPage == 1 ? ItemWardrobe : ItemBody;
+	BeginMotion(CharacterPage == 1 ? TEXT("wardrobe out") : TEXT("body out"));
 	if (bSteppedOut)
 	{
 		BeginStepBack(Blend, Row);
@@ -1478,6 +1523,7 @@ void AVisexMenuDirector::BackToMenu(float BlendTime, int32 Select)
 			EnableInput(PC);
 		}
 		ShowMenu();
+		EndMotion();   // the menu is back and takes input: she leans
 		if (UVisexMenuWidget* W = GetMenuWidget())
 		{
 			W->SetSelected(Select);
@@ -2044,6 +2090,7 @@ void AVisexMenuDirector::SitForSettings()
 		// the way down opens on the lean's own pose: a beat in progress blends into it
 		Anim->PlaySlotAnimationAsDynamicMontage(Down, Slot, 0.4f, SitBlend, 1.f, 1);
 		PlayLoopLater(Sit, Down->GetPlayLength(), false);
+		EndMotion(FMath::Max(Down->GetPlayLength(), SettingsCamTime));
 	}
 	else
 	{
@@ -2073,6 +2120,7 @@ void AVisexMenuDirector::StandFromSettings()
 		// closed mid-way down: a longer blend carries her from wherever she is onto the way up
 		Anim->PlaySlotAnimationAsDynamicMontage(Up, Slot, 0.4f, SitBlend, 1.f, 1);
 		PlayLoopLater(Idle, Up->GetPlayLength(), true);
+		EndMotion(FMath::Max(Up->GetPlayLength(), SettingsCamTime * SettingsCamAlpha));
 	}
 	else
 	{
@@ -2200,6 +2248,10 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 	if (StepDir != 0 && !bArrivalFrozen)
 	{
 		TickStep(DeltaSeconds);
+	}
+	if (MotionStart >= 0.0 && !bArriving)
+	{
+		TickFootSkate();
 	}
 	if (ArrivalClock >= 0.f && !bArrivalFrozen)
 	{
