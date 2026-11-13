@@ -1027,7 +1027,8 @@ void AVisexMenuDirector::UnboxPageCamera(bool bUnbox)
 	}
 	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
 	APlayerCameraManager* Cam = PC ? PC->PlayerCameraManager.Get() : nullptr;
-	AActor* PageView = Cam ? Cam->GetViewTarget() : nullptr;   // the outgoing view, mid-blend home
+	// the outgoing view, mid-blend home (GetViewTarget returns the incoming one while blending)
+	AActor* PageView = Cam ? Cam->ViewTarget.Target.Get() : nullptr;
 	UCineCameraComponent* Lens = PageView && PageView != MenuCamera ? PageView->FindComponentByClass<UCineCameraComponent>() : nullptr;
 	if (!Lens || !bMenuFillsWindow || !Lens->bConstrainAspectRatio || Lens->Filmback.SensorHeight <= 0.f)
 	{
@@ -1413,6 +1414,8 @@ void AVisexMenuDirector::BeginMotion(const TCHAR* Name)
 	MotionName = Name;
 	MotionStart = GetWorld()->GetTimeSeconds();
 	ResetSkate();
+	const APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	bMotionBoxed = PC && PC->PlayerCameraManager && PC->PlayerCameraManager->GetCameraCacheView().bConstrainAspectRatio;
 }
 
 void AVisexMenuDirector::EndMotion(float SettleIn)
