@@ -2482,6 +2482,8 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 	}
 	SettingsCamAlpha = FMath::FInterpConstantTo(SettingsCamAlpha, SitGoal, DeltaSeconds,
 		1.f / FMath::Max(0.1f, SettingsCamDur > 0.f ? SettingsCamDur : SettingsCamTime));
+	// her soles stay planted on the sand except while she sits on the drum (the sit keys its feet)
+	if (UVisexAnimInstance* Plant = Cast<UVisexAnimInstance>(GetPawnAnim())) { Plant->PlantAlpha = 1.f - SettingsCamAlpha; }
 	const bool bSitCamMoved = SitAlpha0 != SettingsCamAlpha;
 	if (bOpen && MenuCamera && bSitCamMoved && bHaveLens)
 	{
