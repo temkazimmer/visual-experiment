@@ -900,7 +900,7 @@ bool AVisexMenuDirector::StartTurnClip(bool bThenWalk)
 	float Landed = Len;
 	for (int32 I = 0; I < TurnCurve.Num(); ++I)
 	{
-		if (FMath::Abs(TurnCurve[I]) >= FMath::Abs(Total) * (bThenWalk ? TurnIntoWalk : 0.995f))
+		if (FMath::Abs(TurnCurve[I]) >= FMath::Abs(Total) * (bThenWalk ? TurnIntoWalk : 0.98f))
 		{
 			Landed = I * TurnDt;
 			break;
@@ -910,7 +910,7 @@ bool AVisexMenuDirector::StartTurnClip(bool bThenWalk)
 	// last of the turn is still in her (the walk steers the rest), onto the lean as it settles
 	TurnStart = FMath::Min(TurnClipLeadIn, Landed * 0.5f);
 	TurnRate = FMath::Max(0.5f, TurnClipRate);
-	TurnEnd = (FMath::Min(Landed + (bThenWalk ? 0.f : 0.15f), Len - 0.2f) - TurnStart) / TurnRate;
+	TurnEnd = (FMath::Min(Landed + (bThenWalk ? 0.f : 0.05f), Len - 0.2f) - TurnStart) / TurnRate;
 	bTurnThenWalk = bThenWalk;
 	if (!bTurnRootSaved)
 	{
@@ -1067,7 +1067,8 @@ void AVisexMenuDirector::TickReturn(float DeltaSeconds)
 		}
 		// past her spot (a long frame) counts as on it: never a step back onto it
 		const bool bPast = Left < 15.f && FVector::DotProduct(To, Char->GetActorForwardVector()) < 0.f;
-		if (Left <= 2.f || bPast || StepClock > (bArriving ? 25.f : 12.f) || (!bArriving && PhaseClock > WalkTime + 0.8f))
+		// (from a page she turns as she comes to rest: the turn's first step is her last)
+		if (Left <= (bArriving ? 2.f : 6.f) || bPast || StepClock > (bArriving ? 25.f : 12.f) || (!bArriving && PhaseClock > WalkTime + 0.8f))
 		{
 			// on her spot: the half turn that puts the column at her back
 			ReturnPhase = 2;
@@ -2136,6 +2137,52 @@ void AVisexMenuDirector::PlayLoopLater(UAnimSequence* Clip, float Delay, bool bT
 	}), FMath::Max(Delay - Blend, 0.05f), false);
 }
 
+float AVisexMenuDirector::SitRate(int32 Warp, float ClipT)
+{
+	// play rate by clip time. Up (A_Menu_Sit_Settings_Down, 2.5 s): still to 0.35, the crouch to
+	// 1.0, the spring to 1.5, the landing on the drum to 2.0, settling after. Down (_Up, 1.7 s):
+	// still to 0.5, the hop down to 1.0, rising onto the lean after
+	static const FVector2D UpKeys[] = {{0.f, 1.f}, {0.35f, 0.85f}, {0.7f, 0.7f}, {1.f, 0.85f}, {1.25f, 1.f},
+		{1.5f, 0.8f}, {1.75f, 0.65f}, {2.f, 0.8f}, {2.5f, 1.f}};
+	static const FVector2D DownKeys[] = {{0.f, 0.85f}, {0.5f, 0.7f}, {0.8f, 0.55f}, {1.1f, 0.6f}, {1.7f, 0.7f}};
+	const FVector2D* K = Warp == 1 ? UpKeys : DownKeys;
+	const int32 N = Warp == 1 ? UE_ARRAY_COUNT(UpKeys) : UE_ARRAY_COUNT(DownKeys);
+	if (ClipT <= K[0].X) { return K[0].Y; }
+	for (int32 I = 1; I < N; ++I)
+	{
+		if (ClipT <= K[I].X)
+		{
+			// eased between keys, so the pace itself never kinks
+			const float A = (ClipT - K[I - 1].X) / FMath::Max(1e-3f, K[I].X - K[I - 1].X);
+			return FMath::Lerp(K[I - 1].Y, K[I].Y, FMath::SmoothStep(0.f, 1.f, A));
+		}
+	}
+	return K[N - 1].Y;
+}
+
+float AVisexMenuDirector::SitWarpTime(int32 Warp, float Len)
+{
+	float T = 0.f;
+	constexpr int32 Steps = 200;
+	for (int32 I = 0; I < Steps; ++I)
+	{
+		T += (Len / Steps) / FMath::Max(0.1f, SitRate(Warp, Len * (I + 0.5f) / Steps));
+	}
+	return T;
+}
+
+void AVisexMenuDirector::TickSitWarp()
+{
+	UAnimInstance* Anim = GetPawnAnim();
+	if (!Anim || !SitMontage || !Anim->Montage_IsPlaying(SitMontage))
+	{
+		SitWarp = 0;
+		SitMontage = nullptr;
+		return;
+	}
+	Anim->Montage_SetPlayRate(SitMontage, SitRate(SitWarp, Anim->Montage_GetPosition(SitMontage)));
+}
+
 void AVisexMenuDirector::SitForSettings()
 {
 	UAnimInstance* Anim = GetPawnAnim();
@@ -2154,9 +2201,13 @@ void AVisexMenuDirector::SitForSettings()
 	{
 		LoadedLean.AddUnique(Down);
 		// the way down opens on the lean's own pose: a beat in progress blends into it
-		Anim->PlaySlotAnimationAsDynamicMontage(Down, Slot, 0.4f, SitBlend, 1.f, 1);
-		PlayLoopLater(Sit, Down->GetPlayLength(), false);
-		EndMotion(FMath::Max(Down->GetPlayLength(), SettingsCamTime));
+		// retimed as it plays (TickSitWarp); the camera dollies in over the same seconds
+		const float Dur = SitWarpTime(1, Down->GetPlayLength());
+		SitMontage = Anim->PlaySlotAnimationAsDynamicMontage(Down, Slot, 0.5f, SitBlend, SitRate(1, 0.f), 1);
+		SitWarp = 1;
+		SettingsCamDur = Dur;
+		PlayLoopLater(Sit, Dur, false);
+		EndMotion(Dur);
 	}
 	else
 	{
@@ -2184,9 +2235,13 @@ void AVisexMenuDirector::StandFromSettings()
 	{
 		LoadedLean.AddUnique(Up);
 		// closed mid-way down: a longer blend carries her from wherever she is onto the way up
-		Anim->PlaySlotAnimationAsDynamicMontage(Up, Slot, 0.4f, SitBlend, 1.f, 1);
-		PlayLoopLater(Idle, Up->GetPlayLength(), true);
-		EndMotion(FMath::Max(Up->GetPlayLength(), SettingsCamTime * SettingsCamAlpha));
+		const float Dur = SitWarpTime(2, Up->GetPlayLength());
+		SitMontage = Anim->PlaySlotAnimationAsDynamicMontage(Up, Slot, 0.4f, SitBlend, SitRate(2, 0.f), 1);
+		SitWarp = 2;
+		// the dolly out lands a beat after her, on the menu shot
+		SettingsCamDur = Dur + 0.3f;
+		PlayLoopLater(Idle, Dur, true);
+		EndMotion(FMath::Max(Dur, SettingsCamDur * SettingsCamAlpha));
 	}
 	else
 	{
@@ -2253,7 +2308,12 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 	// and back out after
 	const float SitGoal = (bOpen && bSitting) ? 1.f : 0.f;
 	const float SitAlpha0 = SettingsCamAlpha;
-	SettingsCamAlpha = FMath::FInterpConstantTo(SettingsCamAlpha, SitGoal, DeltaSeconds, 1.f / FMath::Max(0.1f, SettingsCamTime));
+	if (SitWarp != 0)
+	{
+		TickSitWarp();
+	}
+	SettingsCamAlpha = FMath::FInterpConstantTo(SettingsCamAlpha, SitGoal, DeltaSeconds,
+		1.f / FMath::Max(0.1f, SettingsCamDur > 0.f ? SettingsCamDur : SettingsCamTime));
 	const bool bSitCamMoved = SitAlpha0 != SettingsCamAlpha;
 	if (bOpen && MenuCamera && bSitCamMoved && bHaveLens)
 	{

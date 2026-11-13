@@ -16,6 +16,7 @@ PAGE = globals().get("PAGE", "body")
 DIR = globals().get("DIR", "in")
 SHOTS = int(globals().get("SHOTS", 0))
 SPAN = float(globals().get("SPAN", 3.0))
+END = float(globals().get("END", 5.5))   # game seconds watched (run under slomo: the editor draws ~6 fps in the background)
 LES = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
 world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_game_world()
 if not world or not LES.is_in_play_in_editor():
@@ -84,7 +85,7 @@ def tick(dt):
     while state["shot"] < SHOTS and state["t"] >= times[state["shot"]]:
         shoot(state["shot"])
         state["shot"] += 1
-    if state["t"] >= max(SPAN, 9.0) or (state["shot"] >= SHOTS and state["t"] >= 9.0):
+    if state["t"] >= max(SPAN, END):
         unreal.unregister_slate_post_tick_callback(state["h"])
         with open(os.path.join(OUT, "motion_%s_%s.csv" % (PAGE, DIR)), "w") as f:
             f.write("t,x,y,yaw,speed\n" + "\n".join(state["rows"]))

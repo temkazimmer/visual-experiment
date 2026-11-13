@@ -473,7 +473,7 @@ public:
 
 	/** The turn clips' pace on the menu (1 = as captured); their still lead-in is skipped. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0.5"))
-	float TurnClipRate = 1.45f;
+	float TurnClipRate = 1.55f;
 
 	/** Clip seconds of stillness before each turn clip's first step (skipped). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0"))
@@ -481,7 +481,7 @@ public:
 
 	/** Share of the first return turn landed when she sets off walking (the walk takes the rest). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0.5", ClampMax = "1"))
-	float TurnIntoWalk = 0.85f;
+	float TurnIntoWalk = 0.78f;
 
 	/** The catwalk posture (chest up, shoulders back) held at least this much through the menu's
 	 *  turns and walks, where her speed alone would let it drop (0..1). */
@@ -737,6 +737,14 @@ private:
 	float SettingsCamEase() const { const float X = FMath::Clamp(SettingsCamAlpha, 0.f, 1.f); return X * X * X * (X * (6.f * X - 15.f) + 10.f); }
 	bool bSitting = false;
 	static constexpr float SitBlend = 0.3f;   // the sit clips hand over to each other this long
+	// Settings: the jump onto the drum and down again, retimed as it plays: a settle into the
+	// crouch, an eased spring, a soft landing (clip time -> play rate), the dolly matched to it
+	UPROPERTY(Transient) TObjectPtr<class UAnimMontage> SitMontage;
+	int32 SitWarp = 0;           // 1 the jump up, 2 the step down, 0 none
+	float SettingsCamDur = 0.f;  // this dolly's seconds (0: SettingsCamTime)
+	static float SitRate(int32 Warp, float ClipT);
+	static float SitWarpTime(int32 Warp, float Len);   // her seconds for the whole clip
+	void TickSitWarp();
 	// the panel's layout transform before any lens compensation, and the compensation in force
 	void ApplyPanelLens(float K);
 	float PanelLensK = 1.f;
