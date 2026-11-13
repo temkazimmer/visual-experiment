@@ -28,6 +28,7 @@ static TAutoConsoleVariable<float> CVarCatwalkClear(TEXT("visex.Catwalk.Clear"),
 static TAutoConsoleVariable<float> CVarCatwalkSprint(TEXT("visex.Catwalk.Sprint"), 0.35f, TEXT("Share of the layer kept when sprinting (0..1)"));
 
 // Moving hold, from the Female Everyday idles (learning log 2026-11-10). Live: `visex.Hold.Breath 2`.
+static TAutoConsoleVariable<float> CVarPlant(TEXT("visex.Plant"), 1.f, TEXT("Plant pass, last of all: planted soles onto the visible sand. 0 off, 1 on"));
 static TAutoConsoleVariable<int32> CVarReshape(TEXT("visex.Reshape"), 1, TEXT("Body reshape layer (bone lengths, KeepFeet): 0 off, for measuring"));
 static TAutoConsoleVariable<int32> CVarSteadyHead(TEXT("visex.SteadyHead"), 1, TEXT("SteadyHead layer: 0 off, for measuring"));
 static TAutoConsoleVariable<float> CVarLimits(TEXT("visex.Limits"), 1.f, TEXT("Human joint limits on every pose, applied last: 0 off, 1 on"));
@@ -123,6 +124,7 @@ void FVisexAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSecond
 	HoldTune.Head = CVarHoldHead.GetValueOnGameThread();
 	HoldTune.Pin = CVarHoldPin.GetValueOnGameThread();
 	HoldTune.LyingBreath = CVarHoldLyingBreath.GetValueOnGameThread();
+	PlantGround(InAnimInstance);
 }
 
 bool FVisexAnimProxy::Evaluate_WithRoot(FPoseContext& Output, FAnimNode_Base* InRootNode)
@@ -154,6 +156,7 @@ bool FVisexAnimProxy::Evaluate_WithRoot(FPoseContext& Output, FAnimNode_Base* In
 		Limits(Output.Pose);  // nothing bends past human range of motion
 		const float Z2 = bTrace ? FootZ() : 0.f;
 		if (CVarSteadyHead.GetValueOnAnyThread() != 0) { SteadyHead(Output.Pose); } // after the limits, which clamp the spine but not the neck's counter-turn
+		Plant(Output.Pose);   // last: the soles onto the sand
 		static int32 Every = 0;
 		if (bTrace && (Every++ % 60) == 0)
 		{
@@ -1007,5 +1010,25 @@ void FVisexAnimProxy::Toes(FCompactPose& Pose)
 				S.RotateCS(B2, Turn(Dir2, Across(FootUp, Dir2), Tip));
 			}
 		}
+	}
+}
+
+/**
+ * The plant pass, after every other layer: each planted foot's lowest sole point goes onto the
+ * visible sand (FootTrace) with a two-bone leg solve, the pelvis dropping only when a leg can't
+ * reach. It owns the vertical only, so Foot Placement's planting and the walk's own feet stay.
+ */
+void FVisexAnimProxy::PlantGround(UAnimInstance* Instance)
+{
+	const UVisexAnimInstance* Inst = Cast<UVisexAnimInstance>(Instance);
+	PlantTarget = Inst ? FMath::Clamp(Inst->PlantAlpha, 0.f, 1.f) * CVarPlant.GetValueOnGameThread() : 0.f;
+}
+
+void FVisexAnimProxy::Plant(FCompactPose& Pose)
+{
+	if (PlantTarget < 0.005f)
+	{
+		PlantFix[0] = PlantFix[1] = PelvisFix = 0.f;
+		return;
 	}
 }

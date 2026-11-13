@@ -30,6 +30,9 @@ private:
 	void Contact(FCompactPose& Pose);
 	void Limits(FCompactPose& Pose);
 	void SteadyHead(FCompactPose& Pose);
+	/** Last of all: planted soles onto the visible sand (visex.Plant). */
+	void Plant(FCompactPose& Pose);
+	void PlantGround(UAnimInstance* Instance);   // game thread: the traces
 
 public:
 	virtual void PostUpdate(UAnimInstance* InAnimInstance) const override;
@@ -86,6 +89,14 @@ private:
 	float LimitWorst = 0.f;
 	FName LimitWorstBone;
 	FString LimitReportBuf;
+	// plant pass (visex.Plant): ground under each foot (component space), traced on the game thread
+	float PlantTarget = 0.f;          // the instance's PlantAlpha times the cvar
+	float PlantMoving = 0.f;          // 0 standing, 1 walking (by speed)
+	bool bGround[2] = {false, false};
+	float GroundZ[2] = {0.f, 0.f};
+	FVector SoleAt[2] = {FVector::ZeroVector, FVector::ZeroVector}; // each foot's lowest sole point last frame
+	float PlantFix[2] = {0.f, 0.f};   // cm each ankle moves up, eased
+	float PelvisFix = 0.f;            // cm the pelvis drops so a leg can reach, eased
 };
 
 UCLASS(Transient, Blueprintable)
@@ -131,6 +142,11 @@ public:
 	/** Every limited joint this frame: "bone bend/side/twist" in degrees, for the audit scripts. */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Limits")
 	FString LimitReport;
+
+	/** 1 plants her soles on the sand after every other layer; the menu sets it to 0 while she
+	 *  sits for Settings, photo mode while its motions key their own feet. */
+	UPROPERTY(BlueprintReadWrite, Category = "Plant")
+	float PlantAlpha = 1.f;
 
 protected:
 	virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override { return new FVisexAnimProxy(this); }
