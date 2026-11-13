@@ -81,14 +81,17 @@ def tick(dt):
     v = pawn.get_velocity()
     state["top"] = max(state["top"], (v.x * v.x + v.y * v.y) ** 0.5)
     p, r = pawn.get_actor_location(), pawn.get_actor_rotation()
-    state["rows"].append("%.3f,%.1f,%.1f,%.1f,%.0f" % (state["t"], p.x, p.y, r.yaw, (v.x * v.x + v.y * v.y) ** 0.5))
+    cm = unreal.GameplayStatics.get_player_camera_manager(world, 0)
+    c, cr = cm.get_camera_location(), cm.get_camera_rotation()
+    state["rows"].append("%.3f,%.1f,%.1f,%.1f,%.0f,%.1f,%.1f,%.1f,%.2f,%.2f,%.2f" % (state["t"], p.x, p.y, r.yaw, (v.x * v.x + v.y * v.y) ** 0.5,
+                         c.x, c.y, c.z, cr.yaw, cr.pitch, cm.get_fov_angle()))
     while state["shot"] < SHOTS and state["t"] >= times[state["shot"]]:
         shoot(state["shot"])
         state["shot"] += 1
     if state["t"] >= max(SPAN, END):
         unreal.unregister_slate_post_tick_callback(state["h"])
         with open(os.path.join(OUT, "motion_%s_%s.csv" % (PAGE, DIR)), "w") as f:
-            f.write("t,x,y,yaw,speed\n" + "\n".join(state["rows"]))
+            f.write("t,x,y,yaw,speed,cx,cy,cz,cyaw,cpitch,fov\n" + "\n".join(state["rows"]))
         unreal.log("Menu motion check: %s %s top speed %.0f cm/s, %d frames" % (PAGE, DIR, state["top"], state["shot"]))
 
 
