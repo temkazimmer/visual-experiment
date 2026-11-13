@@ -141,9 +141,18 @@ void AVisexFootprints::Feet(ACharacter* Pawn, USkeletalMeshComponent* Mesh)
 				FHitResult Under;
 				if (GetWorld()->LineTraceSingleByChannel(Under, Mid + FVector(0, 0, 40), Mid - FVector(0, 0, 60), VisexFootTraceChannel, Q))
 				{
-					Mound(Under.ImpactPoint, Under.ImpactNormal, Fwd);
+					// a re-plant inside the same stance keeps the sand already pushed out there
+					UStaticMeshComponent* Near = nullptr;
+					for (UStaticMeshComponent* M : Mounds)
+					{
+						if (M && FVector::DistSquared(M->GetComponentLocation(), Under.ImpactPoint) < 10.f * 10.f) { Near = M; }
+					}
+					if (!Near)
+					{
+						Mound(Under.ImpactPoint, Under.ImpactNormal, Fwd);
+					}
 					bMounded[f] = true;
-					Held[f] = Mounds.Num() ? Mounds.Last() : nullptr;
+					Held[f] = Near ? Near : (Mounds.Num() ? Mounds.Last().Get() : nullptr);
 				}
 			}
 		}
