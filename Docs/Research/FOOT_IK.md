@@ -48,3 +48,19 @@ ground pass lost to the ABP's own IK for this reason).
 - https://dev.epicgames.com/documentation/en-us/unreal-engine/animation-in-lyra-sample-game-in-unreal-engine
 - https://dev.epicgames.com/documentation/unreal-engine/API/Plugins/AnimationWarpingRuntime/FFootPlacementPelvisSettings
 - https://github.com/dyanikoglu/ALS-Community (foot lock in ALSCharacterAnimInstance.cpp)
+
+## Findings in this project (2026-11-13, intro film + feet agent)
+
+- The ground-IK owner today is `ABP_Unarmed`'s AnimNode_ControlRig (`CR_Mannequin_FootIK`: Visibility traces,
+  ik_foot/pelvis offsets, PBIK). Setting its Alpha once doesn't stick (a pin binding or the pose wheel's
+  per-frame UpdateFootIK restores it); the film holds Alpha 0 every frame. Anim graph nodes can't be added
+  from Python, so Foot Placement needs a hand edit of ABP_Unarmed.
+- It plants on whatever Visibility hits: the dune collision. NoCollision visual surfaces above it (hero sand,
+  decals, mounds) read as floating or sunk feet. Hence the dedicated trace channel.
+- Base float: the mesh sits ~1.2–1.5 cm high in Play (mesh relative Z −84.07 vs capsule half-height 83.33,
+  plus a ~2 cm floor gap); VisexBodyComponent offsets the mesh by LegDelta × 0.5 on body reshapes.
+- `MF_Unarmed_Walk_Fwd` has stale ik_foot (1.5–2.5 cm off the foot); `A_PhotoSeq_Walk` is clean (0.2 cm).
+- Bounce: the game walk is a 1.9 m/s stride played at 0.59×, which gives a 9 cm hip bob, 85 cm steps at
+  80/min and 13 cm foot lift. A genuinely slow walk clip with root motion (`A_PhotoSeq_Walk`: 5.6 cm bob,
+  planted feet within 1–1.5 cm) reads calmer and doesn't skate. Prefer it for slow menu walks over
+  slowing a fast clip down.
