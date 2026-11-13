@@ -59,7 +59,7 @@ if SHOTS > 0:
 
 # frame times to shoot: spread over SPAN, the first just after the click, the last at its end
 times = [SPAN * (0.1 + 0.9 * i / max(1, SHOTS - 1)) for i in range(SHOTS)]
-state = {"t": 0.0, "top": 0.0, "shot": 0, "h": None}
+state = {"t": 0.0, "top": 0.0, "shot": 0, "h": None, "rows": []}
 
 
 def shoot(i):
@@ -79,11 +79,15 @@ def tick(dt):
     state["t"] += unreal.GameplayStatics.get_world_delta_seconds(world)
     v = pawn.get_velocity()
     state["top"] = max(state["top"], (v.x * v.x + v.y * v.y) ** 0.5)
+    p, r = pawn.get_actor_location(), pawn.get_actor_rotation()
+    state["rows"].append("%.3f,%.1f,%.1f,%.1f,%.0f" % (state["t"], p.x, p.y, r.yaw, (v.x * v.x + v.y * v.y) ** 0.5))
     while state["shot"] < SHOTS and state["t"] >= times[state["shot"]]:
         shoot(state["shot"])
         state["shot"] += 1
     if state["t"] >= max(SPAN, 9.0) or (state["shot"] >= SHOTS and state["t"] >= 9.0):
         unreal.unregister_slate_post_tick_callback(state["h"])
+        with open(os.path.join(OUT, "motion_%s_%s.csv" % (PAGE, DIR)), "w") as f:
+            f.write("t,x,y,yaw,speed\n" + "\n".join(state["rows"]))
         unreal.log("Menu motion check: %s %s top speed %.0f cm/s, %d frames" % (PAGE, DIR, state["top"], state["shot"]))
 
 

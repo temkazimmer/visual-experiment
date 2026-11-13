@@ -970,7 +970,9 @@ void AVisexMenuDirector::TickStep(float DeltaSeconds)
 	}
 	// her catwalk, eased in and out over the whole walk, landing on her mark
 	const float Want = WalkWant(StepClock, Gap - WalkFrom);
-	const UCharacterMovementComponent* Move = Char->GetCharacterMovement();
+	UCharacterMovementComponent* Move = Char->GetCharacterMovement();
+	// her pace is the plan's, exactly (the movement's own acceleration lagged it, then overshot)
+	Move->Velocity = StepAway * Want + FVector(0.f, 0.f, Move->Velocity.Z);
 	Char->AddMovementInput(StepAway, FMath::Clamp(Want / FMath::Max(1.f, Move->GetMaxSpeed()), 0.f, 1.f));
 }
 
@@ -1003,7 +1005,7 @@ float AVisexMenuDirector::WalkWant(float T, float Done) const
 	const float Plan = WalkDist * U * U * U * (U * (6.f * U - 15.f) + 10.f);
 	const float Pace = WalkDist / FMath::Max(0.05f, WalkTime) * 30.f * U * U * (1.f - U) * (1.f - U);
 	// the plan's pace, and a pull back onto the plan where her movement lags or leads it
-	return FMath::Clamp(Pace + 3.f * (Plan - Done), 0.f, MenuWalkSpeed * 1.25f);
+	return FMath::Clamp(Pace + 2.f * (Plan - Done), 0.f, MenuWalkSpeed * 1.1f);
 }
 
 void AVisexMenuDirector::TickReturn(float DeltaSeconds)
@@ -1056,14 +1058,16 @@ void AVisexMenuDirector::TickReturn(float DeltaSeconds)
 		const float Ramp = FMath::SmoothStep(0.f, 1.f, PhaseClock / FMath::Max(0.05f, WalkOffRamp));
 		const float Want = bArriving ? FMath::Min(ArrivalSpeed * Ramp, FMath::Sqrt(2.f * Settle * FMath::Max(0.f, Left)))
 			: WalkWant(PhaseClock, WalkDist - Left);
-		if (Left > 8.f)
+		if (Left > 8.f && FVector::DotProduct(To, Char->GetActorForwardVector()) > 0.f)
 		{
 			// the arrival steers at a steady rate; the return eases the last of its turn out
 			const float Yaw = bArriving ? FMath::FixedTurn(Char->GetActorRotation().Yaw, To.Rotation().Yaw, 160.f * DeltaSeconds)
 				: FMath::RInterpTo(Char->GetActorRotation(), FRotator(0.f, To.Rotation().Yaw, 0.f), DeltaSeconds, 6.f).Yaw;
 			Char->SetActorRotation(FRotator(0.f, Yaw, 0.f));
 		}
-		if (Left <= 2.f || StepClock > (bArriving ? 25.f : 12.f) || (!bArriving && PhaseClock > WalkTime + 0.8f))
+		// past her spot (a long frame) counts as on it: never a step back onto it
+		const bool bPast = Left < 15.f && FVector::DotProduct(To, Char->GetActorForwardVector()) < 0.f;
+		if (Left <= 2.f || bPast || StepClock > (bArriving ? 25.f : 12.f) || (!bArriving && PhaseClock > WalkTime + 0.8f))
 		{
 			// on her spot: the half turn that puts the column at her back
 			ReturnPhase = 2;
@@ -1073,6 +1077,11 @@ void AVisexMenuDirector::TickReturn(float DeltaSeconds)
 			TurnTime = ReturnTurnTime * FMath::Max(0.35f, FMath::Abs(TurnTo - TurnFrom) / 180.f);
 			StartTurnClip(false);
 			return;
+		}
+		if (!bArriving)
+		{
+			UCharacterMovementComponent* Walk = Char->GetCharacterMovement();
+			Walk->Velocity = Char->GetActorForwardVector().GetSafeNormal2D() * Want + FVector(0.f, 0.f, Walk->Velocity.Z);
 		}
 		Char->AddMovementInput(To.GetSafeNormal2D(), FMath::Clamp(Want / MaxSpeed, bArriving ? 0.02f : 0.f, 1.f));
 		return;
