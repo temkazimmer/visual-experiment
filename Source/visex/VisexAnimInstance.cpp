@@ -7,7 +7,9 @@
 #include "HAL/IConsoleManager.h"
 
 // Catwalk tuning. Live in the console (also during Play): e.g. `visex.Catwalk.HipRoll 9`.
-static TAutoConsoleVariable<int32> CVarKeepFeet(TEXT("visex.Body.KeepFeet"), 1, TEXT("Legs/Feet reshape keeps her feet where the foot IK planted them (pelvis drops by the leg change, legs reach back)"));
+// off: it lifted the lean (5.5/6.6 cm sole gap); the mesh drops by LegDelta instead (VisexBodyComponent)
+// and the plant pass, last of all, puts the soles on the sand
+static TAutoConsoleVariable<int32> CVarKeepFeet(TEXT("visex.Body.KeepFeet"), 0, TEXT("Old Legs/Feet reshape pass that kept her feet where the foot IK planted them: 0 off (default), 1 on"));
 static TAutoConsoleVariable<float> CVarCatwalk(TEXT("visex.Catwalk"), 1.f, TEXT("Catwalk layer on the walk: 0 off, 1 full"));
 static TAutoConsoleVariable<float> CVarCatwalkHipRoll(TEXT("visex.Catwalk.HipRoll"), 11.f, TEXT("Degrees the swing-side hip drops"));
 static TAutoConsoleVariable<float> CVarCatwalkHipYaw(TEXT("visex.Catwalk.HipYaw"), 7.f, TEXT("Degrees the hip turns forward with the leading leg"));
