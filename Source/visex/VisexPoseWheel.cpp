@@ -468,7 +468,12 @@ void UVisexPoseWheelComponent::UpdateFootIK(float DeltaTime)
 	const bool bOnFloor = Phase != EPhase::None && PoseIns.IsValidIndex(Current) && PoseIns[Current];
 	UAnimInstance* Anim = GetAnim();
 	const bool bOff = bOnFloor || (Anim && FootIKOffForMenuClip(Anim));
+	const float WasAlpha = FootIKAlpha;
 	FootIKAlpha = FMath::FInterpConstantTo(FootIKAlpha, bOff ? 0.f : 1.f, DeltaTime, 4.f);
+	if ((WasAlpha < 0.5f) != (FootIKAlpha < 0.5f))
+	{
+		UE_LOG(LogTemp, Log, TEXT("Foot IK: %s (floor pose %d, menu clip %d)"), FootIKAlpha < 0.5f ? TEXT("off") : TEXT("on"), bOnFloor, bOff && !bOnFloor);
+	}
 	IAnimClassInterface* AnimClass = Anim ? IAnimClassInterface::GetFromClass(Anim->GetClass()) : nullptr;
 	if (!AnimClass)
 	{
@@ -496,6 +501,7 @@ void UVisexPoseWheelComponent::UpdateFootIK(float DeltaTime)
 	}
 	if (bRetuned)
 	{
+		UE_LOG(LogTemp, Log, TEXT("Foot IK: tuned Foot Placement on %s (alpha %.2f)"), *Anim->GetClass()->GetName(), FootIKAlpha);
 		TunedAnim = Anim;
 		TunedStamp = FootTuneStamp();
 		Anim->RecalcRequiredBones();   // Foot Placement caches the pelvis max offset when it caches its bones

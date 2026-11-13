@@ -1,5 +1,6 @@
 #include "VisexFootMeter.h"
 #include "visex.h"
+#include "VisexBodyComponent.h"
 #include "Components/SceneCaptureComponent2D.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SceneCapture2D.h"
@@ -9,11 +10,12 @@
 #include "GameFramework/Character.h"
 #include "ImageUtils.h"
 #include "Misc/Paths.h"
+#include "Misc/FileHelper.h"
 #include "TextureResource.h"
 
 namespace
 {
-	constexpr float StepGap = 4.f;    // a foot whose lower sole point is this close (cm) is on the ground
+	constexpr float StepGap = 8.f;    // a foot whose lower sole point is this close (cm) is on the ground
 	constexpr float PointSlack = 1.5f; // a sole point within this of the other one carries weight too
 	constexpr int32 FrameW = 1024, FrameH = 576;   // a strip is 2x2 frames: 2048x1152
 
@@ -61,9 +63,12 @@ void FVisexFootMeter::Tick(ACharacter* Her, float Dt)
 	Clock += Dt;
 	if (RefHeel < 0.f)
 	{
-		RefHeel = RefHeight(Mesh, TEXT("foot_l"));
-		RefBall = RefHeight(Mesh, TEXT("ball_l"));
-		Log(FString::Printf(TEXT("VisexFeet: sole reference: heel (foot bone) %.2f cm, ball %.2f cm over the sole"), RefHeel, RefBall));
+		// the body reshape scales the foot (ankle to sole) by Feet (VisexBodyComponent)
+		const UVisexBodyComponent* Body = Her->FindComponentByClass<UVisexBodyComponent>();
+		const float FeetScale = Body ? Body->GetValue(TEXT("Feet")) : 1.f;
+		RefHeel = RefHeight(Mesh, TEXT("foot_l")) * FeetScale;
+		RefBall = RefHeight(Mesh, TEXT("ball_l")) * FeetScale;
+		Log(FString::Printf(TEXT("VisexFeet: sole reference: heel (foot bone) %.2f cm, ball %.2f cm over the sole (Feet %.3f)"), RefHeel, RefBall, FeetScale));
 	}
 	static const FName Heels[2] = {TEXT("foot_l"), TEXT("foot_r")}, Balls[2] = {TEXT("ball_l"), TEXT("ball_r")};
 	for (int32 S = 0; S < 2; ++S)
@@ -73,6 +78,10 @@ void FVisexFootMeter::Tick(ACharacter* Her, float Dt)
 		FString Surface;
 		const float GH = GapAt(Her, H, RefHeel, &Surface), GB = GapAt(Her, B, RefBall, nullptr);
 		const float G = FMath::Min(GH, GB);
+		PhaseGapSum += G;
+		Csv.Add(FString::Printf(TEXT("%.4f,%s,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.1f"), Clock, *Phase, S, H.X, H.Y, H.Z, GH, B.X, B.Y, B.Z, GB,
+			Her->GetVelocity().Size2D()));
+		++PhaseGapN;
 		if (G > StepGap)
 		{
 			if (F.bStep) { EndStep(S); }
@@ -82,22 +91,31 @@ void FVisexFootMeter::Tick(ACharacter* Her, float Dt)
 		{
 			F = FFoot();
 			F.bStep = true;
-			F.GapMin = F.GapMax = G;
 			F.Surface = Surface;
 		}
 		F.Time += Dt;
-		F.GapSum += G;
-		F.GapMin = FMath::Min(F.GapMin, G);
-		F.GapMax = FMath::Max(F.GapMax, G);
-		++F.N;
-		auto Track = [](FPoint& P, const FVector& At, bool bDown)
+		F.H.Add(FVector4f(FVector3f(H), GH));
+		F.B.Add(FVector4f(FVector3f(B), GB));
+	}
+}
+
+namespace
+{
+	// a sole point is down within 1 cm of the lowest it got in this step; its drift is how far
+	// it moved along the ground over each stretch it stayed down
+	float PointDrift(const TArray<FVector4f>& P, float& OutFloor)
+	{
+		OutFloor = 1e9f;
+		for (const FVector4f& X : P) { OutFloor = FMath::Min(OutFloor, X.W); }
+		float Drift = 0.f;
+		int32 From = INDEX_NONE;
+		for (int32 I = 0; I < P.Num(); ++I)
 		{
-			if (bDown && !P.bDown) { P.At = At; }
-			if (bDown) { P.Drift = FMath::Max(P.Drift, float(FVector::Dist2D(At, P.At))); }
-			P.bDown = bDown;
-		};
-		Track(F.Heel, H, GH < StepGap && GH <= GB + PointSlack);
-		Track(F.Ball, B, GB < StepGap && GB <= GH + PointSlack);
+			if (P[I].W > OutFloor + 1.f) { From = INDEX_NONE; continue; }
+			if (From == INDEX_NONE) { From = I; }
+			Drift = FMath::Max(Drift, FVector2f(P[I].X - P[From].X, P[I].Y - P[From].Y).Size());
+		}
+		return Drift;
 	}
 }
 
@@ -105,14 +123,19 @@ void FVisexFootMeter::EndStep(int32 Side)
 {
 	FFoot& F = Feet[Side];
 	F.bStep = false;
-	if (F.Time < 0.15f || F.N == 0)
+	if (F.Time < 0.15f || F.H.Num() == 0)
 	{
 		return;   // a brush of the ground in the swing, not a step
 	}
-	const float Drift = FMath::Max(F.Heel.Drift, F.Ball.Drift), Gap = F.GapSum / F.N;
+	float HeelFloor, BallFloor;
+	F.Heel.Drift = PointDrift(F.H, HeelFloor);
+	F.Ball.Drift = PointDrift(F.B, BallFloor);
+	const float Drift = FMath::Max(F.Heel.Drift, F.Ball.Drift), Gap = FMath::Min(HeelFloor, BallFloor);
+	F.GapMin = HeelFloor;
+	F.GapMax = BallFloor;
 	PhaseDrift.Add(Drift);
 	PhaseGap.Add(Gap);
-	Log(FString::Printf(TEXT("VisexFeet: %s %s step at %.2f s, %.2f s down: drift %.2f cm (heel %.2f, ball %.2f), sole gap %.2f cm (%.2f..%.2f) on %s"),
+	Log(FString::Printf(TEXT("VisexFeet: %s %s step at %.2f s, %.2f s down: drift %.2f cm (heel %.2f, ball %.2f), sole gap %.2f cm (heel %.2f, ball %.2f) on %s"),
 		*Phase, Side ? TEXT("R") : TEXT("L"), Clock - F.Time, F.Time, Drift, F.Heel.Drift, F.Ball.Drift, Gap, F.GapMin, F.GapMax, *F.Surface));
 }
 
@@ -137,9 +160,18 @@ void FVisexFootMeter::SetPhase(const FString& Name)
 	{
 		Log(FString::Printf(TEXT("VisexFeet: SUMMARY %s: no planted steps"), *Phase));
 	}
+	Log(FString::Printf(TEXT("VisexFeet: SUMMARY %s: lower sole over the phase, mean gap %.2f cm"), *Phase, PhaseGapN ? float(PhaseGapSum / PhaseGapN) : 0.f));
+	PhaseGapSum = 0.0;
+	PhaseGapN = 0;
 	PhaseDrift.Reset();
 	PhaseGap.Reset();
 	Phase = Name;
+	if (Name == TEXT("done"))
+	{
+		const FString File = FPaths::ProjectSavedDir() / TEXT("QA/feet.csv");
+		FFileHelper::SaveStringToFile(TEXT("t,phase,side,hx,hy,hz,hgap,bx,by,bz,bgap,speed\n") + FString::Join(Csv, TEXT("\n")), *File);
+		Log(FString::Printf(TEXT("VisexFeet: frames %s"), *File));
+	}
 }
 
 void FVisexFootMeter::Shoot(UWorld* World, ACharacter* Her, const FString& Name, int32 Index)

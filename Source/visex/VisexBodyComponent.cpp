@@ -166,7 +166,11 @@ void UVisexBodyComponent::Apply()
 	}
 
 	Mesh->SetRelativeScale3D(FVector(S));
-	Mesh->SetRelativeLocation(FVector(0.f, 0.f, ReferenceMeshZ * S + LegDelta * 0.5f));
+	// the soles on the floor: the capsule's bottom (half-height 90 S + LegDelta / 2) hovers
+	// FloorGap over the ground (the movement's floor distance), so the mesh origin, where the
+	// reshaped soles end up, sits that far under the capsule
+	const float SoleZ = -(ReferenceCapsule.X * S + LegDelta * 0.5f) - FloorGap;
+	Mesh->SetRelativeLocation(FVector(0.f, 0.f, bSolesOnFloor ? SoleZ + LegDelta : ReferenceMeshZ * S + LegDelta * 0.5f));
 	if (UCapsuleComponent* Capsule = Char->GetCapsuleComponent())
 	{
 		// the capsule grows about its middle: lift her by the change so its bottom stays on the

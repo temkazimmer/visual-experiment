@@ -55,6 +55,13 @@ public:
 	FVector2D ReferenceCapsule = FVector2D(90.f, 35.f);
 	UPROPERTY(EditAnywhere, Category = "Body|Reference")
 	float ReferenceMeshZ = -89.f;
+	/** Mesh placed so her soles meet the floor (FloorGap under the capsule) rather than
+	 *  ReferenceMeshZ, which left them ~1 cm over the capsule's bottom and ~3 cm over the sand. */
+	UPROPERTY(EditAnywhere, Category = "Body|Reference")
+	bool bSolesOnFloor = true;
+	/** How far the capsule's bottom hovers over the floor (CharacterMovement keeps 1.9-2.4 cm). */
+	UPROPERTY(EditAnywhere, Category = "Body|Reference")
+	float FloorGap = 2.15f;
 
 	/** Soft-tissue bounce. Frequency in Hz, damping ratio (0 = rings forever, 1 = no
 	 *  overshoot), and the travel (cm) one full bounce morph stands for. */

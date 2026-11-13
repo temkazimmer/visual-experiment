@@ -422,6 +422,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
 	TSoftObjectPtr<class UAnimSequence> LeanUp = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Lean_Up.A_Menu_Lean_Up")));
 
+	/** The menu's walk: a genuinely slow, planted walk with root motion (the speed it is played at
+	 *  follows her capsule). Starts at MenuWalkClipStart, in double support. */
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	TSoftObjectPtr<class UAnimSequence> MenuWalkClip = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/PhotoSeq/A_PhotoSeq_Walk.A_PhotoSeq_Walk")));
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	float MenuWalkClipStart = 0.45f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
 	TSoftObjectPtr<class UAnimSequence> LeanDown = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Lean_Down.A_Menu_Lean_Down")));
 
@@ -821,6 +827,11 @@ private:
 	void ResetSkate();
 	/** Visible surfaces block the FootTrace channel her Foot Placement traces (visex.h). */
 	void SetUpFootTrace();
+	/** The menu's walks: the slow walk clip at her capsule's pace (visex.Menu.SlowWalk). */
+	void TickWalkClip(float DeltaSeconds, bool bMenuWalk);
+	UPROPERTY(Transient) TObjectPtr<class UAnimMontage> WalkMontage;
+	float WalkClipSpeed = 126.5f;   // cm/s, the clip's own root motion (measured when it starts)
+	float WalkClipIdle = 0.f;       // seconds she has been all but still on a menu walk
 	FString MotionName;
 	double MotionStart = -1.0;
 	FTimerHandle MotionTimer;

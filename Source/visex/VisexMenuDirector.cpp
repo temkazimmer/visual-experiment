@@ -28,6 +28,7 @@
 #include "Engine/StaticMeshActor.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimSequence.h"
+#include "Animation/AnimMontage.h"
 #include "VisexAnimInstance.h"
 #include "visex.h"
 #include "Components/StaticMeshComponent.h"
@@ -50,6 +51,7 @@
 #include "Containers/Ticker.h"
 #include "HAL/IConsoleManager.h"
 
+static TAutoConsoleVariable<int32> CVarMenuSlowWalk(TEXT("visex.Menu.SlowWalk"), 1, TEXT("Menu walks play the slow walk clip at her capsule's speed (TickWalkClip): 0 leaves them to the blend space"));
 static TAutoConsoleVariable<int32> CVarMenuArrival(TEXT("visex.Menu.Arrival"), 1,
 	TEXT("1: on the first menu after launch she walks in to the column and leans while the menu fades in. 0: she is already leaning."));
 static TAutoConsoleVariable<int32> CVarMenuArrivalFreeze(TEXT("visex.Menu.ArrivalFreeze"), 0,
@@ -1929,6 +1931,60 @@ UAnimInstance* AVisexMenuDirector::GetPawnAnim() const
 	return Char && Char->GetMesh() ? Char->GetMesh()->GetAnimInstance() : nullptr;
 }
 
+void AVisexMenuDirector::TickWalkClip(float DeltaSeconds, bool bMenuWalk)
+{
+	// The menu's walks play a genuinely slow walk (A_PhotoSeq_Walk, ~127 cm/s, 6 cm bob) at the
+	// rate her capsule moves, so each planted foot stays put: the locomotion blend space had a
+	// 3 m/s stride slowed to ~0.6x, bouncy and skating (Docs/Research/FOOT_IK.md). Turn clips and
+	// the lean own the slot while they play; this takes it only once they are done or going.
+	ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	UAnimInstance* Anim = GetPawnAnim();
+	if (!Char || !Anim)
+	{
+		return;
+	}
+	const bool bWalkClip = WalkMontage && Anim->Montage_IsPlaying(WalkMontage);
+	bool bOtherClip = false;
+	for (const FAnimMontageInstance* Inst : Anim->MontageInstances)
+	{
+		bOtherClip |= Inst && Inst->Montage && Inst->Montage != WalkMontage && Inst->IsActive() && !Inst->IsStopped();
+	}
+	const float Speed = Char->GetVelocity().Size2D();
+	WalkClipIdle = Speed < 3.f ? WalkClipIdle + DeltaSeconds : 0.f;
+	const bool bWant = CVarMenuSlowWalk.GetValueOnGameThread() != 0 && bMenuWalk && !bOtherClip && WalkClipIdle < 0.15f
+		&& (bWalkClip || Speed > 8.f);
+	if (!bWant)
+	{
+		if (bWalkClip && !bOtherClip)
+		{
+			Anim->Montage_Stop(0.45f, WalkMontage);
+		}
+		return;
+	}
+	const float Rate = FMath::Clamp(Speed / FMath::Max(10.f, WalkClipSpeed), 0.05f, 1.3f);
+	if (!bWalkClip)
+	{
+		UAnimSequence* Clip = MenuWalkClip.LoadSynchronous();
+		if (!Clip)
+		{
+			return;
+		}
+		LoadedLean.AddUnique(Clip);
+		WalkClipSpeed = float(Clip->ExtractRootMotionFromRange(0.0, Clip->GetPlayLength(), FAnimExtractContext()).GetTranslation().Size2D()
+			/ FMath::Max(0.1, double(Clip->GetPlayLength())));
+		// from double support, so the first steps start from her stance
+		WalkMontage = Anim->PlaySlotAnimationAsDynamicMontage(Clip, FName(TEXT("DefaultSlot")), 0.35f, 0.45f, Rate, 1000000, -1.f, MenuWalkClipStart);
+		if (WalkMontage)
+		{
+			// the capsule moves her (TickStep, TickReturn): the clip's root motion is dropped
+			WalkMontage->bEnableRootMotionTranslation = false;
+			WalkMontage->bEnableRootMotionRotation = false;
+		}
+		return;
+	}
+	Anim->Montage_SetPlayRate(WalkMontage, Rate);
+}
+
 void AVisexMenuDirector::SetUpFootTrace()
 {
 	// Her Foot Placement traces FootTrace (visex.h). Every visible surface with query collision
@@ -2478,6 +2534,7 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 		HoldGait(true);
 		TickStep(DeltaSeconds);
 	}
+	TickWalkClip(DeltaSeconds, (StepDir != 0 && !bArrivalFrozen) || WalkOffClock >= 0.f);
 	if (MotionStart >= 0.0 && !bArriving)
 	{
 		TickFootSkate();

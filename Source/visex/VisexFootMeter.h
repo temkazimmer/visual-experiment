@@ -30,13 +30,17 @@ private:
 		float Time = 0.f, GapSum = 0.f, GapMin = 0.f, GapMax = 0.f;
 		int32 N = 0;
 		FPoint Heel, Ball;
+		TArray<FVector4f> H, B;   // per frame: the point (xyz) and its gap (w)
 		FString Surface;
 	};
 	FFoot Feet[2];
 	float RefHeel = -1.f, RefBall = -1.f;   // the heel (foot) and ball bones' height over the sole, ref pose
 	float Clock = 0.f;
-	FString Phase = TEXT("arrival");
+	FString Phase = TEXT("held");
 	TArray<float> PhaseDrift, PhaseGap;
+	double PhaseGapSum = 0.0;   // every frame's lower sole gap, both feet, whether stepping or not
+	int32 PhaseGapN = 0;
+	TArray<FString> Csv;   // every frame, both feet: written to Saved/QA/feet.csv on the phase "done"
 	TArray<FColor> Strip;
 	TWeakObjectPtr<ASceneCapture2D> Capture;
 

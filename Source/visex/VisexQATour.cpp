@@ -468,16 +468,20 @@ void AVisexQATour::Tick(float DeltaSeconds)
 	if (!bBuilt)
 	{
 		bFeet = FParse::Param(FCommandLine::Get(), TEXT("visexfeet"));
+		FeetClock = 2e5f;   // until she first moves
 		Feet.Log = [](const FString& Line) { QA_LOG(TEXT("%s"), *Line); };
 		bFeet ? BuildFeet() : Build();
 		bBuilt = true;
 	}
 	if (bFeet)
 	{
-		FeetClock += DeltaSeconds;
+		FeetClock += FeetClock < 1e5f ? DeltaSeconds : 0.f;
 		Feet.Tick(Her(), DeltaSeconds);
-		// the arrival, as she walks in: four frames 0.9 s apart from her first second
-		if (Next == 0 && ArrivalShots < 4 && FeetClock > 1.f + 0.9f * ArrivalShots)
+		// the arrival, as she walks in: four frames 0.6 s apart once she moves (before that she
+		// is held under the launch cover, and that is not measured)
+		const ACharacter* C = Her();
+		if (Next == 0 && C && C->GetVelocity().Size2D() > 20.f && FeetClock > 1e5f) { FeetClock = 0.f; Feet.SetPhase(TEXT("arrival")); }
+		if (Next == 0 && FeetClock < 1e5f && ArrivalShots < 4 && FeetClock > 0.6f * ArrivalShots)
 		{
 			Feet.Shoot(GetWorld(), Her(), TEXT("arrival"), ArrivalShots++);
 		}
