@@ -28,6 +28,7 @@
 #include "Engine/StaticMeshActor.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimSequence.h"
+#include "VisexAnimInstance.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "EngineUtils.h"
@@ -546,6 +547,7 @@ void AVisexMenuDirector::OpenSettings()
 		return;
 	}
 	Page = 1;
+	BeginMotion(TEXT("settings in"));
 	ShowSettingsPage(0);
 	SitForSettings();
 }
@@ -567,6 +569,7 @@ void AVisexMenuDirector::CloseSettings()
 	MarkPanel();
 	FVisexSettings::Save();
 	Page = 0;
+	BeginMotion(TEXT("settings out"));
 	StandFromSettings();
 	if (UVisexMenuWidget* W = GetMenuWidget())
 	{
@@ -640,6 +643,8 @@ void AVisexMenuDirector::OpenCharacterPage(int32 InPage)
 	{
 		return;
 	}
+	BeginMotion(InPage == 1 ? TEXT("wardrobe in") : TEXT("body in"));
+	StepThen = 0;
 	// she pushes off the column first; the page opens as she finds her feet
 	const float Up = StandUp();
 	if (Up > 0.f)
@@ -679,6 +684,7 @@ void AVisexMenuDirector::OpenBodyNow()
 	}
 	if (BodyEditor)
 	{
+		BodyEditor->BlendTime = PageBlendTime;   // the same camera move onto every page, and back
 		BodyEditor->OpenPage(CharacterPage);
 	}
 	if (!BodyEditor || !BodyEditor->IsOpen())
@@ -690,6 +696,7 @@ void AVisexMenuDirector::OpenBodyNow()
 	}
 	bStudio = true;
 	StudioStrength = 1.f;
+	EndMotion(BodyEditor->BlendTime);   // the page's camera blend
 	// the menu steps aside while the body page has the screen
 	bOpen = false;
 	Panel->SetVisibility(false);
@@ -742,7 +749,7 @@ void AVisexMenuDirector::BeginStepOut()
 	ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
 	if (!Char || !LeanColumn || bOpen)
 	{
-		OpenBodyNow();
+		StepThen == 1 ? OpenPhotoNow() : OpenBodyNow();
 		return;
 	}
 	// away from the drum, square off its axis (her facing, give or take)
@@ -784,6 +791,7 @@ void AVisexMenuDirector::BeginStepOut()
 	Move->bOrientRotationToMovement = false;   // she keeps her facing, out and back
 	bSteppedOut = true;
 	StepClock = 0.f;
+	PlanWalk(BodyStepTarget - ColumnGapAt(Char->GetActorLocation()), ColumnGapAt(Char->GetActorLocation()));
 	StepDir = 1;
 }
 
@@ -808,6 +816,7 @@ void AVisexMenuDirector::BeginStepBack(float Wait, int32 Select)
 	TurnTime = ReturnTurnTime * FMath::Max(0.35f, FMath::Abs(TurnTo - TurnFrom) / 180.f);
 	ReturnPhase = To.Size() >= ReturnWalkMin ? 0 : 2;
 	PhaseClock = 0.f;
+	PlanWalk(To.Size(), 0.f);
 	if (UAnimInstance* Anim = GetPawnAnim())
 	{
 		Anim->StopSlotAnimation(0.4f, FName(TEXT("DefaultSlot")));
@@ -891,20 +900,25 @@ bool AVisexMenuDirector::StartTurnClip(bool bThenWalk)
 	float Landed = Len;
 	for (int32 I = 0; I < TurnCurve.Num(); ++I)
 	{
-		if (FMath::Abs(TurnCurve[I]) >= FMath::Abs(Total) * (bThenWalk ? 0.97f : 0.995f))
+		if (FMath::Abs(TurnCurve[I]) >= FMath::Abs(Total) * (bThenWalk ? TurnIntoWalk : 0.98f))
 		{
 			Landed = I * TurnDt;
 			break;
 		}
 	}
-	TurnEnd = bThenWalk ? FMath::Min(Landed + 0.1f, Len - 0.3f) : FMath::Min(Landed + 0.35f, Len - 0.2f);
+	// in her seconds: the clip from its first step, at the menu's pace; into the walk while the
+	// last of the turn is still in her (the walk steers the rest), onto the lean as it settles
+	TurnStart = FMath::Min(TurnClipLeadIn, Landed * 0.5f);
+	TurnRate = FMath::Max(0.5f, TurnClipRate);
+	TurnEnd = (FMath::Min(Landed + (bThenWalk ? 0.f : 0.05f), Len - 0.2f) - TurnStart) / TurnRate;
+	bTurnThenWalk = bThenWalk;
 	if (!bTurnRootSaved)
 	{
 		TurnRootMotion = Anim->RootMotionMode;
 		bTurnRootSaved = true;
 	}
 	Anim->SetRootMotionMode(ERootMotionMode::IgnoreRootMotion);   // the yaw is put on her actor here
-	Anim->PlaySlotAnimationAsDynamicMontage(TurnClip, FName(TEXT("DefaultSlot")), 0.3f, bThenWalk ? 0.4f : 0.25f, 1.f, 1);
+	Anim->PlaySlotAnimationAsDynamicMontage(TurnClip, FName(TEXT("DefaultSlot")), 0.25f, bThenWalk ? 0.35f : 0.25f, TurnRate, 1, -1.f, TurnStart);
 	UE_LOG(LogTemp, Log, TEXT("Return turn: need %.1f deg, %s (%.1f deg, x%.2f), done at %.2f of %.2f s"),
 		Need, *TurnClip->GetName(), Total, TurnScale, TurnEnd, Len);
 	return true;
@@ -947,20 +961,51 @@ void AVisexMenuDirector::TickStep(float DeltaSeconds)
 		TickReturn(DeltaSeconds);
 		return;
 	}
-	FVector Dir = StepAway;
-	float Left = BodyStepTarget - ColumnGapAt(Char->GetActorLocation());
-	float Pace = BodyStepSpeed;
-	// a slow start, then the pace that settles to rest right on her mark: weighty, no skid
-	constexpr float Settle = 90.f;   // cm/s^2
-	const float Ramp = FMath::SmoothStep(0.f, 1.f, StepClock / FMath::Max(0.05f, WalkOffRamp));
-	const float Want = FMath::Min(Pace * Ramp, FMath::Sqrt(2.f * Settle * FMath::Max(0.f, Left)));
-	if (Left <= 1.5f || StepClock > 8.f)
+	const float Gap = ColumnGapAt(Char->GetActorLocation());
+	const float Left = BodyStepTarget - Gap;
+	if (Left <= 1.f || StepClock > WalkTime + 0.8f)
 	{
 		EndStep();
 		return;
 	}
-	const UCharacterMovementComponent* Move = Char->GetCharacterMovement();
-	Char->AddMovementInput(Dir, FMath::Clamp(Want / FMath::Max(1.f, Move->GetMaxSpeed()), 0.02f, 1.f));
+	// her catwalk, eased in and out over the whole walk, landing on her mark
+	const float Want = WalkWant(StepClock, Gap - WalkFrom);
+	UCharacterMovementComponent* Move = Char->GetCharacterMovement();
+	// her pace is the plan's, exactly (the movement's own acceleration lagged it, then overshot)
+	Move->Velocity = StepAway * Want + FVector(0.f, 0.f, Move->Velocity.Z);
+	Char->AddMovementInput(StepAway, FMath::Clamp(Want / FMath::Max(1.f, Move->GetMaxSpeed()), 0.f, 1.f));
+}
+
+void AVisexMenuDirector::HoldGait(bool bHold)
+{
+	// her catwalk posture (chest up, shoulders back) by her speed, but never below the floor
+	// while she turns and walks between the lean and a page; -1 hands it back to her speed
+	UVisexAnimInstance* Anim = Cast<UVisexAnimInstance>(GetPawnAnim());
+	if (!Anim || (!bHold && !bGaitHeld))
+	{
+		return;
+	}
+	const APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0);
+	const float Speed = Pawn ? float(Pawn->GetVelocity().Size2D()) : 0.f;
+	Anim->PhotoGait = bHold ? FMath::Max(MenuGaitFloor, FMath::SmoothStep(30.f, 150.f, Speed)) : -1.f;
+	bGaitHeld = bHold;
+}
+
+void AVisexMenuDirector::PlanWalk(float Dist, float From)
+{
+	// smootherstep: the peak pace is 1.875x the mean, so this takes her to MenuWalkSpeed
+	WalkDist = FMath::Max(0.f, Dist);
+	WalkFrom = From;
+	WalkTime = FMath::Max(0.4f, 1.875f * WalkDist / FMath::Max(10.f, MenuWalkSpeed));
+}
+
+float AVisexMenuDirector::WalkWant(float T, float Done) const
+{
+	const float U = FMath::Clamp(T / FMath::Max(0.05f, WalkTime), 0.f, 1.f);
+	const float Plan = WalkDist * U * U * U * (U * (6.f * U - 15.f) + 10.f);
+	const float Pace = WalkDist / FMath::Max(0.05f, WalkTime) * 30.f * U * U * (1.f - U) * (1.f - U);
+	// the plan's pace, and a pull back onto the plan where her movement lags or leads it
+	return FMath::Clamp(Pace + 2.f * (Plan - Done), 0.f, MenuWalkSpeed * 1.1f);
 }
 
 void AVisexMenuDirector::TickReturn(float DeltaSeconds)
@@ -978,8 +1023,11 @@ void AVisexMenuDirector::TickReturn(float DeltaSeconds)
 	auto TickClipTurn = [&]() -> bool
 	{
 		const float T = FMath::Min(PhaseClock, TurnEnd);
-		const float Fix = FMath::Clamp((T - (TurnEnd - 0.35f)) / 0.35f, 0.f, 1.f);
-		const float Yaw = FMath::Lerp(TurnYawAt(T) * TurnScale, TurnTo - TurnFrom, Ease(Fix));
+		const float ClipYaw = TurnYawAt(TurnStart + T * TurnRate) * TurnScale;
+		// into a walk the clip's yaw runs on and the walk steers the rest; onto the lean the
+		// last of it settles on the exact facing
+		const float Fix = bTurnThenWalk ? 0.f : FMath::Clamp((T - (TurnEnd - 0.3f)) / 0.3f, 0.f, 1.f);
+		const float Yaw = FMath::Lerp(ClipYaw, TurnTo - TurnFrom, Ease(Fix));
 		Char->SetActorRotation(FRotator(0.f, TurnFrom + Yaw, 0.f));
 		return PhaseClock >= TurnEnd;
 	};
@@ -991,11 +1039,12 @@ void AVisexMenuDirector::TickReturn(float DeltaSeconds)
 			RestoreTurnRootMotion();
 			if (UAnimInstance* Anim = GetPawnAnim())
 			{
-				Anim->StopSlotAnimation(0.4f, FName(TEXT("DefaultSlot")));
+				Anim->StopSlotAnimation(0.35f, FName(TEXT("DefaultSlot")));
 			}
 			TurnClip = nullptr;
 			ReturnPhase = 1;
 			PhaseClock = 0.f;
+			PlanWalk(Left, 0.f);
 		}
 		return;
 	}
@@ -1003,16 +1052,23 @@ void AVisexMenuDirector::TickReturn(float DeltaSeconds)
 	{
 		// her normal walk to the spot, facing where she goes: a calm start, then the pace that
 		// settles to rest right on it
+		// (the arrival: already at her pace as she comes into frame, settling onto the spot; the
+		// return from a page: the same eased walk as the way out)
 		constexpr float Settle = 90.f;   // cm/s^2
 		const float Ramp = FMath::SmoothStep(0.f, 1.f, PhaseClock / FMath::Max(0.05f, WalkOffRamp));
-		const float Pace = bArriving ? ArrivalSpeed : BodyStepBackSpeed;
-		const float Want = FMath::Min(Pace * Ramp, FMath::Sqrt(2.f * Settle * FMath::Max(0.f, Left)));
-		if (Left > 8.f)
+		const float Want = bArriving ? FMath::Min(ArrivalSpeed * Ramp, FMath::Sqrt(2.f * Settle * FMath::Max(0.f, Left)))
+			: WalkWant(PhaseClock, WalkDist - Left);
+		if (Left > 8.f && FVector::DotProduct(To, Char->GetActorForwardVector()) > 0.f)
 		{
-			const float Yaw = FMath::FixedTurn(Char->GetActorRotation().Yaw, To.Rotation().Yaw, 160.f * DeltaSeconds);
+			// the arrival steers at a steady rate; the return eases the last of its turn out
+			const float Yaw = bArriving ? FMath::FixedTurn(Char->GetActorRotation().Yaw, To.Rotation().Yaw, 160.f * DeltaSeconds)
+				: FMath::RInterpTo(Char->GetActorRotation(), FRotator(0.f, To.Rotation().Yaw, 0.f), DeltaSeconds, 6.f).Yaw;
 			Char->SetActorRotation(FRotator(0.f, Yaw, 0.f));
 		}
-		if (Left <= 2.f || StepClock > (bArriving ? 25.f : 12.f))
+		// past her spot (a long frame) counts as on it: never a step back onto it
+		const bool bPast = Left < 15.f && FVector::DotProduct(To, Char->GetActorForwardVector()) < 0.f;
+		// (from a page she turns as she comes to rest: the turn's first step is her last)
+		if (Left <= (bArriving ? 2.f : 9.f) || bPast || StepClock > (bArriving ? 25.f : 12.f) || (!bArriving && PhaseClock > WalkTime + 0.8f))
 		{
 			// on her spot: the half turn that puts the column at her back
 			ReturnPhase = 2;
@@ -1023,7 +1079,12 @@ void AVisexMenuDirector::TickReturn(float DeltaSeconds)
 			StartTurnClip(false);
 			return;
 		}
-		Char->AddMovementInput(To.GetSafeNormal2D(), FMath::Clamp(Want / MaxSpeed, 0.02f, 1.f));
+		if (!bArriving)
+		{
+			UCharacterMovementComponent* Walk = Char->GetCharacterMovement();
+			Walk->Velocity = Char->GetActorForwardVector().GetSafeNormal2D() * Want + FVector(0.f, 0.f, Walk->Velocity.Z);
+		}
+		Char->AddMovementInput(To.GetSafeNormal2D(), FMath::Clamp(Want / MaxSpeed, bArriving ? 0.02f : 0.f, 1.f));
 		return;
 	}
 	if (TurnClip)
@@ -1063,6 +1124,7 @@ void AVisexMenuDirector::EndStep()
 {
 	const int32 Was = StepDir;
 	StepDir = 0;
+	HoldGait(false);   // before a page opens: photo mode drives the layer itself
 	RestoreTurnRootMotion();
 	TurnClip = nullptr;
 	if (ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0)))
@@ -1073,7 +1135,7 @@ void AVisexMenuDirector::EndStep()
 	}
 	if (Was > 0)
 	{
-		OpenBodyNow();
+		StepThen == 1 ? OpenPhotoNow() : OpenBodyNow();
 		return;
 	}
 	if (bArriving)
@@ -1279,6 +1341,43 @@ void AVisexMenuDirector::TickArrivalPanel(float DeltaSeconds)
 	}
 }
 
+void AVisexMenuDirector::ResetSkate()
+{
+	bPlanted[0] = bPlanted[1] = false;
+	SkateMax = SkateSum = 0.f;
+	SkateSteps = 0;
+}
+
+void AVisexMenuDirector::BeginMotion(const TCHAR* Name)
+{
+	GetWorldTimerManager().ClearTimer(MotionTimer);
+	MotionName = Name;
+	MotionStart = GetWorld()->GetTimeSeconds();
+	ResetSkate();
+}
+
+void AVisexMenuDirector::EndMotion(float SettleIn)
+{
+	if (MotionStart < 0.0)
+	{
+		return;
+	}
+	// settled once the last move (a camera blend, a clip's hand-off) has run out too
+	auto Log = [this]()
+	{
+		if (MotionStart < 0.0) { return; }
+		UE_LOG(LogTemp, Log, TEXT("Menu motion: %s %.2f s, planted-foot skate mean %.1f max %.1f cm over %d steps"),
+			*MotionName, GetWorld()->GetTimeSeconds() - MotionStart, SkateSteps ? SkateSum / SkateSteps : 0.f, SkateMax, SkateSteps);
+		MotionStart = -1.0;
+	};
+	if (SettleIn > 0.01f)
+	{
+		GetWorldTimerManager().SetTimer(MotionTimer, FTimerDelegate::CreateWeakLambda(this, Log), SettleIn, false);
+		return;
+	}
+	Log();
+}
+
 void AVisexMenuDirector::TickFootSkate()
 {
 	// a foot counts as planted while it is low and nearly still; its skate is how far it
@@ -1313,7 +1412,7 @@ void AVisexMenuDirector::TickFootSkate()
 			SkateMax = FMath::Max(SkateMax, Skate);
 			SkateSum += Skate;
 			++SkateSteps;
-			UE_LOG(LogTemp, Log, TEXT("Menu arrival: %s planted %.2f s, skate %.1f cm"), *Bones[F].ToString(), PlantFor[F], Skate);
+			UE_LOG(LogTemp, Log, TEXT("Menu step: %s planted %.2f s, skate %.1f cm"), *Bones[F].ToString(), PlantFor[F], Skate);
 		}
 		bPlanted[F] = bDown;
 	}
@@ -1329,10 +1428,19 @@ void AVisexMenuDirector::OpenPhoto()
 	bOpen = false;
 	FadeOut = 0.f;
 	DisableInput(PC);
-	// she pushes off the column, then the photo camera takes over
+	BeginMotion(TEXT("photo in"));
+	StepThen = 1;
+	// she pushes off the column and walks out as for the body page, then the photo camera
+	// takes over: one way of moving for every page
 	const float Up = StandUp();
 	if (Up > 0.f)
 	{
+		if (LeanColumn)
+		{
+			GetWorldTimerManager().SetTimer(StandTimer, this, &AVisexMenuDirector::BeginStepOut,
+				FMath::Clamp(Up * StandUpHandOver, 0.02f, FMath::Max(0.02f, WalkOffMaxDelay)), false);
+			return;
+		}
 		GetWorldTimerManager().SetTimer(StandTimer, this, &AVisexMenuDirector::OpenPhotoNow, Up * 0.8f, false);
 		return;
 	}
@@ -1352,6 +1460,7 @@ void AVisexMenuDirector::OpenPhotoNow()
 	}
 	if (PhotoMode)
 	{
+		PhotoMode->BlendTime = PageBlendTime;
 		PhotoMode->Open();
 	}
 	if (!PhotoMode || !PhotoMode->IsOpen())
@@ -1368,6 +1477,7 @@ void AVisexMenuDirector::OpenPhotoNow()
 	SetSceneStripped(true);
 	bStudio = true;
 	StudioStrength = PhotoStudioStrength;
+	EndMotion(PhotoMode->BlendTime);
 	OnPhotoMode();
 }
 
@@ -1429,6 +1539,7 @@ void AVisexMenuDirector::SetSceneStripped(bool bStrip)
 void AVisexMenuDirector::HandlePhotoClosed()
 {
 	// the scene returns, and she goes back to the column
+	BeginMotion(TEXT("photo out"));
 	SetSceneStripped(false);
 	bStudio = false;
 	const float Blend = PhotoMode ? PhotoMode->BlendTime : 0.f;
@@ -1448,6 +1559,7 @@ void AVisexMenuDirector::HandleBodyClosed()
 	bStudio = false;
 	const float Blend = BodyEditor ? BodyEditor->BlendTime : 0.f;
 	const int32 Row = CharacterPage == 1 ? ItemWardrobe : ItemBody;
+	BeginMotion(CharacterPage == 1 ? TEXT("wardrobe out") : TEXT("body out"));
 	if (bSteppedOut)
 	{
 		BeginStepBack(Blend, Row);
@@ -1478,6 +1590,7 @@ void AVisexMenuDirector::BackToMenu(float BlendTime, int32 Select)
 			EnableInput(PC);
 		}
 		ShowMenu();
+		EndMotion();   // the menu is back and takes input: she leans
 		if (UVisexMenuWidget* W = GetMenuWidget())
 		{
 			W->SetSelected(Select);
@@ -2024,6 +2137,52 @@ void AVisexMenuDirector::PlayLoopLater(UAnimSequence* Clip, float Delay, bool bT
 	}), FMath::Max(Delay - Blend, 0.05f), false);
 }
 
+float AVisexMenuDirector::SitRate(int32 Warp, float ClipT)
+{
+	// play rate by clip time. Up (A_Menu_Sit_Settings_Down, 2.5 s): still to 0.35, the crouch to
+	// 1.0, the spring to 1.5, the landing on the drum to 2.0, settling after. Down (_Up, 1.7 s):
+	// still to 0.5, the hop down to 1.0, rising onto the lean after
+	static const FVector2D UpKeys[] = {{0.f, 1.f}, {0.35f, 0.85f}, {0.7f, 0.7f}, {1.f, 0.85f}, {1.25f, 1.f},
+		{1.5f, 0.8f}, {1.75f, 0.65f}, {2.f, 0.8f}, {2.5f, 1.f}};
+	static const FVector2D DownKeys[] = {{0.f, 0.85f}, {0.5f, 0.7f}, {0.8f, 0.55f}, {1.1f, 0.6f}, {1.7f, 0.7f}};
+	const FVector2D* K = Warp == 1 ? UpKeys : DownKeys;
+	const int32 N = Warp == 1 ? UE_ARRAY_COUNT(UpKeys) : UE_ARRAY_COUNT(DownKeys);
+	if (ClipT <= K[0].X) { return K[0].Y; }
+	for (int32 I = 1; I < N; ++I)
+	{
+		if (ClipT <= K[I].X)
+		{
+			// eased between keys, so the pace itself never kinks
+			const float A = (ClipT - K[I - 1].X) / FMath::Max(1e-3f, K[I].X - K[I - 1].X);
+			return FMath::Lerp(K[I - 1].Y, K[I].Y, FMath::SmoothStep(0.f, 1.f, A));
+		}
+	}
+	return K[N - 1].Y;
+}
+
+float AVisexMenuDirector::SitWarpTime(int32 Warp, float Len)
+{
+	float T = 0.f;
+	constexpr int32 Steps = 200;
+	for (int32 I = 0; I < Steps; ++I)
+	{
+		T += (Len / Steps) / FMath::Max(0.1f, SitRate(Warp, Len * (I + 0.5f) / Steps));
+	}
+	return T;
+}
+
+void AVisexMenuDirector::TickSitWarp()
+{
+	UAnimInstance* Anim = GetPawnAnim();
+	if (!Anim || !SitMontage || !Anim->Montage_IsPlaying(SitMontage))
+	{
+		SitWarp = 0;
+		SitMontage = nullptr;
+		return;
+	}
+	Anim->Montage_SetPlayRate(SitMontage, SitRate(SitWarp, Anim->Montage_GetPosition(SitMontage)));
+}
+
 void AVisexMenuDirector::SitForSettings()
 {
 	UAnimInstance* Anim = GetPawnAnim();
@@ -2042,8 +2201,13 @@ void AVisexMenuDirector::SitForSettings()
 	{
 		LoadedLean.AddUnique(Down);
 		// the way down opens on the lean's own pose: a beat in progress blends into it
-		Anim->PlaySlotAnimationAsDynamicMontage(Down, Slot, 0.4f, SitBlend, 1.f, 1);
-		PlayLoopLater(Sit, Down->GetPlayLength(), false);
+		// retimed as it plays (TickSitWarp); the camera dollies in over the same seconds
+		const float Dur = SitWarpTime(1, Down->GetPlayLength());
+		SitMontage = Anim->PlaySlotAnimationAsDynamicMontage(Down, Slot, 0.5f, SitBlend, SitRate(1, 0.f), 1);
+		SitWarp = 1;
+		SettingsCamDur = Dur;
+		PlayLoopLater(Sit, Dur, false);
+		EndMotion(Dur);
 	}
 	else
 	{
@@ -2071,8 +2235,13 @@ void AVisexMenuDirector::StandFromSettings()
 	{
 		LoadedLean.AddUnique(Up);
 		// closed mid-way down: a longer blend carries her from wherever she is onto the way up
-		Anim->PlaySlotAnimationAsDynamicMontage(Up, Slot, 0.4f, SitBlend, 1.f, 1);
-		PlayLoopLater(Idle, Up->GetPlayLength(), true);
+		const float Dur = SitWarpTime(2, Up->GetPlayLength());
+		SitMontage = Anim->PlaySlotAnimationAsDynamicMontage(Up, Slot, 0.4f, SitBlend, SitRate(2, 0.f), 1);
+		SitWarp = 2;
+		// the dolly out lands a beat after her, on the menu shot
+		SettingsCamDur = Dur + 0.3f;
+		PlayLoopLater(Idle, Dur, true);
+		EndMotion(FMath::Max(Dur, SettingsCamDur * SettingsCamAlpha));
 	}
 	else
 	{
@@ -2139,7 +2308,12 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 	// and back out after
 	const float SitGoal = (bOpen && bSitting) ? 1.f : 0.f;
 	const float SitAlpha0 = SettingsCamAlpha;
-	SettingsCamAlpha = FMath::FInterpConstantTo(SettingsCamAlpha, SitGoal, DeltaSeconds, 1.f / FMath::Max(0.1f, SettingsCamTime));
+	if (SitWarp != 0)
+	{
+		TickSitWarp();
+	}
+	SettingsCamAlpha = FMath::FInterpConstantTo(SettingsCamAlpha, SitGoal, DeltaSeconds,
+		1.f / FMath::Max(0.1f, SettingsCamDur > 0.f ? SettingsCamDur : SettingsCamTime));
 	const bool bSitCamMoved = SitAlpha0 != SettingsCamAlpha;
 	if (bOpen && MenuCamera && bSitCamMoved && bHaveLens)
 	{
@@ -2199,7 +2373,12 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 	}
 	if (StepDir != 0 && !bArrivalFrozen)
 	{
+		HoldGait(true);
 		TickStep(DeltaSeconds);
+	}
+	if (MotionStart >= 0.0 && !bArriving)
+	{
+		TickFootSkate();
 	}
 	if (ArrivalClock >= 0.f && !bArrivalFrozen)
 	{

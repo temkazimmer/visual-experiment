@@ -460,18 +460,38 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0", ClampMax = "1"))
 	float BodyReachWidthShare = 0.8f;
 
-	/** Her pace on those steps, out and back (cm/s): slow and weighty. */
+	/** Her top pace on the menu walks, out to a page and back (cm/s): her catwalk at an
+	 *  athlete's purpose. Each walk eases in and out over its whole length (smootherstep) and
+	 *  peaks here; the catwalk layer is full from 150. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "10"))
-	float BodyStepSpeed = 75.f;
+	float MenuWalkSpeed = 145.f;
+
+	/** The camera blend onto a page and back (Body, Wardrobe, Photo mode; s): with the push-off
+	 *  and the walk out it brings each page in about 3 s after the click. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0.1"))
+	float PageBlendTime = 1.5f;
+
+	/** The turn clips' pace on the menu (1 = as captured); their still lead-in is skipped. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0.5"))
+	float TurnClipRate = 1.55f;
+
+	/** Clip seconds of stillness before each turn clip's first step (skipped). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0"))
+	float TurnClipLeadIn = 0.3f;
+
+	/** Share of the first return turn landed when she sets off walking (the walk takes the rest). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0.5", ClampMax = "1"))
+	float TurnIntoWalk = 0.72f;
+
+	/** The catwalk posture (chest up, shoulders back) held at least this much through the menu's
+	 *  turns and walks, where her speed alone would let it drop (0..1). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0", ClampMax = "1"))
+	float MenuGaitFloor = 0.6f;
 
 	/** Body/Wardrobe: the least gap from her axis to the stone she walks out to (cm), so the
 	 *  way out and back is a real little walk, not a shuffle. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0"))
-	float BodyWalkGap = 140.f;
-
-	/** Her pace walking back to the column after Body, Wardrobe or photo mode (cm/s). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "10"))
-	float BodyStepBackSpeed = 75.f;
+	float BodyWalkGap = 110.f;
 
 	/** The return: she turns to the column in place, walks to her spot facing it, and turns
 	 *  round there before she sinks into the lean. Seconds for a half turn; less for less. */
@@ -717,6 +737,14 @@ private:
 	float SettingsCamEase() const { const float X = FMath::Clamp(SettingsCamAlpha, 0.f, 1.f); return X * X * X * (X * (6.f * X - 15.f) + 10.f); }
 	bool bSitting = false;
 	static constexpr float SitBlend = 0.3f;   // the sit clips hand over to each other this long
+	// Settings: the jump onto the drum and down again, retimed as it plays: a settle into the
+	// crouch, an eased spring, a soft landing (clip time -> play rate), the dolly matched to it
+	UPROPERTY(Transient) TObjectPtr<class UAnimMontage> SitMontage;
+	int32 SitWarp = 0;           // 1 the jump up, 2 the step down, 0 none
+	float SettingsCamDur = 0.f;  // this dolly's seconds (0: SettingsCamTime)
+	static float SitRate(int32 Warp, float ClipT);
+	static float SitWarpTime(int32 Warp, float Len);   // her seconds for the whole clip
+	void TickSitWarp();
 	// the panel's layout transform before any lens compensation, and the compensation in force
 	void ApplyPanelLens(float K);
 	float PanelLensK = 1.f;
@@ -766,6 +794,14 @@ private:
 	bool bPlanted[2] = {false, false};
 	float SkateMax = 0.f, SkateSum = 0.f;
 	int32 SkateSteps = 0;
+	// menu motion timing: one transition at a time (enter or exit a page), click to settled,
+	// with the planted-foot skate over it. Logged as "Menu motion: <name> ..."
+	void BeginMotion(const TCHAR* Name);
+	void EndMotion(float SettleIn = 0.f);
+	void ResetSkate();
+	FString MotionName;
+	double MotionStart = -1.0;
+	FTimerHandle MotionTimer;
 	int32 ReturnPhase = 0;       // 0 turning to her spot, 1 walking there, 2 turning round on it
 	float PhaseClock = 0.f;
 	float TurnFrom = 0.f, TurnTo = 0.f, TurnTime = 0.f;   // yaw (deg) and seconds of this turn
@@ -775,6 +811,8 @@ private:
 	UPROPERTY(Transient) TObjectPtr<class UAnimSequence> TurnClip;
 	TArray<float> TurnCurve;
 	float TurnDt = 0.f, TurnScale = 1.f, TurnEnd = 0.f;
+	float TurnStart = 0.f, TurnRate = 1.f;   // clip seconds skipped, and its play rate
+	bool bTurnThenWalk = false;
 	float TurnYawAt(float T) const;
 	TEnumAsByte<ERootMotionMode::Type> TurnRootMotion = ERootMotionMode::RootMotionFromMontagesOnly;
 	bool bTurnRootSaved = false;
@@ -787,6 +825,13 @@ private:
 	float StepMinTime = 0.f;     // the camera's blend home: the menu waits for it too
 	bool bSteppedOut = false;
 	bool bStepOrient = true;     // her movement's own orient-to-movement, put back after
+	int32 StepThen = 0;          // what the walk out opens: 0 the body page, 1 photo mode
+	// the walk under way: its length (cm) and time (s), eased in and out over the whole of it
+	float WalkDist = 0.f, WalkTime = 0.f, WalkFrom = 0.f;
+	void PlanWalk(float Dist, float From);
+	float WalkWant(float Clock, float Done) const;   // the pace (cm/s) to be at now
+	bool bGaitHeld = false;      // the catwalk posture is held through the transition
+	void HoldGait(bool bHold);
 
 	// photo mode
 	void OpenPhoto();
