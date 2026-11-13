@@ -481,7 +481,24 @@ public:
 
 	/** Share of the first return turn landed when she sets off walking (the walk takes the rest). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0.5", ClampMax = "1"))
-	float TurnIntoWalk = 0.72f;
+	float TurnIntoWalk = 0.65f;
+
+	/** The return from a page: its turns' pace (the arrival keeps TurnClipRate). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0.5"))
+	float ReturnTurnRate = 1.8f;
+
+	/** The return: the last turn starts this far from her spot (cm), on her last step in. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "2"))
+	float ReturnPivotAt = 35.f;
+
+	/** The return: the sink into the lean starts at this share of the last turn's yaw, from
+	 *  LeanDownFrom (clip s: past its still start and the foot shuffle) at LeanDownRate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0.5", ClampMax = "1"))
+	float TurnIntoLean = 0.7f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0"))
+	float LeanDownFrom = 1.3f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0.5"))
+	float LeanDownRate = 1.4f;
 
 	/** The catwalk posture (chest up, shoulders back) held at least this much through the menu's
 	 *  turns and walks, where her speed alone would let it drop (0..1). */
@@ -722,7 +739,10 @@ private:
 
 	// leaning on the column
 	void SpawnLeanColumn();
-	void Lean(bool bFromStanding);
+	// From/Rate: the lean-down from that clip time at that pace (the return from a page lands
+	// its last step into the sink); LeanSettleAt is when she rests on the stone (world seconds)
+	void Lean(bool bFromStanding, float From = 0.f, float Rate = 1.f);
+	double LeanSettleAt = 0.0;
 	/** Plays the push-off; returns its length in seconds (0 if she wasn't leaning). */
 	float StandUp();
 	void SetColumnBlocksPawn(bool bBlock);
@@ -802,6 +822,7 @@ private:
 	FString MotionName;
 	double MotionStart = -1.0;
 	FTimerHandle MotionTimer;
+	bool bMotionBoxed = false;
 	int32 ReturnPhase = 0;       // 0 turning to her spot, 1 walking there, 2 turning round on it
 	float PhaseClock = 0.f;
 	float TurnFrom = 0.f, TurnTo = 0.f, TurnTime = 0.f;   // yaw (deg) and seconds of this turn
@@ -812,6 +833,7 @@ private:
 	TArray<float> TurnCurve;
 	float TurnDt = 0.f, TurnScale = 1.f, TurnEnd = 0.f;
 	float TurnStart = 0.f, TurnRate = 1.f;   // clip seconds skipped, and its play rate
+	float TurnLeanAt = -1.f;     // the return's last turn: her seconds into it when the sink starts
 	bool bTurnThenWalk = false;
 	float TurnYawAt(float T) const;
 	TEnumAsByte<ERootMotionMode::Type> TurnRootMotion = ERootMotionMode::RootMotionFromMontagesOnly;
@@ -832,6 +854,12 @@ private:
 	float WalkWant(float Clock, float Done) const;   // the pace (cm/s) to be at now
 	bool bGaitHeld = false;      // the catwalk posture is held through the transition
 	void HoldGait(bool bHold);
+	FTransform Drifted(const FTransform& Base) const;   // the menu camera's handheld sway on Base
+	void UnboxPageCamera(bool bUnbox);   // the page's camera fills the window; false: put it back
+	void UnboxLens(class UCineCameraComponent* Lens);
+	TWeakObjectPtr<class UCineCameraComponent> UnboxedLens;
+	FCameraFilmbackSettings UnboxedFilmback;
+	bool bUnboxedConstrain = true;
 
 	// photo mode
 	void OpenPhoto();

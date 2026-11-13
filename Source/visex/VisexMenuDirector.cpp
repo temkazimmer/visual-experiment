@@ -192,7 +192,7 @@ void AVisexMenuDirector::ShowMenu()
 		}
 		bHaveBase = true;
 	}
-	MenuCamera->SetActorTransform(CameraBase);
+	MenuCamera->SetActorTransform(Drifted(CameraBase));   // where the sway left it: no hop
 	SettingsCamAlpha = 0.f;
 	PanelLensK = 1.f;
 	// and its lens, which the Start move turns into the play camera's
@@ -223,6 +223,9 @@ void AVisexMenuDirector::ShowMenu()
 		Focus.ManualFocusDistance = FVector::Dist(CameraBase.GetLocation(), MenuAim);
 		Lens->FocusSettings = Focus;
 	}
+	// and on her, this frame: the menu's aim point is her lean, not where she is now, and the
+	// first frame back drew her soft before TickFocus caught up (QA 0558, the blur at the return)
+	TickFocus();
 	SetCornerShade(1.f);
 	SpawnLeanColumn();
 	FitLeanColumn();
@@ -230,7 +233,7 @@ void AVisexMenuDirector::ShowMenu()
 	// starts out on the sand and walks in to it while the panel fades in
 	const bool bArrive = !bArrivalChecked && CVarMenuArrival.GetValueOnGameThread() != 0 && BeginArrival();
 	bArrivalChecked = true;
-	if (!bArrive)
+	if (!bArrive && !bLeaning)
 	{
 		Lean(bHaveLeaned);
 	}
@@ -239,7 +242,6 @@ void AVisexMenuDirector::ShowMenu()
 	WalkOffClock = -1.f;
 	LandedFor = -1.f;
 	PC->SetViewTarget(MenuCamera);
-	Clock = 0.f;
 
 	// the panel rides with the camera, turned toward the figure on the right
 	Panel->AttachToComponent(MenuCamera->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
@@ -685,6 +687,10 @@ void AVisexMenuDirector::OpenBodyNow()
 	if (BodyEditor)
 	{
 		BodyEditor->BlendTime = PageBlendTime;   // the same camera move onto every page, and back
+		// the page fills the window from the first frame of the blend onto it, as the menu does:
+		// a blend letterboxes while either view does, so the bars snapped on as it started
+		UnboxPageCamera(false);
+		UnboxLens(BodyEditor->FindComponentByClass<UCineCameraComponent>());
 		BodyEditor->OpenPage(CharacterPage);
 	}
 	if (!BodyEditor || !BodyEditor->IsOpen())
@@ -909,9 +915,22 @@ bool AVisexMenuDirector::StartTurnClip(bool bThenWalk)
 	// in her seconds: the clip from its first step, at the menu's pace; into the walk while the
 	// last of the turn is still in her (the walk steers the rest), onto the lean as it settles
 	TurnStart = FMath::Min(TurnClipLeadIn, Landed * 0.5f);
-	TurnRate = FMath::Max(0.5f, TurnClipRate);
+	TurnRate = FMath::Max(0.5f, bArriving ? TurnClipRate : ReturnTurnRate);
 	TurnEnd = (FMath::Min(Landed + (bThenWalk ? 0.f : 0.05f), Len - 0.2f) - TurnStart) / TurnRate;
 	bTurnThenWalk = bThenWalk;
+	// back from a page, the sink into the lean takes over the last turn part-way
+	TurnLeanAt = -1.f;
+	if (!bThenWalk && !bArriving)
+	{
+		for (int32 I = 0; I < TurnCurve.Num(); ++I)
+		{
+			if (FMath::Abs(TurnCurve[I]) >= FMath::Abs(Total) * TurnIntoLean)
+			{
+				TurnLeanAt = FMath::Max(0.f, I * TurnDt - TurnStart) / TurnRate;
+				break;
+			}
+		}
+	}
 	if (!bTurnRootSaved)
 	{
 		TurnRootMotion = Anim->RootMotionMode;
@@ -991,6 +1010,51 @@ void AVisexMenuDirector::HoldGait(bool bHold)
 	bGaitHeld = bHold;
 }
 
+void AVisexMenuDirector::UnboxPageCamera(bool bUnbox)
+{
+	// a blend between two views letterboxes while either does (FMinimalViewInfo::BlendViewInfo
+	// ORs bConstrainAspectRatio): the page cameras box to their 16:9 sensor, the menu camera fills
+	// the window, so the bars snapped off as the blend home finished, a jump mid-walk (QA 0558).
+	// (and on as the blend onto a page started). The page's camera fills the window too, from the
+	// blend onto it to the blend home, keeping its horizontal field (a taller sensor where the
+	// window is narrower than 16:9: the bars turn into more of the same shot). Each open starts
+	// from the page's own lens.
+	if (!bUnbox)
+	{
+		if (UCineCameraComponent* Lens = UnboxedLens.Get())
+		{
+			Lens->Filmback = UnboxedFilmback;
+			Lens->bConstrainAspectRatio = bUnboxedConstrain;
+		}
+		UnboxedLens = nullptr;
+		return;
+	}
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	APlayerCameraManager* Cam = PC ? PC->PlayerCameraManager.Get() : nullptr;
+	// the page's view: incoming while the blend onto it runs, else the current (or outgoing,
+	// mid-blend home: GetViewTarget would return the incoming menu camera then)
+	AActor* PageView = Cam ? (Cam->PendingViewTarget.Target && Cam->PendingViewTarget.Target != MenuCamera
+		? Cam->PendingViewTarget.Target.Get() : Cam->ViewTarget.Target.Get()) : nullptr;
+	UnboxLens(PageView && PageView != MenuCamera ? PageView->FindComponentByClass<UCineCameraComponent>() : nullptr);
+}
+
+void AVisexMenuDirector::UnboxLens(UCineCameraComponent* Lens)
+{
+	if (!Lens || !bMenuFillsWindow || !Lens->bConstrainAspectRatio || Lens->Filmback.SensorHeight <= 0.f)
+	{
+		return;
+	}
+	UnboxedLens = Lens;
+	UnboxedFilmback = Lens->Filmback;
+	bUnboxedConstrain = Lens->bConstrainAspectRatio;
+	const float Window = ViewAspect();
+	if (Window < Lens->Filmback.SensorWidth / Lens->Filmback.SensorHeight)
+	{
+		Lens->Filmback.SensorHeight = Lens->Filmback.SensorWidth / Window;
+	}
+	Lens->bConstrainAspectRatio = false;
+}
+
 void AVisexMenuDirector::PlanWalk(float Dist, float From)
 {
 	// smootherstep: the peak pace is 1.875x the mean, so this takes her to MenuWalkSpeed
@@ -1068,7 +1132,7 @@ void AVisexMenuDirector::TickReturn(float DeltaSeconds)
 		// past her spot (a long frame) counts as on it: never a step back onto it
 		const bool bPast = Left < 15.f && FVector::DotProduct(To, Char->GetActorForwardVector()) < 0.f;
 		// (from a page she turns as she comes to rest: the turn's first step is her last)
-		if (Left <= (bArriving ? 2.f : 9.f) || bPast || StepClock > (bArriving ? 25.f : 12.f) || (!bArriving && PhaseClock > WalkTime + 0.8f))
+		if (Left <= (bArriving ? 2.f : ReturnPivotAt) || bPast || StepClock > (bArriving ? 25.f : 12.f) || (!bArriving && PhaseClock > WalkTime + 0.8f))
 		{
 			// on her spot: the half turn that puts the column at her back
 			ReturnPhase = 2;
@@ -1089,10 +1153,16 @@ void AVisexMenuDirector::TickReturn(float DeltaSeconds)
 	}
 	if (TurnClip)
 	{
-		// turning round on her spot, held on it, into the lean
+		// turning round on her spot, held on it, into the lean (from a page she pivots on her last
+		// step in: drawn onto the spot at about the pace she walked in at)
 		if (Left > 0.5f)
 		{
 			Char->AddActorWorldOffset(To * FMath::Min(1.f, DeltaSeconds * 4.f));
+		}
+		if (TurnLeanAt >= 0.f && PhaseClock >= TurnLeanAt && !bLeaning)
+		{
+			// the sink takes over the turn's last steps: her last step lands into the lean
+			Lean(true, LeanDownFrom, LeanDownRate);
 		}
 		if (TickClipTurn())
 		{
@@ -1354,6 +1424,8 @@ void AVisexMenuDirector::BeginMotion(const TCHAR* Name)
 	MotionName = Name;
 	MotionStart = GetWorld()->GetTimeSeconds();
 	ResetSkate();
+	const APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	bMotionBoxed = PC && PC->PlayerCameraManager && PC->PlayerCameraManager->GetCameraCacheView().bConstrainAspectRatio;
 }
 
 void AVisexMenuDirector::EndMotion(float SettleIn)
@@ -1461,7 +1533,9 @@ void AVisexMenuDirector::OpenPhotoNow()
 	if (PhotoMode)
 	{
 		PhotoMode->BlendTime = PageBlendTime;
+		UnboxPageCamera(false);
 		PhotoMode->Open();
+		UnboxPageCamera(true);   // its camera is made in Open: unboxed as the blend onto it starts
 	}
 	if (!PhotoMode || !PhotoMode->IsOpen())
 	{
@@ -1540,6 +1614,7 @@ void AVisexMenuDirector::HandlePhotoClosed()
 {
 	// the scene returns, and she goes back to the column
 	BeginMotion(TEXT("photo out"));
+	UnboxPageCamera(true);
 	SetSceneStripped(false);
 	bStudio = false;
 	const float Blend = PhotoMode ? PhotoMode->BlendTime : 0.f;
@@ -1560,6 +1635,7 @@ void AVisexMenuDirector::HandleBodyClosed()
 	const float Blend = BodyEditor ? BodyEditor->BlendTime : 0.f;
 	const int32 Row = CharacterPage == 1 ? ItemWardrobe : ItemBody;
 	BeginMotion(CharacterPage == 1 ? TEXT("wardrobe out") : TEXT("body out"));
+	UnboxPageCamera(true);
 	if (bSteppedOut)
 	{
 		BeginStepBack(Blend, Row);
@@ -1590,7 +1666,8 @@ void AVisexMenuDirector::BackToMenu(float BlendTime, int32 Select)
 			EnableInput(PC);
 		}
 		ShowMenu();
-		EndMotion();   // the menu is back and takes input: she leans
+		// settled once she rests on the stone
+		EndMotion(float(FMath::Max(0.0, LeanSettleAt - GetWorld()->GetTimeSeconds())));
 		if (UVisexMenuWidget* W = GetMenuWidget())
 		{
 			W->SetSelected(Select);
@@ -1988,8 +2065,9 @@ void AVisexMenuDirector::SetColumnBlocksPawn(bool bBlock)
 	}
 }
 
-void AVisexMenuDirector::Lean(bool bFromStanding)
+void AVisexMenuDirector::Lean(bool bFromStanding, float From, float Rate)
 {
+	LeanSettleAt = GetWorld()->GetTimeSeconds();
 	GetWorldTimerManager().ClearTimer(StandTimer);
 	GetWorldTimerManager().ClearTimer(SitTimer);
 	bSitting = false;
@@ -2013,7 +2091,11 @@ void AVisexMenuDirector::Lean(bool bFromStanding)
 		// frame or more before the loop started, and her standing base idle flashed through
 		// ("lean pop", 0534). LoadedLean keeps the clip alive; the timer holds it weakly too, so
 		// if that ever slips it skips the idle instead of playing freed memory (0298)
-		Anim->PlaySlotAnimationAsDynamicMontage(Down, Slot, 0.25f, SitBlend, 1.f, 1);
+		From = FMath::Clamp(From, 0.f, FMath::Max(0.f, Down->GetPlayLength() - 0.5f));
+		Rate = FMath::Max(0.5f, Rate);
+		const float Left = (Down->GetPlayLength() - From) / Rate;
+		LeanSettleAt += Left;
+		Anim->PlaySlotAnimationAsDynamicMontage(Down, Slot, From > 0.f ? 0.35f : 0.25f, SitBlend, Rate, 1, -1.f, From);
 		GetWorldTimerManager().SetTimer(StandTimer, FTimerDelegate::CreateWeakLambda(this, [this, WeakIdle = TWeakObjectPtr<UAnimSequence>(Idle)]()
 		{
 			UAnimSequence* Clip = WeakIdle.Get();
@@ -2022,7 +2104,7 @@ void AVisexMenuDirector::Lean(bool bFromStanding)
 			{
 				A->PlaySlotAnimationAsDynamicMontage(Clip, Slot, SitBlend, 0.3f, 1.f, 1000000);
 			}
-		}), FMath::Max(Down->GetPlayLength() - SitBlend, 0.05f), false);
+		}), FMath::Max(Left - SitBlend, 0.05f), false);
 	}
 	else
 	{
@@ -2272,7 +2354,10 @@ FTransform AVisexMenuDirector::SettingsCameraTransform() const
 void AVisexMenuDirector::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	Clock += DeltaSeconds;
+	if (bOpen)
+	{
+		Clock += DeltaSeconds;   // the sway holds still while a page has the screen
+	}
 	if (bArriving)
 	{
 		if (bArrivalFrozen && !ArrivalHeld())
@@ -2337,17 +2422,7 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 			Base = FTransform(FQuat::Slerp(CameraBase.GetRotation(), Shot.GetRotation(), S),
 				FMath::Lerp(CameraBase.GetLocation(), Shot.GetLocation(), S));
 		}
-		const float W = DriftPeriod > 0.f ? 2.f * PI / DriftPeriod : 0.f;
-		const float Sway = DriftPeriod > 0.f ? 1.f : 0.f;
-		// slow, unsynchronised sways read as a handheld camera breathing, not a loop
-		FRotator Rot = Base.Rotator();
-		Rot.Yaw += Sway * DriftDegrees * FMath::Sin(Clock * W);
-		Rot.Pitch += Sway * 0.5f * DriftDegrees * FMath::Sin(Clock * W * 0.73f + 1.3f);
-		const FVector Right = Base.GetRotation().GetRightVector();
-		const FVector Loc = Base.GetLocation()
-			+ Right * Sway * DriftDistance * FMath::Sin(Clock * W * 1.21f + 0.4f)
-			+ FVector::UpVector * Sway * 0.5f * DriftDistance * FMath::Sin(Clock * W * 0.91f + 2.1f);
-		MenuCamera->SetActorLocationAndRotation(Loc, Rot);
+		MenuCamera->SetActorTransform(Drifted(Base));
 		if (SettingsCamAlpha > 0.f || bSitCamMoved)
 		{
 			// every frame while it is wide: the camera sways, and the offset is taken from where it is now
@@ -2379,6 +2454,18 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 	if (MotionStart >= 0.0 && !bArriving)
 	{
 		TickFootSkate();
+		// a letterbox snapping on or off reads as a camera jump: log each change of it
+		const APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+		if (const APlayerCameraManager* Cam = PC ? PC->PlayerCameraManager.Get() : nullptr)
+		{
+			const bool bBoxed = Cam->GetCameraCacheView().bConstrainAspectRatio;
+			if (bBoxed != bMotionBoxed)
+			{
+				UE_LOG(LogTemp, Log, TEXT("Menu motion: %s view %s at %.2f s"), *MotionName,
+					bBoxed ? TEXT("letterboxed") : TEXT("fills the window"), GetWorld()->GetTimeSeconds() - MotionStart);
+				bMotionBoxed = bBoxed;
+			}
+		}
 	}
 	if (ArrivalClock >= 0.f && !bArrivalFrozen)
 	{
@@ -2417,6 +2504,21 @@ void AVisexMenuDirector::Tick(float DeltaSeconds)
 			FadeOut = -1.f;
 		}
 	}
+}
+
+FTransform AVisexMenuDirector::Drifted(const FTransform& Base) const
+{
+	const float W = DriftPeriod > 0.f ? 2.f * PI / DriftPeriod : 0.f;
+	const float Sway = DriftPeriod > 0.f ? 1.f : 0.f;
+	// slow, unsynchronised sways read as a handheld camera breathing, not a loop
+	FRotator Rot = Base.Rotator();
+	Rot.Yaw += Sway * DriftDegrees * FMath::Sin(Clock * W);
+	Rot.Pitch += Sway * 0.5f * DriftDegrees * FMath::Sin(Clock * W * 0.73f + 1.3f);
+	const FVector Right = Base.GetRotation().GetRightVector();
+	const FVector Loc = Base.GetLocation()
+		+ Right * Sway * DriftDistance * FMath::Sin(Clock * W * 1.21f + 0.4f)
+		+ FVector::UpVector * Sway * 0.5f * DriftDistance * FMath::Sin(Clock * W * 0.91f + 2.1f);
+	return FTransform(Rot, Loc);
 }
 
 void AVisexMenuDirector::TickOrbit(float DeltaSeconds)
