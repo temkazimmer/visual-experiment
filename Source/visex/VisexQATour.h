@@ -46,6 +46,9 @@ private:
 	 *  the menu lean and in the idle after Start, with one cvar set against the default. */
 	void BuildGaps();
 	bool bFeet = false;
+	bool bFilm = false;          // -visexfilm: every frame to Saved/QA/film
+	int32 FeetFrames = 0;
+	double FeetT0 = 0.0;
 	float FeetClock = 0.f;
 	int32 ArrivalShots = 0;
 	FVisexFootMeter Feet;

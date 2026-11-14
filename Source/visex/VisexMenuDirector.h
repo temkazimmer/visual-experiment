@@ -428,6 +428,85 @@ public:
 	TSoftObjectPtr<class UAnimSequence> MenuWalkClip = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/PhotoSeq/A_PhotoSeq_Walk.A_PhotoSeq_Walk")));
 	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
 	float MenuWalkClipStart = 0.45f;
+
+	/** The root-motion walks (visex.Menu.RootMotion): her capsule follows these clips, start, loop
+	 *  and stop, each handed to the next over MoveBlend with the planted foot held where it is. */
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	TSoftObjectPtr<class UAnimSequence> WalkStart = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Walk_Start.A_Menu_Walk_Start")));
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	TSoftObjectPtr<class UAnimSequence> WalkLoop = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Walk_Loop.A_Menu_Walk_Loop")));
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	TSoftObjectPtr<class UAnimSequence> WalkStop = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Walk_Stop.A_Menu_Walk_Stop")));
+	/** WalkStart's clip time the walk starts at: her left foot planted, the right about to lift. */
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	float WalkStartFrom = 1.0f;
+	/** The lean-up's clip time the walk takes over: halfway up, her left foot still where it
+	 *  rested and the right already lifting, so the push-off is the walk's first step (later, the
+	 *  lean-up slid her left foot 12 cm and stepped the right back before it stepped forward). */
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	float LeanUpHandOff = 0.45f;
+	/** WalkStart's clip time the lean-up hands to: left planted, the right foot lifting. */
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	float WalkStartFromUp = 0.95f;
+	/** The lean-up's still first frames, skipped when she stands up into a walk (clip s). */
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	float LeanUpFrom = 0.12f;
+	/** The walk back from a page that's straight behind her (visex.Menu.StepBack): she steps back
+	 *  onto the column, left then right, and sinks into the lean as the right lands, no turning
+	 *  round (Tools/char_menu_walk_back_clips.py). */
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	TSoftObjectPtr<class UAnimSequence> WalkBackStart = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_WalkB_Start.A_Menu_WalkB_Start")));
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	TSoftObjectPtr<class UAnimSequence> WalkBackStop = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_WalkB_Stop.A_Menu_WalkB_Stop")));
+	/** WalkBackStart's clip time she sets off from (her weight going back), and the windows the
+	 *  start hands to the stop in (left planted), and the stop to the lean-down (right landing). */
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	float StepBackFrom = 0.45f;
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	FVector2D StepBackCutFrom = FVector2D(1.5f, 1.85f);
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	FVector2D StepBackCutInto = FVector2D(3.2f, 3.6f);
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	float StepBackLeanAt = 3.62f;
+	/** The lean-down's clip time the step back sinks from: left planted, the right settling. */
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	float LeanDownFromBack = 1.45f;
+	/** The step back only when her spot is this close (cm) and within this angle of straight
+	 *  behind her, and she faces within it of her lean facing; else she turns and walks. */
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	float StepBackMax = 120.f;
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	float StepBackAngle = 35.f;
+	/** The short walk hands WalkStart (in this window, clip s) to WalkStop (WalkCutInto), right foot down. */
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	FVector2D WalkCutFrom = FVector2D(1.35f, 1.8f);
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	FVector2D WalkCutInto = FVector2D(3.3f, 3.8f);
+	/** WalkStop's clip time she has stopped at, feet side by side: a page opens, or she turns. */
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	float WalkStopAt = 4.0f;
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	float MoveBlend = 0.25f;
+	/** A turn hands on to the walk (or the lean) once this share of its yaw is in. */
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	float TurnHandOff = 0.82f;
+	/** The arrival's walk-turn (Tools/char_menu_walk_clips.py): the loop hands to it mid-walk
+	 *  (in this window), she plants her left foot and pivots, and sinks into the lean at ArriveLeanAt. */
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	TSoftObjectPtr<class UAnimSequence> WalkTurnIn = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Walk_Turn180R.A_Menu_Walk_Turn180R")));
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	FVector2D ArriveCutInto = FVector2D(0.9f, 2.3f);
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	float ArriveLeanAt = 3.58f;
+	/** The most the arrival's loop curves (deg) to land her; past it the start heading takes the rest. */
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	float ArriveArcMax = 45.f;
+	/** The page opens this long before her walk out has stopped (s). */
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	float PageOpenEarly = 0.3f;
+	/** The walk back's play rate (its turns keep ReturnTurnRate). */
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	float ReturnWalkRate = 1.1f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
 	TSoftObjectPtr<class UAnimSequence> LeanDown = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Lean_Down.A_Menu_Lean_Down")));
 
@@ -491,7 +570,7 @@ public:
 
 	/** The return from a page: its turns' pace (the arrival keeps TurnClipRate). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0.5"))
-	float ReturnTurnRate = 1.8f;
+	float ReturnTurnRate = 2.f;
 
 	/** The return: the last turn starts this far from her spot (cm), on her last step in. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "2"))
@@ -750,7 +829,7 @@ private:
 	void Lean(bool bFromStanding, float From = 0.f, float Rate = 1.f);
 	double LeanSettleAt = 0.0;
 	/** Plays the push-off; returns its length in seconds (0 if she wasn't leaning). */
-	float StandUp();
+	float StandUp(bool bIntoWalk = false);   // bIntoWalk: held on its last frame until a walk takes over
 	void SetColumnBlocksPawn(bool bBlock);
 	class UAnimInstance* GetPawnAnim() const;
 	bool bLeaning = false;
@@ -829,6 +908,84 @@ private:
 	void SetUpFootTrace();
 	/** The menu's walks: the slow walk clip at her capsule's pace (visex.Menu.SlowWalk). */
 	void TickWalkClip(float DeltaSeconds, bool bMenuWalk);
+	/** One clip of a root-motion move: Clip from From to To (clip s; past its end loops it),
+	 *  blended in over Blend with foot Lock (0 left, 1 right, -1 none) held where it was. */
+	struct FMoveSeg { class UAnimSequence* Clip = nullptr; float From = 0.f, To = 0.f; int32 Lock = -1; float Blend = 0.25f; };
+	/** Plays Segs one after another on DefaultSlot with root motion: her capsule follows the
+	 *  clips, the code only steers her heading. The first takes over from FromClip at FromTime.
+	 *  Returns the move's length (s). VisexMenuDirectorMove.cpp */
+	float PlayRootMotionMove(const TArray<FMoveSeg>& Segs, class UAnimSequence* FromClip, float FromTime, float Rate = 1.f);
+	void StartMoveSeg(int32 Index, class UAnimSequence* FromClip, float FromTime);
+	void TickMove();
+	void StopMove();
+	bool IsMoving() const { return MoveIndex >= 0; }
+	bool MoveAtEnd() const { return MoveIndex >= 0 && MoveIndex == MoveSegs.Num() - 1 && MoveClock >= MoveSegs.Last().To; }
+	float MoveLeft() const;
+	bool RootMoves() const;
+	TArray<FMoveSeg> MoveSegs;
+	int32 MoveIndex = -1;
+	float MoveClock = 0.f, MoveLastPos = 0.f, MoveRate = 1.f;
+	bool bRootMove = false;      // this step out, back or arrival walks by root motion
+	float MoveYaw = 0.f;         // the heading the walk back steers to
+	float MoveSide = 0.f;        // the walk back's last turn goes this way round (her first turn's)
+	TArray<FMoveSeg> PlanSegs;   // the walk back (or in), planned before its first turn
+	float PlanScale = 1.f;       // and the root translation scale that lands it
+	// the planted-foot hold across a hand-off: her capsule jumps to where the incoming clip wants
+	// it and her mesh is held back by as much, eased onto it with the incoming clip's weight
+	void HoldFoot(class UAnimSequence* FromClip, float FromTime, class UAnimSequence* ToClip, float ToTime, int32 Foot, class UAnimMontage* Incoming);
+	void TickHold();   // after her bones are final each frame
+	UPROPERTY(Transient) TObjectPtr<class UAnimMontage> HoldMontage;
+	FVector HoldOffset = FVector::ZeroVector, HoldBase = FVector::ZeroVector;
+	bool bHolding = false;
+	int32 HoldFootIdx = -1;      // the foot the hold keeps on its mark
+	FVector HoldTarget = FVector::ZeroVector;   // where (world)
+	FDelegateHandle HoldHandle;
+	// each clip sampled at 60 Hz: ik_foot_l/r in mesh space, root travel from its start
+	struct FClipTrack { float Dt = 1.f / 60.f, Len = 0.f; TArray<FVector> Feet[2]; TArray<FVector> Root; TArray<float> Yaw; };
+	TMap<const class UAnimSequence*, FClipTrack> Tracks;
+	const FClipTrack& Track(class UAnimSequence* Clip);
+	FVector ClipFoot(class UAnimSequence* Clip, float T, int32 Foot);
+	FVector ClipRoot(class UAnimSequence* Clip, float A, float B);   // root travel A..B (mesh space), wrapping
+	FVector ClipVel(class UAnimSequence* Clip, float T);
+	FVector MeshToWorld(const FVector& V, float Yaw) const;
+	/** The best hand-off from A (clip s A0..A1) to B (B0..B1): the same foot planted through the
+	 *  blend in both, the other foot nearest. */
+	bool FindCut(class UAnimSequence* A, FVector2D AWin, class UAnimSequence* B, FVector2D BWin, int32& Foot, float& TA, float& TB, float MaxCost = 15.f);
+	FVector MoveTravel(const TArray<FMoveSeg>& Segs);   // mesh space: root travel and the holds between
+	bool BeginRootStepOut();
+	/** The walk back (or in) to her spot: Segs, the heading, and the root translation scale that
+	 *  lands it, through the turn at its end and the lean-down's hold. Arrival: from a mid-loop. */
+	bool PlanRootReturn(const FVector& From, class UAnimSequence* Turn1Clip, float Turn1At, bool bArrival, TArray<FMoveSeg>& Segs, float& Yaw, float& Scale);
+	void BeginRootTurnHome();
+	/** The arrival by the walk-turn (visex.Menu.ArrivalTurn): the loop curving by ArriveArc deg,
+	 *  into WalkTurnIn's plant and pivot, and the lean-down from its pivot foot. Plans Segs, the
+	 *  first heading and the arc that land her on her spot facing HomeYaw. */
+	bool PlanRootArrival(const FVector& From, TArray<FMoveSeg>& Segs, float& Yaw, float& Arc);
+	/** Where Segs end (world offset) and her yaw there, from Yaw, the loop curving Arc deg; from
+	 *  segment Index at clip time Clock. With the lean-down's hold. */
+	FVector SimMove(const TArray<FMoveSeg>& Segs, int32 Index, float Clock, float Yaw, float ArcLeft, float& EndYaw);
+	void TickRootArrival(float DeltaSeconds);
+	float ClipYaw(class UAnimSequence* Clip, float T);   // its root yaw since its start (deg)
+	bool bArriveTurn = false;    // this arrival walks the walk-turn
+	float ArriveArc = 0.f;       // deg the loop curves by
+	float ArriveArcDone = 0.f;   // of it put on her so far
+	float ArriveClockWas = 0.f;  // the loop's clip time as the arc was last put on
+	void LeanWithHold(class UAnimSequence* FromClip, float FromTime, float DownFrom = -1.f);
+	/** The walk back by stepping back onto the column (ReturnPhase 3): true if it's under way. */
+	bool BeginRootStepBack();
+	void TickStepBack();
+	float StepBackYaw = 0.f;     // the facing she steps back along (eased onto HomeYaw by the lean)
+	/** HoldFoot from where her Foot is in the world now (whatever pose she's in), not a clip's. */
+	void HoldFootNow(class UAnimSequence* ToClip, float ToTime, int32 Foot, class UAnimMontage* Incoming);
+	/** Her yaw to NewYaw: Natural deg of it about her capsule (a turn clip's own yaw), the rest
+	 *  about her planted foot, so steering never slides a foot on the ground. */
+	void TurnAboutPlanted(float NewYaw, float Natural = 0.f, int32 Pivot = -1);   // Pivot: that foot, not the stillest
+	int32 ClipPlantedFoot(class UAnimSequence* Clip, float T);   // the foot standing still in the clip, or -1
+	FVector FootWas[2];
+	uint64 FootFrame = 0;        // the frame FootWas was read on
+	float TurnRawWas = 0.f;      // the turn clip's own yaw (unscaled) as last applied
+	UPROPERTY(Transient) TObjectPtr<class UAnimMontage> TurnMontage;
+	UPROPERTY(Transient) TObjectPtr<class UAnimMontage> MoveMontage;
 	UPROPERTY(Transient) TObjectPtr<class UAnimMontage> WalkMontage;
 	float WalkClipSpeed = 126.5f;   // cm/s, the clip's own root motion (measured when it starts)
 	float WalkClipIdle = 0.f;       // seconds she has been all but still on a menu walk
@@ -842,6 +999,11 @@ private:
 	// the turn clip playing (null: the eased fallback): its root yaw sampled over time, the
 	// scale onto the turn she needs, and the clip time she's done at
 	bool StartTurnClip(bool bThenWalk);
+	/** The turn clip for Need (deg) and its timing, as StartTurnClip plays it: clip seconds
+	 *  skipped (Start), play rate, her seconds to its end and to the lean's start (LeanAt). */
+	struct FTurnPick { class UAnimSequence* Clip = nullptr; TArray<float> Curve; float Dt = 0.f, Scale = 1.f, Start = 0.f, Rate = 1.f, End = 0.f, LeanAt = -1.f; };
+	bool PickTurn(float Need, bool bThenWalk, FTurnPick& Out);
+	bool FinishTurnPick(bool bThenWalk, FTurnPick& Out) const;
 	UPROPERTY(Transient) TObjectPtr<class UAnimSequence> TurnClip;
 	TArray<float> TurnCurve;
 	float TurnDt = 0.f, TurnScale = 1.f, TurnEnd = 0.f;
