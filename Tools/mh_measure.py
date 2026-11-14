@@ -9,7 +9,8 @@ WHO = 'play'          the player's skin mesh in a running Play session (default 
       'label:<name>'  an actor in the editor level by label or class name (first skeletal
                       component, or the one named COMP; ALSO=['Face'] adds a MetaHuman's
                       separate head to the height), or
-      'asset:<path>'  a skeletal mesh asset in its reference pose (spawned, measured, removed).
+      'asset:<path>'  a skeletal mesh asset in its reference pose (spawned, measured, removed), or
+      'bp:<path>'     an assembled MetaHuman Blueprint (its Body, with the Face for the height).
 Reads the posed, skinned vertices (Geometry Script), so bone scales and morphs count.
 Circumferences are tape-style: the convex hull of the torso's cross-section.
 All numbers in cm. With OUT='name' also writes Tools/.bridge/measure_<name>.json.
@@ -109,6 +110,49 @@ def _along(V, a, b, radius, lo=-1e9):
     return min(ts), max(ts)
 
 
+def limb_girth(V, tris, a, b, f0, f1, pick, radius=16.0, step=0.25):
+    """Tape around a limb, square to its bone a->b, between the fractions f0..f1 of its
+    length: the fullest (pick=max) or thinnest (pick=min) loop around the bone. Works on a
+    bent or raised arm, where a level slice would cut the limb at a slant."""
+    w = [b[i] - a[i] for i in range(3)]
+    n = math.sqrt(sum(c * c for c in w))
+    w = [c / n for c in w]
+    r = (0.0, 0.0, 1.0) if abs(w[2]) < 0.9 else (1.0, 0.0, 0.0)
+    u = [r[1] * w[2] - r[2] * w[1], r[2] * w[0] - r[0] * w[2], r[0] * w[1] - r[1] * w[0]]
+    k = math.sqrt(sum(c * c for c in u))
+    u = [c / k for c in u]
+    v = [w[1] * u[2] - w[2] * u[1], w[2] * u[0] - w[0] * u[2], w[0] * u[1] - w[1] * u[0]]
+    def to(p):
+        d = [p[i] - a[i] for i in range(3)]
+        return (sum(d[i] * u[i] for i in range(3)), sum(d[i] * v[i] for i in range(3)),
+                sum(d[i] * w[i] for i in range(3)))
+    L = {}
+    T = {}
+    for t in tris:
+        if min(math.dist(V[i], a) for i in t) > n + radius:
+            continue
+        for i in t:
+            if i not in L:
+                L[i] = to(V[i])
+        ps = [L[i] for i in t]
+        if min(p[0] * p[0] + p[1] * p[1] for p in ps) > radius * radius:
+            continue
+        zs = [p[2] for p in ps]
+        for q in range(math.floor(min(zs)), math.floor(max(zs)) + 1):
+            T.setdefault(q, []).append(t)
+    best = 0.0
+    z = f0 * n
+    while z <= f1 * n:
+        for loop in _loops(_slice(L, T, z)):
+            mx = sum(p[0] for p in loop) / len(loop)
+            my = sum(p[1] for p in loop) / len(loop)
+            g = _hull_perimeter(loop)
+            if math.hypot(mx, my) < 5.0 and g > 8.0 and (best == 0.0 or pick(g, best) == g):
+                best = g
+        z += step
+    return best
+
+
 def read_mesh(comp):
     """World-space posed vertices and triangles of a skeletal mesh component."""
     dm = unreal.DynamicMesh()
@@ -137,7 +181,8 @@ def read_mesh(comp):
 
 BONES = ["pelvis", "spine_01", "spine_03", "spine_05", "neck_01", "head",
          "clavicle_l", "upperarm_l", "upperarm_r", "lowerarm_l", "hand_l", "middle_01_l",
-         "middle_03_l", "thigh_l", "thigh_r", "calf_l", "foot_l", "ball_l"]
+         "middle_03_l", "thigh_l", "thigh_r", "calf_l", "foot_l", "ball_l",
+         "lowerarm_r", "hand_r", "calf_r", "foot_r"]
 
 
 def measure(comp, also=()):
@@ -203,6 +248,21 @@ def measure(comp, also=()):
     lo, hi = _along(low, heel, toe, 7.0)
     m["foot_len"] = hi - lo
     m["head_and_neck"] = m["height"] - B["neck_01"][2]
+    # limb girths, square to the bone, mean of both sides (the idle bends one arm and one leg)
+    for key, a, b, f0, f1, pick in (("upper_arm_girth", "upperarm", "lowerarm", 0.35, 0.7, max),
+                                    ("forearm_girth", "lowerarm", "hand", 0.1, 0.45, max),
+                                    ("wrist_girth", "lowerarm", "hand", 0.8, 0.97, min),
+                                    ("mid_thigh_girth", "thigh", "calf", 0.5, 0.5, max),
+                                    ("knee_girth", "thigh", "calf", 0.97, 1.03, min),
+                                    ("ankle_girth", "calf", "foot", 0.8, 0.95, min)):
+        sides = [limb_girth(V, tris, B[a + s], B[b + s], f0, f1, pick) for s in ("_l", "_r")]
+        sides = [g for g in sides if g > 0.0]
+        # a limb resting on the body (hand on the hip) reads too big on that side: when the
+        # sides disagree by more than 10%, keep the smaller one
+        if len(sides) == 2 and max(sides) > 1.1 * min(sides):
+            sides = [min(sides)]
+        m[key] = sum(sides) / len(sides) if sides else 0.0
+        m[key + "_sides"] = "/".join("%.1f" % g for g in sides)
     return {k: (round(v, 2) if isinstance(v, float) else v) for k, v in m.items()}
 
 
@@ -217,6 +277,12 @@ def _component(who):
     elif who.startswith("label:"):
         actor = next(a for a in eas.get_all_level_actors()
                      if who[6:] in (a.get_actor_label(), a.get_class().get_name()))
+    elif who.startswith("bp:"):         # an assembled MetaHuman Blueprint: spawned, measured, removed
+        actor = eas.spawn_actor_from_class(unreal.load_asset(who[3:]).generated_class(), unreal.Vector(0, 0, 0))
+        comps = actor.get_components_by_class(unreal.SkeletalMeshComponent)
+        global ALSO_COMPS
+        ALSO_COMPS = [c for c in comps if c.get_name() in globals().get("ALSO", ("Face",))]
+        return [c for c in comps if c.get_name() == (want or "Body")][0], lambda: eas.destroy_actor(actor)
     else:
         actor = eas.spawn_actor_from_class(unreal.SkeletalMeshActor, unreal.Vector(0, 0, 0))
         actor.skeletal_mesh_component.set_skinned_asset_and_update(unreal.load_asset(who[6:]))
@@ -224,18 +290,18 @@ def _component(who):
     comps = actor.get_components_by_class(unreal.SkeletalMeshComponent)
     named = [c for c in comps if want and c.get_name() == want]
     print("components:", [(c.get_name(), c.get_skinned_asset().get_name() if c.get_skinned_asset() else None) for c in comps])
-    global ALSO_COMPS
     ALSO_COMPS = [c for c in comps if c.get_name() in globals().get("ALSO", ())]
     return (named or comps)[0], lambda: None
 
 
 if "WHO" in globals():
     _comp, _done = _component(WHO)
+    _what = "%s scale %s" % (_comp.get_skinned_asset().get_name(), _comp.get_world_scale())
     try:
         RESULT = measure(_comp, globals().get('ALSO_COMPS', ()))
     finally:
         _done()
-    print("mesh:", _comp.get_skinned_asset().get_name(), "scale", _comp.get_world_scale())
+    print("mesh:", _what)
     for _k, _v in RESULT.items():
         print("  %-22s %s" % (_k, _v))
     if globals().get("OUT"):
