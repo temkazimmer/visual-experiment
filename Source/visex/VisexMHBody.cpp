@@ -27,7 +27,7 @@ static TAutoConsoleVariable<int32> CVarVisexMHFootPin(
 // "bone:roll,pitch,yaw;bone:..." in each bone's own axes, added on top of the followed pose
 static TAutoConsoleVariable<FString> CVarVisexMHTestPose(
 	TEXT("visex.Body.MetaHuman.TestPose"), TEXT(""),
-	TEXT("Debug: extra local rotations on MetaHuman bones, e.g. \"calf_l:0,0,-120;upperarm_r:0,80,0\". Switches the foot pin off."));
+	TEXT("Debug: extra local rotations on MetaHuman bones, e.g. \"calf_l:0,0,-120;upperarm_r:0,80,0\"; \"ref;...\" poses the reference pose instead of the followed one. Switches the foot pin off."));
 
 namespace
 {
@@ -86,6 +86,7 @@ struct FVisexMHBodyProxy : public FAnimInstanceProxy
 	float Scale = 1.f, Feet = 1.f;
 	float PelvisBase = 0.f;         // pelvis lift before the live leg-length term
 	bool bPin = true, bTest = false;
+	bool bRef = false;              // test pose on the reference pose, the driver ignored
 	FString TestPose;
 	TWeakObjectPtr<const USkeletalMesh> BuiltSource, BuiltTarget;
 
@@ -129,12 +130,14 @@ void FVisexMHBodyProxy::ParseTestPose(const USkeletalMesh* TargetMesh)
 {
 	for (FRow& R : Rows) { R.bExtra = false; R.Extra = FQuat::Identity; }
 	bTest = false;
+	bRef = false;
 	TArray<FString> Parts;
 	TestPose.ParseIntoArray(Parts, TEXT(";"));
 	for (const FString& Part : Parts)
 	{
 		FString Bone, Angles;
 		TArray<FString> A;
+		if (Part.TrimStartAndEnd() == TEXT("ref")) { bRef = bTest = true; continue; }
 		if (!Part.Split(TEXT(":"), &Bone, &Angles) || Angles.ParseIntoArray(A, TEXT(",")) != 3) { continue; }
 		const int32 I = TargetMesh->GetRefSkeleton().FindBoneIndex(FName(*Bone.TrimStartAndEnd()));
 		if (!Rows.IsValidIndex(I)) { continue; }
@@ -302,7 +305,7 @@ bool FVisexMHBodyProxy::Evaluate(FPoseContext& Output)
 		if (Rows.IsValidIndex(M))
 		{
 			const FRow& R = Rows[M];
-			if (R.Mode != EMode::None && SourceCS.IsValidIndex(R.Src))
+			if (R.Mode != EMode::None && !bRef && SourceCS.IsValidIndex(R.Src))
 			{
 				const FTransform& S = SourceCS[R.Src];
 				if (R.Mode == EMode::LocalDelta && SourceCS.IsValidIndex(R.SrcParent))
@@ -551,7 +554,18 @@ void UVisexMHBodyComponent::HideDriver(bool bHide)
 }
 
 void UVisexMHBodyComponent::ApplyDebug()
-{
+{	// the mesh re-creates its anim instance now and then (a rebuilt asset, a re-register): a new one
+	// has no driver and would stand her in the reference pose
+	const ACharacter* Her = Cast<ACharacter>(GetOwner());
+	UVisexMHBodyAnimInstance* Inst = BodyMesh ? Cast<UVisexMHBodyAnimInstance>(BodyMesh->GetAnimInstance()) : nullptr;
+	if (Her && Inst && Inst->Source != Her->GetMesh())
+	{
+		const UVisexBodyComponent* Body = Her->FindComponentByClass<UVisexBodyComponent>();
+		const float Reference = Body ? Body->ReferenceHeight : 177.5f;
+		Inst->SetSource(Her->GetMesh(), BuiltHeight / Reference, Body ? Body->GetValue(TEXT("Feet")) : 1.f);
+		UE_LOG(LogVisexMH, Display, TEXT("VisexMH: the body's anim instance was re-made, following again"));
+	}
+
 	const int32 Want = CVarVisexMHCorrectives.GetValueOnGameThread() != 0 ? 1 : 0;
 	if (BodyMesh && Want != LastCorrectives)
 	{

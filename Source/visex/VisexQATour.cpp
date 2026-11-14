@@ -572,8 +572,8 @@ void AVisexQATour::BuildSpikes()
 		for (int32 I = 0; I < 2; ++I)
 		{
 			const FVisexSpike& S = Spikes.Total[I];
-			QA_LOG(TEXT("VisexSpikes: TOTAL %s: %s, worst %.2fx on %s, %d edges over %.0fx"), Names[I],
-				!S.bValid ? TEXT("NOT MEASURED") : S.Ratio > FVisexMHSpikes::Limit ? TEXT("FAIL") : TEXT("pass"), S.Ratio, *S.Bone.ToString(), S.Over, FVisexMHSpikes::Limit);
+			QA_LOG(TEXT("VisexSpikes: TOTAL %s: %s, stretch %.2fx on %s, %d edges over %.0fx, grew %.2f cm at most on %s"), Names[I],
+				!S.bValid ? TEXT("NOT MEASURED") : S.Fails() ? TEXT("FAIL") : TEXT("pass"), S.Ratio, *S.Bone.ToString(), S.Over, FVisexMHSpikes::Limit, S.Grow, *S.GrowBone.ToString());
 		}
 		QA_LOG(TEXT("VisexQA: done"));
 		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);

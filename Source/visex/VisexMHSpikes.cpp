@@ -62,6 +62,17 @@ bool FVisexMHSpikes::Measure(USkeletalMeshComponent* Mesh, FVisexSpike& Out)
 			}
 			const uint32 A = Cache->Index[I + E], B = Cache->Index[I + (E + 1) % 3];
 			const float Now = FVector3f::Dist(P[A], P[B]);
+			const uint32 Third = Cache->Index[I + (E + 2) % 3];
+			if (Now - Ref > Out.Grow)
+			{
+				Out.Grow = Now - Ref;
+				Out.GrowRef = Ref;
+				Out.GrowVertex = FVector3f::Dist(P[A], P[Third]) > FVector3f::Dist(P[B], P[Third]) ? int32(A) : int32(B);
+			}
+			if (Ref < MinRef)
+			{
+				continue;
+			}
 			const float Ratio = Now / Ref;
 			Out.Over += Ratio > Limit ? 1 : 0;
 			if (Ratio > Out.Ratio)
@@ -75,31 +86,68 @@ bool FVisexMHSpikes::Measure(USkeletalMeshComponent* Mesh, FVisexSpike& Out)
 			}
 		}
 	}
-	// the bone that vertex hangs on most
+	// the bone a vertex hangs on most
 	const FSkinWeightVertexBuffer& SW = LOD.SkinWeightVertexBuffer;
-	for (const FSkelMeshRenderSection& Section : LOD.RenderSections)
+	const auto BoneOf = [&](int32 Vertex)
 	{
-		if (Out.Vertex < int32(Section.BaseVertexIndex) || Out.Vertex >= int32(Section.BaseVertexIndex + Section.NumVertices))
+		FName Name;
+		for (const FSkelMeshRenderSection& Section : LOD.RenderSections)
 		{
-			continue;
-		}
-		int32 Best = 0, BestWeight = -1;
-		for (uint32 K = 0; K < SW.GetMaxBoneInfluences(); ++K)
-		{
-			const int32 W = int32(SW.GetBoneWeight(Out.Vertex, K));
-			if (W > BestWeight)
+			if (Vertex < int32(Section.BaseVertexIndex) || Vertex >= int32(Section.BaseVertexIndex + Section.NumVertices))
 			{
-				BestWeight = W;
-				Best = int32(SW.GetBoneIndex(Out.Vertex, K));
+				continue;
+			}
+			int32 Best = 0, BestWeight = -1;
+			for (uint32 K = 0; K < SW.GetMaxBoneInfluences(); ++K)
+			{
+				const int32 W = int32(SW.GetBoneWeight(Vertex, K));
+				if (W > BestWeight)
+				{
+					BestWeight = W;
+					Best = int32(SW.GetBoneIndex(Vertex, K));
+				}
+			}
+			if (Section.BoneMap.IsValidIndex(Best))
+			{
+				Name = Asset->GetRefSkeleton().GetBoneName(Section.BoneMap[Best]);
 			}
 		}
-		if (Section.BoneMap.IsValidIndex(Best))
-		{
-			Out.Bone = Asset->GetRefSkeleton().GetBoneName(Section.BoneMap[Best]);
-		}
-	}
+		return Name;
+	};
+	Out.Bone = BoneOf(Out.Vertex);
+	Out.GrowBone = BoneOf(Out.GrowVertex);
 	Out.bValid = true;
 	return true;
+}
+
+bool FVisexSpike::Fails() const
+{
+	return Ratio > FVisexMHSpikes::Limit || Grow > FVisexMHSpikes::MaxGrow;
+}
+
+namespace
+{
+	/** Keeps the worse of each measure. */
+	void Merge(FVisexSpike& Into, const FVisexSpike& S)
+	{
+		Into.Over = FMath::Max(Into.Over, S.Over);
+		if (!Into.bValid || S.Ratio > Into.Ratio)
+		{
+			Into.Ratio = S.Ratio;
+			Into.Ref = S.Ref;
+			Into.Now = S.Now;
+			Into.Vertex = S.Vertex;
+			Into.Bone = S.Bone;
+		}
+		if (!Into.bValid || S.Grow > Into.Grow)
+		{
+			Into.Grow = S.Grow;
+			Into.GrowRef = S.GrowRef;
+			Into.GrowVertex = S.GrowVertex;
+			Into.GrowBone = S.GrowBone;
+		}
+		Into.bValid = true;
+	}
 }
 
 void FVisexMHSpikes::Tick(ACharacter* Her)
@@ -120,12 +168,7 @@ void FVisexMHSpikes::Tick(ACharacter* Her)
 		FVisexSpike S;
 		if (Meshes[I] && Meshes[I]->GetPredictedLODLevel() == 0 && Measure(Meshes[I], S))
 		{
-			const int32 Over = FMath::Max(Worst[I].Over, S.Over);
-			if (S.Ratio > Worst[I].Ratio || !Worst[I].bValid)
-			{
-				Worst[I] = S;
-			}
-			Worst[I].Over = Over;
+			Merge(Worst[I], S);
 		}
 	}
 }
@@ -142,14 +185,10 @@ void FVisexMHSpikes::SetPhase(const FString& Name)
 			Line += FString::Printf(TEXT(" %s not measured;"), Names[I]);
 			continue;
 		}
-		Line += FString::Printf(TEXT(" %s worst %.2fx (%.2f to %.2f cm, vertex %d on %s), %d edges over %.0fx%s;"), Names[I], S.Ratio, S.Ref, S.Now,
-			S.Vertex, *S.Bone.ToString(), S.Over, Limit, S.Ratio > Limit ? TEXT(" FAIL") : TEXT(""));
-		if (S.Ratio > Total[I].Ratio || !Total[I].bValid)
-		{
-			const int32 Over = FMath::Max(Total[I].Over, S.Over);
-			Total[I] = S;
-			Total[I].Over = Over;
-		}
+		Line += FString::Printf(TEXT(" %s stretch %.2fx (%.2f to %.2f cm, vertex %d on %s), %d edges over %.0fx, grew %.2f cm at most (a %.2f cm edge, vertex %d on %s) %s;"),
+			Names[I], S.Ratio, S.Ref, S.Now, S.Vertex, *S.Bone.ToString(), S.Over, Limit, S.Grow, S.GrowRef, S.GrowVertex, *S.GrowBone.ToString(),
+			S.Fails() ? TEXT("FAIL") : TEXT("pass"));
+		Merge(Total[I], S);
 	}
 	if (Frames > 0 && Log)
 	{
