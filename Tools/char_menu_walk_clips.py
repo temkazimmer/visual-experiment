@@ -11,7 +11,8 @@ follows the clip, so a planted foot stays put through starts and stops (FOOT_IK.
 
 Writes /Game/Characters/Menu/A_Menu_Walk_Start (Walk_F_Start), _Loop (Walk_F_Loop) and
 _Stop (Walk_F_End). The loop and the stop share their first second (the stop starts where
-the loop does). Idempotent; -clips=A,B bakes only those.
+the loop does). Also _Turn180R (WalkTurn_180R: walking in, she plants her left foot and
+pivots round on it, the arrival's turn into the lean). Idempotent; -clips=A,B bakes only those.
 """
 import os
 import unreal
@@ -34,7 +35,8 @@ PHOTO_DIR = "/Game/Characters/Menu"
 SRC = "/Game/FemaleMovement/Animation/"
 CLIPS = {"A_Menu_Walk_Start": SRC + "Walk/AS_F_Unarmed_Walk_F_Start",
          "A_Menu_Walk_Loop": SRC + "Walk/AS_F_Unarmed_Walk_F_Loop",
-         "A_Menu_Walk_Stop": SRC + "Walk/AS_F_Unarmed_Walk_F_End"}
+         "A_Menu_Walk_Stop": SRC + "Walk/AS_F_Unarmed_Walk_F_End",
+         "A_Menu_Walk_Turn180R": SRC + "WalkTurn/AS_F_Unarmed_WalkTurn_180R"}
 _only = [a.split("=", 1)[1] for a in unreal.SystemLibrary.get_command_line().split() if a.lower().startswith("-clips=")]
 if _only:
     CLIPS = {k: v for k, v in CLIPS.items() if k in _only[0].split(",")}
