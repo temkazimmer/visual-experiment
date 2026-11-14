@@ -11,7 +11,7 @@ STEPS (default ['create', 'shape', 'look']):
   shape     drive the parametric body toward her measured numbers (TARGETS, in cm)
   face      fit the face to her current head, ears included (Tools/mh_face_fit.py wrote the target,
             Tools/mh_face.py imports it); without this step the preset's face stays
-  look      take the preset's garment off and set a pale skin tone (SKIN_UV)
+  look      take the preset's garment and baked top off and set her skin tone (SKIN_UV, TOP_UNDERWEAR)
   hair      wear a MetaHuman groom in black (HAIR, default Hair_L_StraightBangs; HAIR_COLOUR), brows to match
   rig       auto-rig through Epic's cloud (needs an Epic sign-in inside the editor)
   textures  download the high-resolution skin textures from Epic's cloud
@@ -134,7 +134,11 @@ def face(character):
     tool["fit_face"](character)
 
 
-SKIN_UV = globals().get("SKIN_UV", (0.12, 0.35))    # the Creator's skin tone picker: pale, like hers
+# The Creator's skin tone picker: u is how dark (0 the lightest), v the undertone. (0.01, 0.40) is her
+# default tone (Skin 0.25, "European"): under one light the forehead of the preview read closest to
+# hers there (stage 6 log); stages 1-5 wore (0.12, 0.35), darker and redder than her.
+SKIN_UV = globals().get("SKIN_UV", (0.01, 0.40))
+TOP_UNDERWEAR = globals().get("TOP_UNDERWEAR", False)     # the baked grey top: off, a real bare chest (stage 3 asked)
 
 
 def look(character):
@@ -144,11 +148,12 @@ def look(character):
     settings = character.skin_settings
     skin = settings.skin
     skin.u, skin.v = SKIN_UV
+    skin.show_top_underwear = TOP_UNDERWEAR
     settings.skin = skin
     mh.commit_skin_settings(character, settings)
     mh.assemble_for_preview(character)
     log("slots:", [str(d.selection.slot_name) for d in inst.get_slot_selection_data()])
-    log("skin:", character.skin_settings.skin.u, character.skin_settings.skin.v)
+    log("skin:", character.skin_settings.skin.u, character.skin_settings.skin.v, "top underwear:", character.skin_settings.skin.show_top_underwear)
 
 
 # Her hair is MetaHuman's own (Tema, stage 5): a groom from the Creator's wardrobe, coloured black.

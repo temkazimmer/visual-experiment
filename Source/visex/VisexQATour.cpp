@@ -488,7 +488,8 @@ void AVisexQATour::CloseShots(const FString& Shots, const FString& What)
 {
 	// -visexclose=<What>:<bone>:<x,y,z>:<fov>[u][:<tx,ty,tz>][+...]: with the 4K frame of <What> (its name
 	// or its ending, "Crown" for photo_03_Crown), a 4K scene capture looking at a bone of the body on
-	// screen from x forward, y to her right, z up of it (cm), the target moved by t. No post grade.
+	// screen from x forward, y to her right, z up of it (cm), the target moved by t. No post grade,
+	// unless the field of view carries a "g" (17g).
 	FString All;
 	ACharacter* C = Her();
 	if (!FParse::Value(FCommandLine::Get(), TEXT("visexclose="), All, false) || !C)
@@ -528,6 +529,8 @@ void AVisexQATour::CloseShots(const FString& Shots, const FString& What)
 			CloseCapture->RegisterComponent();
 		}
 		CloseCapture->FOVAngle = FCString::Atof(*F[3]);
+		// "17g": with the level's grade (the final LDR colour); without, the tone curve only
+		CloseCapture->CaptureSource = F[3].Contains(TEXT("g")) ? SCS_FinalColorLDR : SCS_FinalToneCurveHDR;
 		// "25u": unlit, base colours only (skin against hair reads in any light)
 		CloseCapture->ShowFlags.SetLighting(!F[3].EndsWith(TEXT("u")));
 		CloseCapture->SetWorldLocationAndRotation(From, (Target - From).Rotation());

@@ -147,7 +147,9 @@ def play_shot():
             mesh = c.get_editor_property("skeletal_mesh_asset")
             if mesh and "Hair" in mesh.get_name():
                 c.set_visibility(False, True)
-    shoot(world, comp, show)
+    # FRAME='driver': aim by the driver's head bone (the MetaHuman's head has the same turn): past LOD 1
+    # the MetaHuman body's own head socket no longer follows the pose
+    shoot(world, her.mesh if globals().get("FRAME") == "driver" else comp, show)
 
 
 def preview_shot():

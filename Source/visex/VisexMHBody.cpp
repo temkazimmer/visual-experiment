@@ -53,7 +53,7 @@ static TAutoConsoleVariable<int32> CVarVisexMHHair(
 
 static TAutoConsoleVariable<FString> CVarVisexMHFace(
 	TEXT("visex.Body.MetaHuman.Face"), TEXT(""),
-	TEXT("Debug: face rig curves on the MetaHuman face, \"name=value,name=value\" (e.g. CTRL_expressions_eyeBlinkL=1,CTRL_expressions_eyeBlinkR=1). Empty: the face's own animation."));
+	TEXT("Debug: face rig curves on the MetaHuman face, \"name=value,name=value\" (e.g. CTRL_expressions_eyeBlinkL=1,CTRL_expressions_eyeBlinkR=1). Empty or \"off\": the face's own animation."));
 
 namespace
 {
@@ -929,7 +929,11 @@ void UVisexMHBodyComponent::ApplyFace()
 	{
 		return;
 	}
-	const FString Want = CVarVisexMHFace.GetValueOnGameThread();
+	FString Want = CVarVisexMHFace.GetValueOnGameThread();
+	if (Want == TEXT("off") || Want == TEXT("\"\""))
+	{
+		Want.Reset();   // the console cannot set an empty value: "off" gives the face back
+	}
 	if (Want == FaceCurves && (bFaceDriven || Want.IsEmpty()))
 	{
 		return;

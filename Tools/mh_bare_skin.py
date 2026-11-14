@@ -158,8 +158,13 @@ else:
             print("wrote", os.path.join(OUT, "%s_%s.png" % (prefix, key)))
 
     # body: the plugin's own mask (red and green: the top, the briefs' front, sides and back)
+    # ... and only where the bake really is grey cloth: with the top switched off at assembly (stage 6:
+    # skin.show_top_underwear = False) the chest is Epic's own bare skin and only the briefs are filled
     m = read(os.path.join(SRC, MASK + ".png"), LOW)
-    paint(MAPS, grow((m[..., 0] > 0.5) | (m[..., 1] > 0.5), GROW), "bare")
+    b = read(os.path.join(SRC, MAPS["bc"] + ".png"), LOW)[..., :3]
+    cloth = ((m[..., 0] > 0.5) | (m[..., 1] > 0.5)) & ((b.max(-1) - b.min(-1)) < 0.06)
+    print("underwear to fill: %.1f%% of the body map (mask alone %.1f%%)" % (100.0 * cloth.mean(), 100.0 * ((m[..., 0] > 0.5) | (m[..., 1] > 0.5)).mean()))
+    paint(MAPS, grow(cloth, GROW), "bare")
     # head: its chest part carries the top's shoulder straps, along the bottom of the map. No mask
     # ships for it, so: the grey (unsaturated) texels in the lowest eighth
     h = read(os.path.join(SRC, HEAD["bc"] + ".png"), LOW)[..., :3]
