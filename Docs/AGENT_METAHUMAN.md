@@ -842,3 +842,93 @@ there: an afternoon with looking, not cheap.
 - A sat-down hem stands 0.04 cm over the skin. Fine in every frame looked at; if it shimmers at a
   distance on a sheer outfit, raise `MH_HEM_MIN`.
 - The cuff in Crown cannot be looked at while her hand is in her hair.
+
+### 2026-11-14 · Stage 5 · MetaHuman hair (captures `stage5_hair_*`)
+
+**Tema's decision:** "let's make hair as in metahuman. i don't like our existing". On the MetaHuman body
+she wears MetaHuman's own hair (a groom), not our cards. Stage 4a's card hair stays in the code and
+assets but is no longer the default. Then: "it's enough hairstyles", so one style, no catalogue.
+
+**The style: `Hair_L_StraightBangs`, black** (Melanin 1, Redness 0, Whiteness 0), with the preset's
+`Eyebrows_M_SlightArch` and `Eyelashes_L_SlightCurl` in the same black. It is the longest straight
+style in the Creator (strands up to 48.5 cm, to the mid-back) and has her fringe; `Hair_L_Straight`
+stops at the shoulders (`stage5_hair_pick.jpg`, both on the Creator's preview actor). The wardrobe is
+what ships in the plugin (`/MetaHumanCharacter/Optional/Grooms/Bindings/<slot>`: 38 hair, 18 brows,
+6 lashes); the cloud serves the rig and textures only, not grooms.
+
+**Built** by one clean pass, `STEPS=['fresh','create','shape','look','hair','rig','textures','build']`
+(2 min 16 s, sign-in cached; the new `hair` step of `Tools/mh_create.py`, `HAIR=` picks another style).
+Same body targets and paths. `Tools/mh_vertex_order.py` before and after: body 30,455 and face 33,845
+vertices, same triangles, **no vertex moved (0.000 cm)**, so the follower, the Silversuit cut, the
+masks and the bare-skin maps hold. Spike tour after it (`-visexqa -visexspikes`, cvar on, Silversuit
+worn): **body pass** (stretch 2.57x), **face pass** (1.35x), **garment pass** (2.07x), **poke pass**
+(97 fabric vertices under drawn skin, deepest 0.08 cm). The old `Hair_S_Coil*` files under
+`Built/MHC_Her/Grooms` (101 MB) are no longer referenced and can go.
+
+**The switch: `visex.Body.MetaHuman.Hair`** (default 1). 1: the Blueprint's own groom is her hair.
+0: the Hair tab's card style on the MetaHuman head (stage 4a, still works). 2: no hair, to time a
+frame without it. Logged as `VisexMH: hair = ...`. The Hair tab does nothing at 1.
+
+**How it behaves on this Mac** (M5 Max, Metal SM6, which is what strands need; the project targets it):
+- **Strands, not cards.** 92,525 strands (24,642 + 67,883), 2.26 M vertices. The groom's own LODs are
+  strands at 0-1, cards at 2-4, a helmet mesh at 5-7, and it follows the Blueprint's LOD Sync; under a
+  garment the figure is held at LOD 0, so with an outfit on it is strands at every distance. The
+  distances of the card LODs with no outfit on were not measured.
+- **Physics runs** (Niagara `StableSpringsSystem`, angular springs, on at LOD 0-2). In the arrival walk
+  the lengths lift off the back and trail behind the neck (film frames 241-261); in the lean they hang
+  off the tilted head with the same outline in four frames over a second. Judged from frames, not
+  measured, and the clip was not watched through for jitter. Switching the physics off
+  (`r.HairStrands.Simulation 0`) changes the frame time by nothing measurable.
+- **It clips into the suit at the shoulders.** The groom collides with nothing: locks that fall in
+  front of the shoulder sink about a centimetre into the Silversuit (`stage5_hair_close.png`, both
+  shoulders, idle and lean). From the menu camera and from behind in the walk it does not read.
+- **Menu camera and backlight: holds.** The low camera shows the fringe and the lengths behind the
+  shoulder with no scalp; backlit from behind it is a solid black shape with loose strands at the rim.
+- **Frame time, 3840x2160, menu camera, lean, Silversuit on** (`Tools/mh_hair_cost.sh`: a `-game` run in
+  a 1920x1080 window at `r.ScreenPercentage 200`, because the display is 3456x2234; vsync off, no frame
+  cap, CSV profiler, 10 s and about 95 frames per mode after 30 dropped; GPU ms is the profiler's GPUTime):
+
+  | hair | frame ms | GPU ms |
+  |---|---|---|
+  | MetaHuman groom | 82.4, then 83.7 on the repeat | 81.8, 83.2 |
+  | none (`Hair 2`) | 79.4 | 78.9 |
+  | our cards (`Hair 0`, Long) | 85.3 | 84.8 |
+  | groom, physics off | 83.4 | 82.9 |
+
+  So the groom costs about 3-4 ms of an 80 ms frame, the same or less than the cards, with 1.3 ms of
+  drift between two runs of the same mode. The frame is GPU bound (game thread 6 ms) and the scene
+  itself is 12 fps at this size: that is not the hair. The window's pixel size was taken from the log
+  (system resolution 1920), not read back from the render target.
+
+**Captures** (3840x2160, Lvl_Dust, cvar on, Silversuit): `stage5_hair_lean.png` (menu camera, game view
+with the grade), `stage5_hair_walk_back.png` (Start walk, 4 s in, game view), `stage5_hair_close.png`
+(idle, head and shoulders 3/4; a scene capture, so no grade, and its hair shadow on the skin is grainy
+from four capture frames), `stage5_hair_walk_lean.mp4` (22 s, 720p, the film tour: walk in, lean, Body
+page and back), `stage5_hair_pick.jpg` (the two long straight styles on the Creator's preview actor).
+
+**Traps.**
+- **A scene capture never computes a groom.** The renderer skips strand interpolation for captures
+  (`AllowGPUParticleUpdate`), so a capture shows what the main view last drew. In a `-game` run that
+  is fine. In a background editor the viewport does not draw ("Use Less CPU when in Background"), and
+  every capture of the Creator's preview actor is bald. `Tools/mh_hair_sheet.py` switches that setting
+  off in memory, aims the viewport at her, and reads the back of the head to tell a bald shot.
+- `try_add_slot_selection` on a slot that has a selection wears both; use `set_single_slot_selection`.
+  A groom's colour parameters exist only after `assemble_for_preview`.
+- `-game` runs log to `~/Library/Logs/visex/`, the editor to `~/Library/Logs/Unreal Engine/visexEditor/`.
+- **The editor restarted itself four minutes in**, and `Config/DefaultEngine.ini` gained
+  `r.GPUSkin.UnlimitedBoneInfluences=True`: the MetaHuman plugin's "missing project settings" toast was
+  accepted in the editor window (18:50:59 the setting, 18:51:09 restart; no bridge job did it, and who
+  clicked is not known). The unexplained `QUIT_EDITOR` of the stage 3 log may be the same toast. The line is left in the working tree,
+  **not committed**; this stage's editor and game runs passed
+  `-ini:Engine:[/Script/Engine.RendererSettings]:r.GPUSkin.UnlimitedBoneInfluences=False`, so the
+  assembly and every number here are on the committed config. Tema or main decides: keep it (then
+  re-assemble and re-run the spikes with it on) or drop the line.
+- Python has no PIL here and this ffmpeg has no drawtext: `Tools/sheet.swift` labels a sheet.
+
+**Left open.**
+- Hair into the shoulders: needs the groom to collide (a physics asset on the groom component, or
+  the solver's collision against the body) or a style that stays behind the shoulders.
+- Packaged build: the grooms are under `/Game/Character/MH`, still not cooked into the DMG.
+- The Hair tab has no MetaHuman styles: each extra style is another groom in the assembly
+  (107 MB of assets for this one) and was cut from this step.
+- Brows and lashes are the preset's; the face step may want others.
