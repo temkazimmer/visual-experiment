@@ -1124,6 +1124,11 @@ void AVisexMenuDirector::TickReturn(float DeltaSeconds)
 		}
 		return;
 	}
+	if (ReturnPhase == 1 && bRootMove && bArriveTurn)
+	{
+		TickRootArrival(DeltaSeconds);
+		return;
+	}
 	if (ReturnPhase == 1 && bRootMove)
 	{
 		// the clips walk her; she keeps to the planned heading, and turns once stopped
@@ -1240,6 +1245,7 @@ void AVisexMenuDirector::EndStep()
 		StopMove();
 	}
 	bRootMove = false;
+	bArriveTurn = false;
 	HoldGait(false);   // before a page opens: photo mode drives the layer itself
 	RestoreTurnRootMotion();
 	TurnClip = nullptr;
@@ -1316,7 +1322,10 @@ bool AVisexMenuDirector::BeginArrival()
 	SkateSteps = 0;
 	StopMove();
 	MoveSide = 0.f;
-	bRootMove = RootMoves() && PlanRootReturn(Start, nullptr, 0.f, true, PlanSegs, MoveYaw, PlanScale);
+	bArriveTurn = PlanRootArrival(Start, PlanSegs, MoveYaw, ArriveArc);
+	ArriveArcDone = 0.f;
+	ArriveClockWas = bArriveTurn ? PlanSegs[0].From : 0.f;
+	bRootMove = bArriveTurn || (RootMoves() && PlanRootReturn(Start, nullptr, 0.f, true, PlanSegs, MoveYaw, PlanScale));
 	if (bRootMove)
 	{
 		// mid-stride in the loop from the first frame: its root motion walks her in

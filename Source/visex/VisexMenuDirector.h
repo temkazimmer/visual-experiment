@@ -490,6 +490,17 @@ public:
 	/** A turn hands on to the walk (or the lean) once this share of its yaw is in. */
 	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
 	float TurnHandOff = 0.82f;
+	/** The arrival's walk-turn (Tools/char_menu_walk_clips.py): the loop hands to it mid-walk
+	 *  (in this window), she plants her left foot and pivots, and sinks into the lean at ArriveLeanAt. */
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	TSoftObjectPtr<class UAnimSequence> WalkTurnIn = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Walk_Turn180R.A_Menu_Walk_Turn180R")));
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	FVector2D ArriveCutInto = FVector2D(0.9f, 2.3f);
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	float ArriveLeanAt = 3.58f;
+	/** The most the arrival's loop curves (deg) to land her; past it the start heading takes the rest. */
+	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
+	float ArriveArcMax = 45.f;
 	/** The page opens this long before her walk out has stopped (s). */
 	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
 	float PageOpenEarly = 0.3f;
@@ -928,7 +939,7 @@ private:
 	bool bHolding = false;
 	FDelegateHandle HoldHandle;
 	// each clip sampled at 60 Hz: ik_foot_l/r in mesh space, root travel from its start
-	struct FClipTrack { float Dt = 1.f / 60.f, Len = 0.f; TArray<FVector> Feet[2]; TArray<FVector> Root; };
+	struct FClipTrack { float Dt = 1.f / 60.f, Len = 0.f; TArray<FVector> Feet[2]; TArray<FVector> Root; TArray<float> Yaw; };
 	TMap<const class UAnimSequence*, FClipTrack> Tracks;
 	const FClipTrack& Track(class UAnimSequence* Clip);
 	FVector ClipFoot(class UAnimSequence* Clip, float T, int32 Foot);
@@ -944,6 +955,19 @@ private:
 	 *  lands it, through the turn at its end and the lean-down's hold. Arrival: from a mid-loop. */
 	bool PlanRootReturn(const FVector& From, class UAnimSequence* Turn1Clip, float Turn1At, bool bArrival, TArray<FMoveSeg>& Segs, float& Yaw, float& Scale);
 	void BeginRootTurnHome();
+	/** The arrival by the walk-turn (visex.Menu.ArrivalTurn): the loop curving by ArriveArc deg,
+	 *  into WalkTurnIn's plant and pivot, and the lean-down from its pivot foot. Plans Segs, the
+	 *  first heading and the arc that land her on her spot facing HomeYaw. */
+	bool PlanRootArrival(const FVector& From, TArray<FMoveSeg>& Segs, float& Yaw, float& Arc);
+	/** Where Segs end (world offset) and her yaw there, from Yaw, the loop curving Arc deg; from
+	 *  segment Index at clip time Clock. With the lean-down's hold. */
+	FVector SimMove(const TArray<FMoveSeg>& Segs, int32 Index, float Clock, float Yaw, float ArcLeft, float& EndYaw);
+	void TickRootArrival(float DeltaSeconds);
+	float ClipYaw(class UAnimSequence* Clip, float T);   // its root yaw since its start (deg)
+	bool bArriveTurn = false;    // this arrival walks the walk-turn
+	float ArriveArc = 0.f;       // deg the loop curves by
+	float ArriveArcDone = 0.f;   // of it put on her so far
+	float ArriveClockWas = 0.f;  // the loop's clip time as the arc was last put on
 	void LeanWithHold(class UAnimSequence* FromClip, float FromTime, float DownFrom = -1.f);
 	/** The walk back by stepping back onto the column (ReturnPhase 3): true if it's under way. */
 	bool BeginRootStepBack();
@@ -953,7 +977,8 @@ private:
 	void HoldFootNow(class UAnimSequence* ToClip, float ToTime, int32 Foot, class UAnimMontage* Incoming);
 	/** Her yaw to NewYaw: Natural deg of it about her capsule (a turn clip's own yaw), the rest
 	 *  about her planted foot, so steering never slides a foot on the ground. */
-	void TurnAboutPlanted(float NewYaw, float Natural = 0.f);
+	void TurnAboutPlanted(float NewYaw, float Natural = 0.f, int32 Pivot = -1);   // Pivot: that foot, not the stillest
+	int32 ClipPlantedFoot(class UAnimSequence* Clip, float T);   // the foot standing still in the clip, or -1
 	FVector FootWas[2];
 	uint64 FootFrame = 0;        // the frame FootWas was read on
 	float TurnRawWas = 0.f;      // the turn clip's own yaw (unscaled) as last applied

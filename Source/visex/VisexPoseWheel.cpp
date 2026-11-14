@@ -455,9 +455,14 @@ static void TuneFootPlacement(FAnimNode_FootPlacement& FP)
 
 static bool PlaysMenuClip(const UAnimInstance* Anim);
 
-static bool FootIKOffForMenuClip(const UAnimInstance* Anim)
+static float MenuClipWeight(const UAnimInstance* Anim);
+
+static bool FootIKOffForMenuClip(const UAnimInstance* Anim, float Alpha)
 {
-	return CVarFootMenuOff.GetValueOnGameThread() != 0 && PlaysMenuClip(Anim);
+	// only once a menu clip has fully blended in: while it blends in over her standing pose the
+	// IK still holds the planted foot where that pose had it (the menu's foot hold starts there)
+	return CVarFootMenuOff.GetValueOnGameThread() != 0 && PlaysMenuClip(Anim)
+		&& MenuClipWeight(Anim) >= (Alpha < 0.99f ? 0.6f : 0.98f);   // (once fading, a hand-off's dip keeps it off)
 }
 
 void UVisexPoseWheelComponent::UpdateFootIK(float DeltaTime)
@@ -468,7 +473,7 @@ void UVisexPoseWheelComponent::UpdateFootIK(float DeltaTime)
 	// Menu clips that plant their own feet (FootIKOffForMenuClip) fade it out too.
 	const bool bOnFloor = Phase != EPhase::None && PoseIns.IsValidIndex(Current) && PoseIns[Current];
 	UAnimInstance* Anim = GetAnim();
-	const bool bOff = bOnFloor || (Anim && FootIKOffForMenuClip(Anim)) || CVarFootOff.GetValueOnGameThread() != 0;
+	const bool bOff = bOnFloor || (Anim && FootIKOffForMenuClip(Anim, FootIKAlpha)) || CVarFootOff.GetValueOnGameThread() != 0;
 	const float WasAlpha = FootIKAlpha;
 	FootIKAlpha = FMath::FInterpConstantTo(FootIKAlpha, bOff ? 0.f : 1.f, DeltaTime, 4.f);
 	if ((WasAlpha < 0.5f) != (FootIKAlpha < 0.5f))
@@ -624,6 +629,33 @@ static bool PlaysMenuClip(const UAnimInstance* Anim)
 		}
 	}
 	return false;
+}
+
+static float MenuClipWeight(const UAnimInstance* Anim)
+{
+	// the summed blend weight of the menu-clip montages playing (a hand-off between two is ~1)
+	float W = 0.f;
+	for (const FAnimMontageInstance* Inst : Anim->MontageInstances)
+	{
+		if (!Inst || !Inst->Montage || !Inst->IsActive())
+		{
+			continue;
+		}
+		for (const FSlotAnimationTrack& Slot : Inst->Montage->SlotAnimTracks)
+		{
+			for (const FAnimSegment& Segment : Slot.AnimTrack.AnimSegments)
+			{
+				const UAnimSequenceBase* Clip = Segment.GetAnimReference();
+				if (Clip && Clip->GetName().StartsWith(TEXT("A_Menu_")))
+				{
+					W += Inst->GetWeight();
+					goto Next;
+				}
+			}
+		}
+	Next:;
+	}
+	return W;
 }
 
 void UVisexPoseWheelComponent::UpdateContacts(float DeltaTime)

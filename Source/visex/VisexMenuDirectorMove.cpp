@@ -16,6 +16,9 @@
 static TAutoConsoleVariable<int32> CVarMenuRootMotion(TEXT("visex.Menu.RootMotion"), 1,
 	TEXT("1: the menu's walks (out to a page, back, the arrival) play root-motion start/loop/stop clips. 0: the capsule-driven walk."));
 
+static TAutoConsoleVariable<int32> CVarMenuArrivalTurn(TEXT("visex.Menu.ArrivalTurn"), 1,
+	TEXT("1: the arrival curves in and turns into the lean on the walk-turn's pivot. 0: she walks in, stops and turns."));
+
 static TAutoConsoleVariable<int32> CVarMenuStepBack(TEXT("visex.Menu.StepBack"), 1,
 	TEXT("1: back from a page straight behind her, she steps back onto the column (two steps, no turns). 0: she turns, walks and turns."));
 
@@ -55,7 +58,10 @@ const AVisexMenuDirector::FClipTrack& AVisexMenuDirector::Track(UAnimSequence* C
 		}
 		K.Feet[0].Add((X[1] * X[0]).GetLocation());
 		K.Feet[1].Add((X[2] * X[0]).GetLocation());
-		K.Root.Add(Clip->ExtractRootMotionFromRange(0.0, T, FAnimExtractContext()).GetTranslation());
+		const FTransform RM = Clip->ExtractRootMotionFromRange(0.0, T, FAnimExtractContext());
+		K.Root.Add(RM.GetTranslation());
+		const float Yaw = RM.Rotator().Yaw;
+		K.Yaw.Add(K.Yaw.Num() ? K.Yaw.Last() + FMath::FindDeltaAngleDegrees(FMath::UnwindDegrees(K.Yaw.Last()), Yaw) : Yaw);
 	}
 	return K;
 }
@@ -84,6 +90,15 @@ FVector AVisexMenuDirector::ClipRoot(UAnimSequence* Clip, float A, float B)
 		return SampleAt(K.Root, K.Dt, T - Laps * K.Len) + Lap * Laps;
 	};
 	return At(B) - At(A);
+}
+
+float AVisexMenuDirector::ClipYaw(UAnimSequence* Clip, float T)
+{
+	const FClipTrack& K = Track(Clip);
+	const float Laps = FMath::FloorToFloat(T / K.Len);
+	const float X = FMath::Clamp((T - Laps * K.Len) / K.Dt, 0.f, float(K.Yaw.Num() - 1));
+	const int32 I = FMath::Min(FMath::FloorToInt(X), K.Yaw.Num() - 2);
+	return FMath::Lerp(K.Yaw[I], K.Yaw[I + 1], X - I) + K.Yaw.Last() * Laps;
 }
 
 FVector AVisexMenuDirector::ClipVel(UAnimSequence* Clip, float T)
@@ -607,7 +622,26 @@ void AVisexMenuDirector::HoldFootNow(UAnimSequence* ToClip, float ToTime, int32 
 	HoldFoot(nullptr, 0.f, ToClip, ToTime, Foot, Incoming);
 }
 
-void AVisexMenuDirector::TurnAboutPlanted(float NewYaw, float Natural)
+int32 AVisexMenuDirector::ClipPlantedFoot(UAnimSequence* Clip, float T)
+{
+	// the one foot standing still in the clip (its own motion against the root's)
+	constexpr float H = 1.f / 60.f;
+	// (both down: -1, as a turn about either would slide the other)
+	int32 Out = -1, Down = 0;
+	for (int32 F = 0; F < 2; ++F)
+	{
+		FVector V = (ClipFoot(Clip, T + H, F) - ClipFoot(Clip, T - H, F)) / (2.f * H) + ClipVel(Clip, T);
+		V.Z = 0.f;
+		if (ClipFoot(Clip, T, F).Z < 11.f && V.Size() < 25.f)
+		{
+			Out = F;
+			++Down;
+		}
+	}
+	return Down == 1 ? Out : -1;
+}
+
+void AVisexMenuDirector::TurnAboutPlanted(float NewYaw, float Natural, int32 ForcePivot)
 {
 	ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
 	USkeletalMeshComponent* Mesh = Char ? Char->GetMesh() : nullptr;
@@ -624,6 +658,10 @@ void AVisexMenuDirector::TurnAboutPlanted(float NewYaw, float Natural)
 		const int32 F = Moved[0] <= Moved[1] ? 0 : 1;
 		const float Dt = FMath::Max(GetWorld()->GetDeltaSeconds(), 1e-3f);
 		Pivot = Moved[F] < 30.f * Dt ? F : -1;
+	}
+	if (ForcePivot >= 0)
+	{
+		Pivot = ForcePivot;
 	}
 	FootWas[0] = Feet[0];
 	FootWas[1] = Feet[1];
@@ -672,7 +710,10 @@ bool AVisexMenuDirector::BeginRootStepBack()
 	const FVector RightNow = Mesh->GetComponentTransform().InverseTransformPosition(Mesh->GetBoneLocation(TEXT("foot_r")));
 	TArray<FMoveSeg> Segs;
 	float BestErr = BIG_NUMBER, From = StepBackFrom;
-	for (float F = 0.f; F <= 0.8f; F += 0.05f)
+	// (from a pose far from the clip's, a photo pose, nothing is held and the clip blends in
+	// from it: she may set off later in it, mid-step, for a shorter step back)
+	const bool bHeld = FVector(RightNow - ClipFoot(BS, StepBackFrom, 1)).Size2D() <= 12.f;
+	for (float F = 0.f; F <= (bHeld ? 0.8f : 1.35f); F += 0.05f)
 	{
 		Segs.Reset();
 		Segs.Add({BS, F, A, -1, 0.3f});
@@ -713,7 +754,7 @@ void AVisexMenuDirector::TickStepBack()
 	UAnimInstance* Anim = GetPawnAnim();
 	UAnimSequence* BE = WalkBackStop.Get();
 	UAnimSequence* Down = LeanDown.Get();
-	if (!Char || !Anim || !BE || !Down)
+	if (!Char || !Anim || !Down || (ReturnPhase == 3 && !BE))
 	{
 		EndStep();
 		return;
@@ -745,8 +786,13 @@ void AVisexMenuDirector::TickStepBack()
 		const FVector Will = MeshToWorld(Rest, Yaw), RootW = MeshToWorld(Root, Yaw);
 		const float Want = Will.Size2D() > 12.f && Need.Size2D() > 12.f
 			? Yaw + FMath::Clamp(FMath::FindDeltaAngleDegrees(Will.Rotation().Yaw, Need.Rotation().Yaw), -StepBackAngle, StepBackAngle) : HomeYaw;
-		TurnAboutPlanted(FMath::FixedTurn(Yaw, Want, 25.f * Dt));
-		if (RootW.Size2D() > 5.f)
+		// (not while the clip blends in over her standing pose and its first foot is held: both
+		// feet are down, so any turn or stretch there slides one)
+		const FMoveSeg& Cur = MoveSegs[FMath::Clamp(MoveIndex, 0, MoveSegs.Num() - 1)];
+		const int32 Pivot = ClipPlantedFoot(Cur.Clip, FMath::Fmod(MoveClock, Cur.Clip->GetPlayLength()));
+		const bool bSteer = !bHolding && Pivot >= 0;
+		TurnAboutPlanted(bSteer ? FMath::FixedTurn(Yaw, Want, 25.f * Dt) : Yaw, 0.f, Pivot);
+		if (bSteer && RootW.Size2D() > 5.f)
 		{
 			Char->SetAnimRootMotionTranslationScale(FMath::Clamp(1.f + float(FVector::DotProduct(Need - Will, RootW.GetSafeNormal2D())) / RootW.Size2D(), 0.95f, 1.05f));
 		}
@@ -774,4 +820,160 @@ void AVisexMenuDirector::TickStepBack()
 		UE_LOG(LogTemp, Log, TEXT("Menu move: on her spot, %.1f cm and %.1f deg off, at %.2f s"), Need.Size2D(), FMath::FindDeltaAngleDegrees(Yaw, HomeYaw), StepClock);
 		EndStep();
 	}
+}
+
+FVector AVisexMenuDirector::SimMove(const TArray<FMoveSeg>& Segs, int32 Index, float AtTime, float Heading, float ArcLeft, float& EndYaw)
+{
+	// the clips' root (and its yaw) step by step, the loop (segment 0) curving by ArcLeft over
+	// what's left of it, the capsule's jump at each held hand-off, and the lean-down's at the end
+	const ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	const FTransform MeshRel = Char && Char->GetMesh() ? Char->GetMesh()->GetRelativeTransform() : FTransform::Identity;
+	auto ToWorld = [&MeshRel](const FVector& V, float Y) { return FRotator(0.f, Y, 0.f).RotateVector(MeshRel.TransformVector(V)); };
+	UAnimSequence* Down = LeanDown.Get();
+	FVector P = FVector::ZeroVector;
+	constexpr float H = 1.f / 60.f;
+	for (int32 I = FMath::Max(0, Index); I < Segs.Num(); ++I)
+	{
+		const FMoveSeg& S = Segs[I];
+		if (I > Index && S.Lock >= 0)
+		{
+			const FMoveSeg& Prev = Segs[I - 1];
+			P += ToWorld(ClipFoot(Prev.Clip, FMath::Fmod(Prev.To, Prev.Clip->GetPlayLength()), S.Lock)
+				- ClipFoot(S.Clip, FMath::Fmod(S.From, S.Clip->GetPlayLength()), S.Lock), Heading);
+		}
+		for (float T = I == Index ? AtTime : S.From; T < S.To - 1e-4f;)
+		{
+			const float Dt = FMath::Min(H, S.To - T);
+			const float Y0 = ClipYaw(S.Clip, T);
+			P += ToWorld(FRotator(0.f, -Y0, 0.f).RotateVector(ClipRoot(S.Clip, T, T + Dt)), Heading);
+			Heading += ClipYaw(S.Clip, T + Dt) - Y0;
+			if (I == 0 && ArcLeft != 0.f)
+			{
+				const float Step = ArcLeft * Dt / FMath::Max(Dt, S.To - T);
+				Heading += Step;
+				ArcLeft -= Step;
+			}
+			T += Dt;
+		}
+	}
+	if (Down && Segs.Num())
+	{
+		const FMoveSeg& L = Segs.Last();
+		P += ToWorld(ClipFoot(L.Clip, FMath::Fmod(L.To, L.Clip->GetPlayLength()), 0) - ClipFoot(Down, LeanDownFrom, 0), Heading);
+	}
+	P.Z = 0.f;
+	EndYaw = Heading;
+	return P;
+}
+
+bool AVisexMenuDirector::PlanRootArrival(const FVector& From, TArray<FMoveSeg>& Segs, float& Yaw, float& Arc)
+{
+	// in from off frame mid-loop, curving, into the walk-turn: she plants her left foot, pivots
+	// round on it and sinks into the lean from it. The loop's length and its arc land her.
+	UAnimSequence* Loop = WalkLoop.LoadSynchronous();
+	UAnimSequence* Turn = WalkTurnIn.LoadSynchronous();
+	UAnimSequence* Down = LeanDown.LoadSynchronous();
+	Segs.Reset();
+	int32 Foot = 0;
+	float A = 0.f, B = 0.f;
+	if (!RootMoves() || CVarMenuArrivalTurn.GetValueOnGameThread() == 0 || !Loop || !Turn || !Down || !FindCut(Loop, FVector2D(0.3f, Loop->GetPlayLength() - 0.4f), Turn, ArriveCutInto, Foot, A, B))
+	{
+		return false;
+	}
+	LoadedLean.AddUnique(Turn);
+	const float Len = Loop->GetPlayLength();
+	const float TurnYaw = ClipYaw(Turn, ArriveLeanAt) - ClipYaw(Turn, B);
+	auto Make = [&](float T)
+	{
+		TArray<FMoveSeg> S;
+		const float F = FMath::Fmod(A - T + 100.f * Len, Len);
+		S.Add({Loop, F, F + T, -1, 0.f});
+		S.Add({Turn, B, ArriveLeanAt, Foot, MoveBlend});
+		return S;
+	};
+	FVector Need = StepHome - From;
+	Need.Z = 0.f;
+	float BestErr = BIG_NUMBER, BestT = 1.f, BestArc = 0.f;
+	auto Try = [&](float Ar)
+	{
+		// the loop's length that covers the distance, for this arc; then how far round it misses
+		float Lo = 0.2f, Hi = 30.f, EndYaw = 0.f;
+		const float Y0 = HomeYaw - Ar - TurnYaw;
+		for (int32 I = 0; I < 24; ++I)
+		{
+			const float Mid = 0.5f * (Lo + Hi);
+			const TArray<FMoveSeg> S = Make(Mid);
+			(SimMove(S, 0, S[0].From, Y0, Ar, EndYaw).Size2D() < Need.Size2D() ? Lo : Hi) = Mid;
+		}
+		const TArray<FMoveSeg> S = Make(0.5f * (Lo + Hi));
+		const float Err = FVector::Dist2D(SimMove(S, 0, S[0].From, Y0, Ar, EndYaw), Need);
+		if (Err < BestErr)
+		{
+			BestErr = Err;
+			BestT = 0.5f * (Lo + Hi);
+			BestArc = Ar;
+		}
+	};
+	for (float Ar = -ArriveArcMax; Ar <= ArriveArcMax + 0.01f; Ar += 3.f)
+	{
+		Try(Ar);
+	}
+	for (float Ar = BestArc - 3.f; Ar <= BestArc + 3.01f; Ar += 0.25f)
+	{
+		Try(FMath::Clamp(Ar, -ArriveArcMax, ArriveArcMax));
+	}
+	Segs = Make(BestT);
+	Arc = BestArc;
+	Yaw = HomeYaw - Arc - TurnYaw;
+	UE_LOG(LogTemp, Log, TEXT("Menu move: walk-turn in %.1f cm, loop %.2f s curving %.1f deg, turn %.1f deg, heading %.1f, lands %.1f cm off"),
+		Need.Size2D(), BestT, Arc, TurnYaw, Yaw, BestErr);
+	return BestErr < 25.f;
+}
+
+void AVisexMenuDirector::TickRootArrival(float DeltaSeconds)
+{
+	ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	UAnimInstance* Anim = GetPawnAnim();
+	if (!Char || !Anim)
+	{
+		return;
+	}
+	const float Yaw = Char->GetActorRotation().Yaw;
+	if (MoveAtEnd() || !IsMoving())
+	{
+		// planted on her left foot, round: the sink takes over from it, her last degrees eased in
+		UAnimSequence* Turn = WalkTurnIn.Get();
+		const float At = MoveMontage && Anim->Montage_IsPlaying(MoveMontage) ? Anim->Montage_GetPosition(MoveMontage) : ArriveLeanAt;
+		UE_LOG(LogTemp, Log, TEXT("Menu move: walk-turn round at %.2f s, %.1f cm from her spot (%.1f planned by the lean-down), %.1f deg off"),
+			StepClock, FVector::Dist2D(Char->GetActorLocation(), StepHome),
+			MeshToWorld(ClipFoot(Turn, At, 0) - ClipFoot(LeanDown.Get(), LeanDownFrom, 0), Yaw).Size2D(), FMath::FindDeltaAngleDegrees(Yaw, HomeYaw));
+		StopMove();
+		LeanWithHold(Turn, At);
+		ReturnPhase = 4;
+		PhaseClock = 0.f;
+		return;
+	}
+	if (MoveIndex != 0)
+	{
+		return;   // the walk-turn's own root yaw turns her
+	}
+	// the loop: its arc, at the pace planned, and the course corrected toward her spot (the
+	// remaining path turned onto it, its length a few % longer or shorter)
+	const FMoveSeg& S = MoveSegs[0];
+	const float Rest = FMath::Max(0.f, S.To - MoveClock);
+	const float ArcLeft = ArriveArc - ArriveArcDone;
+	const float Step = Rest > 1e-3f ? ArcLeft * FMath::Clamp((MoveClock - ArriveClockWas) / Rest, 0.f, 1.f) : ArcLeft;
+	ArriveClockWas = MoveClock;
+	ArriveArcDone += Step;
+	float EndYaw = 0.f;
+	FVector Need = StepHome - Char->GetActorLocation();
+	Need.Z = 0.f;
+	const FVector Will = SimMove(MoveSegs, 0, MoveClock, Yaw + Step, ArriveArc - ArriveArcDone, EndYaw);
+	float Fix = 0.f;
+	if (Will.Size2D() > 40.f && Need.Size2D() > 40.f)
+	{
+		Fix = FMath::Clamp(FMath::FindDeltaAngleDegrees(Will.Rotation().Yaw, Need.Rotation().Yaw), -8.f * DeltaSeconds, 8.f * DeltaSeconds);
+		Char->SetAnimRootMotionTranslationScale(FMath::Clamp(Need.Size2D() / Will.Size2D(), 0.97f, 1.03f));
+	}
+	TurnAboutPlanted(Yaw + Step + Fix);
 }
