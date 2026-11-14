@@ -466,6 +466,46 @@ void AVisexQATour::BuildFeet()
 	});
 }
 
+void AVisexQATour::BuildLayers()
+{
+	// one run, every layer's share: the body walk out and back once per setting, at real speed
+	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
+	AVisexMenuDirector* D = Director;
+	auto Editor = [this]() -> AVisexBodyEditor* { for (TActorIterator<AVisexBodyEditor> It(GetWorld()); It; ++It) { return *It; } return nullptr; };
+	static const TCHAR* Vars[] = {TEXT("visex.Pin"), TEXT("visex.Catwalk"), TEXT("visex.Plant"), TEXT("visex.Toes"), TEXT("visex.Limits"), TEXT("visex.Reshape"), TEXT("visex.SteadyHead"), TEXT("visex.Hold")};
+	struct FSetting { const TCHAR* Name; TArray<int32> Off; bool bPin; };
+	const TArray<FSetting> Settings = {
+		{TEXT("all"), {}, false}, {TEXT("nocatwalk"), {1}, false}, {TEXT("noplant"), {2}, false}, {TEXT("notoes"), {3}, false},
+		{TEXT("nolimits"), {4}, false}, {TEXT("noreshape"), {5}, false}, {TEXT("nosteady"), {6}, false}, {TEXT("nohold"), {7}, false},
+		{TEXT("bare"), {1, 2, 3, 4, 5, 6, 7}, false}, {TEXT("pin"), {}, true}};
+	Add(2.f, [this] { Feet.SetPhase(TEXT("standing")); });
+	for (const FSetting& Set : Settings)
+	{
+		const FString Name = Set.Name;
+		const TArray<int32> Off = Set.Off;
+		const bool bPin = Set.bPin;
+		auto Apply = [Off, bPin, Name]
+		{
+			for (int32 I = 0; I < UE_ARRAY_COUNT(Vars); ++I)
+			{
+				if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(Vars[I])) { V->Set(I == 0 ? (bPin ? TEXT("1") : TEXT("0")) : Off.Contains(I) ? TEXT("0") : TEXT("1"), ECVF_SetByConsole); }
+			}
+			QA_LOG(TEXT("VisexFeet: setting %s"), *Name);
+		};
+		Add(0.5f, [this, Apply, Name, D] { Apply(); Feet.SetPhase(TEXT("out ") + Name); if (Name == TEXT("all") || Name == TEXT("pin")) { Feet.ArmStance(TEXT("out_") + Name); } D->OpenBody(); });
+		Add(4.5f, [] {});
+		Add(0.5f, [this, Name, Editor] { Feet.SetPhase(TEXT("back ") + Name); if (Name == TEXT("all") || Name == TEXT("pin")) { Feet.ArmStance(TEXT("back_") + Name); } if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
+		Add(5.f, [] {});
+	}
+	Add(0.5f, [this]
+	{
+		Feet.SetPhase(TEXT("done"));
+		QA_LOG(TEXT("VisexFeet: %d frames in %.1f s, %.1f fps"), FeetFrames, FPlatformTime::Seconds() - FeetT0, FeetFrames / FMath::Max(0.1, FPlatformTime::Seconds() - FeetT0));
+		QA_LOG(TEXT("VisexQA: done"));
+		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
+	});
+}
+
 void AVisexQATour::BuildGaps()
 {
 	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
@@ -511,10 +551,11 @@ void AVisexQATour::Tick(float DeltaSeconds)
 	{
 		const bool bGaps = FParse::Param(FCommandLine::Get(), TEXT("visexgaps"));
 		bFilm = FParse::Param(FCommandLine::Get(), TEXT("visexfilm"));
-		bFeet = bGaps || bFilm || FParse::Param(FCommandLine::Get(), TEXT("visexfeet"));
+		const bool bLayers = FParse::Param(FCommandLine::Get(), TEXT("visexlayers"));
+		bFeet = bGaps || bFilm || bLayers || FParse::Param(FCommandLine::Get(), TEXT("visexfeet"));
 		FeetClock = 2e5f;   // until she first moves
 		Feet.Log = [](const FString& Line) { QA_LOG(TEXT("%s"), *Line); };
-		bGaps ? BuildGaps() : bFeet ? BuildFeet() : Build();
+		bGaps ? BuildGaps() : bLayers ? BuildLayers() : bFeet ? BuildFeet() : Build();
 		bBuilt = true;
 	}
 	if (bFeet)

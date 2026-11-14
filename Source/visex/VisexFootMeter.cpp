@@ -126,6 +126,17 @@ void FVisexFootMeter::Tick(ACharacter* Her, float Dt)
 			}
 			BobMin = 1e9f; BobMax = -1e9f; BobTime = 0.f; BobSlowest = 1e9f;
 			F.Surface = Surface;
+			if (bStanceArmed && StanceSide < 0 && Her->GetVelocity().Size2D() > 60.f)
+			{
+				// from the foot's outer side, a little above: the ankle at the centre at the first frame
+				bStanceArmed = false;
+				StanceSide = S;
+				StanceT0 = Clock;
+				StanceShots = 0;
+				const FVector Out = Her->GetActorRightVector() * (S ? 1.f : -1.f);
+				StanceLook = FVector(H.X, H.Y, H.Z - RefHeel * 0.5f);
+				StanceEye = StanceLook + Out * 95.f - Her->GetActorForwardVector() * 25.f + FVector(0.f, 0.f, 45.f);
+			}
 		}
 		F.Time += Dt;
 		F.VGap = FMath::Min(F.VGap, VG[S]);
@@ -133,6 +144,7 @@ void FVisexFootMeter::Tick(ACharacter* Her, float Dt)
 		F.B.Add(FVector4f(FVector3f(B), GB));
 	}
 	bHaveLast = true;
+	if (StanceSide >= 0 && Clock - StanceT0 >= 0.1f + 0.12f * StanceShots) { StanceFrame(Her); }
 }
 
 namespace
@@ -351,5 +363,54 @@ void FVisexFootMeter::SoleGaps(ACharacter* Her, float Out[2])
 			Out[S] = GapAt(Her, Low, 0.f, nullptr);
 			SoleOverOrigin[S] = float(Low.Z - Mesh->GetComponentLocation().Z);
 		}
+	}
+}
+
+void FVisexFootMeter::StanceFrame(ACharacter* Her)
+{
+	constexpr int32 W = 960, H = 1080;   // 2x2: 1920x2160, half a 4K frame
+	USkeletalMeshComponent* Mesh = Her ? Her->GetMesh() : nullptr;
+	UWorld* World = Her ? Her->GetWorld() : nullptr;
+	if (!Mesh || !World) { StanceSide = -1; return; }
+	if (!StanceCap.IsValid())
+	{
+		StanceCap = World->SpawnActor<ASceneCapture2D>();
+		USceneCaptureComponent2D* C = StanceCap->GetCaptureComponent2D();
+		UTextureRenderTarget2D* RT = NewObject<UTextureRenderTarget2D>(StanceCap.Get());
+		RT->RenderTargetFormat = RTF_RGBA8_SRGB;
+		RT->InitAutoFormat(W, H);
+		RT->UpdateResourceImmediate(true);
+		C->TextureTarget = RT;
+		C->CaptureSource = SCS_FinalColorLDR;
+		C->bCaptureEveryFrame = false;
+		C->bCaptureOnMovement = false;
+		C->FOVAngle = 18.f;
+	}
+	if (StanceShots == 0)
+	{
+		// fixed in the world from the first frame on: the ankle at the centre, then it can only move off it
+		const FVector A = Mesh->GetSocketLocation(StanceSide ? TEXT("foot_r") : TEXT("foot_l"));
+		StanceEye += A - StanceLook;
+		StanceLook = A;
+		TArray<USkeletalMeshComponent*> Parts;
+		Her->GetComponents(Parts);
+		for (USkeletalMeshComponent* P : Parts) { P->SetBoundsScale(3.f); }
+	}
+	USceneCaptureComponent2D* C = StanceCap->GetCaptureComponent2D();
+	StanceCap->SetActorLocationAndRotation(StanceEye, (StanceLook - StanceEye).Rotation());
+	C->CaptureScene();
+	TArray<FColor> Pixels;
+	C->TextureTarget->GameThread_GetRenderTargetResource()->ReadPixels(Pixels);
+	if (Pixels.Num() != W * H) { StanceSide = -1; return; }
+	if (StanceShots == 0) { StanceStrip.Init(FColor::Black, W * H * 4); }
+	const int32 OX = (StanceShots % 2) * W, OY = (StanceShots / 2) * H;
+	for (int32 Y = 0; Y < H; ++Y) { FMemory::Memcpy(&StanceStrip[(OY + Y) * W * 2 + OX], &Pixels[Y * W], W * sizeof(FColor)); }
+	if (++StanceShots == 4)
+	{
+		for (FColor& P : StanceStrip) { P.A = 255; }
+		const FString File = FPaths::ProjectSavedDir() / TEXT("QA") / FString::Printf(TEXT("fp_stance_%s.jpg"), *StanceName);
+		FImageUtils::SaveImageByExtension(*File, FImageView(StanceStrip.GetData(), W * 2, H * 2), 92);
+		Log(FString::Printf(TEXT("VisexFeet: stance strip %s (%s foot, frames 0.12 s apart)"), *File, StanceSide ? TEXT("R") : TEXT("L")));
+		StanceSide = -1;
 	}
 }

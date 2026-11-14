@@ -42,6 +42,7 @@ private:
 	/** -visexfeet: only the menu's walks (arrival, Body, Wardrobe, photo), her planted steps
 	 *  measured and her feet shot in close-up strips (VisexFootMeter.h). */
 	void BuildFeet();
+	void BuildLayers();   // -visexlayers: the menu walks once per layer switched off, then pinned
 	/** -visexgaps [-visexcvar=name=value]: her soles' gap to the sand while she stands still, at
 	 *  the menu lean and in the idle after Start, with one cvar set against the default. */
 	void BuildGaps();

@@ -33,6 +33,8 @@ private:
 	/** Last of all: planted soles onto the visible sand (visex.Plant). */
 	void Plant(FCompactPose& Pose);
 	void PlantGround(UAnimInstance* Instance);   // game thread: the traces
+	void PinFrom(const FCompactPose& Pose);       // the graph's feet, before the layers
+	void Pin(FCompactPose& Pose);                 // planted feet back under the layers' moves
 
 public:
 	virtual void PostUpdate(UAnimInstance* InAnimInstance) const override;
@@ -104,6 +106,17 @@ private:
 	// what the plant pass did this frame, for the footprints' mounds (copied to the instance in PostUpdate)
 	float OutGap[2] = {1e4f, 1e4f};   // cm between the planted sole and the sand, component space
 	float OutPlant[2] = {0.f, 0.f};   // how planted each foot is, 0..1
+
+	// The pin: the layers' change to each foot (where they put it vs where the graph had it),
+	// frozen in world space while the graph's foot stands still, so they can't slide it
+	float PinOn = 1.f;                // the cvar
+	bool bPinFrom = false, bPinLast = false;
+	FTransform PinGraph[2];           // the graph's feet, component space, this frame
+	FVector PinBall[2];               // the graph's balls, component space, this frame
+	FVector PinLastHeel[2], PinLastBall[2];   // last frame's, world
+	FVector PinDelta[2] = {FVector::ZeroVector, FVector::ZeroVector};   // the layers' move, world
+	FQuat PinTurn[2] = {FQuat::Identity, FQuat::Identity};              // the layers' turn, world
+	float PinW[2] = {0.f, 0.f};       // how still the graph's foot stands, 0..1
 };
 
 UCLASS(Transient, Blueprintable)
