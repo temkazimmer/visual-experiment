@@ -141,6 +141,8 @@ private:
 	FName HairStyle = NAME_None;
 	FString LastHairFit = TEXT("?");
 	bool bHairApplied = false;
+	/** visex.Body.MetaHuman.Hair at the last look (1 the Blueprint's groom, 2 none, 0 the cards); -1: not looked yet */
+	int32 GroomMode = -1;
 
 	/** The body's own skin material while an outfit's masked one is on. */
 	UPROPERTY(Transient)

@@ -47,6 +47,10 @@ static TAutoConsoleVariable<FString> CVarVisexMHHairStyle(
 	TEXT("visex.Body.MetaHuman.HairStyle"), TEXT(""),
 	TEXT("Debug: the MetaHuman head wears this hairstyle (Long, Elf, Short) whatever the Hair tab says. Empty: the Hair tab's."));
 
+static TAutoConsoleVariable<int32> CVarVisexMHHair(
+	TEXT("visex.Body.MetaHuman.Hair"), 1,
+	TEXT("1: the MetaHuman head wears its own hair, the groom assembled into the Blueprint (Tema, stage 5). 0: our card hairstyle from the Hair tab, fitted to this skull (stage 4). 2: no hair at all, to measure what the hair costs."));
+
 namespace
 {
 	/** A hairstyle's fit on the MetaHuman skull: "scale,up,front,side" (hair-asset cm to MetaHuman
@@ -540,6 +544,7 @@ void UVisexMHBodyComponent::Bind()
 	const FLightingChannels& Ch = Driver->LightingChannels;
 	ClearOutfit();   // it hangs on the Body that is being replaced
 	ClearHair();
+	GroomMode = -1;   // a new figure: look at its hair again
 	BodyMesh = nullptr;
 	FaceMesh = nullptr;
 	TInlineComponentArray<UPrimitiveComponent*> Prims(Figure);
@@ -576,6 +581,7 @@ void UVisexMHBodyComponent::Hide()
 {
 	ClearOutfit();
 	ClearHair();
+	GroomMode = -1;   // the next figure says again which hair it wears
 	if (Figure)
 	{
 		Figure->Destroy();
@@ -778,6 +784,34 @@ void UVisexMHBodyComponent::ApplyHair()
 	if (!IsValid(BodyMesh) || !Figure || !Body)
 	{
 		return;
+	}
+	// MetaHuman hair by default: the Blueprint's own groom stays and no card hair is made
+	const int32 Mode = CVarVisexMHHair.GetValueOnGameThread();
+	if (Mode != 0)
+	{
+		if (GroomMode != Mode)
+		{
+			ClearHair();   // gives the groom back if the cards had hidden it
+			GroomMode = Mode;
+			FString Groom = TEXT("no Hair groom on the figure");
+			TInlineComponentArray<UPrimitiveComponent*> Prims(Figure);
+			for (UPrimitiveComponent* Prim : Prims)
+			{
+				if (Prim->GetFName() == TEXT("Hair") && !Prim->IsA<USkeletalMeshComponent>())
+				{
+					Prim->SetHiddenInGame(Mode == 2);   // 2: bald, to time a frame without the hair
+					PresetHair = Mode == 2 ? Prim : nullptr;   // ClearHair shows it again
+					Groom = FString::Printf(TEXT("%s (%s)"), *Prim->GetClass()->GetName(), Mode == 2 ? TEXT("hidden") : TEXT("shown"));
+				}
+			}
+			UE_LOG(LogVisexMH, Display, TEXT("VisexMH: hair = the MetaHuman's own groom: %s; visex.Body.MetaHuman.Hair 0 wears the card hairstyle instead, 2 none"), *Groom);
+		}
+		return;
+	}
+	if (GroomMode != 0)
+	{
+		ClearHair();
+		GroomMode = 0;
 	}
 	const FString Forced = CVarVisexMHHairStyle.GetValueOnGameThread();
 	const FVisexHairStyle& Style = FVisexBodyProfile::HairStyles()[FVisexBodyProfile::HairIndex(Forced.IsEmpty() ? Body->Profile.Hair : FName(*Forced))];
