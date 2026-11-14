@@ -448,17 +448,11 @@ void AVisexQATour::BuildFeet()
 	};
 	// the clock holds through her walk in (Tick), so this is the menu with her on her spot
 	Move(TEXT("standing"), 2.f, [] {});
-	if (bFilm)
-	{
-		// -visexfilm (with -benchmark -fps=30): the arrival, then one Body out and back, every frame
-		Move(TEXT("body out"), 3.f, [D] { D->OpenBody(); }, 0.75f, 0.4f);
-		Move(TEXT("body back"), 3.f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
-		Add(0.5f, [this] { QA_LOG(TEXT("VisexQA: done")); UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false); });
-		return;
-	}
 	// her walk out, start to stop: the lean-up hands over at 0.6 s, she stops by ~1.9 s
 	Move(TEXT("body out"), 3.f, [D] { D->OpenBody(); }, 0.75f, 0.4f);
 	Move(TEXT("body back"), 3.f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
+	// -visexfilm (run with -benchmark -fps=60): every other frame shot, the arrival to here
+	Add(0.1f, [this] { bFilm = false; });
 	Move(TEXT("wardrobe out"), 2.5f, [D] { D->OpenWardrobe(); });
 	Move(TEXT("wardrobe back"), 3.f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
 	Move(TEXT("photo enter"), 3.f, [D] { D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
@@ -528,7 +522,7 @@ void AVisexQATour::Tick(float DeltaSeconds)
 		// the tour's real frame rate (the film runs at a fixed step: every frame shot)
 		++FeetFrames;
 		if (FeetT0 == 0.0) { FeetT0 = FPlatformTime::Seconds(); }
-		if (bFilm) { FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / FString::Printf(TEXT("QA/film/f%05d.png"), FeetFrames), false, false); }
+		if (bFilm && (FeetFrames & 1)) { FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / FString::Printf(TEXT("QA/film/f%05d.png"), FeetFrames), false, false); }
 	}
 	if (bFeet)
 	{

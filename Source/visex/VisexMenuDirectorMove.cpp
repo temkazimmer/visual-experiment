@@ -808,7 +808,7 @@ void AVisexMenuDirector::TickStepBack()
 		TurnAboutPlanted(bSteer ? FMath::FixedTurn(Yaw, Want, 25.f * Dt) : Yaw, 0.f, Pivot);
 		if (bSteer && RootW.Size2D() > 5.f)
 		{
-			Char->SetAnimRootMotionTranslationScale(FMath::Clamp(1.f + float(FVector::DotProduct(Need - Will, RootW.GetSafeNormal2D())) / RootW.Size2D(), 0.95f, 1.05f));
+			Char->SetAnimRootMotionTranslationScale(FMath::Clamp(1.f + float(FVector::DotProduct(Need - Will, RootW.GetSafeNormal2D())) / RootW.Size2D(), 0.98f, 1.02f));
 		}
 		if (MoveAtEnd() || !IsMoving())
 		{
@@ -986,8 +986,8 @@ void AVisexMenuDirector::TickRootArrival(float DeltaSeconds)
 	float Fix = 0.f;
 	if (Will.Size2D() > 40.f && Need.Size2D() > 40.f)
 	{
+		// (no stride stretch: any scale on the root slides the planted foot by it)
 		Fix = FMath::Clamp(FMath::FindDeltaAngleDegrees(Will.Rotation().Yaw, Need.Rotation().Yaw), -8.f * DeltaSeconds, 8.f * DeltaSeconds);
-		Char->SetAnimRootMotionTranslationScale(FMath::Clamp(Need.Size2D() / Will.Size2D(), 0.97f, 1.03f));
 	}
 	TurnAboutPlanted(Yaw + Step + Fix);
 }
