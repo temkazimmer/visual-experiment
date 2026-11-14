@@ -447,7 +447,13 @@ bool AVisexMenuDirector::BeginRootStepOut()
 		+ MeshToWorld(ClipRoot(Stop, WalkStopAt, Stop->GetPlayLength()), Yaw);
 	const float Gap = ColumnGapAt(Char->GetActorLocation());
 	BodyStepTarget = ColumnGapAt(Char->GetActorLocation() + Travel);
-	const float Secs = PlayRootMotionMove(Segs, Up, UpAt, 1.f);
+	// her left foot held where it really is (a beat or the plant pass may have it a few cm off
+	// the lean-up's own), so nothing slides as the push-off becomes the first step
+	const float Secs = PlayRootMotionMove(Segs, nullptr, 0.f, 1.f);
+	if (MoveMontage)
+	{
+		HoldFootNow(Start, WalkStartFromUp, 0, MoveMontage);
+	}
 	bRootMove = true;
 	UE_LOG(LogTemp, Log, TEXT("Body step-out (root motion): lean-up at %.2f s, %.1f cm in %.2f s, gap %.1f -> %.1f, %.1f clear at the sliders' ends"),
 		UpAt, Travel.Size2D(), Secs, Gap, BodyStepTarget, BodyStepTarget - BodyReach);
@@ -660,8 +666,29 @@ bool AVisexMenuDirector::BeginRootStepBack()
 		UE_LOG(LogTemp, Log, TEXT("Menu move: no step back (%.1f cm, %.1f deg off straight back, facing %.1f off)"), To.Size(), Off, Facing);
 		return false;
 	}
+	// where she sets off in the backward start (its weight shift, both feet down) takes up how
+	// far her spot is from where the clips and holds would put her
+	USkeletalMeshComponent* Mesh = Char->GetMesh();
+	const FVector RightNow = Mesh->GetComponentTransform().InverseTransformPosition(Mesh->GetBoneLocation(TEXT("foot_r")));
 	TArray<FMoveSeg> Segs;
-	Segs.Add({BS, StepBackFrom, A, -1, 0.3f});
+	float BestErr = BIG_NUMBER, From = StepBackFrom;
+	for (float F = 0.f; F <= 0.8f; F += 0.05f)
+	{
+		Segs.Reset();
+		Segs.Add({BS, F, A, -1, 0.3f});
+		Segs.Add({BE, B, StepBackLeanAt, Foot, MoveBlend});
+		const FVector Hold = RightNow - ClipFoot(BS, F, 1);
+		const FVector Plan = MeshToWorld(MoveTravel(Segs) + ClipFoot(BE, StepBackLeanAt, 0) - ClipFoot(Down, LeanDownFromBack, 0)
+			+ (Hold.Size2D() <= 12.f ? FVector(Hold.X, Hold.Y, 0.f) : FVector::ZeroVector), Char->GetActorRotation().Yaw);
+		const float Err = FVector::Dist2D(Plan, To) + 0.5f * FMath::Abs(F - StepBackFrom);
+		if (Err < BestErr)
+		{
+			BestErr = Err;
+			From = F;
+		}
+	}
+	Segs.Reset();
+	Segs.Add({BS, From, A, -1, 0.3f});
 	Segs.Add({BE, B, StepBackLeanAt, Foot, MoveBlend});
 	LoadedLean.AddUnique(BS);
 	LoadedLean.AddUnique(BE);
@@ -673,11 +700,10 @@ bool AVisexMenuDirector::BeginRootStepBack()
 	const float Secs = PlayRootMotionMove(Segs, nullptr, 0.f, 1.f);
 	if (MoveMontage)
 	{
-		HoldFootNow(BS, StepBackFrom, 1, MoveMontage);
+		HoldFootNow(BS, From, 1, MoveMontage);
 	}
-	const FVector Plan = MeshToWorld(MoveTravel(Segs) + ClipFoot(BE, StepBackLeanAt, 0) - ClipFoot(Down, LeanDownFromBack, 0), StepBackYaw);
-	UE_LOG(LogTemp, Log, TEXT("Menu move: step back %.1f cm (planned %.1f), %.1f deg off straight back, %.2f s to the lean"),
-		To.Size(), Plan.Size2D(), Off, Secs);
+	UE_LOG(LogTemp, Log, TEXT("Menu move: step back %.1f cm from %.2f s (planned %.1f cm off), %.1f deg off straight back, %.2f s to the lean"),
+		To.Size(), From, BestErr, Off, Secs);
 	return true;
 }
 
