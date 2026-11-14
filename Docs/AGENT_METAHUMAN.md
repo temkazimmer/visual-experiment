@@ -739,3 +739,106 @@ above, scene capture, no grade), `stage4_lean_old.png` (cvar off, same camera), 
 - The Blender round trip of a hair FBX keeps bones, weights and bounds if imported with
   `colors_type="LINEAR"` and exported as `blender_hair_cards.py` does (bounds matched to 0.1 cm).
 - An unlit scene capture draws the MetaHuman skin white: handy for "does skin show through".
+
+### 2026-11-14 · Stage 4b · the two failing Silversuit hems (captures `stage4_cuff*`, `stage4_hip*`)
+
+**The cause was not the split.** Stage 3 blamed the skin being split in four (a fabric vertex between
+two body vertices blends their weights and leaves the body triangle's plane). Checked offline: the
+deepest vertices sit over the body's **own** vertices, with that vertex's exact weights (wrist: body
+vertex 5171, 62% on the hand, fabric 0.54 cm over it, 0.49 cm under in the bend). What happens is a
+fold: fabric rides the skin vertex under it and its offset turns with that vertex's blend of bones,
+while the body triangle on the far side of the crease turns with its own. Bend the wrist 80 degrees
+or sit, and that triangle comes over the hem. The higher the hem stands, the further under it ends up
+(depth = height x how far the neighbour has turned past the fabric's offset): lifting a hem that
+crosses a crease makes it worse, and the cuff stood at 0.5 cm in the wrist crease itself (its
+hand-side hem is where the hand's weight is 0.62: on the joint). A real cuff there is pinched by the
+skin too. The split adds its part where weights differ along an edge, but it is second order here.
+
+**The fix, at the cut** (`Tools/mh_outfit_body.py`, `blender_outfit.py region()`; `--body=mh` only, the
+old body's Silversuit builds to the same size, differing only in the 6 KB that differ between any two runs):
+- `mh_safe_height()`: per skin vertex, the height up to which fabric over it stays within 0.02 cm of
+  every neighbouring body triangle's plane in a set of test poses (each wrist bent 100 degrees in
+  eight directions; each hip flexed 100, 125 and 140 degrees, straight, knee out and knee across;
+  linear skinning from the skin's own weights, one joint at a time, the split vertices' own error
+  included).
+- `region()`: within 0.9 cm of a cut edge a panel sits down to that height (never under 0.04 cm),
+  easing back to its own offset by 1.8 cm in; the rim wall and the binding follow.
+  Only joints whose hems the tour fails are in the pose list (a hem sat down where the game never
+  folds it loses its standing edge for nothing): add one when a poke line names it.
+- `mh_poke_sim()`: the tour's poke line without the game, printed at every build (20 s instead of a
+  9 minute import-and-tour loop). It reads 0.46-0.50 cm at the wrist before the fix, the tour's 0.46.
+  On this cut: 1754 vertices of the suit's hems sat down by up to 0.21 cm (hip cutouts where they
+  cross the crease), 370 of the belt's by up to 0.54, 1122 of the wrist cuffs' by up to 0.46 (their
+  hand-side hem goes from 0.5 cm to 0.04); the ankle cuffs not at all.
+
+**The full check, before and after** (`-visexqa -visexspikes`, worst frame of each pose; fabric
+within 0.8 cm of a cut edge that is under the skin: vertices, deepest; the tour fails past 0.10 cm):
+
+| pose | stage 3 | first cut (80 / 125 degrees, 0.04) | this cut |
+|---|---|---|---|
+| Settings sit (down, sit, up) | 29, 0.19 cm | 13, 0.08 | 27, 0.06 |
+| photo Bookend (left wrist) | 7, 0.46 cm | 5, 0.08 | 5, 0.07 |
+| photo Crown (left wrist) | 26, 0.46 cm | 16, 0.19 | 13, 0.07 |
+| photo Glance | 13, 0.08 cm | 13, 0.05 | 15, 0.05 |
+| photo Ledge | 124, 0.25 cm | 100, 0.11 | 92, 0.08 |
+| photo LegLift | 105, 0.22 cm | 89, 0.10 | 95, 0.08 |
+| photo Run / Peace | 0 / 1, 0.03 cm | 1, 0.03 | 1, 0.03 |
+| every other pose | 0 | 0 | 0 |
+| **TOTAL poke** | **FAIL** | FAIL (Crown, Ledge) | **pass**, 0.08 cm on `pelvis` |
+
+Run three times on this cut with the same poke numbers. TOTAL body, face and garment pass as before
+(garment 1.85-2.07x, creases 4.5-5.0x, grew 1.13-1.21 cm; under clipped skin still 1.52 cm in the
+armpit, unseen). The first cut shows why the test poses are harder than the game's: at 80 degrees
+the offline wrist read clean and Crown still folded 0.19 cm.
+
+**Seen in 4K** (`-visexclose` scene captures framed on `hand_l` and the thighs, lit and unlit; in the
+unlit ones fabric is blue and skin white or pink, so skin through fabric cannot hide in the chrome):
+- **Wrist cuff, Bookend** (`stage4_cuff.png`, six sides in `stage4_cuff_bookend_views.jpg`): a clean band.
+  Its arm-side edge keeps its standing lip; its hand-side edge now lies on the skin, and on the
+  inside of the bend the cuff folds into the wrist crease with the skin (a sharp V in the chrome's
+  reflections). No skin through the fabric from any of the six sides.
+- **Wrist cuff, Crown**: not visible. Her left hand is in her hair and the wrist sits inside the
+  hair's volume, in Short as in Long: 15 camera positions round the wrist, none shows the cuff's
+  edge (`stage4_cuff_crown_views.jpg`). It stays a number (0.07 cm), and nobody will see it either.
+- **Hip crease, Ledge** (`stage4_hip.png`, both hips in `stage4_hip_views.jpg`): the cutout's edge runs
+  through the crease as one line and the belt stays level over it. Where the edge crosses the fold
+  its binding kinks in two or three short facets. No skin through the fabric (unlit: unbroken blue).
+
+**The "thin dark second line" beside the belt and the back cutout's binding (Ledge): shading, not a
+hole.** A lit and an unlit capture from the same camera: unlit, belt meets skin in one clean line;
+lit, under the bright binding there is a black band 0.25-0.3 cm tall (the rim wall: the panel's edge
+down to the skin, in shade) and then the belt's own shadow on the skin. In scene captures that shadow
+is stair-stepped (coarser shadow pages than the game view), which made it look like a mask edge. The
+cover mask is not involved: the skin is drawn right up to the rim. Not changed. To thin it: a lower
+belt (0.3 cm now, plus 0.3 where the suit runs under it).
+
+**Mermaid's "small teeth" on the right-flank cutout: facets, logged, not fixed.** A row of four or
+five dark triangles on the fabric just inside the edge, lit only (unlit: nothing, so no skin and no
+gap). They lie along the waist's side fold in that bend: the body's quads are triangulated one way
+(`bmesh.ops.triangulate` in `mh_outfit_body.py`), the fold runs across the diagonals, and chrome
+shows each triangle of the strip as its own mirror. Skin has the same facets and hides them. A fix
+is a triangulation that follows the fold (shortest diagonal in the bent pose), or a softer normal
+there: an afternoon with looking, not cheap.
+
+**Captures** (`Docs/Research/metahuman/`, 3840x2160 scene captures, Lvl_Dust, cvar on, no post grade):
+`stage4_cuff.png` (Bookend, left wrist), `stage4_hip.png` (Ledge, right hip crease), and the sheets
+`stage4_cuff_bookend_views.jpg`, `stage4_cuff_crown_views.jpg`, `stage4_hip_views.jpg`.
+
+**Assets.** Re-cut and re-imported, all stage 3's own under `/Game/Character/MH/Outfits`:
+`SKM_Silversuit_MH`, `T_Cover_Silversuit`, `MI_Body_Silversuit` (re-saved by `mh_outfit.py`), and
+`SourceArt/Character/MH/Outfits/outfit_silversuit.fbx`. Nothing else.
+
+**Traps.**
+- A hem that crosses a crease: lower, not higher. More offset puts it further under the fold.
+- zsh reads `$p:hand_l` as `$p` with the `:h` modifier. Write `${p}:hand_l`.
+- Unlit, the MetaHuman skin is white where its baked maps are the originals and pink where the
+  underwear was painted out (`T_Body_*_Bare`): the border between them is the old briefs' line, not
+  a hole. Lit, the two do not differ.
+- A scene capture's shadows are stair-stepped next to an edge. Judge shadow lines in the game view.
+
+**Left open.**
+- The pose list in `_mh_test_poses()` is wrists and hips only. Another outfit's failing hem on
+  another joint (a neckline at the shoulder, a stocking top behind the knee) needs its joint added.
+- A sat-down hem stands 0.04 cm over the skin. Fine in every frame looked at; if it shimmers at a
+  distance on a sheer outfit, raise `MH_HEM_MIN`.
+- The cuff in Crown cannot be looked at while her hand is in her hair.
