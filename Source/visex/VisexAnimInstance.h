@@ -126,7 +126,17 @@ private:
 	float PinStance[2] = {0.f, 0.f}, PinGraphDrift[2] = {0.f, 0.f}, PinOutDrift[2] = {0.f, 0.f};
 	FVector PinGraphStart[2][2], PinOutStart[2][2];   // per foot: heel, ball
 	bool bPinDown[2][2] = {{false, false}, {false, false}};
+	// the gate (visex.Pin.Gate): off in the air and while she turns on the spot; the hold lets go gently
+	bool bPinAir = false;
+	float PinYawRate = 0.f, PinCapSpeed = 0.f, PinLastYaw = 0.f, PinGate = 1.f;
+	bool bPinYaw = false;
+	FVector PinApplied[2] = {FVector::ZeroVector, FVector::ZeroVector};   // world cm, after the release slew
 };
+
+/** The pin's numbers since the last reset, for the tours: [0] largest hold (cm), [1] largest
+ *  one-frame change of the hold (cm), [2] straightest leg the hold asked for (reach over leg
+ *  length, only where it straightened past the layers), [3] frames clamped at visex.Pin.Max. */
+VISEX_API void VisexPinStats(float Out[4], bool bReset);
 
 UCLASS(Transient, Blueprintable)
 class VISEX_API UVisexAnimInstance : public UAnimInstance

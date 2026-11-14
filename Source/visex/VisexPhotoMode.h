@@ -164,6 +164,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Photo")
 	int32 GetMotion() const { return Motion; }
 
+	/** A motion's name (Idle, Walk, Run, then the poses by asset name), or empty past the last. */
+	FString GetMotionName(int32 Index) const { return Motions.IsValidIndex(Index) ? Motions[Index].Name : FString(); }
+
 	UFUNCTION(BlueprintCallable, Category = "Photo")
 	void TogglePause();
 
