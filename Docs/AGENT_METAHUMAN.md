@@ -645,3 +645,97 @@ What needs a person:
 - The figure is held at LOD 0 under a garment (face and grooms too): cost not measured.
 - `/Game/Character/MH` is still not cooked, so none of this is in a packaged build.
 - The filled-in skin has no anatomy: fine under this suit, not for outfits that bare chest or hips.
+
+### 2026-11-14 · Stage 4a · her hair on the MetaHuman head (captures `stage4_hair_*`)
+
+With the cvar on, the MetaHuman head wears the style chosen on the Hair tab (Long, Elf, Short) and the
+preset's coil groom is hidden (brows, lashes and peach fuzz are grooms too and stay). Cvar off:
+unchanged. No hair asset was made or modified; the head is a placeholder until the face step.
+
+**How it follows.** `UVisexMHHairComponent` (a skeletal mesh component, `Source/visex/VisexMHBody.*`)
+is created on the figure, attached to the MetaHuman **Body**, with the style's own mesh and physics
+AnimBP. The AnimBP's Copy Pose From Mesh reads its attached parent, so head, neck and spine (the
+Kawaii colliders' driving bones) are the MetaHuman's own, with its bone lengths and after RigLogic:
+the hair no longer knows the driver exists. Kawaii Physics runs as before (the locks swing in the walk
+frames). The attach parent ticks first, so nothing lags a frame.
+
+**The fit: one scale and one offset per style, in one place.** The cards were grown on the old
+skull. Each frame, before its own pose, the component turns the style's fit (in the head bone's
+space) into its relative transform: a card vertex `p` lands at `Head * (s * p + t)`. A uniform scale
+commutes with the head's rotation, so this is exact in any head pose.
+- The numbers live in **`Config/DefaultGame.ini`, `[VisexMHHairFit]`**, a line per style:
+  `Long=0.952,-0.46,1.13,0` is scale, then cm up, to her front, to the side. No rebuild.
+- **To retune on a new head (about 2 minutes):** re-export the head
+  (`MESH=<FaceMesh>; OUT=.../SourceArt/Character/MH/mh_head.fbx` with `Tools/mh_skin_export.py`), then
+  `Blender -b --factory-startup --python Tools/mh_hair_fit.py -- <project> --save`. It fits the scalp
+  cap and 2500 near-scalp card vertices by least squares (a vertex should clear the new scalp by `s`
+  times what it cleared the old one) and rewrites the section.
+- **By hand, live in Play:** `visex.Body.MetaHuman.HairFit "0.95,-0.5,1.1,0"` overrides the worn
+  style; `visex.Body.MetaHuman.HairStyle Elf` wears a style whatever the Hair tab says.
+
+| style | scale | up | front | fit residual rms / 95% | cap vertices under the skin (deepest) |
+|---|---|---|---|---|---|
+| Long | 0.952 | -0.46 | 1.13 | 0.26 / 0.43 cm | 2083 of 4103 (0.41 cm) |
+| Elf | 0.958 | -0.53 | 1.17 | 0.22 / 0.39 cm | 1802 of 4103 (0.38 cm) |
+| Short | 0.943 | -0.31 | 1.23 | 0.39 / 0.54 cm | 2991 of 4913 (0.50 cm) |
+
+The scale is against the hair asset's own cm (today's head draws it at 0.935), so on this skull the
+hair is 1-3% larger than on hers and sits 1.1-1.2 cm further forward on the joint.
+
+**The two heads** (cm from the head joint, at the size each is drawn; `mh_hair_fit.py` prints them):
+
+| | her current head (x0.935) | MetaHuman placeholder |
+|---|---|---|
+| crown over the joint | 15.9 | 15.6 |
+| chin's underside | -5.2 | -5.0 |
+| head height, chin to crown | 21.1 | 20.6 |
+| skull width (top 6 cm, ears left out) | 13.2 | 14.1 |
+| skull depth, brow to back | 17.2 (9.4 front, 7.8 back) | 17.3 (10.4 front, 6.8 back) |
+| ear, bottom to top | 1.6 to 9.4 (7.8 long, pointed) | 1.3 to 6.9 (5.6 long) |
+| ear, front to back | 1.2 in front to 5.2 behind | 2.1 in front to 1.5 behind |
+| ear, furthest out from the middle | 9.1 (the tip: 9.4 up, 5.1 behind) | 8.1 |
+
+So the placeholder skull is 0.9 cm wider, the same depth but 1 cm further forward on the neck, and
+its ear is 2.2 cm shorter, lower at the top by 2.5 cm and does not sweep back.
+
+**What a uniform fit cannot do (not built, by decision: the head is re-assembled next).** The scalp
+cap rides 0.05 cm over the old scalp, and one scale leaves +-0.4 cm of shape difference, so about
+half the cap ends up just under the new skin. Where cards are dense nothing shows; where they part,
+skin shows instead of cap. `mh_hair_fit.py --write` plus `Tools/mh_hair.py` is the refit for the
+final head: every cap vertex goes 0.08 cm over the new skin and the cards take the correction of
+the cap under them, fading out over 6 cm; same bones, so the same AnimBPs, as new
+`/Game/Character/MH/Hair/SKM_Hair*_MH` meshes that the game prefers when they exist. Tried on this
+skull (cap under the skin 2083/1802/2991 -> 0/0/2; Short's crown closes) and then set aside: no
+`_MH` asset is committed.
+
+**Seen** (4K, Lvl_Dust; `-visexclose` scene captures lit and unlit, where skin reads white on hair):
+- **Long**: menu camera reads as her (`stage4_hair_lean.png` against `stage4_lean_old.png`). From
+  above and behind no scalp. The fringe sits at the brows as on her head. In the walk the lengths
+  lie down the back over the suit and swing; no clipping into shoulders or suit seen.
+- **Elf**: hairline sits on the forehead, no gap (a soft contact shadow, stepped by the card ends).
+  From above and behind no scalp. The face locks hang in front of the shoulders, clear of the suit.
+- **Short**: sits; from above, a 1 cm dot of scalp shows at the crown whorl, where the cards part
+  and the cap is under the skin (the gap of the uniform fit; the refit closes it). Nape and neck clean.
+- **Ears.** Her styles are cut around a pointed ear that rises 9.4 cm and sweeps back. Long: the
+  opening is there and a round human ear sits low in it, crossed by the strands that used to pass
+  behind the tip, with a patch of temple skin above it. Elf: the ear is bare, and above it a
+  wedge of skin where the pointed ear used to cover the swept-back side. Short: the ear is under the
+  hair, nothing to see. Options: (1) the face step gives the MetaHuman her ear (decided), then rerun
+  the fit and, if wanted, the refit; (2) a separate ear mesh on the head bone (seam at the root);
+  (3) regrow the styles on this skull with `blender_hair_cards.py` (HAIR_SKIN = the head FBX).
+
+**Tools added to the tour.** `-visexclose=<What>:<bone>:<x,y,z>:<fov>[u][:<tx,ty,tz>][+...]`: with the 4K
+frame of `<What>` (or its ending, `Crown`), a 4K scene capture looking at a bone of the body on
+screen from x forward, y right, z up of it; `u` is unlit (base colours: skin against hair or fabric
+in any light). `-visexcvar=a=1+b=2` sets several.
+
+**Captures**: `stage4_hair_lean.png` (menu camera, Long = the Hair tab's), `stage4_hair_long/elf/short.png`
+(menu lean per style), `stage4_hair_walk_back.png` (mid-stride from behind), `stage4_hair_top.png` (from
+above, scene capture, no grade), `stage4_lean_old.png` (cvar off, same camera), and
+`stage4_hair_views_<style>.jpg` (top, back, side unlit; ear, face, back lit).
+
+**Traps.**
+- `FParse::Value` stops at a comma: pass `false` to read a value with commas from the command line.
+- The Blender round trip of a hair FBX keeps bones, weights and bounds if imported with
+  `colors_type="LINEAR"` and exported as `blender_hair_cards.py` does (bounds matched to 0.1 cm).
+- An unlit scene capture draws the MetaHuman skin white: handy for "does skin show through".
