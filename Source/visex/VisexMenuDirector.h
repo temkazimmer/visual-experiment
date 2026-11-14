@@ -937,6 +937,8 @@ private:
 	UPROPERTY(Transient) TObjectPtr<class UAnimMontage> HoldMontage;
 	FVector HoldOffset = FVector::ZeroVector, HoldBase = FVector::ZeroVector;
 	bool bHolding = false;
+	int32 HoldFootIdx = -1;      // the foot the hold keeps on its mark
+	FVector HoldTarget = FVector::ZeroVector;   // where (world)
 	FDelegateHandle HoldHandle;
 	// each clip sampled at 60 Hz: ik_foot_l/r in mesh space, root travel from its start
 	struct FClipTrack { float Dt = 1.f / 60.f, Len = 0.f; TArray<FVector> Feet[2]; TArray<FVector> Root; TArray<float> Yaw; };

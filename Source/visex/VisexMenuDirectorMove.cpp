@@ -163,6 +163,10 @@ void AVisexMenuDirector::HoldFoot(UAnimSequence* FromClip, float FromTime, UAnim
 	}
 	HoldOffset = Left - Char->GetActorTransform().InverseTransformVectorNoScale(D);
 	HoldMontage = Incoming;
+	// the held foot where it's drawn now: through the blend the hold keeps it there by
+	// measurement, whatever the outgoing pose (or the IK on it) does
+	HoldFootIdx = Foot;
+	HoldTarget = Mesh->GetBoneLocation(Foot ? FName(TEXT("foot_r")) : FName(TEXT("foot_l")));
 	bHolding = true;
 	Mesh->SetRelativeLocation(HoldBase + HoldOffset);
 	if (!HoldHandle.IsValid())
@@ -186,7 +190,17 @@ void AVisexMenuDirector::TickHold()
 	const UAnimInstance* Anim = Mesh->GetAnimInstance();
 	const FAnimMontageInstance* Inst = Anim && HoldMontage ? Anim->GetActiveInstanceForMontage(HoldMontage) : nullptr;
 	const float W = Inst ? FMath::Clamp(Inst->GetWeight(), 0.f, 1.f) : 1.f;
-	Mesh->SetRelativeLocation(HoldBase + HoldOffset * (1.f - W));
+	FVector Off = HoldOffset * (1.f - W);
+	if (W < 0.999f && HoldFootIdx >= 0)
+	{
+		// where the mesh must sit for the held foot to be on its mark this frame, eased onto
+		// the planned offset as the incoming clip takes over (the two meet at its full weight)
+		const FVector Miss = HoldTarget - Mesh->GetBoneLocation(HoldFootIdx ? FName(TEXT("foot_r")) : FName(TEXT("foot_l")));
+		FVector Fb = Mesh->GetRelativeLocation() - HoldBase + Char->GetActorTransform().InverseTransformVectorNoScale(FVector(Miss.X, Miss.Y, 0.f));
+		Fb.Z = Off.Z;
+		Off = FMath::Lerp(Fb, Off, W * W * W);
+	}
+	Mesh->SetRelativeLocation(HoldBase + Off);
 	if (W >= 0.999f)
 	{
 		bHolding = false;
@@ -222,7 +236,7 @@ void AVisexMenuDirector::StartMoveSeg(int32 Index, UAnimSequence* FromClip, floa
 	MoveLastPos = From;
 	if (S.Lock >= 0 && FromClip && MoveMontage)
 	{
-		HoldFoot(FromClip, FromTime, S.Clip, From, S.Lock, MoveMontage);
+		HoldFoot(FromClip, FMath::Fmod(FromTime, FromClip->GetPlayLength()), S.Clip, From, S.Lock, MoveMontage);
 	}
 }
 

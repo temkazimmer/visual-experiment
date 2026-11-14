@@ -448,6 +448,14 @@ void AVisexQATour::BuildFeet()
 	};
 	// the clock holds through her walk in (Tick), so this is the menu with her on her spot
 	Move(TEXT("standing"), 2.f, [] {});
+	if (bFilm)
+	{
+		// -visexfilm (with -benchmark -fps=30): the arrival, then one Body out and back, every frame
+		Move(TEXT("body out"), 3.f, [D] { D->OpenBody(); }, 0.75f, 0.4f);
+		Move(TEXT("body back"), 3.f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
+		Add(0.5f, [this] { QA_LOG(TEXT("VisexQA: done")); UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false); });
+		return;
+	}
 	// her walk out, start to stop: the lean-up hands over at 0.6 s, she stops by ~1.9 s
 	Move(TEXT("body out"), 3.f, [D] { D->OpenBody(); }, 0.75f, 0.4f);
 	Move(TEXT("body back"), 3.f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
@@ -458,6 +466,7 @@ void AVisexQATour::BuildFeet()
 	Add(0.5f, [this]
 	{
 		Feet.SetPhase(TEXT("done"));
+		QA_LOG(TEXT("VisexFeet: %d frames in %.1f s, %.1f fps"), FeetFrames, FPlatformTime::Seconds() - FeetT0, FeetFrames / FMath::Max(0.1, FPlatformTime::Seconds() - FeetT0));
 		QA_LOG(TEXT("VisexQA: done"));
 		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
 	});
@@ -507,11 +516,19 @@ void AVisexQATour::Tick(float DeltaSeconds)
 	if (!bBuilt)
 	{
 		const bool bGaps = FParse::Param(FCommandLine::Get(), TEXT("visexgaps"));
-		bFeet = bGaps || FParse::Param(FCommandLine::Get(), TEXT("visexfeet"));
+		bFilm = FParse::Param(FCommandLine::Get(), TEXT("visexfilm"));
+		bFeet = bGaps || bFilm || FParse::Param(FCommandLine::Get(), TEXT("visexfeet"));
 		FeetClock = 2e5f;   // until she first moves
 		Feet.Log = [](const FString& Line) { QA_LOG(TEXT("%s"), *Line); };
 		bGaps ? BuildGaps() : bFeet ? BuildFeet() : Build();
 		bBuilt = true;
+	}
+	if (bFeet)
+	{
+		// the tour's real frame rate (the film runs at a fixed step: every frame shot)
+		++FeetFrames;
+		if (FeetT0 == 0.0) { FeetT0 = FPlatformTime::Seconds(); }
+		if (bFilm) { FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / FString::Printf(TEXT("QA/film/f%05d.png"), FeetFrames), false, false); }
 	}
 	if (bFeet)
 	{
