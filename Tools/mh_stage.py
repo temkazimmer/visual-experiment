@@ -27,8 +27,8 @@ TAG = "MHStage"
 YAW = globals().get("YAW", -90.0)       # the assembled Blueprint's facing, if it differs
 SHOTS = {       # camera position, look-at point, field of view; she is at y = -GAP/2
     "full": ((560.0, 0.0, 90.0), (0.0, 0.0, 84.0), 33.0),
-    "hands": ((170.0, 0.0, 78.0), (0.0, 0.0, 76.0), 34.0),
-    "feet": ((150.0, 0.0, 32.0), (0.0, 0.0, 6.0), 36.0),
+    "hands": ((150.0, -15.0, 86.0), (0.0, -15.0, 85.0), 33.0),     # her near hand and the MetaHuman's
+    "feet": ((200.0, 0.0, 30.0), (0.0, 0.0, 8.0), 46.0),
 }
 
 les = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
@@ -67,7 +67,8 @@ def prepare():
     ground = floor_z(world, 0.0, GAP / 2)
     comps = []
     if unreal.EditorAssetLibrary.does_asset_exist(BUILT_BP):
-        a = spawn(unreal.load_asset(BUILT_BP).generated_class(), (0.0, GAP / 2, ground), YAW)
+        # like the preview, the assembled body carries its soles 2.4 cm above its origin
+        a = spawn(unreal.load_asset(BUILT_BP).generated_class(), (0.0, GAP / 2, ground - 2.4), YAW)
         comps = list(a.get_components_by_class(unreal.SkeletalMeshComponent))
         print("MetaHuman: assembled Blueprint", BUILT_BP)
     else:
@@ -134,6 +135,11 @@ def setup():
             a.set_actor_location_and_rotation(unreal.Vector(0.0, GAP / 2, floor_z(world, 0.0, GAP / 2) - 2.4),
                                               unreal.Rotator(roll=0.0, pitch=0.0, yaw=YAW), False, True)
             print("MetaHuman preview at", a.get_actor_location())
+    for a in tagged(world, unreal.Actor):
+        for c in a.get_components_by_class(unreal.LODSyncComponent):
+            # LOD Sync follows the player's view, not the capture: from the far player camera
+            # it picks face LOD 2+, whose eyes come out blank here. Hold LOD 0 for the stills.
+            c.set_editor_property("forced_lod", 0)
     print("her at", her.get_actor_location(), "stage actors in Play:", len(tagged(world, unreal.Actor)))
 
 

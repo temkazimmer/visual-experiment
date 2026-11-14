@@ -148,6 +148,8 @@ def build(character):
     params.common_folder_path = CHAR_DIR + "/Common"
     params.enable_wardrobe_item_validation = False
     mh.build_meta_human(character, params)
+    # the assembly leaves ~240 unsaved packages; save this folder only, never "save all"
+    unreal.EditorAssetLibrary.save_directory(CHAR_DIR, only_if_is_dirty=False, recursive=True)
     log("built into", BUILD_DIR, unreal.EditorAssetLibrary.list_assets(BUILD_DIR, True, False)[:6])
 
 
