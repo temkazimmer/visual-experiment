@@ -60,6 +60,9 @@ public:
 	/** The MetaHuman body mesh while it is the one on screen, else null. */
 	static USkeletalMeshComponent* ShownBody(const ACharacter* Her);
 
+	/** Its face mesh, likewise. */
+	static USkeletalMeshComponent* ShownFace(const ACharacter* Her);
+
 	/** The mesh whose feet are on screen: the MetaHuman body if shown, else her own mesh. */
 	static USkeletalMeshComponent* FeetMesh(const ACharacter* Her);
 

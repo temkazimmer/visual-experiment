@@ -399,6 +399,12 @@ USkeletalMeshComponent* UVisexMHBodyComponent::ShownBody(const ACharacter* Her)
 	return C && C->bShown ? C->BodyMesh.Get() : nullptr;
 }
 
+USkeletalMeshComponent* UVisexMHBodyComponent::ShownFace(const ACharacter* Her)
+{
+	const UVisexMHBodyComponent* C = Her ? Her->FindComponentByClass<UVisexMHBodyComponent>() : nullptr;
+	return C && C->bShown ? C->FaceMesh.Get() : nullptr;
+}
+
 USkeletalMeshComponent* UVisexMHBodyComponent::FeetMesh(const ACharacter* Her)
 {
 	USkeletalMeshComponent* Shown = ShownBody(Her);

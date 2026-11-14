@@ -163,6 +163,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Photo")
 	int32 GetMotion() const { return Motion; }
+	/** The motion's name as the photo page shows it (empty past the last). */
+	FString GetMotionName(int32 Index) const { return Motions.IsValidIndex(Index) ? Motions[Index].Name : FString(); }
 
 	UFUNCTION(BlueprintCallable, Category = "Photo")
 	void TogglePause();

@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "VisexFootMeter.h"
+#include "VisexMHSpikes.h"
 #include "VisexQATour.generated.h"
 
 /**
@@ -45,6 +46,14 @@ private:
 	/** -visexgaps [-visexcvar=name=value]: her soles' gap to the sand while she stands still, at
 	 *  the menu lean and in the idle after Start, with one cvar set against the default. */
 	void BuildGaps();
+	/** -visexspikes [-visexcvar=visex.Body.MetaHuman=1]: every pose she has (arrival walk, menu
+	 *  lean, Settings sit, each photo motion by name, Start walk, idle, height 145 and 185) with
+	 *  the MetaHuman's skin checked for stretched edges each frame (VisexMHSpikes.h). */
+	void BuildSpikes();
+	/** -visexcvar=name=value: sets it before the tour starts. */
+	void ApplyCvarArg();
+	bool bSpikes = false;
+	FVisexMHSpikes Spikes;
 	bool bFeet = false;
 	bool bFilm = false;          // -visexfilm: every frame to Saved/QA/film
 	int32 FeetFrames = 0;

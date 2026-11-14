@@ -466,10 +466,8 @@ void AVisexQATour::BuildFeet()
 	});
 }
 
-void AVisexQATour::BuildGaps()
+void AVisexQATour::ApplyCvarArg()
 {
-	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
-	AVisexMenuDirector* D = Director;
 	FString Setting, Var, Value;
 	if (FParse::Value(FCommandLine::Get(), TEXT("visexcvar="), Setting) && Setting.Split(TEXT("="), &Var, &Value))
 	{
@@ -486,6 +484,13 @@ void AVisexQATour::BuildGaps()
 	{
 		QA_LOG(TEXT("VisexGaps: setting default"));
 	}
+}
+
+void AVisexQATour::BuildGaps()
+{
+	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
+	AVisexMenuDirector* D = Director;
+	ApplyCvarArg();
 	// -visexshots=<name>: 4K frames of the game view on the way (lean, three of the walk, idle),
 	// for a same-camera pair with a cvar off and on. Each costs a hitch, so only when asked.
 	FString Shots;
@@ -521,6 +526,60 @@ void AVisexQATour::BuildGaps()
 	});
 }
 
+void AVisexQATour::BuildSpikes()
+{
+	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
+	AVisexMenuDirector* D = Director;
+	ApplyCvarArg();
+	Spikes.Log = [](const FString& Line) { QA_LOG(TEXT("%s"), *Line); };
+	auto Phase = [this](const FString& Name) { Spikes.SetPhase(Name); };
+	auto Height = [this](float Cm)
+	{
+		ACharacter* C = Her();
+		if (UVisexBodyComponent* B = C ? C->FindComponentByClass<UVisexBodyComponent>() : nullptr) { B->SetValue(TEXT("Height"), Cm); }
+	};
+	Phase(TEXT("arrival walk"));
+	// the clock holds through her walk in; then every screen she has a pose on
+	Add(4.f, [Phase] { Phase(TEXT("menu lean")); });
+	Add(3.f, [Phase, D] { Phase(TEXT("settings sit down")); D->OpenSettings(); });
+	Add(8.f, [Phase] { Phase(TEXT("settings sit")); });
+	Add(3.f, [Phase, D] { Phase(TEXT("settings stand up")); D->CloseSettings(); });
+	Add(8.f, [Phase, D] { Phase(TEXT("photo enter")); D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
+	Add(4.f, [] {});
+	for (int32 I = 0; I < 40; ++I)
+	{
+		Add(0.5f, [this, Phase, I]
+		{
+			AVisexPhotoMode* P = Photo();
+			if (!P || !P->IsOpen()) { Next = AfterPoses; return; }
+			P->SetMotion(I);
+			if (P->GetMotion() != I) { Next = AfterPoses; return; }   // past the last motion
+			Phase(FString::Printf(TEXT("photo %02d %s"), I, *P->GetMotionName(I)));
+		});
+		Add(4.5f, [] {});
+	}
+	AfterPoses = Steps.Num();
+	Add(0.5f, [this, Phase] { Phase(TEXT("photo close")); if (AVisexPhotoMode* P = Photo()) { P->Close(); } });
+	Add(4.f, [Phase, D] { Phase(TEXT("start walk")); D->OnItemChosen(AVisexMenuDirector::ItemStart); });
+	Add(14.f, [Phase] { Phase(TEXT("proud idle")); });
+	Add(3.f, [Phase, Height] { Phase(TEXT("height 145")); Height(145.f); });
+	Add(3.f, [Phase, Height] { Phase(TEXT("height 185")); Height(185.f); });
+	Add(3.f, [this, Phase, Height]
+	{
+		Height(166.f);
+		Phase(TEXT("done"));
+		static const TCHAR* Names[2] = {TEXT("body"), TEXT("face")};
+		for (int32 I = 0; I < 2; ++I)
+		{
+			const FVisexSpike& S = Spikes.Total[I];
+			QA_LOG(TEXT("VisexSpikes: TOTAL %s: %s, worst %.2fx on %s, %d edges over %.0fx"), Names[I],
+				!S.bValid ? TEXT("NOT MEASURED") : S.Ratio > FVisexMHSpikes::Limit ? TEXT("FAIL") : TEXT("pass"), S.Ratio, *S.Bone.ToString(), S.Over, FVisexMHSpikes::Limit);
+		}
+		QA_LOG(TEXT("VisexQA: done"));
+		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
+	});
+}
+
 void AVisexQATour::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
@@ -532,7 +591,8 @@ void AVisexQATour::Tick(float DeltaSeconds)
 		bFeet = bGaps || bFilm || FParse::Param(FCommandLine::Get(), TEXT("visexfeet"));
 		FeetClock = 2e5f;   // until she first moves
 		Feet.Log = [](const FString& Line) { QA_LOG(TEXT("%s"), *Line); };
-		bGaps ? BuildGaps() : bFeet ? BuildFeet() : Build();
+		bSpikes = FParse::Param(FCommandLine::Get(), TEXT("visexspikes"));
+		bSpikes ? BuildSpikes() : bGaps ? BuildGaps() : bFeet ? BuildFeet() : Build();
 		bBuilt = true;
 	}
 	if (bFeet)
@@ -554,6 +614,10 @@ void AVisexQATour::Tick(float DeltaSeconds)
 		{
 			Feet.Shoot(GetWorld(), Her(), TEXT("arrival"), ArrivalShots++);
 		}
+	}
+	if (bSpikes)
+	{
+		Spikes.Tick(Her());
 	}
 	FrameSum += DeltaSeconds * 1000.0;
 	FrameMax = FMath::Max(FrameMax, double(DeltaSeconds) * 1000.0);
