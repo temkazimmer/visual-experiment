@@ -437,22 +437,24 @@ void AVisexQATour::BuildFeet()
 	AVisexMenuDirector* D = Director;
 	auto Editor = [this]() -> AVisexBodyEditor* { for (TActorIterator<AVisexBodyEditor> It(GetWorld()); It; ++It) { return *It; } return nullptr; };
 	// one move: the phase starts with Run, four frames of her feet 0.6 s apart, then it settles
-	auto Move = [this, &Add](const FString& Name, float Settle, TFunction<void()> Run)
+	auto Move = [this, &Add](const FString& Name, float Settle, TFunction<void()> Run, float First = 0.6f, float Gap = 0.6f)
 	{
 		Add(0.5f, [this, Name, Run] { Feet.SetPhase(Name); QA_LOG(TEXT("VisexFeet: phase %s"), *Name); Run(); });
 		for (int32 I = 0; I < 4; ++I)
 		{
-			Add(0.6f, [this, Name, I] { Feet.Shoot(GetWorld(), Her(), Name.Replace(TEXT(" "), TEXT("_")), I); });
+			Add(I ? Gap : First, [this, Name, I] { Feet.Shoot(GetWorld(), Her(), Name.Replace(TEXT(" "), TEXT("_")), I); });
 		}
 		Add(Settle, [] {});
 	};
 	// the clock holds through her walk in (Tick), so this is the menu with her on her spot
 	Move(TEXT("standing"), 2.f, [] {});
-	Move(TEXT("body out"), 2.5f, [D] { D->OpenBody(); });
+	// her walk out, start to stop: the lean-up hands over at 0.6 s, she stops by ~1.9 s
+	Move(TEXT("body out"), 3.f, [D] { D->OpenBody(); }, 0.75f, 0.4f);
 	Move(TEXT("body back"), 3.f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
 	Move(TEXT("wardrobe out"), 2.5f, [D] { D->OpenWardrobe(); });
 	Move(TEXT("wardrobe back"), 3.f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
 	Move(TEXT("photo enter"), 3.f, [D] { D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
+	Move(TEXT("photo back"), 3.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->Close(); } });
 	Add(0.5f, [this]
 	{
 		Feet.SetPhase(TEXT("done"));
