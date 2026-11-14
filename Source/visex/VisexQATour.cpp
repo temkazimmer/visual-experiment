@@ -473,11 +473,11 @@ void AVisexQATour::BuildLayers()
 	AVisexMenuDirector* D = Director;
 	auto Editor = [this]() -> AVisexBodyEditor* { for (TActorIterator<AVisexBodyEditor> It(GetWorld()); It; ++It) { return *It; } return nullptr; };
 	static const TCHAR* Vars[] = {TEXT("visex.Pin"), TEXT("visex.Catwalk"), TEXT("visex.Plant"), TEXT("visex.Toes"), TEXT("visex.Limits"), TEXT("visex.Reshape"), TEXT("visex.SteadyHead"), TEXT("visex.Hold")};
-	struct FSetting { const TCHAR* Name; TArray<int32> Off; int32 Pin; };
+	struct FSetting { const TCHAR* Name; TArray<int32> Off; int32 Pin; const TCHAR* Extra = TEXT(""); };
 	// pin 0 is the layers as they were; the layer settings are measured without the pin
 	const TArray<FSetting> Settings = {
-		{TEXT("all"), {}, 0}, {TEXT("pin1"), {}, 1}, {TEXT("pin2"), {}, 2}, {TEXT("nocatwalk"), {1}, 0}, {TEXT("noreshape"), {5}, 0},
-		{TEXT("noplant"), {2}, 0}, {TEXT("notoes"), {3}, 0}, {TEXT("nolimits"), {4}, 0}, {TEXT("bare"), {1, 2, 3, 4, 5, 6, 7}, 0}, {TEXT("pin2b"), {}, 2}};
+		{TEXT("all"), {}, 0}, {TEXT("pin1"), {}, 1}, {TEXT("pin2"), {}, 2}, {TEXT("nocatwalk"), {1}, 0},
+		{TEXT("pin2loose"), {}, 2, TEXT("visex.Pin.Still=20;visex.Pin.Moving=60")}, {TEXT("pin2nocat"), {1}, 2}};
 	if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(TEXT("visex.Pin.Log"))) { V->Set(TEXT("1"), ECVF_SetByConsole); }
 	Add(2.f, [this] { Feet.SetPhase(TEXT("standing")); });
 	for (const FSetting& Set : Settings)
@@ -485,11 +485,19 @@ void AVisexQATour::BuildLayers()
 		const FString Name = Set.Name;
 		const TArray<int32> Off = Set.Off;
 		const int32 Pin = Set.Pin;
-		auto Apply = [Off, Pin, Name]
+		const FString Extra = Set.Extra;
+		auto Apply = [Off, Pin, Name, Extra]
 		{
 			for (int32 I = 0; I < UE_ARRAY_COUNT(Vars); ++I)
 			{
 				if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(Vars[I])) { V->Set(I == 0 ? *FString::FromInt(Pin) : Off.Contains(I) ? TEXT("0") : TEXT("1"), ECVF_SetByConsole); }
+			}
+			TArray<FString> Pairs;
+			FString(TEXT("visex.Pin.Still=12;visex.Pin.Moving=40;") + Extra).ParseIntoArray(Pairs, TEXT(";"));
+			for (const FString& Pair : Pairs)
+			{
+				FString K, Val;
+				if (Pair.Split(TEXT("="), &K, &Val)) { if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(*K)) { V->Set(*Val, ECVF_SetByConsole); } }
 			}
 			QA_LOG(TEXT("VisexFeet: setting %s"), *Name);
 			UE_LOG(LogTemp, Display, TEXT("VisexPin: setting %s"), *Name);
@@ -498,6 +506,20 @@ void AVisexQATour::BuildLayers()
 		Add(4.5f, [] {});
 		Add(0.5f, [this, Name, Editor] { Feet.SetPhase(TEXT("back ") + Name); if (Name == TEXT("all") || Name == TEXT("pin2")) { Feet.ArmStance(TEXT("back_") + Name); } if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
 		Add(5.f, [] {});
+	}
+	// the other moves with the pin, then the photo return once more without it
+	auto Pin = [](const TCHAR* V) { if (IConsoleVariable* C = IConsoleManager::Get().FindConsoleVariable(TEXT("visex.Pin"))) { C->Set(V, ECVF_SetByConsole); } };
+	Add(0.5f, [this, D, Pin] { Pin(TEXT("2")); Feet.SetPhase(TEXT("wardrobe out pin2")); D->OpenWardrobe(); });
+	Add(4.5f, [] {});
+	Add(0.5f, [this, Editor] { Feet.SetPhase(TEXT("wardrobe back pin2")); if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
+	Add(5.f, [] {});
+	for (const TCHAR* P : {TEXT("2"), TEXT("0")})
+	{
+		const FString Tag = FString(TEXT(" pin")) + P;
+		Add(0.5f, [this, D, Pin, P, Tag] { Pin(P); if (const ACharacter* C = Her()) { QA_LOG(TEXT("VisexFeet: before photo%s: she stands at %s yaw %.1f"), *Tag, *C->GetActorLocation().ToCompactString(), C->GetActorRotation().Yaw); } Feet.SetPhase(TEXT("photo enter") + Tag); D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
+		Add(5.f, [] {});
+		Add(0.5f, [this, Tag] { Feet.SetPhase(TEXT("photo back") + Tag); if (AVisexPhotoMode* Ph = Photo()) { Ph->Close(); } });
+		Add(6.f, [this, Tag] { if (const ACharacter* C = Her()) { QA_LOG(TEXT("VisexFeet: photo back%s: she stands at %s yaw %.1f"), *Tag, *C->GetActorLocation().ToCompactString(), C->GetActorRotation().Yaw); } });
 	}
 	Add(0.5f, [this]
 	{

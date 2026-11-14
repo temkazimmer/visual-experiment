@@ -1241,7 +1241,8 @@ void FVisexAnimProxy::Pin(FCompactPose& Pose)
 	const FQuat Xq = EvalX.GetRotation();
 	const int32 Mode = PinOn > 1.5f ? 2 : PinOn > 0.5f ? 1 : 0;
 	const float Still = CVarPinStill.GetValueOnAnyThread(), Moving = FMath::Max(CVarPinMoving.GetValueOnAnyThread(), Still + 1.f);
-	auto FollowOf = [this](float W) { return W <= 0.f ? 1.f : 1.f - FMath::Pow(FMath::Clamp(W, 0.f, 1.f), FMath::Max(Dt * 60.f, 0.01f)); };
+	// held outright once mostly planted (a leaky hold let a planted point creep 2 cm), free once mostly not
+	auto FollowOf = [](float W) { return 1.f - FMath::SmoothStep(0.3f, 0.9f, W); };
 	for (int32 F = 0; F < 2; ++F)
 	{
 		if (!Leg[F][0].IsValid() || !Leg[F][1].IsValid() || !Leg[F][2].IsValid()) { continue; }
@@ -1268,7 +1269,8 @@ void FVisexAnimProxy::Pin(FCompactPose& Pose)
 		for (int32 I = 0; I < 2; ++I)
 		{
 			const float Height = bGround[F] ? Z[I] - PinRefZ[I] - GroundZ[F] : 0.f;
-			W[I] = (1.f - FMath::SmoothStep(1.f, 3.f, Height)) * (1.f - FMath::SmoothStep(Still, Moving, PinSpeed[F][I]));
+			// the graph's soles float ~1.5 cm before the plant pass, so "down" is within a few cm
+			W[I] = (1.f - FMath::SmoothStep(3.f, 6.f, Height)) * (1.f - FMath::SmoothStep(Still, Moving, PinSpeed[F][I]));
 			if (PinW[F] <= 0.f) { W[I] = 0.f; }   // a cut
 		}
 		if (Mode == 2)
