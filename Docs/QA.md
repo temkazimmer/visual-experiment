@@ -7,6 +7,37 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-14 13:05 · VIS-EX-0622 Shipping (b54e246) · FAIL: her legs are thrown upward, upside down in run 1, after the foot pin merge; film mirrored and hand-off clean
+
+- **Cook:** `Success - 0 error(s), 0 warning(s)`, 926 packages ordered. DMG md5 `4ee14590…` (1.6 GB). Not copied to `-stable`.
+- **Tour:** two runs from the mounted DMG, 1440×1080 windowed (the 1920×1080 request clamps to this screen, same as 0612). Both `VisexQA: done`, exit 0 (310 s, 300 s), no `.ips`.
+  On ground at every report step, `body page open`, `wardrobe open`, photo `moved 0.0 cm`, `layout save PASS`, menu feet IN FRAME at 16:9 and 4:3, back on the lean spot (9500 −900 152) after Body, Wardrobe and Photo.
+  Run 1: Tema's save (Elf hair). Run 2: the 0612 copy with Short hair. Load average 5–7 both runs.
+- **The fail: her pose breaks** (`sheets/inverted_vs0612.jpg`, `menu_play_vs0612.jpg`, `run1_all.jpg`, `run2_all.jpg`). The capsule is fine; the skeleton is not.
+  - Run 1: in the menu she's folded up on the drum. At `play` and `walked`, on the Body page and in most photo motions she hangs **upside down**, legs in the air.
+    The menu feet check puts both feet at y 0.24–0.31 of the frame (0612: 0.76).
+  - Run 2: one leg is thrown up. She walks with a leg pointing at the sky (`sheets/play_walk_3fps.jpg`), a foot sits beside her head on the Body face/hair tabs,
+    and photo Bookend/Crown/Idle show a leg straight up. The right foot is at y 0.30 in the menu feet check, the left one on the sand at 0.76.
+  - The outfit poses (12–21) and some photo motions look normal. The two runs differ, so this looks like uninitialised or garbage state, not a bad clip.
+  - Since 0612 the only runtime change is the pin pass in `VisexAnimInstance.cpp` (the film is just a movie). Suspect: `PinAnchor`, `PinLastHeel/Ball` and `PinGraphStart`
+    are `FVector`s with no initialiser (garbage in Shipping), and `PinAnchor` is lerped before it's first set. Not confirmed: `-dpcvars` is compiled out of Shipping,
+    so `visex.Pin 0` couldn't be tested in the packaged build. Next: check `visex.Pin 0` vs 2 in a Development or Shipping build.
+- **Film** (run 2 screen recording, `run2/rec/arrival.mp4`, `sheets/film_strip.jpg`, `film_and_lean.jpg`): it plays mirrored, toes and stride going left to right, ~6.5 s.
+  Then ~1 s of black and the plaza fades up (`sheets/handoff_arrival_4fps.jpg`). **No desktop showed through and no gap** beyond that black, in windowed mode.
+  The 0612 desktop flash didn't repeat. Music not checked (no audio in the capture).
+- **Arrival:** she walks in from the left and sinks into the lean with no snap, but a leg kicks up during the walk-in (the pose bug). The lean itself isn't clean either (one leg missing from view).
+- **Menu moves** (`run2/rec/settings_body_wardrobe.mp4`, `sheets/moves_1fps.jpg`): Settings (onto the drum and back), Body and Wardrobe go out and come back to the lean.
+  Photo goes out (walk in the dunes) and comes back (`58_after_photo`), but the window was covered during Photo, so that motion wasn't seen.
+- **Play step:** still at the column 4 s after Start (9494 −923, root-motion montage on), as in 0612, on an idle machine this time. So it isn't the load:
+  the arrival montage holds her there. At `walked` (+3.5 s) she's 500 cm out (9365 −1406).
+- **Feet:** fail. With the pose broken, feet aren't on the sand in the Settings stand-up, the Body turn or play. The pin itself can't be judged until the pose is fixed.
+- **Mounds:** prints and shallow mounds show around her in `04_walked`.
+- **Short hair:** the report has `Hair: SKM_HairShort` all through run 2, and the Body hair tab shows the layered shag (`sheets/walked_settings_hair_run2.jpg`).
+- **Perf:** frame times noisy (menu 48 / 26 ms, quality 4 90 / 70 ms). Not compared.
+- **Saves:** backed up `VisexBody.sav` (`7ac129aa…`) and `GameUserSettings.ini` (`06e783cf…`). Restored after each run, both md5s match. No `Game.ini` before or after.
+  Run 1's screen recording was lost (screencapture killed before it wrote). Run 2's was cut to game-only clips and the raw file deleted.
+  Shots in `Saved/QA_0622ship_run{1,2}/` and `Tools/.bridge/shots/qa0622/run{1,2}/`, sheets in `sheets/`.
+
 ## 2026-11-14 10:09 · VIS-EX-0612 Shipping (8992d06) · PASS, root-motion arrival turns and sinks into the lean with no snap, Short hair wears and is listed WORN; perf not measurable (machine busy)
 
 - **Cook:** `Success - 0 error(s), 0 warning(s)`, 946 packages (926 cooked, 20 skipped by platform). The uncommitted MetaHuman plugin entries in `visex.uproject` didn't break it:
