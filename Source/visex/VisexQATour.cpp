@@ -473,28 +473,30 @@ void AVisexQATour::BuildLayers()
 	AVisexMenuDirector* D = Director;
 	auto Editor = [this]() -> AVisexBodyEditor* { for (TActorIterator<AVisexBodyEditor> It(GetWorld()); It; ++It) { return *It; } return nullptr; };
 	static const TCHAR* Vars[] = {TEXT("visex.Pin"), TEXT("visex.Catwalk"), TEXT("visex.Plant"), TEXT("visex.Toes"), TEXT("visex.Limits"), TEXT("visex.Reshape"), TEXT("visex.SteadyHead"), TEXT("visex.Hold")};
-	struct FSetting { const TCHAR* Name; TArray<int32> Off; bool bPin; };
+	struct FSetting { const TCHAR* Name; TArray<int32> Off; int32 Pin; };
+	// pin 0 is the layers as they were; the layer settings are measured without the pin
 	const TArray<FSetting> Settings = {
-		{TEXT("all"), {}, false}, {TEXT("nocatwalk"), {1}, false}, {TEXT("noplant"), {2}, false}, {TEXT("notoes"), {3}, false},
-		{TEXT("nolimits"), {4}, false}, {TEXT("noreshape"), {5}, false}, {TEXT("nosteady"), {6}, false}, {TEXT("nohold"), {7}, false},
-		{TEXT("bare"), {1, 2, 3, 4, 5, 6, 7}, false}, {TEXT("pin"), {}, true}};
+		{TEXT("all"), {}, 0}, {TEXT("pin1"), {}, 1}, {TEXT("pin2"), {}, 2}, {TEXT("nocatwalk"), {1}, 0}, {TEXT("noreshape"), {5}, 0},
+		{TEXT("noplant"), {2}, 0}, {TEXT("notoes"), {3}, 0}, {TEXT("nolimits"), {4}, 0}, {TEXT("bare"), {1, 2, 3, 4, 5, 6, 7}, 0}, {TEXT("pin2b"), {}, 2}};
+	if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(TEXT("visex.Pin.Log"))) { V->Set(TEXT("1"), ECVF_SetByConsole); }
 	Add(2.f, [this] { Feet.SetPhase(TEXT("standing")); });
 	for (const FSetting& Set : Settings)
 	{
 		const FString Name = Set.Name;
 		const TArray<int32> Off = Set.Off;
-		const bool bPin = Set.bPin;
-		auto Apply = [Off, bPin, Name]
+		const int32 Pin = Set.Pin;
+		auto Apply = [Off, Pin, Name]
 		{
 			for (int32 I = 0; I < UE_ARRAY_COUNT(Vars); ++I)
 			{
-				if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(Vars[I])) { V->Set(I == 0 ? (bPin ? TEXT("1") : TEXT("0")) : Off.Contains(I) ? TEXT("0") : TEXT("1"), ECVF_SetByConsole); }
+				if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(Vars[I])) { V->Set(I == 0 ? *FString::FromInt(Pin) : Off.Contains(I) ? TEXT("0") : TEXT("1"), ECVF_SetByConsole); }
 			}
 			QA_LOG(TEXT("VisexFeet: setting %s"), *Name);
+			UE_LOG(LogTemp, Display, TEXT("VisexPin: setting %s"), *Name);
 		};
-		Add(0.5f, [this, Apply, Name, D] { Apply(); Feet.SetPhase(TEXT("out ") + Name); if (Name == TEXT("all") || Name == TEXT("pin")) { Feet.ArmStance(TEXT("out_") + Name); } D->OpenBody(); });
+		Add(0.5f, [this, Apply, Name, D] { Apply(); Feet.SetPhase(TEXT("out ") + Name); if (Name == TEXT("all") || Name == TEXT("pin2")) { Feet.ArmStance(TEXT("out_") + Name); } D->OpenBody(); });
 		Add(4.5f, [] {});
-		Add(0.5f, [this, Name, Editor] { Feet.SetPhase(TEXT("back ") + Name); if (Name == TEXT("all") || Name == TEXT("pin")) { Feet.ArmStance(TEXT("back_") + Name); } if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
+		Add(0.5f, [this, Name, Editor] { Feet.SetPhase(TEXT("back ") + Name); if (Name == TEXT("all") || Name == TEXT("pin2")) { Feet.ArmStance(TEXT("back_") + Name); } if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
 		Add(5.f, [] {});
 	}
 	Add(0.5f, [this]

@@ -22,6 +22,7 @@ struct FVisexAnimProxy : public FAnimInstanceProxy
 
 	virtual void PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeconds) override;
 	virtual bool Evaluate_WithRoot(FPoseContext& Output, FAnimNode_Base* InRootNode) override;
+	virtual void PreEvaluateAnimation(UAnimInstance* InAnimInstance) override;   // her transform after this frame's move
 
 private:
 	void Reshape(FCompactPose& Pose) const;
@@ -117,6 +118,14 @@ private:
 	FVector PinDelta[2] = {FVector::ZeroVector, FVector::ZeroVector};   // the layers' move, world
 	FQuat PinTurn[2] = {FQuat::Identity, FQuat::Identity};              // the layers' turn, world
 	float PinW[2] = {0.f, 0.f};       // how still the graph's foot stands, 0..1
+	FTransform EvalX;                 // the mesh's world transform as it is evaluated (after the move)
+	float PinSpeed[2][2] = {{0.f, 0.f}, {0.f, 0.f}};   // the graph's heel and ball, world cm/s
+	FVector PinAnchor[2][2];          // pin 2: where each planted heel and ball stays, world
+	float PinRefZ[2] = {-1.f, -1.f};  // heel (ankle) and ball over the sole, ref pose
+	// pin log: per stance, how far the graph's and the final contact point slid
+	float PinStance[2] = {0.f, 0.f}, PinGraphDrift[2] = {0.f, 0.f}, PinOutDrift[2] = {0.f, 0.f};
+	FVector PinGraphStart[2][2], PinOutStart[2][2];   // per foot: heel, ball
+	bool bPinDown[2][2] = {{false, false}, {false, false}};
 };
 
 UCLASS(Transient, Blueprintable)
