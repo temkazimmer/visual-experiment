@@ -2,6 +2,7 @@
 
 #include "VisexAnimInstance.h"
 #include "VisexShellComponent.h"
+#include "VisexMHBody.h"
 #include "ChaosClothAsset/ClothAsset.h"
 #include "ChaosClothAsset/ClothComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -68,6 +69,8 @@ void UVisexBodyComponent::BeginPlay()
 		Load();
 	}
 	Apply();
+	// visex.Body.MetaHuman: the MetaHuman body that can stand in for the skin (nothing until the cvar is 1)
+	UVisexMHBodyComponent::Ensure(GetOwner());
 }
 
 void UVisexBodyComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
