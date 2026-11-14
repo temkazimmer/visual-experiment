@@ -105,6 +105,10 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<class UMaterialInterface> BareSkin;
 
+	/** The face mesh's own skin material (slot 0, LOD 0) while the one without the top's straps is on. */
+	UPROPERTY(Transient)
+	TObjectPtr<class UMaterialInterface> FaceSkin;
+
 	FName GarmentOutfit = NAME_None;
 	bool bOutfitApplied = false;
 

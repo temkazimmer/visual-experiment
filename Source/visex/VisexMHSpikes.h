@@ -61,7 +61,7 @@ struct FVisexMHSpikes
 	static constexpr float Limit = 3.f, MinRef = 1.f, MinCrease = 0.25f, MaxGrow = 3.f;
 	/** Poke-through: skin is drawn within EdgeBand cm of a fabric edge (the cover mask's margin and
 	 *  its ramp); fabric more than MaxPoke cm under the skin there fails. */
-	static constexpr float EdgeBand = 1.3f, MaxPoke = 0.1f;
+	static constexpr float EdgeBand = 0.8f, MaxPoke = 0.1f;
 	enum { Body, Face, Garment, Count };
 
 	TFunction<void(const FString&)> Log;
@@ -89,11 +89,12 @@ private:
 	};
 	FCache Caches[Count];
 	FVisexSpike Worst[Count];
-	/** Per garment fabric vertex: the body vertex under it in the reference pose. */
+	/** Per garment fabric vertex: the point of the body's skin under it in the reference pose. */
 	struct FPokeCache
 	{
 		TWeakObjectPtr<const USkeletalMesh> Body, Garment;
-		TArray<int32> Vertex, Under;      // garment vertex, body vertex
+		TArray<int32> Vertex, Under;      // garment vertex; the body triangle under it (first index)
+		TArray<FVector3f> Bary;           // where on that triangle
 		TArray<uint8> bEdge;              // within EdgeBand of a cut edge
 		TArray<uint32> BodyIndex;
 		float Sign = 1.f;                 // which way the body's stored triangle winding faces

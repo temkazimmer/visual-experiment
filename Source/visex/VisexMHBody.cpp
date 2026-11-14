@@ -637,6 +637,11 @@ void UVisexMHBodyComponent::ClearOutfit()
 		BodyMesh->SetMaterial(0, BareSkin);
 	}
 	BareSkin = nullptr;
+	if (IsValid(FaceMesh) && FaceSkin)
+	{
+		FaceMesh->SetMaterial(0, FaceSkin);
+	}
+	FaceSkin = nullptr;
 	bOutfitApplied = false;
 }
 
@@ -686,6 +691,15 @@ void UVisexMHBodyComponent::ApplyOutfit()
 	{
 		BareSkin = BodyMesh->GetMaterial(0);
 		BodyMesh->SetMaterial(0, Under);
+	}
+	// the head mesh's chest part carries the baked top's shoulder straps: under an outfit, the copy
+	// of its LOD 0 skin with them painted out (Tools/mh_bare_skin.py); the figure is held at LOD 0
+	const TCHAR* HeadBare = TEXT("/Game/Character/MH/Outfits/MI_Head_Bare");
+	UMaterialInterface* Head = FaceMesh && FPackageName::DoesPackageExist(HeadBare) ? LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Character/MH/Outfits/MI_Head_Bare.MI_Head_Bare")) : nullptr;
+	if (Head)
+	{
+		FaceSkin = FaceMesh->GetMaterial(0);
+		FaceMesh->SetMaterial(0, Head);
 	}
 	UE_LOG(LogVisexMH, Display, TEXT("VisexMH: wearing %s (%s, skin under it %s)"), *Want.ToString(), *Mesh->GetName(), BareSkin ? TEXT("clipped") : TEXT("left as it is"));
 }

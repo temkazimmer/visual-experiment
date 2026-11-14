@@ -326,24 +326,6 @@ static FAutoConsoleCommandWithWorld CmdVisexMHSections(
 
 namespace
 {
-	/** Area-weighted vertex normals from a triangle list (winding as stored; the caller fixes the sign). */
-	void VertexNormals(const TArray<uint32>& Index, const TFunctionRef<FVector3f(uint32)>& At, int32 Num, TArray<FVector3f>& N)
-	{
-		N.Init(FVector3f::ZeroVector, Num);
-		for (int32 I = 0; I + 2 < Index.Num(); I += 3)
-		{
-			const FVector3f A = At(Index[I]), B = At(Index[I + 1]), C = At(Index[I + 2]);
-			const FVector3f Face = FVector3f::CrossProduct(B - A, C - A);
-			N[Index[I]] += Face;
-			N[Index[I + 1]] += Face;
-			N[Index[I + 2]] += Face;
-		}
-		for (FVector3f& V : N)
-		{
-			V = V.GetSafeNormal();
-		}
-	}
-
 	FName DominantBone(const USkeletalMesh* Asset, const FSkeletalMeshLODRenderData& LOD, int32 Vertex)
 	{
 		const FSkinWeightVertexBuffer& SW = LOD.SkinWeightVertexBuffer;
@@ -391,19 +373,24 @@ bool FVisexMHSpikes::MeasurePoke(USkeletalMeshComponent* BodyMesh, USkeletalMesh
 	FPokeCache& C = PokeCache;
 	if (C.Body != BA || C.Garment != GA)
 	{
-		// once, in the reference pose: each fabric vertex that lies on the skin (0.05-0.8 cm above
-		// it, the body vertex under it within 0.7 cm) and whether it is near a cut edge (UV2.x, cm)
+		// once, in the reference pose: each fabric vertex that lies on the skin (0.05-0.8 cm off the
+		// body triangle it was cut from) and whether it is near a cut edge (UV2.x, cm)
 		C = FPokeCache();
 		C.Body = BA;
 		C.Garment = GA;
 		BL.MultiSizeIndexContainer.GetIndexBuffer(C.BodyIndex);
-		TArray<FVector3f> N;
-		VertexNormals(C.BodyIndex, [&BP](uint32 V) { return BP.VertexPosition(V); }, BP.GetNumVertices(), N);
-		TMap<FIntVector, TArray<int32>> Grid;
-		const auto Cell = [](const FVector3f& P) { return FIntVector(FMath::FloorToInt(P.X), FMath::FloorToInt(P.Y), FMath::FloorToInt(P.Z)); };
+		const TArray<uint32>& Ix = C.BodyIndex;
+		TArray<FName> BodyBone;
+		BodyBone.SetNum(BP.GetNumVertices());
 		for (uint32 V = 0; V < BP.GetNumVertices(); ++V)
 		{
-			Grid.FindOrAdd(Cell(BP.VertexPosition(V))).Add(int32(V));
+			BodyBone[V] = DominantBone(BA, BL, int32(V));
+		}
+		TMap<FIntVector, TArray<int32>> Grid;
+		const auto Cell = [](const FVector3f& P) { return FIntVector(FMath::FloorToInt(P.X / 2.f), FMath::FloorToInt(P.Y / 2.f), FMath::FloorToInt(P.Z / 2.f)); };
+		for (int32 T = 0; T + 2 < Ix.Num(); T += 3)
+		{
+			Grid.FindOrAdd(Cell((BP.VertexPosition(Ix[T]) + BP.VertexPosition(Ix[T + 1]) + BP.VertexPosition(Ix[T + 2])) / 3.f)).Add(T);
 		}
 		const FStaticMeshVertexBuffer& UV = GL.StaticVertexBuffers.StaticMeshVertexBuffer;
 		const bool bSeamUV = UV.GetNumTexCoords() >= 3;
@@ -418,34 +405,45 @@ bool FVisexMHSpikes::MeasurePoke(USkeletalMeshComponent* BodyMesh, USkeletalMesh
 			}
 			const FVector3f P = GP.VertexPosition(V);
 			const FIntVector At = Cell(P);
+			// the skin it was cut from hangs on the same bone: across a fold (armpit, between the
+			// thighs) the nearest skin can be the other side's
+			const FName Mine = DominantBone(GA, GL, int32(V));
 			int32 Best = INDEX_NONE;
-			float BestD = FMath::Square(1.2f);
+			float BestD = FMath::Square(0.8f), BestH = 0.f;
+			FVector3f BestB = FVector3f::ZeroVector;
 			for (int32 X = -1; X <= 1; ++X) for (int32 Y = -1; Y <= 1; ++Y) for (int32 Z = -1; Z <= 1; ++Z)
 			{
-				if (const TArray<int32>* Bin = Grid.Find(At + FIntVector(X, Y, Z)))
+				const TArray<int32>* Bin = Grid.Find(At + FIntVector(X, Y, Z));
+				for (int32 K = 0; Bin && K < Bin->Num(); ++K)
 				{
-					for (int32 B : *Bin)
+					const int32 T = (*Bin)[K];
+					if (BodyBone[Ix[T]] != Mine && BodyBone[Ix[T + 1]] != Mine && BodyBone[Ix[T + 2]] != Mine)
 					{
-						const float D = FVector3f::DistSquared(P, BP.VertexPosition(B));
-						if (D < BestD) { BestD = D; Best = B; }
+						continue;
+					}
+					const FVector3f A = BP.VertexPosition(Ix[T]), B = BP.VertexPosition(Ix[T + 1]), Cc = BP.VertexPosition(Ix[T + 2]);
+					const FVector3f On = FVector3f(FMath::ClosestPointOnTriangleToPoint(FVector(P), FVector(A), FVector(B), FVector(Cc)));
+					const float D = FVector3f::DistSquared(P, On);
+					if (D < BestD)
+					{
+						const FVector Bc = FMath::ComputeBaryCentric2D(FVector(On), FVector(A), FVector(B), FVector(Cc));
+						BestD = D;
+						Best = T;
+						BestB = FVector3f(Bc);
+						BestH = FVector3f::DotProduct(P - On, FVector3f::CrossProduct(B - A, Cc - A).GetSafeNormal());
 					}
 				}
 			}
-			if (Best == INDEX_NONE)
+			if (Best == INDEX_NONE || FMath::Abs(BestH) < 0.05f)
 			{
-				continue;
+				continue;   // nothing under it, or it is off the triangle's side (an edge's rim)
 			}
-			const FVector3f Off = P - BP.VertexPosition(Best);
-			const float H = FVector3f::DotProduct(Off, N[Best]);
-			if (FMath::Abs(H) < 0.05f || FMath::Abs(H) > 0.8f || (Off - N[Best] * H).Size() > 0.7f)
-			{
-				continue;
-			}
-			(H > 0.f ? Plus : Minus)++;
+			(BestH > 0.f ? Plus : Minus)++;
 			C.Vertex.Add(int32(V));
 			C.Under.Add(Best);
+			C.Bary.Add(BestB);
 			C.bEdge.Add(Edge < EdgeBand ? 1 : 0);
-			Height.Add(H);
+			Height.Add(BestH);
 		}
 		// fabric is outside the skin in the reference pose: that tells which way the stored winding faces
 		C.Sign = Plus >= Minus ? 1.f : -1.f;
@@ -453,12 +451,12 @@ bool FVisexMHSpikes::MeasurePoke(USkeletalMeshComponent* BodyMesh, USkeletalMesh
 		{
 			if (Height[I] * C.Sign < 0.f)
 			{
-				C.Vertex.RemoveAtSwap(I); C.Under.RemoveAtSwap(I); C.bEdge.RemoveAtSwap(I); Height.RemoveAtSwap(I);
+				C.Vertex.RemoveAtSwap(I); C.Under.RemoveAtSwap(I); C.Bary.RemoveAtSwap(I); C.bEdge.RemoveAtSwap(I); Height.RemoveAtSwap(I);
 			}
 		}
 	}
 	TArray<FMatrix44f> RefToLocal;
-	TArray<FVector3f> PB, PG, N;
+	TArray<FVector3f> PB, PG;
 	BodyMesh->CacheRefToLocalMatrices(RefToLocal);
 	USkinnedMeshComponent::ComputeSkinnedPositions(BodyMesh, PB, RefToLocal, BL, BL.SkinWeightVertexBuffer);
 	GarmentMesh->CacheRefToLocalMatrices(RefToLocal);
@@ -467,12 +465,14 @@ bool FVisexMHSpikes::MeasurePoke(USkeletalMeshComponent* BodyMesh, USkeletalMesh
 	{
 		return false;
 	}
-	VertexNormals(C.BodyIndex, [&PB](uint32 V) { return PB[V]; }, PB.Num(), N);
+	// each fabric vertex against the very skin point it was cut over: under that triangle's plane, in cm
 	int32 Deep = INDEX_NONE, EdgeDeep = INDEX_NONE;
 	for (int32 I = 0; I < C.Vertex.Num(); ++I)
 	{
-		const int32 B = C.Under[I];
-		const float Depth = -C.Sign * FVector3f::DotProduct(PG[C.Vertex[I]] - PB[B], N[B]);
+		const int32 T = C.Under[I];
+		const FVector3f A = PB[C.BodyIndex[T]], B = PB[C.BodyIndex[T + 1]], Cc = PB[C.BodyIndex[T + 2]];
+		const FVector3f On = A * C.Bary[I].X + B * C.Bary[I].Y + Cc * C.Bary[I].Z;
+		const float Depth = -C.Sign * FVector3f::DotProduct(PG[C.Vertex[I]] - On, FVector3f::CrossProduct(B - A, Cc - A).GetSafeNormal());
 		if (Depth <= 0.02f)
 		{
 			continue;
