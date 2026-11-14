@@ -87,7 +87,7 @@ def replant_root(frames):
     return out[-1][1] - out[0][1], root[-1][1] - root[0][1]
 
 
-REPLANT = ("A_Menu_Walk_Loop",)
+REPLANT = ("A_Menu_Walk_Start", "A_Menu_Walk_Loop", "A_Menu_Walk_Stop")
 
 for name, path in CLIPS.items():
     seq = unreal.load_asset(path)
