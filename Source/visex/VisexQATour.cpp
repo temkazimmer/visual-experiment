@@ -486,17 +486,35 @@ void AVisexQATour::BuildGaps()
 	{
 		QA_LOG(TEXT("VisexGaps: setting default"));
 	}
+	// -visexshots=<name>: 4K frames of the game view on the way (lean, three of the walk, idle),
+	// for a same-camera pair with a cvar off and on. Each costs a hitch, so only when asked.
+	FString Shots;
+	FParse::Value(FCommandLine::Get(), TEXT("visexshots="), Shots);
+	auto Hi = [this, Shots](const TCHAR* What)
+	{
+		UGameViewportClient* View = GetWorld() ? GetWorld()->GetGameViewport() : nullptr;
+		if (!Shots.IsEmpty() && View)
+		{
+			const FString File = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("QA") / FString::Printf(TEXT("%s_%s.png"), *Shots, What));
+			View->ConsoleCommand(FString::Printf(TEXT("HighResShot 3840x2160 filename=\"%s\""), *File));
+			QA_LOG(TEXT("VisexGaps: 4K shot %s"), *File);
+		}
+	};
 	// the clock holds through her walk in: six seconds into the lean, two seconds measured
 	Add(6.f, [this] { Feet.SetPhase(TEXT("lean")); });
 	// Settings: she climbs onto the drum and perches; eight seconds to settle, three measured
-	Add(2.f, [this, D] { Feet.SetPhase(TEXT("sitdown")); D->OpenSettings(); });
+	Add(2.f, [this, D, Hi] { Hi(TEXT("lean")); Feet.SetPhase(TEXT("sitdown")); D->OpenSettings(); });
 	Add(8.f, [this] { Feet.SetPhase(TEXT("sit")); });
 	Add(3.f, [this, D] { Feet.SetPhase(TEXT("standup")); D->CloseSettings(); });
 	Add(8.f, [this, D] { Feet.SetPhase(TEXT("start")); D->OnItemChosen(AVisexMenuDirector::ItemStart); });
 	// Start: she stands up, walks off and stops on the open sand
-	Add(14.f, [this] { Feet.SetPhase(TEXT("idle")); });
-	Add(2.f, [this]
+	Add(7.f, [Hi] { Hi(TEXT("walk1")); });
+	Add(1.5f, [Hi] { Hi(TEXT("walk2")); });
+	Add(1.5f, [Hi] { Hi(TEXT("walk3")); });
+	Add(4.f, [this] { Feet.SetPhase(TEXT("idle")); });
+	Add(2.f, [this, Hi]
 	{
+		Hi(TEXT("idle"));
 		Feet.SetPhase(TEXT("done"));
 		QA_LOG(TEXT("VisexQA: done"));
 		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
