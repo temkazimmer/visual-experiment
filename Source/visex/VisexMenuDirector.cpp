@@ -665,7 +665,7 @@ void AVisexMenuDirector::OpenCharacterPage(int32 InPage)
 			// she pushes off, then walks clear of the stone: turning her on the page swept her
 			// legs into it. The page opens where she stops.
 			GetWorldTimerManager().SetTimer(StandTimer, this, &AVisexMenuDirector::BeginStepOut,
-				RootMoves() ? LeanUpHandOff : FMath::Clamp(Up * StandUpHandOver, 0.02f, FMath::Max(0.02f, WalkOffMaxDelay)), false);
+				RootMoves() ? FMath::Max(0.02f, LeanUpHandOff - LeanUpFrom) : FMath::Clamp(Up * StandUpHandOver, 0.02f, FMath::Max(0.02f, WalkOffMaxDelay)), false);
 			return;
 		}
 		GetWorldTimerManager().SetTimer(StandTimer, this, &AVisexMenuDirector::OpenBodyNow, Up * 0.8f, false);
@@ -854,6 +854,10 @@ void AVisexMenuDirector::BeginStepBack(float Wait, int32 Select)
 	StopMove();
 	bRootMove = false;
 	MoveSide = 0.f;
+	if (ReturnPhase == 0 && BeginRootStepBack())
+	{
+		return;
+	}
 	if (RootMoves() && ReturnPhase == 0)
 	{
 		// the walk back by root motion, planned from where the first turn will leave her feet;
@@ -900,6 +904,7 @@ bool AVisexMenuDirector::StartTurnClip(bool bThenWalk)
 	TurnEnd = P.End;
 	TurnLeanAt = P.LeanAt;
 	bTurnThenWalk = bThenWalk;
+	TurnRawWas = TurnYawAt(TurnStart);
 	if (!bTurnRootSaved)
 	{
 		TurnRootMotion = Anim->RootMotionMode;
@@ -1060,6 +1065,11 @@ void AVisexMenuDirector::TickReturn(float DeltaSeconds)
 {
 	ACharacter* Char = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
 	PhaseClock += DeltaSeconds;
+	if (ReturnPhase >= 3)
+	{
+		TickStepBack();
+		return;
+	}
 	FVector To = StepHome - Char->GetActorLocation();
 	To.Z = 0.f;
 	const float Left = To.Size();
@@ -1076,7 +1086,11 @@ void AVisexMenuDirector::TickReturn(float DeltaSeconds)
 		// last of it settles on the exact facing
 		const float Fix = bTurnThenWalk ? 0.f : FMath::Clamp((T - (TurnEnd - 0.3f)) / 0.3f, 0.f, 1.f);
 		const float Yaw = FMath::Lerp(ClipYaw, TurnTo - TurnFrom, Ease(Fix));
-		Char->SetActorRotation(FRotator(0.f, TurnFrom + Yaw, 0.f));
+		// the clip's own yaw turns her about her capsule, as its feet are drawn; what the scale
+		// and the settle add turns about her planted foot, so it doesn't slide
+		const float Raw = TurnYawAt(TurnStart + T * TurnRate);
+		TurnAboutPlanted(TurnFrom + Yaw, bLeaning ? 0.f : Raw - TurnRawWas);   // (sinking: the turn's pose is held)
+		TurnRawWas = Raw;
 		return PhaseClock >= TurnEnd;
 	};
 	if (ReturnPhase == 0)
@@ -1113,7 +1127,7 @@ void AVisexMenuDirector::TickReturn(float DeltaSeconds)
 	if (ReturnPhase == 1 && bRootMove)
 	{
 		// the clips walk her; she keeps to the planned heading, and turns once stopped
-		Char->SetActorRotation(FRotator(0.f, FMath::FixedTurn(Char->GetActorRotation().Yaw, MoveYaw, 90.f * DeltaSeconds), 0.f));
+		TurnAboutPlanted(FMath::FixedTurn(Char->GetActorRotation().Yaw, MoveYaw, 90.f * DeltaSeconds));
 		if (MoveAtEnd() || !IsMoving())
 		{
 			BeginRootTurnHome();
@@ -1166,6 +1180,11 @@ void AVisexMenuDirector::TickReturn(float DeltaSeconds)
 		if (Left > 0.5f && !bRootMove)
 		{
 			Char->AddActorWorldOffset(To * FMath::Min(1.f, DeltaSeconds * 4.f));
+		}
+		else if (bRootMove && bLeaning && !bHolding && Left > 0.05f)
+		{
+			// sinking: the centimetre or two the turn's pivots left, slowly, not a pop at the end
+			Char->AddActorWorldOffset(To.GetClampedToMaxSize(4.f * DeltaSeconds));
 		}
 		if (TurnLeanAt >= 0.f && PhaseClock >= TurnLeanAt && !bLeaning)
 		{
@@ -1552,7 +1571,7 @@ void AVisexMenuDirector::OpenPhoto()
 		if (LeanColumn)
 		{
 			GetWorldTimerManager().SetTimer(StandTimer, this, &AVisexMenuDirector::BeginStepOut,
-				RootMoves() ? LeanUpHandOff : FMath::Clamp(Up * StandUpHandOver, 0.02f, FMath::Max(0.02f, WalkOffMaxDelay)), false);
+				RootMoves() ? FMath::Max(0.02f, LeanUpHandOff - LeanUpFrom) : FMath::Clamp(Up * StandUpHandOver, 0.02f, FMath::Max(0.02f, WalkOffMaxDelay)), false);
 			return;
 		}
 		GetWorldTimerManager().SetTimer(StandTimer, this, &AVisexMenuDirector::OpenPhotoNow, Up * 0.8f, false);
@@ -2291,7 +2310,8 @@ float AVisexMenuDirector::StandUp(bool bIntoWalk)
 	if (UAnimSequence* Up = LeanUp.LoadSynchronous())
 	{
 		LoadedLean.AddUnique(Up);
-		Anim->PlaySlotAnimationAsDynamicMontage(Up, Slot, 0.15f, 0.35f, 1.f, 1, bIntoWalk ? 0.f : -1.f);
+		// into a walk: from its first movement (its still first frames read as a wait)
+		Anim->PlaySlotAnimationAsDynamicMontage(Up, Slot, 0.15f, 0.35f, 1.f, 1, bIntoWalk ? 0.f : -1.f, bIntoWalk ? LeanUpFrom : 0.f);
 		return Up->GetPlayLength();
 	}
 	Anim->StopSlotAnimation(0.4f, Slot);
