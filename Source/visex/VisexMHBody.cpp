@@ -3,6 +3,7 @@
 #include "VisexShellComponent.h"
 #include "Materials/MaterialInterface.h"
 #include "Misc/PackageName.h"
+#include "Misc/ConfigCacheIni.h"
 #include "Animation/AnimInstanceProxy.h"
 #include "Components/LODSyncComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -37,8 +38,33 @@ static TAutoConsoleVariable<FString> CVarVisexMHTestPose(
 	TEXT("visex.Body.MetaHuman.TestPose"), TEXT(""),
 	TEXT("Debug: extra local rotations on MetaHuman bones, e.g. \"calf_l:0,0,-120;upperarm_r:0,80,0\"; \"ref;...\" poses the reference pose instead of the followed one. Switches the foot pin off."));
 
+// "scale,up,forward,right": hair-asset cm to MetaHuman head cm, then cm along the head bone's X, Y, Z
+static TAutoConsoleVariable<FString> CVarVisexMHHairFit(
+	TEXT("visex.Body.MetaHuman.HairFit"), TEXT(""),
+	TEXT("Debug: overrides the worn hairstyle's fit on the MetaHuman head, \"scale,x,y,z\" in the head bone's axes (cm). Empty: the style's own fit."));
+
+static TAutoConsoleVariable<FString> CVarVisexMHHairStyle(
+	TEXT("visex.Body.MetaHuman.HairStyle"), TEXT(""),
+	TEXT("Debug: the MetaHuman head wears this hairstyle (Long, Elf, Short) whatever the Hair tab says. Empty: the Hair tab's."));
+
 namespace
 {
+	/** A hairstyle's fit on the MetaHuman skull: "scale,up,front,side" (hair-asset cm to MetaHuman
+	 *  head cm, then cm along the head bone's X, Y, Z). The one place the numbers live is
+	 *  Config/DefaultGame.ini, [VisexMHHairFit], a line per style, written by Tools/mh_hair_fit.py
+	 *  (least squares of the scalp clearance; run it again after every new head). No line: no fit. */
+	bool ParseHairFit(const FString& Text, float& Scale, FVector& Offset)
+	{
+		TArray<FString> Parts;
+		if (Text.ParseIntoArray(Parts, TEXT(",")) != 4)
+		{
+			return false;
+		}
+		Scale = FMath::Clamp(FCString::Atof(*Parts[0]), 0.5f, 1.5f);
+		Offset = FVector(FCString::Atof(*Parts[1]), FCString::Atof(*Parts[2]), FCString::Atof(*Parts[3]));
+		return true;
+	}
+
 	const TCHAR* FigureClassPath = TEXT("/Game/Character/MH/Built/MHC_Her/BP_MHC_Her.BP_MHC_Her_C");
 	// the MetaHuman was shaped to her at Height 166 (Tools/mh_create.py), at component scale 1
 	const float BuiltHeight = 166.f;
@@ -460,6 +486,7 @@ void UVisexMHBodyComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 		HideDriver(true);
 		ApplyOutfit();
 		ApplyDebug();
+		ApplyHair();   // after ApplyDebug: it may have bound a re-made Body
 	}
 }
 
@@ -512,6 +539,7 @@ void UVisexMHBodyComponent::Bind()
 	const float Reference = Body ? Body->ReferenceHeight : 177.5f;
 	const FLightingChannels& Ch = Driver->LightingChannels;
 	ClearOutfit();   // it hangs on the Body that is being replaced
+	ClearHair();
 	BodyMesh = nullptr;
 	FaceMesh = nullptr;
 	TInlineComponentArray<UPrimitiveComponent*> Prims(Figure);
@@ -547,6 +575,7 @@ void UVisexMHBodyComponent::Bind()
 void UVisexMHBodyComponent::Hide()
 {
 	ClearOutfit();
+	ClearHair();
 	if (Figure)
 	{
 		Figure->Destroy();
@@ -702,4 +731,117 @@ void UVisexMHBodyComponent::ApplyOutfit()
 		FaceMesh->SetMaterial(0, Head);
 	}
 	UE_LOG(LogVisexMH, Display, TEXT("VisexMH: wearing %s (%s, skin under it %s)"), *Want.ToString(), *Mesh->GetName(), BareSkin ? TEXT("clipped") : TEXT("left as it is"));
+}
+
+void UVisexMHHairComponent::Refit()
+{
+	const USkeletalMeshComponent* Parent = Cast<USkeletalMeshComponent>(GetAttachParent());
+	if (!Parent)
+	{
+		return;
+	}
+	// a card vertex p (head space, hair-asset cm) belongs at Head * (FitScale * p + FitOffset); the
+	// AnimBP's copy puts it at Head * p in this component, so the component carries the rest. A
+	// uniform scale commutes with the head's rotation, so this is exact in any head pose.
+	const FTransform Head = Parent->GetSocketTransform(TEXT("head"), RTS_Component);
+	SetRelativeTransform(FTransform(FQuat::Identity,
+		Head.GetLocation() * (1.f - FitScale) + Head.GetRotation().RotateVector(FitOffset), FVector(FitScale)));
+}
+
+void UVisexMHHairComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Refit();   // the attach parent (the Body) is a tick prerequisite: its head is this frame's
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+}
+
+void UVisexMHBodyComponent::ClearHair()
+{
+	if (Hair)
+	{
+		Hair->DestroyComponent();
+	}
+	Hair = nullptr;
+	if (IsValid(PresetHair))
+	{
+		PresetHair->SetHiddenInGame(false);
+	}
+	PresetHair = nullptr;
+	HairStyle = NAME_None;
+	LastHairFit = TEXT("?");   // the next style logs its fit
+	bHairApplied = false;
+}
+
+void UVisexMHBodyComponent::ApplyHair()
+{
+	const ACharacter* Her = Cast<ACharacter>(GetOwner());
+	const UVisexBodyComponent* Body = Her ? Her->FindComponentByClass<UVisexBodyComponent>() : nullptr;
+	if (!IsValid(BodyMesh) || !Figure || !Body)
+	{
+		return;
+	}
+	const FString Forced = CVarVisexMHHairStyle.GetValueOnGameThread();
+	const FVisexHairStyle& Style = FVisexBodyProfile::HairStyles()[FVisexBodyProfile::HairIndex(Forced.IsEmpty() ? Body->Profile.Hair : FName(*Forced))];
+	if (!bHairApplied || Style.Name != HairStyle || (Hair && Hair->GetAttachParent() != BodyMesh))
+	{
+		ClearHair();
+		HairStyle = Style.Name;
+		bHairApplied = true;
+		// the style's own cards and physics AnimBP (the same assets today's head wears)
+		// the cards refitted to this skull if they exist (Tools/mh_hair.py: same bones, the cap and the
+		// roots moved onto the new scalp), else the style's own, which the fit alone seats to ~0.4 cm
+		const FString Own = FPackageName::ObjectPathToPackageName(FString(Style.Mesh));
+		const FString Name = FPackageName::GetShortName(Own) + TEXT("_MH");
+		const FString Refit = TEXT("/Game/Character/MH/Hair/") + Name;
+		USkeletalMesh* Asset = FPackageName::DoesPackageExist(Refit) ? LoadObject<USkeletalMesh>(nullptr, *(Refit + TEXT(".") + Name)) : nullptr;
+		Asset = Asset ? Asset : LoadObject<USkeletalMesh>(nullptr, Style.Mesh);
+		UClass* Anim = LoadClass<UAnimInstance>(nullptr, Style.Anim);
+		if (!Asset || !Anim)
+		{
+			UE_LOG(LogVisexMH, Warning, TEXT("VisexMH: hairstyle %s did not load, the preset's groom stays"), *Style.Name.ToString());
+			return;
+		}
+		Hair = NewObject<UVisexMHHairComponent>(Figure, TEXT("HerHair"), RF_Transient);
+		Hair->SetupAttachment(BodyMesh);   // the AnimBP copies its attached parent's pose
+		Hair->SetCollisionProfileName(TEXT("NoCollision"));
+		Hair->SetGenerateOverlapEvents(false);
+		Hair->SetSkeletalMeshAsset(Asset);
+		Hair->SetAnimInstanceClass(Anim);
+		Hair->SetCastShadow(true);
+		Hair->SetReceivesDecals(false);
+		Hair->SetBoundsScale(2.f);
+		const FLightingChannels& Ch = BodyMesh->LightingChannels;
+		Hair->SetLightingChannels(Ch.bChannel0, Ch.bChannel1, Ch.bChannel2);
+		Hair->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+		Hair->RegisterComponent();
+		// the preset's hair groom goes; brows, lashes and peach fuzz are grooms too and stay
+		TInlineComponentArray<UPrimitiveComponent*> Prims(Figure);
+		for (UPrimitiveComponent* Prim : Prims)
+		{
+			if (Prim->GetFName() == TEXT("Hair") && !Prim->IsA<USkeletalMeshComponent>())
+			{
+				Prim->SetHiddenInGame(true);
+				PresetHair = Prim;
+			}
+		}
+		UE_LOG(LogVisexMH, Display, TEXT("VisexMH: hair %s on the MetaHuman head (%s, preset groom %s)"), *Style.Name.ToString(), *Asset->GetName(), PresetHair ? TEXT("hidden") : TEXT("not found"));
+	}
+	if (!Hair)
+	{
+		return;
+	}
+	// the fit: the style's own line in DefaultGame.ini, or the debug cvar's while it is set
+	float Scale = 1.f;
+	FVector Offset = FVector::ZeroVector;
+	FString Own;
+	const bool bOwn = GConfig->GetString(TEXT("VisexMHHairFit"), *HairStyle.ToString(), Own, GGameIni) && ParseHairFit(Own, Scale, Offset);
+	const FString Debug = CVarVisexMHHairFit.GetValueOnGameThread();
+	ParseHairFit(Debug, Scale, Offset);
+	if (Debug != LastHairFit)
+	{
+		LastHairFit = Debug;
+		UE_LOG(LogVisexMH, Display, TEXT("VisexMH: hair fit %s scale %.3f offset %s (%s)"), *HairStyle.ToString(), Scale, *Offset.ToString(),
+			!Debug.IsEmpty() ? TEXT("visex.Body.MetaHuman.HairFit") : bOwn ? TEXT("DefaultGame.ini") : TEXT("NO LINE in [VisexMHHairFit]"));
+	}
+	Hair->FitScale = Scale;
+	Hair->FitOffset = Offset;
 }

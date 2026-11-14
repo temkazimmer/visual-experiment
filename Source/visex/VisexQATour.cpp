@@ -28,6 +28,10 @@
 #include "VisexMenuLayout.h"
 #include "Engine/GameViewportClient.h"
 #include "UnrealEngine.h"
+#include "VisexMHBody.h"
+#include "Components/SceneCaptureComponent2D.h"
+#include "Engine/TextureRenderTarget2D.h"
+#include "Kismet/KismetRenderingLibrary.h"
 #include "GameFramework/PlayerController.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogVisexQA, Log, All);
@@ -476,13 +480,85 @@ void AVisexQATour::HiShot(const FString& What)
 		const FString File = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("QA") / FString::Printf(TEXT("%s_%s.png"), *Shots, *What.Replace(TEXT(" "), TEXT("_"))));
 		View->ConsoleCommand(FString::Printf(TEXT("HighResShot 3840x2160 filename=\"%s\""), *File));
 		QA_LOG(TEXT("VisexQA: 4K shot %s"), *File);
+		CloseShots(Shots, What);
+	}
+}
+
+void AVisexQATour::CloseShots(const FString& Shots, const FString& What)
+{
+	// -visexclose=<What>:<bone>:<x,y,z>:<fov>[u][:<tx,ty,tz>][+...]: with the 4K frame of <What> (its name
+	// or its ending, "Crown" for photo_03_Crown), a 4K scene capture looking at a bone of the body on
+	// screen from x forward, y to her right, z up of it (cm), the target moved by t. No post grade.
+	FString All;
+	ACharacter* C = Her();
+	if (!FParse::Value(FCommandLine::Get(), TEXT("visexclose="), All, false) || !C)
+	{
+		return;
+	}
+	TArray<FString> Specs;
+	All.ParseIntoArray(Specs, TEXT("+"));
+	int32 N = 0;
+	for (const FString& Spec : Specs)
+	{
+		TArray<FString> F;
+		Spec.ParseIntoArray(F, TEXT(":"));
+		const auto Vec = [](const FString& Text)
+		{
+			TArray<FString> P;
+			Text.ParseIntoArray(P, TEXT(","));
+			return P.Num() == 3 ? FVector(FCString::Atof(*P[0]), FCString::Atof(*P[1]), FCString::Atof(*P[2])) : FVector::ZeroVector;
+		};
+		if (F.Num() < 4 || !What.EndsWith(F[0]))
+		{
+			continue;
+		}
+		const USkeletalMeshComponent* Shown = UVisexMHBodyComponent::ShownBody(C);
+		const USkeletalMeshComponent* Mesh = Shown ? Shown : C->GetMesh();
+		const auto Frame = [C](const FVector& V) { return C->GetActorForwardVector() * V.X + C->GetActorRightVector() * V.Y + FVector(0, 0, V.Z); };
+		const FVector Target = Mesh->GetSocketLocation(FName(*F[1])) + Frame(F.Num() > 4 ? Vec(F[4]) : FVector::ZeroVector);
+		const FVector From = Mesh->GetSocketLocation(FName(*F[1])) + Frame(Vec(F[2]));
+		if (!CloseCapture)
+		{
+			CloseCapture = NewObject<USceneCaptureComponent2D>(this, NAME_None, RF_Transient);
+			CloseCapture->TextureTarget = UKismetRenderingLibrary::CreateRenderTarget2D(this, 3840, 2160, RTF_RGBA8_SRGB);
+			CloseCapture->CaptureSource = SCS_FinalToneCurveHDR;
+			CloseCapture->bCaptureEveryFrame = false;
+			CloseCapture->bCaptureOnMovement = false;
+			CloseCapture->bAlwaysPersistRenderingState = true;
+			CloseCapture->RegisterComponent();
+		}
+		CloseCapture->FOVAngle = FCString::Atof(*F[3]);
+		// "25u": unlit, base colours only (skin against hair reads in any light)
+		CloseCapture->ShowFlags.SetLighting(!F[3].EndsWith(TEXT("u")));
+		CloseCapture->SetWorldLocationAndRotation(From, (Target - From).Rotation());
+		for (int32 I = 0; I < 4; ++I)
+		{
+			CloseCapture->CaptureScene();   // a few, so the temporal passes settle
+		}
+		const FString Name = FString::Printf(TEXT("%s_%s_close%d_%s.png"), *Shots, *What.Replace(TEXT(" "), TEXT("_")), N++, *F[1]);
+		UKismetRenderingLibrary::ExportRenderTarget(this, CloseCapture->TextureTarget, FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("QA")), Name);
+		QA_LOG(TEXT("VisexQA: close shot %s from %s at %s"), *Name, *From.ToCompactString(), *Target.ToCompactString());
 	}
 }
 
 void AVisexQATour::ApplyCvarArg()
 {
-	FString Setting, Var, Value;
-	if (FParse::Value(FCommandLine::Get(), TEXT("visexcvar="), Setting) && Setting.Split(TEXT("="), &Var, &Value))
+	FString Setting, More, Var, Value;
+	// several: -visexcvar=a=1+b=Elf (the first is the one the report names)
+	FString First;
+	if (FParse::Value(FCommandLine::Get(), TEXT("visexcvar="), Setting) && Setting.Split(TEXT("+"), &First, &More))
+	{
+		Setting = First;
+		TArray<FString> Rest;
+		More.ParseIntoArray(Rest, TEXT("+"));
+		for (const FString& One : Rest)
+		{
+			IConsoleVariable* V = One.Split(TEXT("="), &Var, &Value) ? IConsoleManager::Get().FindConsoleVariable(*Var) : nullptr;
+			if (V) { V->Set(*Value, ECVF_SetByConsole); }
+			QA_LOG(TEXT("VisexGaps: also setting %s, reads %s"), *One, V ? *V->GetString() : TEXT("NO SUCH CVAR"));
+		}
+	}
+	if (!Setting.IsEmpty() && Setting.Split(TEXT("="), &Var, &Value))
 	{
 		IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(*Var);
 		if (V) { V->Set(*Value, ECVF_SetByConsole); }

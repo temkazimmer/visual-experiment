@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Animation/AnimInstance.h"
 #include "Components/ActorComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "VisexMHBody.generated.h"
 
 class ACharacter;
@@ -37,6 +38,31 @@ public:
 
 protected:
 	virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override;
+};
+
+/**
+ * Her card hair on the MetaHuman head. The style's own mesh and AnimBP, unchanged: the AnimBP copies
+ * the pose from the attached parent (here the MetaHuman Body, so head, neck and spine are the
+ * MetaHuman's, with its bone lengths) and Kawaii Physics swings the locks. The cards were grown on
+ * the old skull, so each style carries a fit in the head bone's space (uniform scale and an offset:
+ * Config/DefaultGame.ini [VisexMHHairFit], written by Tools/mh_hair_fit.py). Before its own pose each frame the
+ * component turns that fit into its relative transform from the Body's final head bone (the attach
+ * parent ticks first), so the fit turns with the head and nothing lags a frame.
+ */
+UCLASS(Transient, NotBlueprintable)
+class VISEX_API UVisexMHHairComponent : public USkeletalMeshComponent
+{
+	GENERATED_BODY()
+
+public:
+	/** Hair-asset cm to MetaHuman head cm, and the offset in the head bone's axes (cm). */
+	float FitScale = 1.f;
+	FVector FitOffset = FVector::ZeroVector;
+
+	/** Puts the fit on the component from the parent's head bone as it is now. */
+	void Refit();
+
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 };
 
 /**
@@ -88,6 +114,10 @@ private:
 	 *  body's skin material is swapped for the one that clips the skin under opaque fabric. */
 	void ApplyOutfit();
 	void ClearOutfit();
+	/** Wears the driver's hairstyle on the MetaHuman head (UVisexMHHairComponent) and hides the
+	 *  preset's hair groom; brows, lashes and fuzz stay. */
+	void ApplyHair();
+	void ClearHair();
 
 	UPROPERTY(Transient)
 	TObjectPtr<AActor> Figure;
@@ -100,6 +130,17 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<USkeletalMeshComponent> Garment;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UVisexMHHairComponent> Hair;
+
+	/** The preset's hair groom, hidden while her cards are on. */
+	UPROPERTY(Transient)
+	TObjectPtr<UPrimitiveComponent> PresetHair;
+
+	FName HairStyle = NAME_None;
+	FString LastHairFit = TEXT("?");
+	bool bHairApplied = false;
 
 	/** The body's own skin material while an outfit's masked one is on. */
 	UPROPERTY(Transient)

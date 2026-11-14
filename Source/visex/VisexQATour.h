@@ -52,6 +52,9 @@ private:
 	void BuildSpikes();
 	/** -visexshots=<name>: a 4K frame of the game view to Saved/QA/<name>_<What>.png (no-op without it). */
 	void HiShot(const FString& What);
+	/** -visexclose=<What>:<bone>:<x,y,z>:<fov>[+...]: with that 4K frame, a 4K scene capture framed on a bone. */
+	void CloseShots(const FString& Shots, const FString& What);
+	UPROPERTY(Transient) TObjectPtr<class USceneCaptureComponent2D> CloseCapture;
 	/** -visexcvar=name=value: sets it before the tour starts. */
 	void ApplyCvarArg();
 	bool bSpikes = false;
