@@ -28,8 +28,8 @@ what we learned, so **write findings down in the log at the bottom as you go**.
 - **Run the spike check on every pose before any capture goes to Tema.** `UnrealEditor visex.uproject
   /Game/VisEx/Lvl_Dust -game -visexqa -visexspikes -visexcvar=visex.Body.MetaHuman=1` walks the arrival,
   the lean, the Settings sit, every photo motion, the Start walk, the idle and height 145/185, and writes
-  a line per pose to `Saved/QA/report.txt` (add `-visexshots=<name>` for a 4K frame of each). Both TOTAL
-  lines must read `pass`, and look at any pose whose crease count jumps. `visex.MH.Spikes` checks the
+  a line per pose to `Saved/QA/report.txt` (add `-visexshots=<name>` for a 4K frame of each). The TOTAL
+  lines (body, face, and with an outfit on: garment, poke) must read `pass`, and look at any pose whose crease count jumps. `visex.MH.Spikes` checks the
   pose on screen. Any re-assembly, new body shape or new pose set: run it again.
 - The project must keep `r.GPUSkin.Support16BitBoneIndex=True` (Config/DefaultEngine.ini). Assembling a
   MetaHuman without it silently drops skin weights (see the stage 2 log).
@@ -43,7 +43,7 @@ what we learned, so **write findings down in the log at the bottom as you go**.
    character stays the driver and the MetaHuman body follows its final pose, behind
    `visex.Body.MetaHuman` (see the stage 2 log). Done when walk and lean play in Lvl_Dust
    with foot numbers measured.
-3. **One outfit.** Rebuild Silversuit on the new skin through `Tools/blender_outfit.py`
+3. **One outfit.** (worn and holding; two hems fail the poke check, see the stage 3 log) Rebuild Silversuit on the new skin through `Tools/blender_outfit.py`
    (new skin FBX in, new fit data out). Done when it holds through walk, lean and a deep bend.
 4. **Spike review with Tema**: 4K side-by-side stills and a short clip, foot numbers, and
    a list of what broke. He decides whether to continue.
@@ -466,3 +466,182 @@ the grade, cvar on).
 **Left open.** Hands 1.7 cm and feet 2.2 cm longer than hers (bone scale in the follow step, if
 wanted). Hip breadth and the leg's real shape against her taper. Bust size in profile
 (Underbust). Ada's face and groom are still placeholders.
+
+### 2026-11-14 · Stage 3 · Silversuit on the MetaHuman body (captures `stage3_suit_*`)
+
+With `visex.Body.MetaHuman 1` and the Silversuit worn, she wears a Silversuit cut on the MetaHuman
+body: same cut, same material instances. Any other outfit shows nothing yet; with the cvar off
+nothing changed. Commits c95dc38 (tools), fb6d1f8 (C++), 35b51f6 (assets) and the three after them.
+
+**The pipeline survives.** `Tools/blender_outfit.py` already measures everything on the skin it is
+given (landmarks from joints and surface, fields in cm), so the MetaHuman body became a second skin
+source behind `--body=mh` instead of a fork. The old body's outfits build as before: same sizes and
+vertex counts, and the FBX differs from the old script's only in the ~6 KB that differ between any
+two runs of the same script (checked on Silversuit and Noir, with a control run).
+
+    python3 Tools/ue.py Tools/mh_skin_export.py                         # body LOD 0 -> SourceArt/Character/MH/mh_skin.fbx
+    Blender -b --factory-startup --python Tools/blender_outfit.py -- SourceArt/Character/MH/mh_skin.fbx \
+        SourceArt/Character/MH/Outfits [<preview_dir>] --only=Silversuit --body=mh
+    python3 Tools/ue.py -c "OUTFIT='Silversuit'; exec(open('<project>/Tools/mh_outfit.py').read())"
+
+What `--body=mh` does differently (`Tools/mh_outfit_body.py`, exec'd after the import):
+- **The export** comes in metres under a 0.01 empty, split along UV seams (32,334 vertices), with
+  UVs in tile 1 (u 1..2). It is flattened to cm, welded to 30,455, and each triangle split in four
+  (121,725 vertices, ~0.36 cm apart): the script's smoothing passes and kit fields were tuned on a
+  0.27 cm skin and round every opening off at 0.7 cm.
+- **Helper joints.** The skin hangs on `thigh_bck`, `calf_knee`, `upperarm_in`, `wrist_inner`,
+  `ankle_bck`, `clavicle_pec` ... and not on `thigh`, `calf`, `upperarm`. The script's substring
+  groups catch most; added: `wrist_*` is arm, `ankle_*` leg, and `clavicle_pec` / `clavicle_scap`
+  are chest and back, not arm (they would have cut the bust out of every torso mask).
+- **No morphs.** The bust apex is found on the surface (the most forward chest skin per side) and
+  stands in for the Bust morph's reach; there is no design morph set, no fit solve, and the garment
+  has no shape keys. The crotch is the lowest centre-line skin that faces down (this body's inner
+  thighs meet below it), and the floor is the lowest vertex (its soles are 3.5 cm over the origin).
+- **Reference pose kept.** The Blender round trip leaves the 342 bones where they were (worst
+  0.0003 cm, 0.14 degrees against the body mesh), which Leader Pose needs.
+
+**Pattern transfer: by landmark.** Silversuit's openings are Figma shapes drawn over the old body's
+T-pose views (`OutfitKit/Silversuit/figma.json`). `--kit-ref` on the old skin writes its landmarks
+to `OutfitKit/views/ref_profile.json`; on the MetaHuman, `mh_kit_tpose()` raises its arms the same
+way and maps each height band onto the old body's (this body -> old, cm): floor 3.5 -> 0, knee
+49.8 -> 49.8, crotch 79.2 -> 83.4, pelvis 92.9 -> 98.7, waist 104.0 -> 109.8, bust apex 124.1 ->
+128.8, shoulder joint 135.9 -> 142.8, neck 143.6 -> 151.2, with widths scaled by the silhouette's
+half-width at each band (1.00 at the hip, 1.07 waist, 0.99 bust, 1.18 at the shoulder joints) and
+depths by its front and back. The drawn shapes are then projected exactly as on the old body, so
+each hem keeps its place between the same two landmarks: the scoop neck inside the shoulder joints,
+the keyhole between and under the bust apexes, the hip cutouts from under the ribs to the hip crease,
+the belt (its height mapped back the same way) across them. Ankle and wrist hems come from joints
+and weights as before (5 cm over the ankle joint; where the hand's weight starts). Checked against
+`OutfitKit/Silversuit/build_front_close.png` in the Blender preview and in the game frames.
+
+**Weights and the follow.** Fabric keeps all 8 influences of the skin it was cut from, helper joints
+included, and `SKM_Silversuit_MH` (78,058 vertices, one LOD, on `metahuman_base_skel`, legacy FBX
+importer at 0.01) follows the Body by Leader Pose through `UVisexShellComponent`: the leader's final
+bones are the post-process AnimBP's output, so the fabric gets the twists and correctives the skin
+gets. `UVisexMHBodyComponent::ApplyOutfit` loads `SKM_<Outfit>_MH` and `MI_Body_<Outfit>` by name from
+`/Game/Character/MH/Outfits` when the outfit changes; no asset, nothing worn. While a garment is on,
+the figure is held at LOD 0 (`ForcedLOD`): the garment has one LOD and is skinned to joints the body
+stops evaluating past LOD 1. That also holds the face and grooms at LOD 0 (not measured in ms).
+
+**Skin under the fabric: clipped, not fitted.** There are no fit morphs on this body, so the tool
+bakes `cover_<outfit>.png`: the body's UV0, white where an opaque panel covers the skin by more than
+`COVER_MARGIN` (0.5 cm in from every edge). `mh_outfit.py` copies the skin material and its two
+instances into `/Game/Character/MH/Outfits` (`M_Body_Under`, `MI_Body_Under`, `MI_Body_<Outfit>`;
+the assembled originals are not edited), sets the copy to Masked and feeds `1 - Cover Mask` to the
+opacity mask. Under a panel there is then no skin to poke through, in any pose and at every LOD, and
+the fabric casts the shadow instead. Why not the alternatives: a body mesh with the covered
+triangles removed would lose the DNA user data RigLogic reads (no correctives); pushing the skin
+in needs morph targets the MetaHuman body does not have. Fabric offsets are the old ones (0.25 cm
+panel, 0.5 cuffs, 0.3-0.6 belt), each opaque edge with its rim down to the skin.
+
+**Baked underwear: painted out for outfits.** The Silversuit's scoop neck, keyhole, back and hip
+openings showed the grey top and briefs. `Tools/mh_bare_skin.py` exports the baked base colour,
+normal and SRMF maps, fills the underwear from the skin around it and imports 4096 copies
+(`T_Body_*_Bare`, `T_Head_*_Bare`); every `MI_Body_<Outfit>` uses the body set, and while an outfit
+is worn the face mesh's slot 0 gets `MI_Head_Bare` (the head mesh's chest part carries the top's
+shoulder straps). The body's mask ships with the plugin in the same UV layout
+(`/MetaHumanCharacter/Textures/Shared/1K/T_Underwear_M`, red and green); the head has none, so its
+straps are found by colour (grey texels in the lowest eighth of the map). The filled skin is smooth:
+no nipples, no navel detail beyond what the surrounding skin carries, which is fine under a suit
+and not enough for an outfit that bares the chest or hips fully. With no outfit she still wears
+the baked underwear. Better at the next assembly: `skin.show_top_underwear = False` (Epic's own bare
+chest on body and head), and keep this fill for the briefs only.
+
+**Checks.** `-visexqa -visexspikes -visexcvar=visex.Body.MetaHuman=1 -visexshots=<name>` now measures
+three meshes (body, face, garment) and adds a poke line. Poke: every fabric vertex against the skin
+triangle it was cut over, in the pose on screen (CPU skin, LOD 0); "at a hem" is fabric within
+0.8 cm of a cut edge, where the skin is still drawn, and fails past 0.1 cm under the skin; further
+in the skin is clipped, so depth there is only how far the fabric left the skin's surface.
+Body and face read as in the shape pass (TOTAL pass: body stretch 2.83x, creases 6.24x, grew
+2.18 cm; face 1.35x). Garment and poke, worst frame of each pose (38,252 fabric vertices compared):
+
+| pose | garment stretch / creases / grew | at a hem: vertices under, deepest | under clipped skin |
+|---|---|---|---|
+| arrival walk / Start walk | 1.24x / 2.37x / 0.48 cm | 0 | 1.04 cm (armpit) |
+| menu lean | 1.18x / 2.04x / 0.34 cm | 0 | 0.36 cm |
+| Settings sit (down, sit, up) | 1.54x / 3.74x / 0.91 cm | 29, 0.19 cm on `pelvis` | 1.09 cm |
+| photo Idle / Walk / Run | 1.24x / 1.26x / 1.43x; grew 0.32 / 0.37 / 0.70 | 0 | 1.04 / 1.01 / 0.87 cm |
+| photo Bookend | 1.22x / 2.08x / 0.50 cm | 7, 0.46 cm on `hand_l` | 0.65 cm |
+| photo Crown | 1.31x / 3.23x / 0.81 cm | 26, 0.46 cm on `hand_l` | 0.46 cm |
+| photo FeetUp | 1.38x / 3.25x / 0.81 cm | 0 | 1.52 cm |
+| photo Glance | 1.54x / 3.60x / 0.85 cm | 13, 0.08 cm on `pelvis` | 1.52 cm |
+| photo Ledge | 2.07x / 4.86x / 1.24 cm | 124, 0.25 cm on `pelvis` | 0.91 cm |
+| photo LegLift | 1.54x / 3.96x / 0.99 cm | 105, 0.22 cm on `pelvis` | 1.52 cm |
+| photo Mermaid / Peace | 1.42x / 3.38x / 0.78 cm | 0 / 1 (0.03 cm) | 1.29 / 1.33 cm |
+| proud idle, height 145 / 185 | 1.19x / 2.09x / 0.31 cm | 0 | 1.05 cm |
+
+TOTAL garment: pass (2.07x, no edge over 3x, grew 1.24 cm). **TOTAL poke: FAIL**, on two hems: the
+hip cutout's edge where it crosses the hip crease in the sits and deep leg lifts (0.17-0.25 cm
+under, up to 124 vertices), and the left wrist cuff with the wrist bent hard in Bookend and Crown
+(0.46 cm, 7-26 vertices). Narrowing the cover margin from 1.0 to 0.5 cm did not change them: they
+are within 0.8 cm of the edge itself. The armpit numbers are the split triangles (see Traps), under
+clipped skin in every pose, the standing ones included.
+
+**Seen in the 4K frames** (`Saved/QA/s8_*.png`, `g3_*.png`; game view, grade on):
+- **Menu lean**: reads as today's Silversuit from the same camera (`stage3_suit_lean.png` against
+  `stage3_suit_lean_old.png`): scoop neck, keyhole, hip cutout, belt and buckle, cuffs. Clean.
+- **Walk, mid-stride (from behind)**: back and hip openings hold their shape, belt level, ankle
+  cuffs follow. Nothing slides. The chrome's reflections smear into dark patches as on today's suit.
+- **Settings sit**: clean where it shows (her near foot hides the hips from that camera).
+- **LegLift** (the deepest bend): the suit folds with her, no skin through a panel, no spikes.
+- **Ledge**: clean; at 4K the belt's lower edge and the back cutout's edge show a thin dark second
+  line beside the binding: a hem detail, not a hole. Its cause was not checked.
+- **Mermaid**: clean; the side cutout's edge has a few small teeth on her right flank (cause not
+  checked; the drawn shape passes from the front view to the side view about there).
+- **FeetUp**: clean, back and hip openings smooth. Her chest sinks into the sand as before (pose).
+- Not seen: the wrists in Crown and Bookend are outside the photo camera's frame, so the cuff's
+  0.46 cm is a number only.
+
+**Captures** (`Docs/Research/metahuman/`, 3840x2160, Lvl_Dust, game view): `stage3_suit_lean.png`,
+`stage3_suit_walk.png`, `stage3_suit_bend.png` (LegLift), all cvar on; `stage3_suit_lean_old.png`
+(cvar off, same camera); `stage3_suit_walk_lean.mp4` (23 s, 720p: walk in, lean, Body page and back,
+cvar on; shot before the head's straps were painted out, so they show at the neckline there).
+
+**Assets.** All new, under `/Game/Character/MH/Outfits`: `SKM_Silversuit_MH`, `T_Cover_Silversuit`,
+`MI_Body_Silversuit`, `M_Body_Under`, `MI_Body_Under`, `T_Body_{BC,N,SRMF}_Bare`,
+`T_Head_{BC,N,SRMF}_Bare`, `MI_Head_Bare`. No existing `.uasset` was modified; Silversuit's material
+instances are referenced, not changed.
+
+**The remaining outfits: recipe and estimate.** Per outfit, automatic (about 5 minutes of machine
+time): `blender_outfit.py --body=mh --only=<Name>` (cut, weights, cover mask, 2 minutes),
+`mh_outfit.py` with `OUTFIT='<Name>'` (import, materials, body material; add the outfit's old mesh
+path to `OLD_MESH`), then the spike tour with the outfit saved as worn (3 minutes, garment and poke
+lines). Re-export the skin (`mh_skin_export.py`) and re-run `mh_bare_skin.py` after any re-assembly.
+What needs a person:
+- **Catsuit**: the same builder as Silversuit without the kit; expect 20 minutes, mostly looking.
+- **Opaque sets (Mirror, Harness, Cocoa)**: 30-60 minutes each. `cups()`, `bra()`, `band(TORSO)` and
+  the strap rays have not run on this body: the bust is larger with a real cleavage, the cup extents
+  come from the 9 cm stand-in, and `TORSO` now reads the MetaHuman's helper joints. Check each piece.
+- **Sheer, lace, net, nylon (Bodystocking, Sheer, Noir, Garter, Fishnet)**: 1-2 hours each. The cover
+  mask only clips under opaque fabric, so under a translucent panel the skin stays and only the
+  0.1-0.25 cm offset keeps it in. Expect to raise offsets or add a clearance pass per pose. They
+  also show the skin itself: the filled-in underwear area has no anatomy (see above), so these need
+  the top switched off at assembly, and a decision on the briefs area.
+- **Kit strokes (KitTartan) and Tartan's wrapped straps**: `sketch.json` holds 3D lines on the old
+  skin; they need the same landmark map as the shapes (`mh_kit_tpose` gives it per vertex, not yet
+  per point). Half a day of tool work, once.
+- **The skirt (cloth)**: a new Chaos cloth asset and capsules on the MetaHuman skeleton. Half a day.
+- **Body sliders and fit morphs**: none on this body yet (stage 5). Outfits are cut on her default
+  shape only.
+
+**Traps.**
+- The body's UVs sit in tile 1 (u 1..2): a bake that assumes 0..1 writes an empty map.
+- `FString::Printf` needs a literal format: build asset names by concatenation.
+- The Blender preview camera is off-axis: on this bust the keyhole looks lopsided there and is not.
+- Measuring poke-through against the nearest skin vertex's plane reads centimetres deep in every
+  crease. Compare each fabric vertex with the skin triangle it was cut over (barycentric), and match
+  by bone so the other side of a fold is not picked.
+- Splitting the skin's triangles has a cost: a new fabric vertex blends its two corners' weights, and
+  where those differ a lot (armpit, hip crease, a bent wrist) it leaves the skin's surface by up to
+  1.5 cm. Under clipped skin that is unseen; at a hem it is the poke numbers above.
+- A `-game` tour appends to `Saved/QA/report.txt`: read the last block, not the first TOTAL lines.
+- The cvar-off gaps tour's walk frames did not share a camera with the cvar-on run this time
+  (`g0_walk2` looks down on her): only the lean pair is same-camera. Not looked into.
+
+**Left open.**
+- The two hems the poke check fails (hip crease, bent wrist). Options: cut the fabric from the
+  body's own vertices near hems instead of the split ones, or lift hems that cross a crease.
+- With the cvar on, the outfit's cut is on her default shape only; Height scales it with her.
+- The figure is held at LOD 0 under a garment (face and grooms too): cost not measured.
+- `/Game/Character/MH` is still not cooked, so none of this is in a packaged build.
+- The filled-in skin has no anatomy: fine under this suit, not for outfits that bare chest or hips.
