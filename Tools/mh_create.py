@@ -5,10 +5,12 @@
 
 STEPS (default ['create', 'shape', 'look']):
   fresh     delete the Creator asset first: a new body shape is always a clean pass
-            (STEPS=['fresh','create','shape','look','hair','rig','textures','build'])
+            (STEPS=['fresh','create','shape','face','look','hair','rig','textures','build'])
   create    copy a MetaHuman Creator preset to /Game/Character/MH/MHC_Her (the face is a
             placeholder: PRESET picks it, Tema designs the real one later)
   shape     drive the parametric body toward her measured numbers (TARGETS, in cm)
+  face      fit the face to her current head, ears included (Tools/mh_face_fit.py wrote the target,
+            Tools/mh_face.py imports it); without this step the preset's face stays
   look      take the preset's garment off and set a pale skin tone (SKIN_UV)
   hair      wear a MetaHuman groom in black (HAIR, default Hair_L_StraightBangs; HAIR_COLOUR), brows to match
   rig       auto-rig through Epic's cloud (needs an Epic sign-in inside the editor)
@@ -121,6 +123,15 @@ def shape(character):
         mark = "*" if c.is_active else " "
         log("%s %-24s %7.1f -> %7.1f   (%.1f..%.1f)" % (mark, name, before[name], c.target_measurement,
                                                       c.min_measurement, c.max_measurement))
+
+
+def face(character):
+    """Her own face and ears instead of the preset's (stage 6): the Creator's face is fitted to the
+    head Tools/mh_face_fit.py wrapped onto her current one. After 'shape' (the target sits on this
+    body's neck) and before 'rig'."""
+    tool = {"__name__": "mh_face"}
+    exec(open(unreal.Paths.project_dir() + "Tools/mh_face.py").read(), tool)
+    tool["fit_face"](character)
 
 
 SKIN_UV = globals().get("SKIN_UV", (0.12, 0.35))    # the Creator's skin tone picker: pale, like hers

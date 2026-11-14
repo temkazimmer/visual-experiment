@@ -1,0 +1,26 @@
+{
+  "about": "Matching points on her current head ('her') and the MetaHuman preset head ('mh'), read off the gridded pictures of `mh_face_fit.py --views` (cm from the head joint, her left side; the tool mirrors them). front: [x, z]. side: [cm forward, z]; 'rim' points are on the ear's outline, 'side' points are where a ray from the side lands. The four eye points are the outline of her closed lids and the edge of the MetaHuman's open eye. The ear's outline is paired by length along it: the MetaHuman's upper-back helix becomes her tip.",
+  "front": {
+    "eye_in": {"her": [1.45, 5.41], "mh": [1.83, 5.35]},
+    "eye_out": {"her": [4.41, 5.56], "mh": [4.65, 5.63]},
+    "eye_top": {"her": [3.0, 6.01], "mh": [3.0, 6.29]},
+    "eye_bot": {"her": [2.9, 5.02], "mh": [3.2, 5.26]},
+    "alare": {"her": [1.5, 2.0], "mh": [1.95, 1.75]},
+    "alar_base": {"her": [1.25, 1.45], "mh": [1.7, 1.15]},
+    "cheilion": {"her": [2.0, -0.82], "mh": [2.42, -1.04]}
+  },
+  "rim": {
+    "ear_front_top": {"her": [-0.72, 6.88], "mh": [0.64, 6.7]},
+    "ear_top": {"her": [-2.25, 7.84], "mh": [0.01, 6.85]},
+    "ear_top_back": {"her": [-3.96, 8.9], "mh": [-0.62, 6.6]},
+    "ear_tip": {"her": [-5.25, 9.68], "mh": [-1.07, 6.07]},
+    "ear_back_hi": {"her": [-4.84, 8.17], "mh": [-1.36, 5.16]},
+    "ear_back": {"her": [-3.79, 6.58], "mh": [-1.22, 4.04]},
+    "ear_back_low": {"her": [-1.64, 4.45], "mh": [-0.62, 2.36]},
+    "ear_lobe": {"her": [0.85, 1.5], "mh": [1.41, 1.36]}
+  },
+  "side": {
+    "ear_root_top": {"her": [0.95, 5.85], "mh": [1.1, 6.2]},
+    "ear_canal": {"her": [0.85, 3.34], "mh": [1.34, 3.2]}
+  }
+}
