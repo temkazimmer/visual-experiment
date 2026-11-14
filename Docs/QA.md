@@ -7,6 +7,30 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-14 10:09 · VIS-EX-0612 Shipping (8992d06) · PASS, root-motion arrival turns and sinks into the lean with no snap, Short hair wears and is listed WORN; perf not measurable (machine busy)
+
+- **Cook:** `Success - 0 error(s), 0 warning(s)`, 946 packages (926 cooked, 20 skipped by platform). The uncommitted MetaHuman plugin entries in `visex.uproject` didn't break it:
+  their content is rejected as NeverCook. DMG md5 `94db06bb…` (1.6 GB). Not copied to `-stable`.
+- **Tour:** two runs from the mounted DMG. Both `VisexQA: done`, exit 0 (343 s, 358 s), no `.ips`, on ground at every step (only photo motions 5/6/7/9 in mode 0, as 0558).
+  `body page open`, `wardrobe open`, 11 motions, photo `moved 0.0 cm`, `layout save PASS`, menu feet IN FRAME at 16:9 and 4:3. After Body, Wardrobe and Photo she is back on the lean spot (9500 −900 152).
+  - Run 1: Tema's save (Elf hair), 1920×1080 windowed. Run 2: a copy of his save with `Hair` set to Short, `-fullscreen`.
+  - Run 2 in fullscreen: shots are 1728×1084, not 4K. Shots 01–05 were requested but never written, and the 4:3 step stayed at 1728×1117. Use windowed for the tour.
+- **Arrival** (`run1/rec/arrival.mp4`, `sheets/arrival_strip.jpg`, `arrival_lean_30fps.jpg`): she walks in from the left, curves into the walk-turn and sinks into the lean in one continuous move. No snap frame by frame at 30 fps.
+  The film → game hand-off showed ~1.7 s of desktop through the window (windowed run). Unconfirmed, because Tema was using the Mac during the run; recheck in fullscreen.
+- **Menu moves:**
+  - Settings in and out (jump onto the drum, slide back) and Body out (lean-up into the first step, walk, page) are smooth on video (`sheets/body_out_strip.jpg`).
+  - Wardrobe and Photo out/back: only the stills (page open, back on the lean). The game window was covered by other apps for the rest of the run, so their motion wasn't seen.
+  - At the tour's `play` step (4 s after Start) she was still at the column (9495 −921, root-motion montage on). In 0558 she was 400 cm out. Probably the load slowing game time; recheck on an idle machine.
+- **Feet / mounds** (`sheets/feet_lean_zoom.jpg`, `feet_walk_mounds.jpg`): on the lean the soles sit on the sand with a contact shadow; the front foot rests on its heel, toes slightly up. Mounds and prints show around the feet in `04_walked`.
+  No mound is distinct at the lean from the menu camera.
+- **Short hair** (`sheets/short_hair_run2.jpg`, `short_hair_lean_zoom.jpg`, `hair_tab_list.jpg`): the report says `Hair: SKM_HairShort` all run. The Hair tab lists Long / Elven / **Short, layered — WORN**.
+  - The turnaround reads as a layered shag to the jaw with the copper top. Ears are covered at every angle, and the nape is clean.
+  - From the low menu camera the fringe hides both eyes. Correct for the style, but her face reads less in the lean: Tema's call.
+  - Hair-tab text shows a faint double image (low frame rate during the fade).
+- **Perf: not comparable.** Load average was 20 during run 1 and up to 113 during run 2: a second editor (visex-ground) launched mid-run and Tema was working. Menu 46.5 ms (0558: 17.6), quality 4 80.5 ms; later steps hit the 400 ms clamp.
+- **Saves:** backed up `VisexBody.sav` (`7ac129aa…`) and `GameUserSettings.ini` (`06e783cf…`); the tour rewrote both. Restored after each run, and both md5s match. No `Game.ini` before or after.
+  Screen recordings were trimmed to game-only footage. Shots in `Saved/QA_0612ship_run{1,2}/` and `Tools/.bridge/shots/qa0612/run{1,2}/`, sheets in `sheets/`.
+
 ## 2026-11-13 12:25 · VIS-EX-0558 Shipping (49c8994) · STABLE PASS, every page opens in ~3.1 s at real speed in one walk; exits bring the menu back at 3.0 s but she's on the lean only at ~5.5 s
 
 - **Cook:** `Success - 0 error(s), 0 warning(s)`, 854 packages. DMG md5 `63046835…` (1.7 GB), copied to `VIS-EX-0558-stable.dmg`. Editor target built first (`Result: Succeeded`).
