@@ -30,6 +30,16 @@ _n1 = len(_bm.verts)
 bmesh.ops.triangulate(_bm, faces=_bm.faces)
 bmesh.ops.subdivide_edges(_bm, edges=_bm.edges, cuts=1, use_grid_fill=True)
 bmesh.ops.triangulate(_bm, faces=_bm.faces)
+# the two body vertices each new vertex was put between (itself twice for the body's own)
+_bm.verts.index_update()
+MH_PARENTS = np.zeros((len(_bm.verts), 2), int)
+for _v in _bm.verts:
+    _base = [e.other_vert(_v) for e in _v.link_edges if e.other_vert(_v).index < _n1]
+    if _v.index < _n1 or len(_base) < 2:
+        MH_PARENTS[_v.index] = _v.index
+        continue
+    _pair = min(((a, b) for i, a in enumerate(_base) for b in _base[i + 1:]), key=lambda ab: ((ab[0].co + ab[1].co) * 0.5 - _v.co).length)
+    MH_PARENTS[_v.index] = (_pair[0].index, _pair[1].index)
 _bm.to_mesh(skin.data)
 _bm.free()
 skin.data.update()
@@ -149,3 +159,158 @@ def mh_cover_mask(name, covers):
     out.file_format = "PNG"
     out.save()
     print("cover mask", out.filepath_raw, "hidden skin %.0f%%" % (100.0 * (val > 0.5).mean()))
+
+
+def _mh_test_poses():
+    """(label, bone, joint, 3x3 rotation): one joint bent hard, everything below it rigid with it."""
+    out = []
+    pos = lambda n: np.array(arm.matrix_world @ arm.data.bones[n].head_local)
+    def rot(axis, deg):
+        a = np.asarray(axis, float) / np.linalg.norm(axis)
+        K = np.array([[0, -a[2], a[1]], [a[2], 0, -a[0]], [-a[1], a[0], 0]])
+        r = math.radians(deg)
+        return np.eye(3) + math.sin(r) * K + (1 - math.cos(r)) * K @ K
+    for s in ("l", "r"):
+        d = pos("hand_" + s) - pos("lowerarm_" + s)
+        u = np.cross(d, (0.0, 0.0, 1.0))
+        v = np.cross(d, u)
+        u, v = u / np.linalg.norm(u), v / np.linalg.norm(v)
+        for k in range(8):               # the hand bent 100 degrees every 45 degrees round the forearm
+            ax = math.cos(k * math.pi / 4) * u + math.sin(k * math.pi / 4) * v
+            out.append(("wrist_%s %3d" % (s, k * 45), "hand_" + s, pos("hand_" + s), rot(ax, 100)))
+        for deg in (100, -100, 125, -125, 140, -140):
+            for out_ in (0, 25, -25, 50, -50):     # a sit, the knee out, the knee across
+                out.append(("hip_%s flex %+d out %+d" % (s, deg, out_), "thigh_" + s, pos("thigh_" + s), rot(LEFT, deg) @ rot(FWD, out_)))
+    # only the two joints whose hems the tour fails: a hem sat down where the game never folds it
+    # (waist, shoulder, ankle) would lose its standing edge for nothing. Add a joint here when the
+    # tour's poke line names a hem on it.
+    return out
+
+
+def mh_poke_sim(label, oc, src, top, tw, edist):
+    """The game's poke check without the game: each test pose, every fabric vertex cut from the skin
+    against the plane of the body triangle it lies over (the body is drawn with its own vertices; a
+    fabric vertex between two of them carries their blended weights and leaves that plane when the
+    two move differently). Linear skinning only, no RigLogic correctives. Prints, per pose, the
+    fabric within 0.8 cm of a cut edge that ends up under the skin, as the tour's poke line does."""
+    fab = np.nonzero((src[:, 0] >= 0) & (edist < NO_SEAM))[0]
+    a, b, t = src[fab, 0].astype(int), src[fab, 1].astype(int), src[fab, 2][:, None]
+    tris_of = {}
+    for k, f in enumerate(T.tolist()):
+        for i in range(3):
+            tris_of.setdefault((min(f[i], f[i - 1]), max(f[i], f[i - 1])), []).append(k)
+            tris_of.setdefault((f[i], f[i]), []).append(k)
+    near = [tris_of.get((min(i, j), max(i, j)), []) for i, j in zip(a.tolist(), b.tolist())]
+    pa, pb = MH_PARENTS[:, 0], MH_PARENTS[:, 1]
+
+    def heights(flat, xd):
+        """Lowest height of each fabric vertex over the planes of the body triangles under it."""
+        fn = np.cross(flat[T[:, 1]] - flat[T[:, 0]], flat[T[:, 2]] - flat[T[:, 0]])
+        fn /= np.maximum(np.linalg.norm(fn, axis=1, keepdims=True), 1e-9)
+        on = flat[a] * (1 - t) + flat[b] * t
+        h = np.full(len(fab), 9.0)
+        for i, ks in enumerate(near):
+            if ks:
+                h[i] = ((xd[i] - on[i]) * fn[ks]).sum(1).min()
+        return h
+
+    rest = heights(X, oc[fab])
+    sign = 1.0 if np.median(rest[rest < 9]) > 0 else -1.0
+    panel = (rest * sign > 0.05) & (rest < 9)          # not a rim's foot, which sits on the skin
+    hem = panel & (edist[fab] < 0.8)
+    gi = {n: i for i, n in enumerate(gnames)}
+    worst = 0.0
+    for name, bone, J, R in _mh_test_poses():
+        sub = np.zeros(len(gnames), bool)
+        for bn in [bone] + [c.name for c in arm.data.bones[bone].children_recursive]:
+            if bn in gi:
+                sub[gi[bn]] = True
+        move = lambda P_, s_: P_ + s_[:, None] * ((P_ - J) @ R.T + J - P_)
+        Xd = move(X, WM[:, sub].sum(1).astype(float))
+        flat = (Xd[pa] + Xd[pb]) * 0.5                 # where the drawn skin is: on the body's own triangles
+        depth = -sign * heights(flat, move(oc[fab], (tw[fab] * sub[top[fab]]).sum(1)))
+        d_hem = np.where(hem, depth, 0.0)
+        worst = max(worst, d_hem.max())
+        if os.environ.get("MH_DEBUG") and d_hem.max() > 0.1:
+            i = int(np.argmax(d_hem))
+            sk = WM[:, sub].sum(1)
+            fs = float((tw[fab[i]] * sub[top[fab[i]]]).sum())
+            c = sorted(set(MH_PARENTS[a[i]].tolist() + MH_PARENTS[b[i]].tolist()))
+            print("   worst: src %d-%d t %.2f rest height %.2f edge dist %.2f; fabric weight in the bent part %.3f (untruncated %.3f); body corners %s weights %s, apart %s cm" % (
+                a[i], b[i], float(t[i, 0]), rest[i] * sign, edist[fab[i]], fs, sk[a[i]] * (1 - t[i, 0]) + sk[b[i]] * t[i, 0], c,
+                np.round(sk[c], 3).tolist(), np.round([np.linalg.norm(X[c[j]] - X[c[j - 1]]) for j in range(len(c))], 2).tolist()))
+        print("pokesim %s %-22s at a hem: %4d under (%3d past 0.1), deepest %.2f cm; elsewhere deepest %.2f" % (
+            label, name, int((d_hem > 0.02).sum()), int((d_hem > 0.1).sum()), d_hem.max(), np.where(panel & ~hem, depth, 0.0).max()))
+    print("pokesim %s worst at a hem %.2f cm (%d fabric vertices, %d at a hem)" % (label, worst, int(panel.sum()), int(hem.sum())))
+    return worst
+
+
+def mh_arm_along(s):
+    """Per skin vertex, cm along the forearm from the wrist joint of side s ("l"/"r"), + toward the
+    fingers; and the furthest up the forearm that the hand's bones still pull on the body's own
+    vertices (a triangle that spans it bends with the wrist)."""
+    pos = lambda n: np.array(arm.matrix_world @ arm.data.bones[n].head_local)
+    d = pos("hand_" + s) - pos("lowerarm_" + s)
+    d /= np.linalg.norm(d)
+    along = (X - pos("hand_" + s)) @ d
+    side = G("lowerarm_" + s, "hand_" + s, "wrist_inner_" + s, "wrist_outer_" + s, "lowerarm_twist_01_" + s, "lowerarm_twist_02_" + s) > 0.5
+    base = np.arange(len(X)) < MH_BASE_VERTS
+    reach = along[side & base & (HANDS > 0.02)].min()
+    if os.environ.get("MH_DEBUG"):
+        for th in (0.02, 0.1, 0.25, 0.62, 0.9):
+            m = side & base & (HANDS > th)
+            print("mh wrist_%s: hand weight > %.2f reaches %.2f cm up the forearm (%d body vertices)" % (s, th, -along[m].min(), int(m.sum())))
+        ring = side & base & (np.abs(along + 3.0) < 3.0)
+        e = EDGES[ring[EDGES[:, 0]] & ring[EDGES[:, 1]] & (EDGES[:, 0] < MH_BASE_VERTS) & (EDGES[:, 1] < MH_BASE_VERTS)]
+        print("mh wrist_%s: %d split edges within 6 cm above the joint, median %.2f cm" % (s, len(e), np.median(np.linalg.norm(X[e[:, 0]] - X[e[:, 1]], axis=1)) if len(e) else 0))
+    return np.where(side, along, 99.0), reach
+
+
+MH_HEM_TOL = 0.02      # cm a hem may end up under a folded neighbour (the tour fails past 0.1)
+MH_HEM_MIN = 0.04      # cm: a hem is never put closer to the skin than this
+_MH_SAFE = []
+MH_DROPPED = []       # per panel cut: (slot, offset, hem vertices sat down, most)
+
+
+def mh_safe_height():
+    """Per skin vertex, the height (cm) up to which fabric over it stays out of the skin in every
+    test pose. Fabric rides the skin vertex under it, so its offset turns with that vertex's blend
+    of bones, while the body triangle on the far side of a crease turns with its own: in a hard
+    fold (a bent wrist, the hip crease in a sit) that triangle comes over the fabric, the further
+    under the higher the fabric stands (stage 3's two failing hems: the deepest vertices are over
+    the body's own vertices, not the split ones). So a hem is safe below a height, not above one.
+    Includes what a split vertex adds by leaving its triangle's plane."""
+    if _MH_SAFE:
+        return _MH_SAFE[0]
+    pa, pb = MH_PARENTS[:, 0], MH_PARENTS[:, 1]
+    gi = {n: i for i, n in enumerate(gnames)}
+    fn0 = np.cross(X[T[:, 1]] - X[T[:, 0]], X[T[:, 2]] - X[T[:, 0]])
+    sign = 1.0 if np.median((fn0 * NRM[T[:, 0]]).sum(1)) > 0 else -1.0
+    H = np.full(nv, 9.0)
+    for name, bone, J, R in _mh_test_poses():
+        sub = np.zeros(len(gnames), bool)
+        for bn in [bone] + [c.name for c in arm.data.bones[bone].children_recursive]:
+            if bn in gi:
+                sub[gi[bn]] = True
+        s = WM[:, sub].sum(1).astype(float)[:, None]
+        Xd = X + s * ((X - J) @ R.T + J - X)
+        flat = (Xd[pa] + Xd[pb]) * 0.5
+        fn = np.cross(flat[T[:, 1]] - flat[T[:, 0]], flat[T[:, 2]] - flat[T[:, 0]]) * sign
+        fn /= np.maximum(np.linalg.norm(fn, axis=1, keepdims=True), 1e-9)
+        Bn = (1 - s) * NRM + s * (NRM @ R.T)
+        for k in range(3):
+            v = T[:, k]
+            c = ((Xd[v] - flat[v]) * fn).sum(1)
+            g = (Bn[v] * fn).sum(1)
+            ok = np.where(g < -1e-3, np.maximum(MH_HEM_TOL + c, 0.0) / np.maximum(-g, 1e-3), np.where(c < -MH_HEM_TOL, 0.0, 9.0))
+            np.minimum.at(H, v, ok)
+    # a hem's height should not jump from vertex to vertex: the lowest of each neighbourhood, eased
+    for _ in range(2):
+        low = H.copy()
+        np.minimum.at(low, EDGES[:, 0], H[EDGES[:, 1]])
+        np.minimum.at(low, EDGES[:, 1], H[EDGES[:, 0]])
+        H = low
+    H = np.minimum(H, diffuse(np.minimum(H, 1.0), 2))
+    _MH_SAFE.append(H)
+    print("mh safe hem height: %d of %d skin vertices under 0.25 cm, %d under 0.10" % (int((H < 0.25).sum()), nv, int((H < 0.10).sum())))
+    return H

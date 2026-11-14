@@ -377,7 +377,6 @@ def region(val, offset, slot, rim=None, pipe=None, pipe_r=0.18, min_loop=10.0, l
                 bm.faces.new(poly)
             except ValueError:
                 pass
-    loops = edge_loops(bm, min_loop, srcof) if (pipe or bind) else []
     # true distance from every vertex to the cut edge, for the seam/piping normal (UVSeam.x)
     bpts = []
     for e in bm.edges:
@@ -393,13 +392,30 @@ def region(val, offset, slot, rim=None, pipe=None, pipe_r=0.18, min_loop=10.0, l
         edist = [min(ek.find(v.co)[2], NO_SEAM - 0.01) for v in bm.verts]    # < NO_SEAM marks fabric
     else:
         edist = [NO_SEAM - 0.01] * len(bm.verts)
+    drop = {}
+    if MH:
+        # a hem that crosses a crease sits down to the height that stays out of the folding skin
+        # (mh_safe_height) for its first 0.9 cm, easing back up to the panel's own height by 1.8
+        safe = mh_safe_height()
+        for i, v in enumerate(bm.verts):
+            if edist[i] >= 1.8:
+                continue
+            a_, b_, t_ = srcof[v]
+            h = offset + (ll[a_] + (ll[b_] - ll[a_]) * t_ if ll else 0.0)
+            u = min(1.0, (1.8 - edist[i]) / 0.9)
+            d = (h - max(MH_HEM_MIN, min(h, safe[a_] + (safe[b_] - safe[a_]) * t_))) * u * u * (3.0 - 2.0 * u)
+            if d > 1e-4:
+                v.co -= nrm[v] * d
+                drop[v] = d
+        MH_DROPPED.append((slot, offset, len(drop), max(drop.values()) if drop else 0.0))
+    loops = edge_loops(bm, min_loop, srcof) if (pipe or bind) else []
     if rim if rim is not None else slot in OPAQUE:
         inner = {}
         for e in [e for e in bm.edges if e.is_boundary]:
             a, b = e.verts
             for v in (a, b):
                 if v not in inner:
-                    inner[v] = bm.verts.new(v.co - nrm[v] * max(0.0, offset - 0.03))
+                    inner[v] = bm.verts.new(v.co - nrm[v] * max(0.0, offset - drop.get(v, 0.0) - 0.03))
                     src.append(srcof[v])
                     edist.append(0.0)
             bm.faces.new((a, b, inner[b], inner[a]))
@@ -957,6 +973,8 @@ def catsuit_set(variant=None):
                                 (Vector((0, 0, 0)), left_v, (0.3, W - bar, 0.35))):   # the prong across the middle
             clip(c + dv, fwd_v, along, size)
     wrist = np.minimum((0.62 - HANDS) * 25.0, (HANDS - 0.22) * 25.0)                 # cuff bands
+    if MH and os.environ.get("MH_DEBUG"):
+        mh_arm_along("l"); mh_arm_along("r")
     region(where(UPPERARM > 0.5, wrist), 0.5, "Latex", bind=("Latex", 0.5), min_loop=6.0)
     if not kit:
         region(band(top - 1.5, 3.0, UPPERARM < 0.3), 0.5, "Latex", bind=("Latex", 0.5))    # collar
@@ -1968,6 +1986,11 @@ def finalize(ob):
     if strands is not None:
         dl = {k: _along_strands(v, *strands) for k, v in dl.items()}
     oc = clear_skin(oc, idx3, w3, SEAM_OF[ob.name][:, 0] < NO_SEAM, dl)     # fabric panels only
+    if MH:
+        for slot_, off_, n_, d_ in MH_DROPPED:
+            print("mh hems: %s panel at %.2f cm, %d vertices sat down, by %.2f cm at most" % (slot_, off_, n_, d_))
+        MH_DROPPED.clear()
+        mh_poke_sim(name, oc, src, top, tw, SEAM_OF[ob.name][:, 0])
     fit = FIT_OF.pop(ob.name, None)
     if FIT and fit and name not in CLOTH:
         fit_outfit(name, fit, oc, idx3, w3, dl, SEAM_OF[ob.name][:, 0] < NO_SEAM)
