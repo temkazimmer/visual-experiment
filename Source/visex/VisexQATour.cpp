@@ -14,6 +14,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 #include "Kismet/GameplayStatics.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Components/CapsuleComponent.h"
@@ -90,6 +91,13 @@ void AVisexQATour::Report(const FString& Where) const
 				F.HitResult.GetComponent() ? *F.HitResult.GetComponent()->GetName() : TEXT("-"), F.FloorDist);
 			Body += FString::Printf(TEXT(", vel z %.0f, rootmotion %d, montage-rm %d"), Move->Velocity.Z,
 				Move->HasAnimRootMotion() ? 1 : 0, C->IsPlayingRootMotion() ? 1 : 0);
+			// which montage holds her, and where in it (the Start walk-off waits on it)
+			const UAnimInstance* Anim = C->GetMesh() ? C->GetMesh()->GetAnimInstance() : nullptr;
+			if (const UAnimMontage* M = Anim ? Anim->GetCurrentActiveMontage() : nullptr)
+			{
+				const UAnimSequenceBase* Clip = M->SlotAnimTracks.Num() && M->SlotAnimTracks[0].AnimTrack.AnimSegments.Num() ? M->SlotAnimTracks[0].AnimTrack.AnimSegments[0].GetAnimReference().Get() : nullptr;
+				Body += FString::Printf(TEXT(", montage %s at %.2f/%.2f w %.2f, rm mode %d"), Clip ? *Clip->GetName() : *M->GetName(), Anim->Montage_GetPosition(M), M->GetPlayLength(), Anim->GetSlotMontageGlobalWeight(FName(TEXT("DefaultSlot"))), int32(Anim->RootMotionMode.GetValue()));
+			}
 		}
 		FHitResult Down;
 		FCollisionQueryParams Q(TEXT("QAFloor"), true, C);

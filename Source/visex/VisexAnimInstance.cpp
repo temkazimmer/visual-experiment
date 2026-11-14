@@ -1214,7 +1214,51 @@ void FVisexAnimProxy::MeasureSole(const USkeletalMeshComponent* Mesh)
 void FVisexAnimProxy::PreEvaluateAnimation(UAnimInstance* InAnimInstance)
 {
 	FAnimInstanceProxy::PreEvaluateAnimation(InAnimInstance);
-	if (const USkeletalMeshComponent* Mesh = InAnimInstance ? InAnimInstance->GetSkelMeshComponent() : nullptr) { EvalX = Mesh->GetComponentTransform(); }
+	if (const USkeletalMeshComponent* Mesh = InAnimInstance ? InAnimInstance->GetSkelMeshComponent() : nullptr)
+	{
+		EvalX = Mesh->GetComponentTransform();
+		// a new mesh (outfit, body) or a jump (teleport, cut, the director placing her) starts the pin over
+		const UObject* Asset = Mesh->GetSkeletalMeshAsset();
+		const FVector At = EvalX.GetLocation();
+		if (Asset != PinMesh || (bPinLastX && FVector::DistSquared(At, PinLastX) > 100.f * 100.f) || !EvalX.IsValid())
+		{
+			PinReset();
+			PinMesh = Asset;
+		}
+		PinLastX = At;
+		bPinLastX = true;
+	}
+}
+
+void FVisexAnimProxy::Initialize(UAnimInstance* InAnimInstance)
+{
+	FAnimInstanceProxy::Initialize(InAnimInstance);
+	PinReset();
+	PinMesh = nullptr;
+	bPinLastX = false;
+}
+
+/** Everything the pin carries across frames back to zero; each foot reseeds from its pose. */
+void FVisexAnimProxy::PinReset()
+{
+	bPinFrom = bPinLast = false;
+	PinRefZ[0] = PinRefZ[1] = -1.f;
+	PinBones = 0;
+	PinGate = 0.f;   // eases back in over a quarter second
+	for (int32 F = 0; F < 2; ++F)
+	{
+		bPinSeeded[F] = false;
+		PinGraph[F] = FTransform::Identity;
+		PinBall[F] = PinLastHeel[F] = PinLastBall[F] = PinDelta[F] = PinApplied[F] = FVector::ZeroVector;
+		PinTurn[F] = FQuat::Identity;
+		PinW[F] = PinHeld[F] = PinStance[F] = PinGraphDrift[F] = PinOutDrift[F] = 0.f;
+		PinSpeed[F][0] = PinSpeed[F][1] = 0.f;
+		for (int32 I = 0; I < 2; ++I)
+		{
+			PinAnchor[F][I] = PinGraphStart[F][I] = PinOutStart[F][I] = FVector::ZeroVector;
+			bPinDown[F][I] = false;
+		}
+	}
 }
 
 void FVisexAnimProxy::PinFrom(const FCompactPose& Pose)
@@ -1224,6 +1268,7 @@ void FVisexAnimProxy::PinFrom(const FCompactPose& Pose)
 	const FCompactPoseBoneIndex Foot[2] = {S.Find(TEXT("foot_l")), S.Find(TEXT("foot_r"))};
 	const FCompactPoseBoneIndex Ball[2] = {S.Find(TEXT("ball_l")), S.Find(TEXT("ball_r"))};
 	if (!Foot[0].IsValid() || !Foot[1].IsValid() || !Ball[0].IsValid() || !Ball[1].IsValid()) { return; }
+	if (Pose.GetNumBones() != PinBones) { PinReset(); PinBones = Pose.GetNumBones(); }   // a new LOD or bone set
 	if (PinRefZ[0] < 0.f)
 	{
 		const FBoneContainer& Bones = Pose.GetBoneContainer();
@@ -1244,7 +1289,7 @@ void FVisexAnimProxy::PinFrom(const FCompactPose& Pose)
 			PinSpeed[F][0] = float((H - PinLastHeel[F]).Size()) / Dt;
 			PinSpeed[F][1] = float((B - PinLastBall[F]).Size()) / Dt;
 			W = 1.f - FMath::SmoothStep(Still, Moving, FMath::Min(PinSpeed[F][0], PinSpeed[F][1]));
-			if (FMath::Min(PinSpeed[F][0], PinSpeed[F][1]) > 2000.f) { W = 0.f; }   // a teleport or a cut
+			if (FMath::Min(PinSpeed[F][0], PinSpeed[F][1]) > 2000.f || !FMath::IsFinite(PinSpeed[F][0] + PinSpeed[F][1])) { W = 0.f; bPinSeeded[F] = false; }   // a teleport or a cut
 		}
 		PinW[F] = W;
 		PinLastHeel[F] = H;
@@ -1283,6 +1328,16 @@ void FVisexAnimProxy::Pin(FCompactPose& Pose)
 		const FTransform Post = S.Component(Leg[F][2]);
 		const FVector Move = Xq.RotateVector(Post.GetLocation() - PinGraph[F].GetLocation());
 		const FQuat Turn = Xq * (Post.GetRotation() * PinGraph[F].GetRotation().Inverse()) * Xq.Inverse();
+		if (Post.ContainsNaN() || PinGraph[F].ContainsNaN() || PinBall[F].ContainsNaN()) { bPinSeeded[F] = false; continue; }   // nothing sane to hold
+		const bool bSeed = !bPinSeeded[F];
+		if (bSeed)
+		{
+			// first frame since a reset: no hold, every carried value from this pose
+			PinDelta[F] = Move;
+			PinTurn[F] = Turn.GetNormalized();
+			PinApplied[F] = FVector::ZeroVector;
+			PinHeld[F] = 0.f;
+		}
 		// pin 1: the layers' change, frozen while the graph's foot stands still
 		const float Follow = Mode == 0 ? 1.f : FMath::Lerp(1.f, FollowOf(PinW[F]), PinGate);
 		PinDelta[F] = FMath::Lerp(PinDelta[F], Move, Follow);
@@ -1299,6 +1354,7 @@ void FVisexAnimProxy::Pin(FCompactPose& Pose)
 		const FVector P[2] = {EvalX.TransformPosition(Want), EvalX.TransformPosition(BallAt)};
 		const FVector G[2] = {EvalX.TransformPosition(PinGraph[F].GetLocation()), EvalX.TransformPosition(PinBall[F])};
 		const float Z[2] = {float(PinGraph[F].GetLocation().Z), float(PinBall[F].Z)};
+		if (bSeed) { PinAnchor[F][0] = P[0]; PinAnchor[F][1] = P[1]; bPinSeeded[F] = true; }
 		float W[2];
 		for (int32 I = 0; I < 2; ++I)
 		{
@@ -1344,6 +1400,21 @@ void FVisexAnimProxy::Pin(FCompactPose& Pose)
 			PinAnchor[F][0] = P[0];
 			PinAnchor[F][1] = P[1];
 			PinApplied[F] = FVector::ZeroVector;
+		}
+		// the safety: a non-finite value or a pull past twice visex.Pin.Max skips the pin for this
+		// frame (the layers' foot stands) and reseeds the foot from its pose
+		const float Limit = FMath::Max(2.f * MaxHold, 1.f);
+		auto Bad = [Limit](const FVector& V) { return V.ContainsNaN() || V.SizeSquared() > double(Limit) * Limit; };
+		if (Want.ContainsNaN() || WantRot.ContainsNaN() || Bad(PinApplied[F]) || Bad(Want - Post.GetLocation())
+			|| PinDelta[F].ContainsNaN() || PinTurn[F].ContainsNaN() || PinAnchor[F][0].ContainsNaN() || PinAnchor[F][1].ContainsNaN())
+		{
+			if ((PinSkips++ % 120) == 0)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("VisexPin: %s skipped (%d so far): pull %s, hold %s"), F ? TEXT("R") : TEXT("L"), PinSkips, *(Want - Post.GetLocation()).ToCompactString(), *PinApplied[F].ToCompactString());
+			}
+			bPinSeeded[F] = false;
+			PinApplied[F] = FVector::ZeroVector;
+			continue;
 		}
 		if (Mode > 0 && (FVector::Dist(Want, Post.GetLocation()) > 0.005f || WantRot.AngularDistance(Post.GetRotation()) > 1e-4f))
 		{

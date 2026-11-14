@@ -143,7 +143,7 @@ private:
 	/** The slider the selected row shapes, or INDEX_NONE (hair, costumes, APPLY). */
 	int32 SliderHere() const;
 	FVisexBodyProfile Applied;
-	FRotator StartRotation;
+	FRotator StartRotation = FRotator::ZeroRotator;
 	FShot From;
 	FShot Current;
 	float ShotTime = 1.f;
