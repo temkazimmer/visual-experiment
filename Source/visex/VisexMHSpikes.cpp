@@ -26,10 +26,18 @@ bool FVisexMHSpikes::Measure(USkeletalMeshComponent* Mesh, FVisexSpike& Out)
 	{
 		return false;
 	}
-	FCache* Cache = Caches[0].Mesh == Asset ? &Caches[0] : Caches[1].Mesh == Asset ? &Caches[1] : nullptr;
+	FCache* Cache = nullptr;
+	for (FCache& C : Caches)
+	{
+		Cache = C.Mesh == Asset ? &C : Cache;
+	}
 	if (!Cache)
 	{
-		Cache = !Caches[0].Mesh.IsValid() ? &Caches[0] : &Caches[1];
+		Cache = &Caches[Count - 1];
+		for (int32 I = Count - 1; I >= 0; --I)
+		{
+			Cache = !Caches[I].Mesh.IsValid() ? &Caches[I] : Cache;
+		}
 		Cache->Mesh = Asset;
 		Cache->Index.Reset();
 		LOD.MultiSizeIndexContainer.GetIndexBuffer(Cache->Index);
@@ -169,9 +177,35 @@ namespace
 	}
 }
 
+namespace
+{
+	void MergePoke(FVisexPoke& Into, const FVisexPoke& P)
+	{
+		Into.Under = FMath::Max(Into.Under, P.Under);
+		Into.EdgeUnder = FMath::Max(Into.EdgeUnder, P.EdgeUnder);
+		Into.Tracked = FMath::Max(Into.Tracked, P.Tracked);
+		if (!Into.bValid || P.Depth > Into.Depth)
+		{
+			Into.Depth = P.Depth;
+			Into.Bone = P.Bone;
+		}
+		if (!Into.bValid || P.EdgeDepth > Into.EdgeDepth)
+		{
+			Into.EdgeDepth = P.EdgeDepth;
+			Into.EdgeBone = P.EdgeBone;
+		}
+		Into.bValid = true;
+	}
+}
+
+bool FVisexPoke::Fails() const
+{
+	return EdgeDepth > FVisexMHSpikes::MaxPoke;
+}
+
 void FVisexMHSpikes::Tick(ACharacter* Her)
 {
-	USkeletalMeshComponent* Meshes[2] = {UVisexMHBodyComponent::ShownBody(Her), UVisexMHBodyComponent::ShownFace(Her)};
+	USkeletalMeshComponent* Meshes[Count] = {UVisexMHBodyComponent::ShownBody(Her), UVisexMHBodyComponent::ShownFace(Her), UVisexMHBodyComponent::ShownGarment(Her)};
 	if (!Meshes[0])
 	{
 		return;
@@ -182,7 +216,7 @@ void FVisexMHSpikes::Tick(ACharacter* Her)
 		Sync->ForcedLOD = 0;
 	}
 	++Frames;
-	for (int32 I = 0; I < 2; ++I)
+	for (int32 I = 0; I < Count; ++I)
 	{
 		FVisexSpike S;
 		if (Meshes[I] && Meshes[I]->GetPredictedLODLevel() == 0 && Measure(Meshes[I], S))
@@ -190,13 +224,18 @@ void FVisexMHSpikes::Tick(ACharacter* Her)
 			Merge(Worst[I], S);
 		}
 	}
+	FVisexPoke P;
+	if (Meshes[Garment] && Meshes[Body]->GetPredictedLODLevel() == 0 && MeasurePoke(Meshes[Body], Meshes[Garment], P))
+	{
+		MergePoke(WorstPoke, P);
+	}
 }
 
 void FVisexMHSpikes::SetPhase(const FString& Name)
 {
-	static const TCHAR* Names[2] = {TEXT("body"), TEXT("face")};
+	static const TCHAR* Names[Count] = {TEXT("body"), TEXT("face"), TEXT("garment")};
 	FString Line = FString::Printf(TEXT("VisexSpikes: %s (%d frames):"), *Phase, Frames);
-	for (int32 I = 0; I < 2; ++I)
+	for (int32 I = 0; I < Count; ++I)
 	{
 		const FVisexSpike& S = Worst[I];
 		if (!S.bValid)
@@ -209,11 +248,22 @@ void FVisexMHSpikes::SetPhase(const FString& Name)
 			S.Crease, S.CreaseRef, S.CreaseNow, *S.CreaseBone.ToString(), S.CreaseOver, S.Grow, S.GrowRef, *S.GrowBone.ToString());
 		Merge(Total[I], S);
 	}
+	if (WorstPoke.bValid)
+	{
+		const FVisexPoke& K = WorstPoke;
+		Line += FString::Printf(TEXT(" poke %s: where skin is drawn (%.1f cm from a fabric edge) %d fabric vertices under it, deepest %.2f cm on %s; under clipped skin %d, deepest %.2f cm on %s (%d compared);"),
+			K.Fails() ? TEXT("FAIL") : TEXT("pass"), EdgeBand, K.EdgeUnder, K.EdgeDepth, *K.EdgeBone.ToString(), K.Under, K.Depth, *K.Bone.ToString(), K.Tracked);
+		MergePoke(TotalPoke, K);
+	}
 	if (Frames > 0 && Log)
 	{
 		Log(Line);
 	}
-	Worst[0] = Worst[1] = FVisexSpike();
+	for (FVisexSpike& W : Worst)
+	{
+		W = FVisexSpike();
+	}
+	WorstPoke = FVisexPoke();
 	Frames = 0;
 	Phase = Name;
 }
@@ -273,3 +323,171 @@ static FAutoConsoleCommandWithWorld CmdVisexMHSections(
 			}
 		}
 	}));
+
+namespace
+{
+	/** Area-weighted vertex normals from a triangle list (winding as stored; the caller fixes the sign). */
+	void VertexNormals(const TArray<uint32>& Index, const TFunctionRef<FVector3f(uint32)>& At, int32 Num, TArray<FVector3f>& N)
+	{
+		N.Init(FVector3f::ZeroVector, Num);
+		for (int32 I = 0; I + 2 < Index.Num(); I += 3)
+		{
+			const FVector3f A = At(Index[I]), B = At(Index[I + 1]), C = At(Index[I + 2]);
+			const FVector3f Face = FVector3f::CrossProduct(B - A, C - A);
+			N[Index[I]] += Face;
+			N[Index[I + 1]] += Face;
+			N[Index[I + 2]] += Face;
+		}
+		for (FVector3f& V : N)
+		{
+			V = V.GetSafeNormal();
+		}
+	}
+
+	FName DominantBone(const USkeletalMesh* Asset, const FSkeletalMeshLODRenderData& LOD, int32 Vertex)
+	{
+		const FSkinWeightVertexBuffer& SW = LOD.SkinWeightVertexBuffer;
+		for (const FSkelMeshRenderSection& Section : LOD.RenderSections)
+		{
+			if (Vertex < int32(Section.BaseVertexIndex) || Vertex >= int32(Section.BaseVertexIndex + Section.NumVertices))
+			{
+				continue;
+			}
+			int32 Best = 0, BestWeight = -1;
+			for (uint32 K = 0; K < SW.GetMaxBoneInfluences(); ++K)
+			{
+				const int32 W = int32(SW.GetBoneWeight(Vertex, K));
+				if (W > BestWeight)
+				{
+					BestWeight = W;
+					Best = int32(SW.GetBoneIndex(Vertex, K));
+				}
+			}
+			return Section.BoneMap.IsValidIndex(Best) ? Asset->GetRefSkeleton().GetBoneName(Section.BoneMap[Best]) : FName();
+		}
+		return FName();
+	}
+}
+
+bool FVisexMHSpikes::MeasurePoke(USkeletalMeshComponent* BodyMesh, USkeletalMeshComponent* GarmentMesh, FVisexPoke& Out)
+{
+	Out = FVisexPoke();
+	const USkeletalMesh* BA = BodyMesh ? BodyMesh->GetSkeletalMeshAsset() : nullptr;
+	const USkeletalMesh* GA = GarmentMesh ? GarmentMesh->GetSkeletalMeshAsset() : nullptr;
+	FSkeletalMeshRenderData* BR = BodyMesh ? BodyMesh->GetSkeletalMeshRenderData() : nullptr;
+	FSkeletalMeshRenderData* GR = GarmentMesh ? GarmentMesh->GetSkeletalMeshRenderData() : nullptr;
+	if (!BA || !GA || !BR || !GR || BR->LODRenderData.Num() == 0 || GR->LODRenderData.Num() == 0)
+	{
+		return false;
+	}
+	const FSkeletalMeshLODRenderData& BL = BR->LODRenderData[0];
+	const FSkeletalMeshLODRenderData& GL = GR->LODRenderData[0];
+	const FPositionVertexBuffer& BP = BL.StaticVertexBuffers.PositionVertexBuffer;
+	const FPositionVertexBuffer& GP = GL.StaticVertexBuffers.PositionVertexBuffer;
+	if (BP.GetNumVertices() == 0 || GP.GetNumVertices() == 0 || !BP.GetVertexData() || !GP.GetVertexData())
+	{
+		return false;
+	}
+	FPokeCache& C = PokeCache;
+	if (C.Body != BA || C.Garment != GA)
+	{
+		// once, in the reference pose: each fabric vertex that lies on the skin (0.05-0.8 cm above
+		// it, the body vertex under it within 0.7 cm) and whether it is near a cut edge (UV2.x, cm)
+		C = FPokeCache();
+		C.Body = BA;
+		C.Garment = GA;
+		BL.MultiSizeIndexContainer.GetIndexBuffer(C.BodyIndex);
+		TArray<FVector3f> N;
+		VertexNormals(C.BodyIndex, [&BP](uint32 V) { return BP.VertexPosition(V); }, BP.GetNumVertices(), N);
+		TMap<FIntVector, TArray<int32>> Grid;
+		const auto Cell = [](const FVector3f& P) { return FIntVector(FMath::FloorToInt(P.X), FMath::FloorToInt(P.Y), FMath::FloorToInt(P.Z)); };
+		for (uint32 V = 0; V < BP.GetNumVertices(); ++V)
+		{
+			Grid.FindOrAdd(Cell(BP.VertexPosition(V))).Add(int32(V));
+		}
+		const FStaticMeshVertexBuffer& UV = GL.StaticVertexBuffers.StaticMeshVertexBuffer;
+		const bool bSeamUV = UV.GetNumTexCoords() >= 3;
+		TArray<float> Height;
+		int32 Plus = 0, Minus = 0;
+		for (uint32 V = 0; V < GP.GetNumVertices(); ++V)
+		{
+			const float Edge = bSeamUV ? UV.GetVertexUV(V, 2).X : 0.f;
+			if (Edge > 8.9f)
+			{
+				continue;   // cords, tapes and hardware: not fabric cut from the skin
+			}
+			const FVector3f P = GP.VertexPosition(V);
+			const FIntVector At = Cell(P);
+			int32 Best = INDEX_NONE;
+			float BestD = FMath::Square(1.2f);
+			for (int32 X = -1; X <= 1; ++X) for (int32 Y = -1; Y <= 1; ++Y) for (int32 Z = -1; Z <= 1; ++Z)
+			{
+				if (const TArray<int32>* Bin = Grid.Find(At + FIntVector(X, Y, Z)))
+				{
+					for (int32 B : *Bin)
+					{
+						const float D = FVector3f::DistSquared(P, BP.VertexPosition(B));
+						if (D < BestD) { BestD = D; Best = B; }
+					}
+				}
+			}
+			if (Best == INDEX_NONE)
+			{
+				continue;
+			}
+			const FVector3f Off = P - BP.VertexPosition(Best);
+			const float H = FVector3f::DotProduct(Off, N[Best]);
+			if (FMath::Abs(H) < 0.05f || FMath::Abs(H) > 0.8f || (Off - N[Best] * H).Size() > 0.7f)
+			{
+				continue;
+			}
+			(H > 0.f ? Plus : Minus)++;
+			C.Vertex.Add(int32(V));
+			C.Under.Add(Best);
+			C.bEdge.Add(Edge < EdgeBand ? 1 : 0);
+			Height.Add(H);
+		}
+		// fabric is outside the skin in the reference pose: that tells which way the stored winding faces
+		C.Sign = Plus >= Minus ? 1.f : -1.f;
+		for (int32 I = C.Vertex.Num() - 1; I >= 0; --I)
+		{
+			if (Height[I] * C.Sign < 0.f)
+			{
+				C.Vertex.RemoveAtSwap(I); C.Under.RemoveAtSwap(I); C.bEdge.RemoveAtSwap(I); Height.RemoveAtSwap(I);
+			}
+		}
+	}
+	TArray<FMatrix44f> RefToLocal;
+	TArray<FVector3f> PB, PG, N;
+	BodyMesh->CacheRefToLocalMatrices(RefToLocal);
+	USkinnedMeshComponent::ComputeSkinnedPositions(BodyMesh, PB, RefToLocal, BL, BL.SkinWeightVertexBuffer);
+	GarmentMesh->CacheRefToLocalMatrices(RefToLocal);
+	USkinnedMeshComponent::ComputeSkinnedPositions(GarmentMesh, PG, RefToLocal, GL, GL.SkinWeightVertexBuffer);
+	if (PB.Num() != int32(BP.GetNumVertices()) || PG.Num() != int32(GP.GetNumVertices()) || C.Vertex.Num() == 0)
+	{
+		return false;
+	}
+	VertexNormals(C.BodyIndex, [&PB](uint32 V) { return PB[V]; }, PB.Num(), N);
+	int32 Deep = INDEX_NONE, EdgeDeep = INDEX_NONE;
+	for (int32 I = 0; I < C.Vertex.Num(); ++I)
+	{
+		const int32 B = C.Under[I];
+		const float Depth = -C.Sign * FVector3f::DotProduct(PG[C.Vertex[I]] - PB[B], N[B]);
+		if (Depth <= 0.02f)
+		{
+			continue;
+		}
+		++Out.Under;
+		if (Depth > Out.Depth) { Out.Depth = Depth; Deep = C.Vertex[I]; }
+		if (C.bEdge[I])
+		{
+			++Out.EdgeUnder;
+			if (Depth > Out.EdgeDepth) { Out.EdgeDepth = Depth; EdgeDeep = C.Vertex[I]; }
+		}
+	}
+	Out.Bone = Deep != INDEX_NONE ? DominantBone(GA, GL, Deep) : FName();
+	Out.EdgeBone = EdgeDeep != INDEX_NONE ? DominantBone(GA, GL, EdgeDeep) : FName();
+	Out.Tracked = C.Vertex.Num();
+	Out.bValid = true;
+	return true;
+}

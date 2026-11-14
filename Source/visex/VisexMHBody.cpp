@@ -1,5 +1,8 @@
 #include "VisexMHBody.h"
 #include "VisexBodyComponent.h"
+#include "VisexShellComponent.h"
+#include "Materials/MaterialInterface.h"
+#include "Misc/PackageName.h"
 #include "Animation/AnimInstanceProxy.h"
 #include "Components/LODSyncComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -413,6 +416,12 @@ USkeletalMeshComponent* UVisexMHBodyComponent::ShownFace(const ACharacter* Her)
 	return C && C->bShown ? C->FaceMesh.Get() : nullptr;
 }
 
+USkeletalMeshComponent* UVisexMHBodyComponent::ShownGarment(const ACharacter* Her)
+{
+	const UVisexMHBodyComponent* C = Her ? Her->FindComponentByClass<UVisexMHBodyComponent>() : nullptr;
+	return C && C->bShown ? C->Garment.Get() : nullptr;
+}
+
 USkeletalMeshComponent* UVisexMHBodyComponent::FeetMesh(const ACharacter* Her)
 {
 	USkeletalMeshComponent* Shown = ShownBody(Her);
@@ -449,6 +458,7 @@ void UVisexMHBodyComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 	{
 		// an outfit put on later is a new component: keep the driver's layers hidden
 		HideDriver(true);
+		ApplyOutfit();
 		ApplyDebug();
 	}
 }
@@ -501,6 +511,7 @@ void UVisexMHBodyComponent::Bind()
 	const UVisexBodyComponent* Body = Her->FindComponentByClass<UVisexBodyComponent>();
 	const float Reference = Body ? Body->ReferenceHeight : 177.5f;
 	const FLightingChannels& Ch = Driver->LightingChannels;
+	ClearOutfit();   // it hangs on the Body that is being replaced
 	BodyMesh = nullptr;
 	FaceMesh = nullptr;
 	TInlineComponentArray<UPrimitiveComponent*> Prims(Figure);
@@ -535,6 +546,7 @@ void UVisexMHBodyComponent::Bind()
 
 void UVisexMHBodyComponent::Hide()
 {
+	ClearOutfit();
 	if (Figure)
 	{
 		Figure->Destroy();
@@ -581,7 +593,10 @@ void UVisexMHBodyComponent::ApplyDebug()
 		UE_LOG(LogVisexMH, Display, TEXT("VisexMH: the figure's components were re-made, binding again"));
 		Bind();
 	}
-	const int32 LOD = CVarVisexMHLOD.GetValueOnGameThread();
+	// a garment has one LOD and is skinned to the corrective joints, which the body stops evaluating
+	// past LOD 1: while one is worn the figure is held at LOD 0
+	const int32 Debug = CVarVisexMHLOD.GetValueOnGameThread();
+	const int32 LOD = Debug >= 0 ? Debug : Garment ? 0 : -1;
 	if (Figure && LOD != LastLOD)
 	{
 		if (ULODSyncComponent* Sync = Figure->FindComponentByClass<ULODSyncComponent>())
@@ -608,4 +623,69 @@ void UVisexMHBodyComponent::ApplyDebug()
 		BodyMesh->SetDisablePostProcessBlueprint(Want == 0);
 		LastCorrectives = Want;
 	}
+}
+
+void UVisexMHBodyComponent::ClearOutfit()
+{
+	if (Garment)
+	{
+		Garment->DestroyComponent();
+	}
+	Garment = nullptr;
+	if (IsValid(BodyMesh) && BareSkin)
+	{
+		BodyMesh->SetMaterial(0, BareSkin);
+	}
+	BareSkin = nullptr;
+	bOutfitApplied = false;
+}
+
+void UVisexMHBodyComponent::ApplyOutfit()
+{
+	const ACharacter* Her = Cast<ACharacter>(GetOwner());
+	const UVisexBodyComponent* Body = Her ? Her->FindComponentByClass<UVisexBodyComponent>() : nullptr;
+	const FName Want = Body ? Body->Profile.Outfit : FName(NAME_None);
+	if (!IsValid(BodyMesh) || !Figure)
+	{
+		return;
+	}
+	if (bOutfitApplied && Want == GarmentOutfit && (!Garment || Garment->LeaderPoseComponent.Get() == BodyMesh))
+	{
+		return;
+	}
+	ClearOutfit();
+	GarmentOutfit = Want;
+	bOutfitApplied = true;
+	if (Want.IsNone())
+	{
+		return;
+	}
+	// by name, loaded on first wear: SKM_<Outfit>_MH and MI_Body_<Outfit> from Tools/mh_outfit.py
+	const auto Load = [&Want](const TCHAR* Prefix, const TCHAR* Suffix, UClass* Class) -> UObject*
+	{
+		const FString Name = Prefix + Want.ToString() + Suffix;
+		const FString Package = TEXT("/Game/Character/MH/Outfits/") + Name;
+		return FPackageName::DoesPackageExist(Package) ? StaticLoadObject(Class, nullptr, *(Package + TEXT(".") + Name)) : nullptr;
+	};
+	USkeletalMesh* Mesh = Cast<USkeletalMesh>(Load(TEXT("SKM_"), TEXT("_MH"), USkeletalMesh::StaticClass()));
+	if (!Mesh)
+	{
+		UE_LOG(LogVisexMH, Display, TEXT("VisexMH: outfit %s has no cut on the MetaHuman body yet, she wears nothing"), *Want.ToString());
+		return;
+	}
+	UVisexShellComponent* Shell = NewObject<UVisexShellComponent>(Figure, NAME_None, RF_Transient);
+	Shell->SetSkeletalMesh(Mesh);
+	Shell->SetupAttachment(BodyMesh);
+	Shell->SetCastShadow(true);              // the skin under it is clipped away: the fabric is her shadow there
+	Shell->SetBoundsScale(2.f);
+	const FLightingChannels& Ch = BodyMesh->LightingChannels;
+	Shell->SetLightingChannels(Ch.bChannel0, Ch.bChannel1, Ch.bChannel2);
+	Shell->RegisterComponent();              // follows the Body's final bones from here (Leader Pose)
+	Garment = Shell;
+	if (UMaterialInterface* Under = Cast<UMaterialInterface>(Load(TEXT("MI_Body_"), TEXT(""), UMaterialInterface::StaticClass())))
+	{
+		BareSkin = BodyMesh->GetMaterial(0);
+		BodyMesh->SetMaterial(0, Under);
+	}
+	UE_LOG(LogVisexMH, Display, TEXT("VisexMH: wearing %s (%s, skin under it %s)"), *Want.ToString(), *Mesh->GetName(), BareSkin ? TEXT("clipped") : TEXT("left as it is"));
 }

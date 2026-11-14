@@ -63,6 +63,9 @@ public:
 	/** Its face mesh, likewise. */
 	static USkeletalMeshComponent* ShownFace(const ACharacter* Her);
 
+	/** The worn outfit's cut on the MetaHuman body while it is shown, else null. */
+	static USkeletalMeshComponent* ShownGarment(const ACharacter* Her);
+
 	/** The mesh whose feet are on screen: the MetaHuman body if shown, else her own mesh. */
 	static USkeletalMeshComponent* FeetMesh(const ACharacter* Her);
 
@@ -80,6 +83,11 @@ private:
 	/** Hides (or gives back) the driver's skin, outfit, cloth and hair. */
 	void HideDriver(bool bHide);
 	void ApplyDebug();
+	/** Wears the MetaHuman cut of the driver's outfit if there is one (/Game/Character/MH/Outfits,
+	 *  Tools/mh_outfit.py): the garment follows the body's final pose, correctives included, and the
+	 *  body's skin material is swapped for the one that clips the skin under opaque fabric. */
+	void ApplyOutfit();
+	void ClearOutfit();
 
 	UPROPERTY(Transient)
 	TObjectPtr<AActor> Figure;
@@ -89,6 +97,16 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<USkeletalMeshComponent> FaceMesh;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USkeletalMeshComponent> Garment;
+
+	/** The body's own skin material while an outfit's masked one is on. */
+	UPROPERTY(Transient)
+	TObjectPtr<class UMaterialInterface> BareSkin;
+
+	FName GarmentOutfit = NAME_None;
+	bool bOutfitApplied = false;
 
 	/** What HideDriver hid, to give back exactly that. */
 	TArray<TWeakObjectPtr<USceneComponent>> Hidden;

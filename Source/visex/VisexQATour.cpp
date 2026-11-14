@@ -571,14 +571,17 @@ void AVisexQATour::BuildSpikes()
 	{
 		Height(166.f);
 		Phase(TEXT("done"));
-		static const TCHAR* Names[2] = {TEXT("body"), TEXT("face")};
-		for (int32 I = 0; I < 2; ++I)
+		static const TCHAR* Names[FVisexMHSpikes::Count] = {TEXT("body"), TEXT("face"), TEXT("garment")};
+		for (int32 I = 0; I < FVisexMHSpikes::Count; ++I)
 		{
 			const FVisexSpike& S = Spikes.Total[I];
 			QA_LOG(TEXT("VisexSpikes: TOTAL %s: %s, stretch %.2fx on %s (%d over %.0fx), creases %.2fx on %s (%d over), grew %.2f cm at most on %s"), Names[I],
 				!S.bValid ? TEXT("NOT MEASURED") : S.Fails() ? TEXT("FAIL") : TEXT("pass"), S.Ratio, *S.Bone.ToString(), S.Over, FVisexMHSpikes::Limit,
 				S.Crease, *S.CreaseBone.ToString(), S.CreaseOver, S.Grow, *S.GrowBone.ToString());
 		}
+		const FVisexPoke& K = Spikes.TotalPoke;
+		QA_LOG(TEXT("VisexSpikes: TOTAL poke: %s, where skin is drawn %d fabric vertices under it at most, deepest %.2f cm on %s; under clipped skin %d, deepest %.2f cm on %s"),
+			!K.bValid ? TEXT("NOT MEASURED") : K.Fails() ? TEXT("FAIL") : TEXT("pass"), K.EdgeUnder, K.EdgeDepth, *K.EdgeBone.ToString(), K.Under, K.Depth, *K.Bone.ToString());
 		QA_LOG(TEXT("VisexQA: done"));
 		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
 	});
