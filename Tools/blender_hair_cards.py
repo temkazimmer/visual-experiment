@@ -28,7 +28,8 @@ PREVIEW = len(args) > 1 and args[1] == "preview"
 os.makedirs(OUT, exist_ok=True)
 
 LOOK = dict(
-    style=os.environ.get("HAIR_STYLE", "long"),   # "long": loose and straight; "elf": half-up (Tema: Lord of the Rings elves)
+    style=os.environ.get("HAIR_STYLE", "long"),   # "long": loose and straight; "elf": half-up (Tema: Lord of the Rings elves);
+                                                  # "short": layered shag to the jaw, flicked ends (SHORT below)
     tie_el=6.0,            # elf: degrees above the ear tops where the gathered hair is tied at the back
     fall=(54, 62),         # elf: cm the gathered hair falls from the tie
     card_w_gather=(2.2, 3.4),
@@ -36,7 +37,7 @@ LOOK = dict(
     seed=11,
     guides=1700,           # strands that become cards (dense: a full head of hair, no gaps)
     part_x=1.6,            # the part, cm to her left of centre
-    steps=30 if os.environ.get("HAIR_STYLE", "long") == "elf" else 22,   # points along a card (the tied hair runs further)
+    steps={"elf": 30, "short": 14}.get(os.environ.get("HAIR_STYLE", "long"), 22),   # points along a card (the tied hair runs further)
     length=dict(front=(48, 56), side=(60, 68), back=(66, 76), side_lock=(54, 62)),   # mid-back; locks to the chest
     fringe=140,            # guides in the fringe (long style only; the elf style has a centre part)
     fringe_az=34.0,        # degrees either side of the face the fringe spans
@@ -69,7 +70,41 @@ LOOK = dict(
     cap_fade=7.0,          # degrees over which the cap fades in from the hairline
 )
 rng = np.random.default_rng(LOOK["seed"])
-FBX_NAME = "hair_elf.fbx" if LOOK["style"] == "elf" else "hair_cards.fbx"
+FBX_NAME = {"elf": "hair_elf.fbx", "short": "hair_short.fbx"}.get(LOOK["style"], "hair_cards.fbx")
+IS_SHORT = LOOK["style"] == "short"
+# The short cut (Tema's reference, 2026-11-14): a layered shag to the jaw. Every strand is about
+# the same length, so the ones rooted higher end higher (the layers); they stand off the head
+# (volume), gather into pointed locks and flick outward at the tips. A wispy curtain fringe to
+# the brows, a short tapered nape. Auburn, with a copper panel in the fringe (vertex colour B).
+SHORT = dict(
+    guides=1900,
+    locks=170,                 # lock leaders: each guide follows its nearest one and converges on it
+    converge=0.72,             # how far a guide's tip moves onto its lock's path (pointed locks)
+    whorl=(168.0, 66.0),       # the crown whorl (azimuth, elevation): hair combs away from it
+    len_top=(11.5, 15.0),      # cm, rooted above 45 degrees
+    len_mid=(9.5, 13.0),       # upper sides and back
+    len_low=(6.0, 9.0),        # lower back
+    len_nape=(3.2, 5.5),       # along the nape hairline: tapered, close to the neck
+    len_temple=(8.5, 11.5),    # in front of the ears, down to the jaw
+    lift_top=(0.38, 0.62),     # root lift (0 = lies on the scalp): volume at the crown
+    lift_mid=(0.26, 0.44),
+    lift_low=(0.06, 0.16),
+    stiff=(0.955, 0.87),       # heading kept per cm, root -> tip (short hair holds its shape)
+    flick=(0.3, 1.0),          # outward turn of the tips, per lock
+    kick=5.0,                  # cm a fully flicked tip may leave the volume envelope
+    vol=(0.3, 0.9, 2.2, 3.0, 3.4),    # cm the hair stands off the scalp: nape hairline .. crown
+    vol_fringe=1.0,
+    crown_fill=220,            # extra strands round the whorl, where the hair parts in every direction
+    flick_from=0.55,           # share of the length where the flick starts
+    wave_amp=0.6, wave_len=13.0,   # the S through each lock, cm
+    fringe_az=40.0, fringe_el=64.0,
+    brow=0.2, brow_jag=1.3,    # cm above the head centre where the fringe ends
+    wisps=0.25, wisp_cut=-2.0,
+    face_halfw=6.3,            # cm: below the brow the sides stay outside this
+    w_fringe=(0.6, 1.1), w_side=(1.3, 2.3), w_back=(1.5, 2.6), w_top=(1.4, 2.4),
+    normal_round=0.65,         # card normals bent toward the head's radial: one soft mass, not facets
+    streak_az=44.0,            # the copper panel: fringe roots within this azimuth
+)
 
 skin, arm = load_skin()
 co = world_verts(skin)
@@ -360,9 +395,245 @@ def signed_az(az):
     return ((az + 180) % 360) - 180
 
 
-guides = []        # (pts, layer, flyaway, az, zone)
+# ---- the short cut ---------------------------------------------------------------------------
+G_DOWN = Vector((0.0, 0.0, -1.0))
+WHORL = C + direction(*SHORT["whorl"]) * 10.5
+
+
+def clear_body(p, margin):
+    """p kept off the skull (ears aside) and, for the short cut, laid over the ears."""
+    hit, nrm, _, _ = bvh_body.find_nearest(p)
+    pushed = None
+    if hit is not None:
+        v = p - hit
+        if nrm.dot(hit - Vector((C.x, C.y, min(hit.z, C.z)))) < 0:
+            nrm = -nrm
+        if v.dot(nrm) < 0 or v.length < margin:
+            p = hit + nrm * margin
+            pushed = nrm
+    _, _, de = ear_kd.find(p)
+    if de < 0.9:                                   # over the ear, outward
+        o = Vector((p.x - C.x, p.y - C.y, 0.0))
+        if o.length > 1e-3:
+            p = p + o.normalized() * (0.9 - de)
+    return p, pushed
+
+
+def scalp_height(p):
+    """(height above the skull, outward normal there), or (None, None) below the head."""
+    hit, nrm, _, _ = bvh_body.find_nearest(p)
+    if hit is None:
+        return None, None
+    if nrm.dot(hit - Vector((C.x, C.y, min(hit.z, C.z)))) < 0:
+        nrm = -nrm
+    return (p - hit).dot(nrm), nrm
+
+
+
+def _ss(a, b, x):
+    t = max(0.0, min(1.0, (x - a) / (b - a)))
+    return t * t * (3 - 2 * t)
+
+
+def short_profile(az, el):
+    """(length range, root lift) for a root at (az, el): layered, longer on top, tapered at the nape."""
+    fa = abs(signed_az(az))
+    lo = hairline(az)
+    u = max(0.0, min(1.0, (el - lo) / (90.0 - lo)))
+    ku = [0.0, 0.08, 0.25, 0.45, 0.7, 1.0]
+    back = float(np.interp(u, ku, [4.5, 6.5, 9.5, 12.0, 13.5, 14.0]))
+    side = float(np.interp(u, ku, [11.4, 12.0, 12.6, 13.2, 13.8, 14.0]))
+    w = _ss(95.0, 135.0, fa)
+    L = side + (back - side) * w
+    lift = float(np.interp(u, ku, [0.03, 0.07, 0.2, 0.36, 0.5, 0.56]))
+    if fa < 95:
+        lift = min(lift, 0.12 + 0.4 * u)            # sleeker beside the face
+    return L, lift
+
+
+def short_lock(az, el):
+    """One lock's character: everything its strands share."""
+    fa = abs(signed_az(az))
+    S = SHORT
+    L, lift = short_profile(az, el)
+    p_, _n = scalp(az, el)
+    fringe = fa < S["fringe_az"] or (el > 58 and p_.y < WHORL.y - 3.0 and abs(p_.x) < 5.5)
+    zone = "fringe" if fringe else ("top" if el > 45 else ("side" if fa < 100 else "back"))
+    lo = hairline(az)
+    nape = fa > 110 and el < lo + 12
+    flick = rng.uniform(*S["flick"]) * (0.35 if nape else 1.0)
+    if rng.uniform() < 0.22:
+        flick = min(1.25, flick * 1.5)              # a few locks kick right out: the broken outline
+    z_cut = None
+    if fringe:
+        curtain = min(1.0, abs(p_.x) / 6.0) ** 2 * 3.6   # longer toward the temples: a curtain, eyes clear
+        z_cut = C.z + S["brow"] - curtain + rng.uniform(-S["brow_jag"], S["brow_jag"])
+        if rng.uniform() < S["wisps"] and abs(p_.x) > 0.8:
+            z_cut = C.z + S["wisp_cut"] - curtain * 0.4 + rng.uniform(-0.8, 0.8)
+        flick *= 0.35
+        lift = min(lift, 0.2)
+    streak = rng.uniform(0.0, 0.22)                 # copper: the fringe panel, a hint elsewhere
+    if fringe:
+        streak = max(streak, (1.0 - _ss(0.6, 1.0, abs(p_.x) / 6.5)) * rng.uniform(0.6, 1.0))
+    elif fa < 75:
+        streak = max(streak, rng.uniform(0.15, 0.45))
+    u_ = max(0.0, min(1.0, (el - lo) / (90.0 - lo)))
+    vol = float(np.interp(u_, [0.0, 0.1, 0.3, 0.6, 1.0], S["vol"])) * rng.uniform(0.8, 1.2)
+    # the fringe is see-through: each of its locks keeps only part of its strands, fewest in the middle
+    thin = rng.uniform(0.3, 0.75) * (0.6 if abs(p_.x) < 1.8 else 1.0) if fringe else 1.0
+    return dict(az=az, el=el, zone=zone, vol=vol, conv=0.9 if fringe else S["converge"], thin=thin, L=L * rng.uniform(0.86, 1.1), lift=lift * rng.uniform(0.85, 1.15),
+                flick=flick, z_cut=z_cut, phase=rng.uniform(0, 6.283), amp=S["wave_amp"] * rng.uniform(0.5, 1.3),
+                streak=streak, twist=rng.uniform(-0.25, 0.25))
+
+
+def grow_short(az, el, layer, lk, own=1.0):
+    """One strand of a short lock, root first, LOOK["steps"] + 1 points."""
+    S = SHORT
+    p0, n0 = scalp(az, el)
+    fa = abs(signed_az(az))
+    margin = 0.18 + 0.24 * layer
+    p = p0 + n0 * (0.1 + margin * 0.5)
+    away = p - WHORL
+    dw = away.length
+    away = away - n0 * away.dot(n0)
+    if away.length > 1e-4:
+        away.normalize()
+    down = G_DOWN - n0 * G_DOWN.dot(n0)
+    tang = away * 0.55 + down + n0.cross(away) * (0.22 * math.exp(-dw / 3.0))  # a slight swirl round the whorl
+    sx = 1.0 if p.x >= 0.6 else -1.0
+    if p.y < WHORL.y:                                 # in front of the crown: parted, a curtain...
+        tang += Vector((sx * 0.30 * min(1.0, abs(p.x - 0.6) / 2.0), 0.0, 0.0))
+        # ...and by the temples it frames the face instead of crossing it
+        tang += Vector((0.0, 0.22 * _ss(5.0, 7.5, abs(p.x)) * _ss(55.0, 30.0, el), 0.0))
+    tang = tang - n0 * tang.dot(n0)
+    if tang.length < 1e-3:
+        tang = Vector((0, -1, 0)) - n0 * Vector((0, -1, 0)).dot(n0)
+    calm = 0.35 + 0.65 * _ss(1.0, 4.5, dw)           # round the whorl the hair lies down: no tuft
+    d = (tang.normalized() + n0 * lk["lift"] * calm).normalized()
+    L = lk["L"] * own
+    z_cut = lk["z_cut"]
+    pts = [p.copy()]
+    step, travelled = 0.4, 0.0
+    f0 = S["flick_from"]
+    while travelled < L:
+        t = travelled / L
+        s = blend(S["stiff"][0], S["stiff"][1], t) ** step
+        d = (d * s + G_DOWN * (1 - s)).normalized()
+        if t > f0 and lk["flick"] > 0:
+            u = (t - f0) / (1 - f0)
+            out = Vector((p.x - C.x, p.y - C.y, 0.0))
+            if out.length > 1e-3:
+                out.normalize()
+                side_t = Vector((-out.y, out.x, 0.0)) * lk["twist"]
+                d = d.lerp((out + side_t + Vector((0, 0, 0.38))).normalized(),
+                           min(0.9, lk["flick"] * 0.42 * u * step)).normalized()
+        p = p + d * step
+        travelled += step
+        if z_cut is not None and p.z < z_cut:
+            break
+        if lk["zone"] != "fringe" and p.y < C.y - 1 and C.z - 16 < p.z < C.z + 2.5 and abs(p.x) < S["face_halfw"]:
+            sx_ = 1.0 if p.x >= 0 else -1.0
+            p.x = sx_ * S["face_halfw"]
+            d = (d + Vector((sx_ * 0.1, 0.2, -0.3))).normalized()
+        # the hair rests on the hair under it: it follows the head inside a volume envelope, and
+        # only the flicked tips leave it
+        if p.z > C.z - 7.5:
+            h, nrm = scalp_height(p)
+            if h is not None:
+                kick = max(0.0, (t - f0) / (1 - f0)) * lk["flick"] * S["kick"]
+                vol = lk["vol"] * (0.55 + 0.45 * calm)
+                if lk["zone"] == "fringe":            # full on top of the head, close over the forehead
+                    vol = min(vol, blend(vol, S["vol_fringe"], _ss(0.0, 4.0, WHORL.y - 6.0 - p.y)))
+                h_max = margin + vol * (0.3 + 0.7 * _ss(0.0, 0.3, t)) + kick
+                if h > h_max:
+                    p = p - nrm * ((h - h_max) * 0.7)
+                    d = (d - nrm * max(0.0, d.dot(nrm)) * 0.8).normalized()
+        p, pushed = clear_body(p, margin)
+        if pushed is not None:
+            d = (d - pushed * min(0.0, d.dot(pushed))).normalized()
+        pts.append(p.copy())
+    out_pts = resample(pts)
+    # the S through the lock: the same phase for every strand in it
+    P = np.array([tuple(x) for x in out_pts])
+    seg = np.r_[0, np.cumsum(np.linalg.norm(np.diff(P, axis=0), axis=1))]
+    for i in range(1, len(out_pts)):
+        tg = P[min(i + 1, len(P) - 1)] - P[i - 1]
+        rad = P[i] - np.array([C.x, C.y, min(P[i][2], C.z)])
+        perp = np.cross(tg, rad)
+        nrm_ = np.linalg.norm(perp)
+        if nrm_ < 1e-6:
+            continue
+        ramp = min(1.0, seg[i] / 4.0)
+        out_pts[i] = out_pts[i] + Vector(perp / nrm_) * (lk["amp"] * ramp * math.sin(lk["phase"] + seg[i] / S["wave_len"] * 6.283))
+    return out_pts
+
+
+def short_guides():
+    S = SHORT
+    # lock leaders: spread evenly over the scalp (rejection: no two closer than th)
+    locks, dirs = [], []
+    th = 0.205
+    for _ in range(20000):
+        if len(locks) >= S["locks"]:
+            break
+        az = rng.uniform(-180, 180)
+        el = math.degrees(math.asin(rng.uniform(math.sin(math.radians(LOOK["line_back"])), 0.995)))
+        if el < hairline(az) + 1.0:
+            continue
+        dv = direction(az, el)
+        if any(dv.angle(o) < th for o in dirs):
+            continue
+        dirs.append(dv)
+        locks.append(short_lock(az, el))
+    for lk in locks:
+        lk["path"] = np.array([tuple(x) for x in grow_short(lk["az"], lk["el"], 1, lk)])
+    lkd = KDTree(len(dirs))
+    for i, dv in enumerate(dirs):
+        lkd.insert(dv, i)
+    lkd.balance()
+    out = []
+    n_ = LOOK["steps"] + 1
+    wconv = np.linspace(0, 1, n_) ** 1.3
+    for k in range(S["guides"] + S["crown_fill"]):
+        az = rng.uniform(-180, 180)
+        lo = hairline(az)
+        u = rng.uniform(0, 1) ** 0.85
+        el = lo + (88.0 - lo) * u
+        if k >= S["guides"]:                           # round the whorl
+            dv_ = (direction(*S["whorl"]) + Vector(rng.normal(0, 0.2, 3))).normalized()
+            az = math.degrees(math.atan2(dv_.x, -dv_.y))
+            el = math.degrees(math.asin(max(-1.0, min(1.0, dv_.z))))
+        _, li, _ = lkd.find(direction(az, el))
+        lk = locks[li]
+        fa = abs(signed_az(az))
+        if lk["zone"] == "fringe" and rng.uniform() > lk["thin"] * (0.6 if el < lo + 8 else 1.0):
+            continue                                   # a wispy fringe: thin, thinnest along the very front
+        layer = int(rng.choice([0, 1, 2], p=[0.34, 0.36, 0.30]))
+        fly = rng.uniform() < 0.07
+        own = rng.uniform(0.86, 1.04) * (rng.uniform(0.6, 0.85) if fly else 1.0)
+        P = np.array([tuple(x) for x in grow_short(az, el, layer, lk, own)])
+        near = _ss(1.5, 5.0, (Vector(P[0]) - WHORL).length)      # no pinching into a knot at the whorl
+        w = wconv * lk["conv"] * (0.35 if fly else 1.0) * (0.25 + 0.75 * near)
+        P = P + (lk["path"] - P) * w[:, None]
+        # layers stay layered at the tips too, and nothing ends inside the head
+        pts = []
+        for i in range(n_):
+            q = Vector(P[i])
+            rad = Vector((q.x - C.x, q.y - C.y, q.z - min(q.z, C.z)))
+            if rad.length > 1e-3:
+                q = q + rad.normalized() * (0.16 * (layer - 1) * (i / (n_ - 1)))
+            q, _ = clear_body(q, 0.15 + 0.2 * layer)
+            pts.append(q)
+        out.append((pts, layer, fly, az % 360, lk["zone"], lk["streak"], el))
+    print("short: locks", len(locks), "guides", len(out))
+    return out
+
+
+guides = []        # (pts, layer, flyaway, az, zone[, streak, root elevation])
 dropped = 0
-if LOOK["style"] == "elf":
+if IS_SHORT:
+    guides = short_guides()
+elif LOOK["style"] == "elf":
     for k in range(LOOK["guides"]):
         az = rng.uniform(0, 360)
         lo = hairline(az)
@@ -431,17 +702,25 @@ CARDS = []         # (first vertex, zone, az, path) per card, for the rig
 AO_LAYER = (0.6, 0.82, 1.0)        # colour (vertex R), also darker at the roots
 AO_SPEC = (0.8, 0.92, 1.0)         # highlight (vertex G): only a little, and not at the roots,
                                    # which is where the highlight band sits
-for pts, layer, fly, az, zone in guides:
+NRM = []                           # short: a custom normal per vertex (cards read as one soft mass)
+for g_ in guides:
+    pts, layer, fly, az, zone = g_[:5]
+    streak = g_[5] if len(g_) > 5 else 0.0
+    root_el = g_[6] if len(g_) > 6 else 0.0
     P = [np.array(x) for x in pts]
     wkey = "card_w_elflock" if (zone == "side" and LOOK["style"] == "elf") else "card_w_" + zone
-    w0 = rng.uniform(*LOOK[wkey]) * (0.45 if fly else 1.0)
-    if zone == "fringe" and P[-1][2] < C.z - 0.5:
+    w0 = rng.uniform(*(SHORT["w_" + zone] if IS_SHORT else LOOK[wkey])) * (0.45 if fly else 1.0)
+    if IS_SHORT:
+        w0 *= 0.75 + 0.25 * min(1.0, np.linalg.norm(P[-1] - P[0]) / 8.0)     # short nape strands: narrower
+    elif zone == "fringe" and P[-1][2] < C.z - 0.5:
         w0 *= 0.5                                     # the long wisps are a few strands each
     # dense tiles under everything, and on the locks by her face and the fringe: on sparse tiles
     # those were mostly holes, and the sunlit skin behind showed through as beige (QA 0278)
     dense = layer == 0 or zone in ("side", "fringe", "tie", "gather")
+    if IS_SHORT:
+        dense = (layer == 0 and zone != "fringe") or rng.uniform() < (0.2 if zone == "fringe" else 0.45)
     # the locks by her face are two cards crossed, so a lock has thickness from every side
-    for cross in ((False, True) if zone == "side" else (False,)):
+    for cross in ((False, True) if (zone == "side" and not IS_SHORT) else (False,)):
         CARDS.append((len(V), zone, az, np.array(P)))
         base = len(V)
         prev_n = None
@@ -462,8 +741,16 @@ for pts, layer, fly, az, zone in guides:
             s = i / (n - 1)
             w = w0 * (1.0 - 0.22 * s) * (0.55 + 0.45 * min(1.0, s * 6))
             _, _, de = ear_kd.find(Vector(p))
-            w *= min(1.0, max(0.25, de / 2.5))            # cards narrow beside an ear
+            if not IS_SHORT:
+                w *= min(1.0, max(0.25, de / 2.5))        # cards narrow beside an ear
             ao = (AO_LAYER[min(layer, 2)] * (0.75 + 0.25 * min(1.0, s * 5)), AO_SPEC[min(layer, 2)])
+            if IS_SHORT:
+                # B = 1 - copper; a fringe rooted far back on the head stays brown near its root
+                ao = ao + (1.0 - streak * (_ss(0.05, 0.4, s) if root_el > 58 else 1.0),)
+                rr = p - np.array([C.x, C.y, min(p[2], C.z - 2.0)])
+                rr = rr / (np.linalg.norm(rr) + 1e-9)
+                nv = nn * (1 - SHORT["normal_round"]) + rr * SHORT["normal_round"]
+                nv = nv / (np.linalg.norm(nv) + 1e-9)
             for off in (-0.5, 0.0, 0.5):
                 if cross:                                 # turned a quarter round the strand
                     q = p + nn * off * w * 0.8
@@ -471,6 +758,8 @@ for pts, layer, fly, az, zone in guides:
                     q = p + b * off * w + nn * (LOOK["arch"] * w * (1 - (2 * off) ** 2) * 0.5)
                 V.append(tuple(q))
                 COL.append(ao)
+                if IS_SHORT:
+                    NRM.append(tuple(nv))
                 uu = (off + 0.5) if not flip else (0.5 - off)
                 UVs.append(((tile + 0.03 + 0.94 * uu) / TILES, s))
         for i in range(n - 1):
@@ -506,6 +795,8 @@ for v in _ids:
     V.append(tuple(co[v] + _vn[v] * LOOK["cap_lift"]))
     UVs.append((float(_fade[v]), 0.5))
     COL.append((1.0, 1.0))
+    if IS_SHORT:
+        NRM.append(tuple(_vn[v]))
 for t in _keep:
     F.append(tuple(_map[int(v)] for v in t))
 CAP_VERTS = list(range(N_CARD_VERTS, len(V)))
@@ -524,9 +815,11 @@ vc = me.color_attributes.new(name="Col", type="BYTE_COLOR", domain="CORNER")
 for li, loop in enumerate(me.loops):
     k = COL[loop.vertex_index]
     # the FBX export puts byte colours through a 2.2 gamma (0.45 came out as 0.17): undo it here
-    vc.data[li].color = (k[0] ** (1 / 2.2), k[1] ** (1 / 2.2), 1.0, 1.0)
+    vc.data[li].color = (k[0] ** (1 / 2.2), k[1] ** (1 / 2.2), (k[2] if len(k) > 2 else 1.0) ** (1 / 2.2), 1.0)
 me.color_attributes.active_color = vc
 me.color_attributes.render_color_index = 0
+if IS_SHORT:
+    me.normals_split_custom_set_from_vertices(NRM)
 hair = bpy.data.objects.new("Hair", me)
 bpy.context.collection.objects.link(hair)
 
@@ -545,10 +838,15 @@ sep = nt.nodes.new("ShaderNodeSeparateColor")
 nt.links.new(tex.outputs["Color"], sep.inputs["Color"])
 ramp = nt.nodes.new("ShaderNodeValToRGB")          # root -> tip colour
 nt.links.new(sep.outputs["Blue"], ramp.inputs["Fac"])
+# preview colours; the game's are in Tools/char_hair_cards.py (keep the short cut's in step)
+COLOURS = dict(root=(0.004, 0.005, 0.010), tip=(0.035, 0.042, 0.075), streak=None, cap=(0.008, 0.007, 0.006))
+if IS_SHORT:
+    COLOURS = dict(root=(0.060, 0.024, 0.010), tip=(0.250, 0.105, 0.034), streak=(0.42, 0.140, 0.030),
+                   cap=(0.085, 0.034, 0.013))
 ramp.color_ramp.elements[0].position = 0.0
-ramp.color_ramp.elements[0].color = (0.004, 0.005, 0.010, 1)
+ramp.color_ramp.elements[0].color = COLOURS["root"] + (1,)
 ramp.color_ramp.elements[1].position = 1.0
-ramp.color_ramp.elements[1].color = (0.035, 0.042, 0.075, 1)
+ramp.color_ramp.elements[1].color = COLOURS["tip"] + (1,)
 var = nt.nodes.new("ShaderNodeMath")
 var.operation = "MULTIPLY_ADD"
 var.inputs[1].default_value = 0.9
@@ -562,8 +860,55 @@ nt.links.new(ramp.outputs["Color"], mul.inputs["A"])
 nt.links.new(var.outputs["Value"], mul.inputs["B"])
 bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
 nt.links.new(mul.outputs["Result"], bsdf.inputs["Base Color"])
-bsdf.inputs["Roughness"].default_value = 0.42
-bsdf.inputs["Specular IOR Level"].default_value = 0.5
+if IS_SHORT:                                        # as the game's material: copper by vertex B, occlusion by R
+    att = nt.nodes.new("ShaderNodeVertexColor")
+    att.layer_name = "Col"
+    vsep = nt.nodes.new("ShaderNodeSeparateColor")
+    nt.links.new(att.outputs["Color"], vsep.inputs["Color"])
+    inv = nt.nodes.new("ShaderNodeMath")
+    inv.operation = "SUBTRACT"
+    inv.inputs[0].default_value = 1.0
+    nt.links.new(vsep.outputs["Blue"], inv.inputs[1])
+    sramp = nt.nodes.new("ShaderNodeValToRGB")      # the copper lock, root -> tip
+    nt.links.new(sep.outputs["Blue"], sramp.inputs["Fac"])
+    sramp.color_ramp.elements[0].color = tuple(c * 0.55 for c in COLOURS["streak"]) + (1,)
+    sramp.color_ramp.elements[1].color = COLOURS["streak"] + (1,)
+    smul = nt.nodes.new("ShaderNodeMix")
+    smul.data_type = "RGBA"
+    smul.blend_type = "MULTIPLY"
+    smul.inputs["Factor"].default_value = 1.0
+    nt.links.new(sramp.outputs["Color"], smul.inputs["A"])
+    nt.links.new(var.outputs["Value"], smul.inputs["B"])
+    smix = nt.nodes.new("ShaderNodeMix")
+    smix.data_type = "RGBA"
+    nt.links.new(inv.outputs["Value"], smix.inputs["Factor"])
+    nt.links.new(mul.outputs["Result"], smix.inputs["A"])
+    nt.links.new(smul.outputs["Result"], smix.inputs["B"])
+    occ = nt.nodes.new("ShaderNodeMix")
+    occ.data_type = "RGBA"
+    occ.blend_type = "MULTIPLY"
+    occ.inputs["Factor"].default_value = 1.0
+    nt.links.new(smix.outputs["Result"], occ.inputs["A"])
+    nt.links.new(vsep.outputs["Red"], occ.inputs["B"])
+    nt.links.new(occ.outputs["Result"], bsdf.inputs["Base Color"])
+    geo = nt.nodes.new("ShaderNodeNewGeometry")     # the underside of a flicked lock is lit like its top
+    sgn = nt.nodes.new("ShaderNodeMath")
+    sgn.operation = "MULTIPLY_ADD"
+    sgn.inputs[1].default_value = -2.0
+    sgn.inputs[2].default_value = 1.0
+    nt.links.new(geo.outputs["Backfacing"], sgn.inputs[0])
+    nflip = nt.nodes.new("ShaderNodeVectorMath")
+    nflip.operation = "SCALE"
+    nt.links.new(geo.outputs["Normal"], nflip.inputs[0])
+    nt.links.new(sgn.outputs["Value"], nflip.inputs["Scale"])
+    nt.links.new(nflip.outputs["Vector"], bsdf.inputs["Normal"])
+    # (Cycles leaves a card's far side unlit however its normal points; a little transmission
+    # stands in for the game's shading, which lights both sides alike)
+    bsdf.inputs["Transmission Weight"].default_value = 0.0
+    trl = nt.nodes.new("ShaderNodeBsdfTranslucent")
+    nt.links.new(occ.outputs["Result"], trl.inputs["Color"])
+bsdf.inputs["Roughness"].default_value = 0.56 if IS_SHORT else 0.42
+bsdf.inputs["Specular IOR Level"].default_value = 0.3 if IS_SHORT else 0.5
 bsdf.inputs["Anisotropic"].default_value = 0.9
 bsdf.inputs["Sheen Weight"].default_value = 0.2
 tan = nt.nodes.new("ShaderNodeTangent")
@@ -573,10 +918,21 @@ nt.links.new(tan.outputs["Tangent"], bsdf.inputs["Tangent"])
 nt.links.new(tex.outputs["Alpha"], bsdf.inputs["Alpha"])
 outn = nt.nodes.new("ShaderNodeOutputMaterial")
 nt.links.new(bsdf.outputs["BSDF"], outn.inputs["Surface"])
+if IS_SHORT:
+    tmix = nt.nodes.new("ShaderNodeMixShader")
+    tmix.inputs[0].default_value = 0.35
+    tsp = nt.nodes.new("ShaderNodeBsdfTransparent")
+    amix = nt.nodes.new("ShaderNodeMixShader")       # the strand mask applies to both lobes
+    nt.links.new(tex.outputs["Alpha"], amix.inputs[0])
+    nt.links.new(tsp.outputs["BSDF"], amix.inputs[1])
+    nt.links.new(trl.outputs["BSDF"], amix.inputs[2])
+    nt.links.new(bsdf.outputs["BSDF"], tmix.inputs[1])
+    nt.links.new(amix.outputs["Shader"], tmix.inputs[2])
+    nt.links.new(tmix.outputs["Shader"], outn.inputs["Surface"])
 hair.data.materials.append(m)
 capm = bpy.data.materials.new("HairCap")
 capm.use_nodes = True
-capm.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (0.008, 0.007, 0.006, 1)
+capm.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = COLOURS["cap"] + (1,)
 capm.node_tree.nodes["Principled BSDF"].inputs["Roughness"].default_value = 0.8
 hair.data.materials.append(capm)
 
@@ -587,7 +943,29 @@ sm.node_tree.nodes["Principled BSDF"].inputs["Roughness"].default_value = 0.55
 skin.data.materials.clear()
 skin.data.materials.append(sm)
 
-if PREVIEW:
+if PREVIEW and IS_SHORT:
+    # the reference's four views, in a neutral studio: front, profile, back, from above
+    sq = int(os.environ.get("HAIR_RES", "1200"))
+    scn_ = setup_render((sq, sq), 64)
+    scn_.world.node_tree.nodes["Background"].inputs[0].default_value = (0.42, 0.43, 0.46, 1)
+    scn_.world.node_tree.nodes["Background"].inputs[1].default_value = 1.0
+    for name, rot, energy in (("key", (math.radians(55), 0, math.radians(-25)), 2.6),
+                              ("fill", (math.radians(70), 0, math.radians(120)), 1.0),
+                              ("back", (math.radians(60), 0, math.radians(200)), 1.4)):
+        d_ = bpy.data.lights.new(name, "SUN")
+        d_.energy = energy
+        d_.angle = math.radians(12)
+        o_ = bpy.data.objects.new(name, d_)
+        o_.rotation_euler = rot
+        bpy.context.collection.objects.link(o_)
+    tz = C.z - 3.0
+    want = os.environ.get("HAIR_VIEWS", "front,side,back,top").split(",")
+    for nme, eye, tgt in (("front", (0, -150, tz + 2), (0, 0, tz)), ("side", (-150, 0, tz + 2), (0, 2, tz)),
+                          ("back", (0, 150, tz + 2), (0, 0, tz)), ("top", (0, -75, tz + 135), (0, -1, tz + 4)),
+                          ("front34", (100, -112, tz + 6), (0, 0, tz))):
+        if nme in want:
+            shoot(os.path.join(OUT, "short_%s.png" % nme), eye, tgt, lens=85)
+elif PREVIEW:
     setup_render((1600, 900), 64)
     lights()
     tz = top - 22                                     # aim at the chin: head and shoulders in frame
@@ -605,6 +983,10 @@ if "rig" in args:
         side=([53, -53], 5),
         fringe=([-18, 0, 18], 2),
     )
+    SHORT_F0 = 0.45                      # short: the first part of every strand rides the head
+    if IS_SHORT:                         # short hair barely swings: two bones a chain, tips only
+        CHAINS = dict(back=([115, 150, 180, -150, -115], 2), top=([45, 110, 180, -110, -45], 2),
+                      side=([70, -70], 2), fringe=([-22, 0, 22], 2))
 
 
     def az_diff(a, b):
@@ -628,7 +1010,7 @@ if "rig" in args:
         cz = "back" if zone == "gather" else zone
         cand = [(az_diff(signed_az(az), c["az"]), i) for i, c in enumerate(chains) if c["zone"] == cz]
         cand.sort()
-        if cz == "back" and len(cand) > 1:
+        if cz in ("back", "top") and len(cand) > 1:
             (d0, i0), (d1, i1) = cand[0], cand[1]
             w0 = d1 / (d0 + d1 + 1e-6)
             assign.append([(i0, w0), (i1, 1 - w0)])
@@ -660,6 +1042,8 @@ if "rig" in args:
                 start = i
                 break
         start = min(start, n_pts - 3)
+        if IS_SHORT:
+            start = int(round(SHORT_F0 * (n_pts - 1)))
         c["f0"] = start / (n_pts - 1)
         seg = np.r_[0, np.cumsum(np.linalg.norm(np.diff(M[start:], axis=0), axis=1))]
         joints = [np.array([np.interp(t, seg, M[start:, k]) for k in range(3)])
@@ -708,6 +1092,8 @@ if "rig" in args:
             lim = C.z - (6.0 if zone == "side" else 9.0)
             below = [i for i in range(n_pts) if P[i][2] < lim]
             cf0 = min(below[0] if below else n_pts - 3, n_pts - 3) / (n_pts - 1)
+        if IS_SHORT:
+            cf0 = SHORT_F0
         if not assign[ci_card]:
             groups["head"].add([first + i for i in range(n_pts * 3)], 1.0, "REPLACE")
             continue
