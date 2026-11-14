@@ -989,6 +989,10 @@ private:
 	UPROPERTY(Transient) TObjectPtr<class UAnimMontage> WalkMontage;
 	float WalkClipSpeed = 126.5f;   // cm/s, the clip's own root motion (measured when it starts)
 	float WalkClipIdle = 0.f;       // seconds she has been all but still on a menu walk
+	// the walk clip is a root-motion clip: while it plays, her anim ignores root motion (the capsule
+	// moves her), or its zeroed translation held her still on the Start walk-off; then restored
+	bool bWalkRootOff = false;
+	uint8 WalkRootMode = 3;         // ERootMotionMode to restore (RootMotionFromMontagesOnly)
 	FString MotionName;
 	double MotionStart = -1.0;
 	FTimerHandle MotionTimer;

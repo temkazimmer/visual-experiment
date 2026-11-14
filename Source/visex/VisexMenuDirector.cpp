@@ -2009,6 +2009,15 @@ void AVisexMenuDirector::TickWalkClip(float DeltaSeconds, bool bMenuWalk)
 		return;
 	}
 	const bool bWalkClip = WalkMontage && Anim->Montage_IsPlaying(WalkMontage);
+	if (bWalkRootOff && !(WalkMontage && Anim->Montage_IsActive(WalkMontage)))
+	{
+		// the walk clip is gone: root motion back as it was, unless something set its own since
+		if (Anim->RootMotionMode == ERootMotionMode::IgnoreRootMotion)
+		{
+			Anim->SetRootMotionMode(ERootMotionMode::Type(WalkRootMode));
+		}
+		bWalkRootOff = false;
+	}
 	bool bOtherClip = false;
 	for (const FAnimMontageInstance* Inst : Anim->MontageInstances)
 	{
@@ -2044,6 +2053,14 @@ void AVisexMenuDirector::TickWalkClip(float DeltaSeconds, bool bMenuWalk)
 			// the capsule moves her (TickStep, TickReturn): the clip's root motion is dropped
 			WalkMontage->bEnableRootMotionTranslation = false;
 			WalkMontage->bEnableRootMotionRotation = false;
+			// a root-motion montage with its translation off still drives the movement, at zero:
+			// the walk-off's stick input went nowhere and she crawled off the column (0612-0622)
+			if (Anim->RootMotionMode != ERootMotionMode::IgnoreRootMotion)
+			{
+				WalkRootMode = uint8(Anim->RootMotionMode.GetValue());
+				Anim->SetRootMotionMode(ERootMotionMode::IgnoreRootMotion);
+				bWalkRootOff = true;
+			}
 		}
 		return;
 	}
