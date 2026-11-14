@@ -34,7 +34,11 @@ DIR = "/Game/Character/Hair"
 # per hairstyle (see Tools/char_hair_cards.py): STYLE='elf' builds ABP_HairElf on SKM_HairElf
 STYLE = globals().get("STYLE", "long")
 MESH, SKEL, NAME = dict(long=("SKM_HairCards", "SK_HairCards", "ABP_HairCards"),
-                        elf=("SKM_HairElf", "SK_HairCards", "ABP_HairElf"))[STYLE]
+                        elf=("SKM_HairElf", "SK_HairCards", "ABP_HairElf"),
+                        short=("SKM_HairShort", "SK_HairCards", "ABP_HairShort"))[STYLE]
+if STYLE == "short":
+    # short hair holds its cut: only the tips give, a little, and they come straight back
+    PHYS.update(damping=0.35, stiffness=0.4, limit_angle=9.0, radius=0.8, gravity=(0, 0, -150))
 
 assert not unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).is_in_play_in_editor(), "stop Play first"
 T = unreal.VisexAnimGraphTools

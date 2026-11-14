@@ -70,6 +70,10 @@ const TArray<FVisexHairStyle>& FVisexBodyProfile::HairStyles()
 			TEXT("/Game/Character/Hair/SKM_HairCards.SKM_HairCards"), TEXT("/Game/Character/Hair/ABP_HairCards.ABP_HairCards_C")},
 		{TEXT("Elf"), LOCTEXT("HairElf", "Elven, swept back"),
 			TEXT("/Game/Character/Hair/SKM_HairElf.SKM_HairElf"), TEXT("/Game/Character/Hair/ABP_HairElf.ABP_HairElf_C")},
+		// short: a layered auburn shag to the jaw with a copper fringe; its colours are material
+		// instances on the mesh (hair agent, Tema's reference 2026-11-14)
+		{TEXT("Short"), LOCTEXT("HairShort", "Short, layered"),
+			TEXT("/Game/Character/Hair/SKM_HairShort.SKM_HairShort"), TEXT("/Game/Character/Hair/ABP_HairShort.ABP_HairShort_C")},
 	};
 	return Styles;
 }

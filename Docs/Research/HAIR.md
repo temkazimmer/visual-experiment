@@ -186,6 +186,7 @@ To put one on her: mesh + anim class, attached to the body mesh, as `ApplyHair` 
 |---|---|---|---|
 | long | `SKM_HairCards` | `ABP_HairCards_C` | loose, straight, wispy fringe, face-framing locks |
 | elf | `SKM_HairElf` | `ABP_HairElf_C` | centre part, front and sides swept behind the ears and gathered at the back, one thin lock a side, no fringe |
+| short | `SKM_HairShort` | `ABP_HairShort_C` | layered shag to the jaw: wispy curtain fringe, flicked tips, short tapered nape; auburn with a copper fringe |
 
 Build a style: `HAIR_STYLE=elf ... blender_hair_cards.py -- <out> rig`, copy the FBX and atlas to
 `SourceArt/Character/Hair/`, then in the editor run `char_hair_cards.py` and `char_hair_physics.py`
@@ -196,6 +197,54 @@ with `STYLE='elf'` set first (see the scripts' headers).
 - A new style's bones must be a subset of the skeleton's, or the importer adds them to `SK_HairCards`
   (fine, but then commit the skeleton too).
 - UE's importer puts a new style's mesh on the existing hair skeleton by itself; don't rename it.
+
+### The short cut (added 2026-11-14, Tema's reference photo sheet)
+
+`HAIR_STYLE=short` in `blender_hair_cards.py` (values in `SHORT`). How it differs from the long styles:
+
+- **Layers from one length.** Every strand is 10 to 14 cm, so the ones rooted higher end higher. The
+  nape tapers to 4 cm. Hair combs away from a crown whorl, one continuous field (a zone-by-zone
+  direction left a bare seam between fringe and sides).
+- **A volume envelope.** A strand follows the head and may stand at most `vol` cm off the scalp
+  (0.3 at the nape to 3.4 at the crown); only the flicked last 45% may leave it, by `kick`. Without
+  it short stiff strands shoot off the skull tangentially and the cut reads as anime spikes.
+- **Locks.** About 110 leaders; each strand takes its leader's length, flick and wave and converges on
+  its path toward the tip, so the tips gather into points. The fringe keeps only part of its strands.
+- **Ears are covered** (the other styles go round them): strands are pushed 1.6 cm clear of the ear
+  and extra strands are rooted above it. Extra strands also fill the whorl and the nape hairline.
+- **Colour is per style.** `M_HairCards` and `M_HairCap` stay the black masters; a style listed in
+  `TINTS` (`char_hair_cards.py`) gets instances (`MI_HairShort`, `MI_HairCapShort`). Vertex colour B
+  is `1 - copper`, lerped to `StreakColor`. `BothSides = 1` keeps the front normal on a card's back
+  face, or the underside of a flicked lock goes dark; its card normals are bent 65% toward the head's
+  radial so the mass shades as one form.
+- **Its own atlas**, `T_HairAtlasFine`: a third more strands and roots ragged over the first 7%
+  (upper-layer roots are in plain view). Twice the strands at half the width averaged into solid,
+  feather-like cards, so it is not finer than that. It never streams: a re-imported atlas came in
+  late and the first shots showed low mips.
+- **Soft roots.** `RootFade` ramps coverage in over the first 16% of a card where vertex alpha is 1
+  (layers 1 and 2); the under layer keeps solid roots so the scalp stays covered. The under layer
+  is also baked lighter (0.76 instead of 0.6): on light hair it shows between the top cards.
+- **No edge-on highlight.** `GrazeFade` removes the highlight where a card is seen edge-on. With the
+  sun ahead and the camera behind, crown cards went white; lowering Specular alone did not fix it.
+- **Physics:** two bones a chain (15 chains), tips only, stiffness 0.4, 9 degrees: it holds its cut.
+  Its "top" chains were added to `SK_HairCards`. Stable at 3 fps in a background editor (tips move
+  about 0.1 cm with her breathing).
+
+`RootFade`, `GrazeFade`, `BothSides` and the second colour are parameters of `M_HairCards` that
+default to off, so long and elf render as before.
+
+Review shots without Play: `Tools/hair_preview.py` (skin + hair in the open air above the menu spot).
+In Play: `Tools/hair_shots.py` with a `HairCam` SceneCapture2D placed before Play (don't save it);
+`GRADED=True` shoots the final LDR image with the level's grade. To put a style on the way the
+Hair tab does, set `profile.hair` on her `VisexBodyComponent` and call `apply()`.
+
+Traps: with `skeleton=None` the importer still picks the existing hair skeleton in the folder, so
+never rename a skeleton the import did not create (it re-pointed every style once). Wait for her
+arrival (about 40 s into Play) before shooting; earlier her head socket is not where she ends up.
+
+Open: in hard side sun the top cards still cast a stepped shadow pattern on the layer under them
+near the crown; at menu distance the sunlit fringe cards read a little like leaves; not watched in
+motion at real speed (a background editor runs at 3 fps).
 
 ## What I could not verify
 
