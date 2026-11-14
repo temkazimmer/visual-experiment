@@ -59,3 +59,29 @@ what we learned, so **write findings down in the log at the bottom as you go**.
 ## Findings log
 
 (date, what was tried, what happened, numbers, commit)
+
+### 2026-11-14 · Stage 1 · her numbers (commit 0e4ef85, `Tools/mh_measure.py`)
+
+Measured on the live skin (`Shell`, `SKM_AndroidSkin`, 227k render vertices) in a Play
+session in Lvl_Studio with a fresh save, so every default slider is applied (actor scale
+0.935 = 166 / 177.5). She was in the proud idle (contrapposto, arms down), so girths are
+level slices of a slightly tilted torso: read them as ±2 cm. Lengths are joint to joint.
+
+| cm | her (default sliders) | how |
+|---|---|---|
+| Height | 162.0 in the idle, **164.3 straightened** | crown to floor; ankle + shin + thigh + trunk |
+| Shoulders | 26.6 joint to joint, 39.6 across the deltoids | `upperarm_l/r` |
+| Bust | 93.3 | fullest tape below the armpits |
+| Waist | 57.6 | narrowest tape, pelvis to bust |
+| Hip | 98.1 | fullest tape above the crotch |
+| Inseam | 76.4 | where the trunk splits into legs |
+| Arm | 48.6 shoulder to wrist (24.7 + 23.8), hand 13.2 | joints; wrist to fingertip |
+| Leg | thigh 41.8, shin 38.1, ankle 7.5 high | joints |
+| Foot | 22.4 | heel to toe along the foot |
+| Thigh / calf girth | 63.7 / 38.6 | 3 cm under the crotch / fullest |
+
+The slider label says 166, but that is the scale of a 177.5 cm reference mesh; with her
+default leg (0.98), neck (0.90) and head (1.04) scales she stands about 164.
+The skin is on `SK_Mannequin` (Quinn), 181 bones, including our added toe bones.
+`copy_mesh_from_component` cannot pose a Leader Pose follower ("Unable to pose the source
+mesh"); asking for the render LOD reads the skinned mesh instead.
