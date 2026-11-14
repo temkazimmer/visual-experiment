@@ -5,11 +5,12 @@
 
 STEPS (default ['create', 'shape', 'look']):
   fresh     delete the Creator asset first: a new body shape is always a clean pass
-            (STEPS=['fresh','create','shape','look','rig','textures','build'])
+            (STEPS=['fresh','create','shape','look','hair','rig','textures','build'])
   create    copy a MetaHuman Creator preset to /Game/Character/MH/MHC_Her (the face is a
             placeholder: PRESET picks it, Tema designs the real one later)
   shape     drive the parametric body toward her measured numbers (TARGETS, in cm)
   look      take the preset's garment off and set a pale skin tone (SKIN_UV)
+  hair      wear a MetaHuman groom in black (HAIR, default Hair_L_StraightBangs; HAIR_COLOUR), brows to match
   rig       auto-rig through Epic's cloud (needs an Epic sign-in inside the editor)
   textures  download the high-resolution skin textures from Epic's cloud
   build     assemble game-ready assets under /Game/Character/MH/Built (PIPELINE, QUALITY)
@@ -137,6 +138,48 @@ def look(character):
     mh.assemble_for_preview(character)
     log("slots:", [str(d.selection.slot_name) for d in inst.get_slot_selection_data()])
     log("skin:", character.skin_settings.skin.u, character.skin_settings.skin.v)
+
+
+# Her hair is MetaHuman's own (Tema, stage 5): a groom from the Creator's wardrobe, coloured black.
+# StraightBangs is the longest straight one (to the mid-back) and has her fringe; the other long straight
+# style stops at the shoulders (Docs/Research/metahuman/stage5_hair_pick.jpg). The preset's brows and
+# lashes stay and take the same colour.
+HAIR = globals().get("HAIR", "Hair_L_StraightBangs")
+HAIR_COLOUR = globals().get("HAIR_COLOUR", {"Melanin": 1.0, "Redness": 0.0, "Whiteness": 0.0})
+GROOMS = "/MetaHumanCharacter/Optional/Grooms/Bindings/"
+
+
+def hair(character):
+    """Wear HAIR in the Hair slot, in HAIR_COLOUR. Part of the one pass, before rig and build.
+    The colour is an instance parameter and only exists once the preview has been assembled."""
+    coll = character.internal_collection
+    inst = coll.default_instance
+    item = unreal.load_asset(GROOMS + "Hair/WI_" + HAIR)
+    if item is None:
+        raise RuntimeError("no wardrobe item for " + HAIR)
+    key = coll.try_add_item_from_wardrobe_item("Hair", item)
+    if key is None:
+        raise RuntimeError("the collection refused " + HAIR)
+    inst.set_single_slot_selection("Hair", key)     # replaces the preset's; try_add would wear both
+    mh.assemble_for_preview(character)
+    seen = {}
+    for p in inst.get_instance_parameters(item_path=unreal.MetaHumanPaletteItemPath(item_key=key)):
+        if str(p.name) in HAIR_COLOUR:
+            p.set_float(value=HAIR_COLOUR[str(p.name)])
+            seen[str(p.name)] = round(p.get_float(), 3)
+    if len(seen) != len(HAIR_COLOUR):
+        raise RuntimeError("hair colour parameters not found: %s of %s" % (seen, HAIR_COLOUR))
+    log("hair:", HAIR, seen)
+    for d in inst.get_slot_selection_data():         # brows and lashes in the same black, where they have a colour
+        slot = str(d.selection.slot_name)
+        if slot in ("Eyebrows", "Eyelashes"):
+            got = {}
+            for p in inst.get_instance_parameters(item_path=unreal.MetaHumanPaletteItemPath(item_key=d.selection.selected_item)):
+                if str(p.name) in HAIR_COLOUR:
+                    p.set_float(value=HAIR_COLOUR[str(p.name)])
+                    got[str(p.name)] = round(p.get_float(), 3)
+            log(slot, d.selection.selected_item.to_asset_name_string(), got or "no colour parameters")
+    log("slots:", [(str(d.selection.slot_name), d.selection.selected_item.to_asset_name_string()) for d in inst.get_slot_selection_data()])
 
 
 # Cloud steps. BLOCKING=True (default) holds the editor until Epic's service answers, which
