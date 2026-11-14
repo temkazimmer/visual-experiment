@@ -143,10 +143,24 @@ def setup():
     print("her at", her.get_actor_location(), "stage actors in Play:", len(tagged(world, unreal.Actor)))
 
 
+def hand_view(world, side):
+    """A 3/4 view onto the back of one MetaHuman hand, fingers in frame: from in front,
+    outside and a little above (stage 1 shot the hands end-on and they proved nothing)."""
+    mhs = [a for a in tagged(world, unreal.Actor) if a.get_class().get_name().startswith("BP_MHC")]
+    body = [c for c in mhs[0].get_components_by_class(unreal.SkeletalMeshComponent) if c.get_name() == "Body"][0]
+    h, t = body.get_socket_location("hand_" + side), body.get_socket_location("middle_03_" + side)
+    m = (h + t) * 0.5
+    out = 1.0 if h.y > mhs[0].get_actor_location().y else -1.0
+    return (m.x + 40.0, m.y + out * 34.0, m.z + 16.0), (m.x, m.y, m.z - 1.0), 26.0
+
+
 def shot():
-    """One 4K frame through the stage capture. NAME picks a SHOTS entry, or pass VIEW."""
+    """One 4K frame through the stage capture. NAME picks a SHOTS entry (or hand_l / hand_r),
+    or pass VIEW."""
     world = ues.get_game_world()
     name = globals().get("NAME", "full")
+    if not globals().get("VIEW") and name in ("hand_l", "hand_r"):
+        SHOTS[name] = hand_view(world, name[-1])
     pos, target, fov = globals().get("VIEW") or SHOTS[name]
     cap = tagged(world, unreal.SceneCapture2D)[0]
     loc = unreal.Vector(*pos)

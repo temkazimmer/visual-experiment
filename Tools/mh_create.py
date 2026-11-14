@@ -4,6 +4,8 @@
   python3 Tools/ue.py -c "STEPS=['rig']; exec(open(unreal.Paths.project_dir() + 'Tools/mh_create.py').read())"
 
 STEPS (default ['create', 'shape', 'look']):
+  fresh     delete the Creator asset first: a new body shape is always a clean pass
+            (STEPS=['fresh','create','shape','look','rig','textures','build'])
   create    copy a MetaHuman Creator preset to /Game/Character/MH/MHC_Her (the face is a
             placeholder: PRESET picks it, Tema designs the real one later)
   shape     drive the parametric body toward her measured numbers (TARGETS, in cm)
@@ -16,7 +18,7 @@ Every step saves the character asset, so a later step can run in a fresh editor.
 import unreal
 
 CHAR_DIR = "/Game/Character/MH"
-CHAR_NAME = "MHC_Her"
+CHAR_NAME = globals().get("CHAR_NAME", "MHC_Her")     # another name makes a scratch copy to try shapes on
 CHAR_PATH = CHAR_DIR + "/" + CHAR_NAME
 PRESET = globals().get("PRESET", "Ada")
 STEPS = globals().get("STEPS", ["create", "shape", "look"])
@@ -27,16 +29,30 @@ STEPS = globals().get("STEPS", ["create", "shape", "look"])
 # Constraints not listed stay free and the parametric model fills them in.
 TARGETS = globals().get("TARGETS", {
     "Height": 166.8,            # the Creator's height is 2.4 cm more than sole to crown
-    "Chest": 91.5,
+    "Chest": 93.8,              # our tape reads 93.2
     "Waist": 56.6,
-    "Hip": 93.7,
+    "Hip": 92.5,
     "Inseam": 70.5,             # reads ~6 cm lower than the crotch height we measure
     "Across Shoulder": 24.3,
     "Upper Arm Length": 32.0,   # shoulder point to elbow, not joint to joint
     "Lower Arm Length": 23.5,
-    "Thigh": 61.0,
-    "Calf": 38.2,
+    # Stage 3, "slimmer, keep realism": the limbs and ribcage stage 1 left free. With the
+    # tape matched the free model filled them in heavier than her (upper arm 27.7 against
+    # her 23.0). The Creator reads its girths 1.5-2 cm under our tape.
+    "Thigh": 60.0,              # our tape 61.7 (stage 1: 61.0 -> 62.8)
+    "Calf": 37.6,               # (stage 1: 38.2)
+    "Knee": 30.5,               # free it sat at 32.4
+    "Bicep": 21.5,              # free 25.5; our tape 27.7 -> 23.6
+    "Forearm": 19.3,            # free 20.1
+    "Wrist": 12.8,              # free 13.5
+    "Underbust": 66.5,          # free 67.7; lower and the bust (Chest stays) projects too far
+    "Bust Span": 20.5,          # pinned where it sat: free, a lower Underbust pulls it to 18.6
+    "Muscularity": -1.0,        # an axis, not cm (-2.3..2.3); free -0.6
+    "Hand Circumference": 17.0, # free 19.2: a narrower palm; hand length has no control
 })
+# Left free on purpose: Fat (-2.8..2.8) and Masculine/Feminine (-2..2). Pinned away from
+# where the model puts them, Fat moves volume into the seat and hollows the collarbones
+# (Neck Base falls under the Creator's own minimum), and neither changes hand or foot length.
 
 mh = unreal.get_editor_subsystem(unreal.MetaHumanCharacterEditorSubsystem)
 eal = unreal.EditorAssetLibrary
@@ -48,6 +64,26 @@ def log(*a):
 
 def save(character):
     eal.save_loaded_asset(character, only_if_is_dirty=False)
+
+
+def fresh():
+    """Throw the Creator asset away so 'create' starts from the preset again. A character
+    shaped several times does not come back the same: the solve leans on the state it starts
+    from and the head stops following the body at the shoulders (see the stage 3 log). A new
+    shape is one pass: fresh, create, shape, look, rig, textures, build."""
+    if not eal.does_asset_exist(CHAR_PATH):
+        return
+    old = unreal.load_asset(CHAR_PATH)
+    if mh.is_object_added_for_editing(old):
+        mh.remove_object_to_edit(old)
+    del old
+    if not eal.delete_asset(CHAR_PATH):
+        raise RuntimeError("could not delete " + CHAR_PATH)
+    log("deleted", CHAR_PATH)
+    if unreal.find_object(None, CHAR_PATH + "." + CHAR_NAME):
+        # an editor session that assembled this character keeps it in memory after the delete,
+        # and 'create' would then pick up the dead object instead of copying the preset
+        raise RuntimeError("deleted on disk but still loaded: restart the editor, then run the same STEPS again")
 
 
 def create():
@@ -154,12 +190,14 @@ def build(character):
 
 
 def run():
+    if "fresh" in STEPS:
+        fresh()
     character = create() if "create" in STEPS else unreal.load_asset(CHAR_PATH)
     if not mh.is_object_added_for_editing(character) and not mh.try_add_object_to_edit(character):
         raise RuntimeError("cannot edit %s: is it open in the MetaHuman editor?" % CHAR_PATH)
     try:
         for step in STEPS:
-            if step == "create":
+            if step in ("create", "fresh"):
                 continue
             log("step", step)
             globals()[step](character)
