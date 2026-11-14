@@ -103,7 +103,13 @@ void FVisexFootMeter::Tick(ACharacter* Her, float Dt)
 		Csv.Add(FString::Printf(TEXT("%.4f,%s,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.1f,%.2f"), Clock, *Phase, S, H.X, H.Y, H.Z, GH, B.X, B.Y, B.Z, GB,
 			Her->GetVelocity().Size2D(), VG[S]));
 		++PhaseGapN;
-		if (G > StepGap)
+		// up: clear of the ground, or heel and ball both sweeping along it (a low swing; at toe-off
+		// and heel strike one of them stays put)
+		const float SweepH = bHaveLast ? FVector::Dist2D(H, LastH[S]) / FMath::Max(Dt, 1e-3f) : 0.f;
+		const float SweepB = bHaveLast ? FVector::Dist2D(B, LastB[S]) / FMath::Max(Dt, 1e-3f) : 0.f;
+		LastH[S] = H;
+		LastB[S] = B;
+		if (G > StepGap || FMath::Min(SweepH, SweepB) > 40.f)
 		{
 			if (F.bStep) { EndStep(S); }
 			continue;
@@ -126,6 +132,7 @@ void FVisexFootMeter::Tick(ACharacter* Her, float Dt)
 		F.H.Add(FVector4f(FVector3f(H), GH));
 		F.B.Add(FVector4f(FVector3f(B), GB));
 	}
+	bHaveLast = true;
 }
 
 namespace

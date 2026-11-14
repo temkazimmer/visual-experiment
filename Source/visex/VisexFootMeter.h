@@ -47,6 +47,8 @@ private:
 	TArray<FColor> Strip;
 	TWeakObjectPtr<ASceneCapture2D> Capture;
 	TWeakObjectPtr<ACharacter> LastHer;
+	FVector LastH[2], LastB[2];   // last frame's heel and ball: a foot sweeping along is in the air
+	bool bHaveLast = false;
 	/** Where her mesh origin and capsule sit against the surfaces under her (the base float). */
 	void LogGround(ACharacter* Her) const;
 	/** Her soles' real gap: the lowest skinned vertex of each foot over the surface under it (cm). */
