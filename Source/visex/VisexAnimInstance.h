@@ -131,6 +131,7 @@ private:
 	float PinYawRate = 0.f, PinCapSpeed = 0.f, PinLastYaw = 0.f, PinGate = 1.f;
 	bool bPinYaw = false;
 	FVector PinApplied[2] = {FVector::ZeroVector, FVector::ZeroVector};   // world cm, after the release slew
+	float PinHeld[2] = {0.f, 0.f};    // seconds each foot has stood held
 };
 
 /** The pin's numbers since the last reset, for the tours: [0] largest hold (cm), [1] largest

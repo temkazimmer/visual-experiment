@@ -40,7 +40,8 @@ static TAutoConsoleVariable<float> CVarPinStill(TEXT("visex.Pin.Still"), 20.f, T
 static TAutoConsoleVariable<float> CVarPinMoving(TEXT("visex.Pin.Moving"), 60.f, TEXT("Pin: both faster than this (cm/s) is a swing"));
 static TAutoConsoleVariable<int32> CVarPinLog(TEXT("visex.Pin.Log"), 0, TEXT("1 logs each stance: how far the graph's and the final heel or ball slid"));
 static TAutoConsoleVariable<float> CVarPinMax(TEXT("visex.Pin.Max"), 6.f, TEXT("Pin 2: the most (cm) a planted heel or ball is held off where the graph puts it"));
-static TAutoConsoleVariable<int32> CVarPinGate(TEXT("visex.Pin.Gate"), 0, TEXT("1: the pin lets go in the air and while she turns on the spot, drags its anchor at visex.Pin.Max, and releases at visex.Pin.Release cm/s"));
+static TAutoConsoleVariable<int32> CVarPinGate(TEXT("visex.Pin.Gate"), 1, TEXT("1: the pin lets go in the air and while she turns on the spot, drags its anchor at visex.Pin.Max, and releases at visex.Pin.Release cm/s"));
+static TAutoConsoleVariable<float> CVarPinBleed(TEXT("visex.Pin.Bleed"), 3.f, TEXT("Pin gate: once a foot has stood over a second, its hold past 2 cm eases back to the graph at this many cm/s (a turn, a stand-up or a pose flow leaves none behind)"));
 static TAutoConsoleVariable<float> CVarPinRelease(TEXT("visex.Pin.Release"), 40.f, TEXT("Pin gate: the most (cm/s) the hold may change by, so a foot's release eases"));
 namespace { FCriticalSection GPinStatLock; float GPinStat[4] = {0.f, 0.f, 0.f, 0.f}; }
 void VisexPinStats(float Out[4], bool bReset)
@@ -1270,7 +1271,7 @@ void FVisexAnimProxy::Pin(FCompactPose& Pose)
 	float GateWant = 1.f;
 	if (bGate)
 	{
-		const float Turning = FMath::SmoothStep(30.f, 90.f, PinYawRate) * (1.f - FMath::SmoothStep(40.f, 120.f, PinCapSpeed));
+		const float Turning = FMath::SmoothStep(10.f, 30.f, PinYawRate) * (1.f - FMath::SmoothStep(40.f, 120.f, PinCapSpeed));
 		GateWant = bPinAir ? 0.f : 1.f - Turning;
 	}
 	PinGate = FMath::FInterpConstantTo(PinGate, GateWant, Dt, GateWant < PinGate ? 8.f : 4.f);
@@ -1313,10 +1314,17 @@ void FVisexAnimProxy::Pin(FCompactPose& Pose)
 			for (int32 I = 0; I < 2; ++I)
 			{
 				PinAnchor[F][I] = FMath::Lerp(PinAnchor[F][I], P[I], FollowOf(W[I]));
+				if (bGate)
+				{
+					// a long stance lets a stored hold past 2 cm go, slowly
+					const float Off = float((PinAnchor[F][I] - P[I]).Size()), Ease = CVarPinBleed.GetValueOnAnyThread() * FMath::SmoothStep(0.8f, 1.6f, PinHeld[F]) * Dt;
+					if (Off > 2.f && Ease > 0.f) { PinAnchor[F][I] = P[I] + (PinAnchor[F][I] - P[I]) * (FMath::Max(Off - Ease, 2.f) / Off); }   // an idle's slow creep stays held
+				}
 				Corr += (PinAnchor[F][I] - P[I]) * W[I];
 			}
 			Corr /= FMath::Max(W[0] + W[1], 1.f);
 			Corr.Z = 0.f;
+			PinHeld[F] = FMath::Max(W[0], W[1]) > 0.9f ? PinHeld[F] + Dt : 0.f;
 			const float Size = float(Corr.Size());
 			if (Size > MaxHold)
 			{
