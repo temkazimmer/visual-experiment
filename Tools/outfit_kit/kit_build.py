@@ -12,6 +12,9 @@
 import json as _json
 
 _KIT = os.path.join(os.path.dirname(os.path.abspath(SRC)), "OutfitKit")     # next to android_skin.fbx
+if MH:               # the drawings are shared: the MetaHuman skin lives one folder down
+    _KIT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(SRC))), "OutfitKit")
+_KIT_Z = None        # --body=mh: (this body's heights, the old body's) once the views are loaded
 _OFFSET = {"Tartan": 0.30, "Satin": 0.45, "Lace": 0.30, "Sheer": 0.24, "Latex": 0.30, "Nylon": 0.22,
            "Net": 0.22, "Jersey": 0.30}
 _FACE = 0.15         # a vertex must face a view at least this much to be judged from it
@@ -20,8 +23,12 @@ _UNION_FACE = 0.3    # ... and this much for that view to count in the union (gr
 
 def _views():
     vj = _json.load(open(os.path.join(_KIT, "views", "views.json")))
-    tp = np.load(os.path.join(_KIT, "views", "tpose.npy")).astype(float)
-    assert len(tp) == nv, "tpose.npy has %d vertices, the skin %d: re-run Tools/outfit_kit/views.py" % (len(tp), nv)
+    if MH:           # another body: its T-pose carried onto the drawn body's landmarks
+        global _KIT_Z
+        tp, _KIT_Z = mh_kit_tpose(_KIT)
+    else:
+        tp = np.load(os.path.join(_KIT, "views", "tpose.npy")).astype(float)
+        assert len(tp) == nv, "tpose.npy has %d vertices, the skin %d: re-run Tools/outfit_kit/views.py" % (len(tp), nv)
     # T-pose vertex normals
     fn = np.cross(tp[T[:, 1]] - tp[T[:, 0]], tp[T[:, 2]] - tp[T[:, 0]])
     vn = np.zeros_like(tp)
@@ -183,6 +190,9 @@ def kit_shapes(name):
     belt = out["belt"].get("front")
     out["belt_z"] = (out["ctx"][0]["z_top"] - np.mean([p[:, 1].mean() for p in belt]) / out["ctx"][0]["px_per_cm"]) if belt else None
     out["belt_h"] = (np.mean([np.ptp(p[:, 1]) for p in belt]) / out["ctx"][0]["px_per_cm"]) if belt else None
+    if MH and belt:  # drawn heights are the old body's
+        lo, hi = (float(np.interp(out["belt_z"] + d * out["belt_h"], _KIT_Z[1], _KIT_Z[0])) for d in (-0.5, 0.5))
+        out["belt_z"], out["belt_h"] = (lo + hi) * 0.5, hi - lo
     return out
 
 
@@ -296,3 +306,26 @@ def kit_outfit(name):
 for _d in sorted(os.listdir(_KIT)) if os.path.isdir(_KIT) else []:
     if os.path.exists(os.path.join(_KIT, _d, "figma.json")) and os.path.exists(os.path.join(_KIT, _d, "sketch.json")):
         OUTFITS["Kit" + _d] = (lambda n: (lambda: kit_outfit(n)))(_d)
+
+
+def kit_profile(tp):
+    """The body's landmarks for carrying drawn shapes to another body (Tools/mh_outfit_body.py):
+    heights from the floor up, and at each the silhouette's half-width, front and back (cm from
+    the pelvis; arms left out). Above the shoulder joints the shoulder's values hold."""
+    lat, fw, z = (tp - PEL) @ LEFT, (tp - PEL) @ FWD, tp[:, 2]
+    body = UPPERARM < 0.3
+
+    def slab(h, half=1.2):
+        m = body & (np.abs(z - h) < half)
+        return float(np.abs(lat[m]).max()), float(fw[m].max()), float(fw[m].min())
+
+    sh = float(Bn["upperarm_l"][2])
+    # joints where the two skeletons agree, the surface where it is sharper (crotch, bust apex)
+    names = ["floor", "knee", "crotch", "pelvis", "waist", "bust", "shoulder", "neck", "head"]
+    hs = [float(z.min()), float(Bn["calf_l"][2]), float(LM["crotch_skin"]), float(PEL[2]), float(LM["waist"]), float(LM["bust"]), sh,
+          float(Bn["neck_01"][2]), float(Bn["head"][2])]
+    rows = [slab(h) for h in (hs[1], hs[1], hs[3], hs[3], hs[4], hs[5])]   # crotch: the hip's values, not the thighs'
+    top = (abs(float((Bn["upperarm_l"] - PEL) @ LEFT)),) + slab(sh - 3.0)[1:]
+    rows += [top, top, top]
+    return dict(names=names, z=hs, hw=[r[0] for r in rows], front=[r[1] for r in rows], back=[r[2] for r in rows],
+                pel=PEL.tolist(), left=LEFT.tolist(), fwd=FWD.tolist())
