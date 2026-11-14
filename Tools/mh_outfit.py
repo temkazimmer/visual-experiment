@@ -7,7 +7,8 @@ Reads SourceArt/Character/MH/Outfits/outfit_<name>.fbx and cover_<name>.png, wri
   SKM_<Name>_MH        the garment on the MetaHuman skeleton, wearing the outfit's existing
                        material instances (taken slot by slot from the old body's mesh)
   T_Cover_<Name>       the body's UV0, white where opaque fabric hides the skin
-  MI_Body_<Name>       the body's material with that skin clipped away, so nothing pokes through
+  MI_Body_<Name>       the body's material with that skin clipped away, so nothing pokes through,
+                       and with the baked underwear painted out (T_Body_*_Bare, Tools/mh_bare_skin.py)
   M_Body_Under, MI_Body_Under   (shared) copies of the MetaHuman skin material and its instance
                        with an opacity mask added; the assembled originals are not edited
 Nothing outside that folder is written. UVisexMHBodyComponent picks the three per-outfit assets
@@ -22,6 +23,7 @@ BODY = "/Game/Character/MH/Built/MHC_Her/Body/SKM_MHC_Her_BodyMesh"
 OLD_MESH = {"Silversuit": "/Game/Character/Clothes/SKM_Outfit_Silversuit"}
 SRC = os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir()), "SourceArt", "Character", "MH", "Outfits")
 MASK_PARAM = "Cover Mask"
+BARE = {"Basecolor Baked VT": "T_Body_BC_Bare", "Normal Baked VT": "T_Body_N_Bare", "SRMF Baked VT": "T_Body_SRMF_Bare"}
 tools = unreal.AssetToolsHelpers.get_asset_tools()
 mel = unreal.MaterialEditingLibrary
 eal = unreal.EditorAssetLibrary
@@ -88,6 +90,12 @@ def under_material(cover):
         for n in mel.get_vector_parameter_names(src_mi):
             mel.set_material_instance_vector_parameter_value(mi, n, mel.get_material_instance_vector_parameter_value(src_mi, n))
     mel.set_material_instance_texture_parameter_value(mi, MASK_PARAM, cover)
+    # under an outfit she wears no baked underwear: the maps with it painted out (Tools/mh_bare_skin.py)
+    for param, name in BARE.items():
+        if eal.does_asset_exist(DIR + "/" + name):
+            mel.set_material_instance_texture_parameter_value(mi, param, unreal.load_asset(DIR + "/" + name))
+        else:
+            print("no", name, "- the baked underwear stays (run Tools/mh_bare_skin.py)")
     mel.update_material_instance(mi)
     eal.save_loaded_asset(mi)
     return mi

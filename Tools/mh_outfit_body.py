@@ -103,7 +103,8 @@ def mh_kit_tpose(kit_dir):
     return out, (kz, oz)
 
 
-COVER_MARGIN = 1.0   # cm of skin kept under every fabric edge, so an edge never shows a hole
+COVER_MARGIN = 0.5   # cm of skin kept under every fabric edge, so an edge never shows a hole (at 1.0 the
+                     # skin left under a hem could still come through it in a deep hip or wrist bend)
 COVER_PX = 2048
 
 
