@@ -596,7 +596,8 @@ void AVisexQATour::BuildPin()
 	auto Shot4K = [this](const FString& Name)
 	{
 		const FString File = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("QA") / FString::Printf(TEXT("pin_%s.png"), *Name));
-		GEngine->Exec(GetWorld(), *FString::Printf(TEXT("HighResShot 3840x2160 filename=\"%s\""), *File));
+		// through the player's console, which reaches the viewport (GEngine->Exec wrote nothing)
+		if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0)) { PC->ConsoleCommand(FString::Printf(TEXT("HighResShot 3840x2160 filename=\"%s\""), *File)); }
 		QA_LOG(TEXT("VisexQA: shot %s"), *File);
 	};
 	FString Only;
