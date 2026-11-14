@@ -23,6 +23,7 @@ struct FVisexAnimProxy : public FAnimInstanceProxy
 	virtual void PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeconds) override;
 	virtual bool Evaluate_WithRoot(FPoseContext& Output, FAnimNode_Base* InRootNode) override;
 	virtual void PreEvaluateAnimation(UAnimInstance* InAnimInstance) override;   // her transform after this frame's move
+	virtual void Initialize(UAnimInstance* InAnimInstance) override;              // the pin starts clean
 
 private:
 	void Reshape(FCompactPose& Pose) const;
@@ -112,19 +113,23 @@ private:
 	// frozen in world space while the graph's foot stands still, so they can't slide it
 	float PinOn = 1.f;                // the cvar
 	bool bPinFrom = false, bPinLast = false;
-	FTransform PinGraph[2];           // the graph's feet, component space, this frame
-	FVector PinBall[2];               // the graph's balls, component space, this frame
-	FVector PinLastHeel[2], PinLastBall[2];   // last frame's, world
+	// every pin member starts zeroed: FVector's default constructor leaves garbage, and a NaN
+	// anchor never recovered (Shipping 0622 hung her upside down)
+	FTransform PinGraph[2] = {FTransform::Identity, FTransform::Identity};   // the graph's feet, component space, this frame
+	FVector PinBall[2] = {FVector::ZeroVector, FVector::ZeroVector};        // the graph's balls, component space, this frame
+	FVector PinLastHeel[2] = {FVector::ZeroVector, FVector::ZeroVector}, PinLastBall[2] = {FVector::ZeroVector, FVector::ZeroVector};   // last frame's, world
 	FVector PinDelta[2] = {FVector::ZeroVector, FVector::ZeroVector};   // the layers' move, world
 	FQuat PinTurn[2] = {FQuat::Identity, FQuat::Identity};              // the layers' turn, world
 	float PinW[2] = {0.f, 0.f};       // how still the graph's foot stands, 0..1
-	FTransform EvalX;                 // the mesh's world transform as it is evaluated (after the move)
+	FTransform EvalX = FTransform::Identity;   // the mesh's world transform as it is evaluated (after the move)
 	float PinSpeed[2][2] = {{0.f, 0.f}, {0.f, 0.f}};   // the graph's heel and ball, world cm/s
-	FVector PinAnchor[2][2];          // pin 2: where each planted heel and ball stays, world
+	FVector PinAnchor[2][2] = {{FVector::ZeroVector, FVector::ZeroVector}, {FVector::ZeroVector, FVector::ZeroVector}};   // pin 2: where each planted heel and ball stays, world
+	bool bPinSeeded[2] = {false, false};   // the foot's anchors, delta and turn were set from its pose since the last reset
 	float PinRefZ[2] = {-1.f, -1.f};  // heel (ankle) and ball over the sole, ref pose
 	// pin log: per stance, how far the graph's and the final contact point slid
 	float PinStance[2] = {0.f, 0.f}, PinGraphDrift[2] = {0.f, 0.f}, PinOutDrift[2] = {0.f, 0.f};
-	FVector PinGraphStart[2][2], PinOutStart[2][2];   // per foot: heel, ball
+	FVector PinGraphStart[2][2] = {{FVector::ZeroVector, FVector::ZeroVector}, {FVector::ZeroVector, FVector::ZeroVector}};   // per foot: heel, ball
+	FVector PinOutStart[2][2] = {{FVector::ZeroVector, FVector::ZeroVector}, {FVector::ZeroVector, FVector::ZeroVector}};
 	bool bPinDown[2][2] = {{false, false}, {false, false}};
 	// the gate (visex.Pin.Gate): off in the air and while she turns on the spot; the hold lets go gently
 	bool bPinAir = false;
@@ -132,6 +137,13 @@ private:
 	bool bPinYaw = false;
 	FVector PinApplied[2] = {FVector::ZeroVector, FVector::ZeroVector};   // world cm, after the release slew
 	float PinHeld[2] = {0.f, 0.f};    // seconds each foot has stood held
+	// resets: a new mesh (outfit, body), a teleport or cut, a new instance; and the safety's count
+	const UObject* PinMesh = nullptr;
+	int32 PinBones = 0;
+	FVector PinLastX = FVector::ZeroVector;
+	bool bPinLastX = false;
+	int32 PinSkips = 0;
+	void PinReset();
 };
 
 /** The pin's numbers since the last reset, for the tours: [0] largest hold (cm), [1] largest
