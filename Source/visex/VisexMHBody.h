@@ -41,6 +41,25 @@ protected:
 };
 
 /**
+ * Face rig curves on the MetaHuman Face, for looking at expressions (visex.Body.MetaHuman.Face). No
+ * graph: it gives out the reference pose with the named curves set, and the mesh's post-process AnimBP
+ * (ABP_Face_PostProcess: the pose copied from the Body, then RigLogic) turns the curves into the face.
+ * Only on the Face while the console variable is set; the Blueprint's own class comes back after.
+ */
+UCLASS(Transient, NotBlueprintable)
+class VISEX_API UVisexMHFaceAnimInstance : public UAnimInstance
+{
+	GENERATED_BODY()
+
+public:
+	/** Curve name and value pairs, e.g. CTRL_expressions_eyeBlinkL 1. Game thread. */
+	TArray<TPair<FName, float>> Curves;
+
+protected:
+	virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override;
+};
+
+/**
  * Her card hair on the MetaHuman head. The style's own mesh and AnimBP, unchanged: the AnimBP copies
  * the pose from the attached parent (here the MetaHuman Body, so head, neck and spine are the
  * MetaHuman's, with its bone lengths) and Kawaii Physics swings the locks. The cards were grown on
@@ -118,6 +137,14 @@ private:
 	 *  preset's hair groom; brows, lashes and fuzz stay. */
 	void ApplyHair();
 	void ClearHair();
+	/** Drives face rig curves from visex.Body.MetaHuman.Face (a debug look at expressions). */
+	void ApplyFace();
+
+	/** The console value the Face was last set up for, and the anim class it had before. */
+	FString FaceCurves;
+	UPROPERTY(Transient)
+	TObjectPtr<UClass> FaceOwnClass;
+	bool bFaceDriven = false;
 
 	UPROPERTY(Transient)
 	TObjectPtr<AActor> Figure;

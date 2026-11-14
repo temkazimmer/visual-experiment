@@ -196,13 +196,6 @@ def views(name, V, T, shots=SHOTS, px=1600):
 
 herV, herT = her_head()
 print("FIT her head: %d vertices, bbox %s %s" % (len(herV), np.round(herV.min(0), 2), np.round(herV.max(0), 2)))
-if "--look" in argv:
-    # --look <head.fbx> <name>: the same pictures of any MetaHuman face mesh (Tools/mh_face.py MODE='export')
-    path, tag = argv[argv.index("--look") + 1:][:2]
-    lookV, lookT, lookMat, _, _ = load(path)
-    show = np.array([("Skin" in m and "LOD0" in m) or any(k in m for k in ("Eye_Left", "Eye_Right", "EyeL_", "EyeR_")) for m in lookMat])
-    views(tag, lookV, lookT[show])
-    sys.exit(0)
 if VIEWS:
     rows, _ = part(mhT, mhMat, "head")
     views("mh", mhV, mhT[rows])
@@ -320,6 +313,34 @@ mhRows, mhIds = part(mhT, mhMat, "head")
 herBVH = bvh_of(herV, herT)
 mhBVH = bvh_of(mhV, mhT[mhRows])
 
+
+def measure(name, V, T):
+    """The head's tape, cm (the head joint is the origin; ears are what stands more than 7.2 cm out)."""
+    r = V - J
+    front = r[:, 1] < -3.0
+    crown = r[np.abs(r[:, 0]) < 3.0, 2].max()
+    top = r[r[:, 2] > crown - 6.0]
+    pts = profile_points(bvh_of(V, T), name)
+    p = {k: v - J for k, v in pts.items()}
+    band = lambda lo, hi: 2.0 * np.abs(r[front & (r[:, 2] > lo) & (r[:, 2] < hi), 0]).max()
+    ear = r[(np.abs(r[:, 0]) > 7.2) & (r[:, 2] < 12.0) & (r[:, 2] > 0.0)]
+    row = dict(crown=crown, chin=p["menton"][2], height=crown - p["menton"][2], skull=2.0 * np.abs(top[:, 0]).max(),
+               cheeks=band(3.5, 5.0), jaw=band(p["stomion"][2] - 0.3, p["stomion"][2] + 0.3),
+               nose=-p["pronasale"][1], nose_z=p["pronasale"][2], mouth_z=p["stomion"][2], chin_fwd=-p["pogonion"][1],
+               ear_top=ear[:, 2].max(), ear_back=ear[:, 1].max(), ear_out=np.abs(ear[:, 0]).max())
+    print("FIT tape %-4s" % name, "  ".join("%s %.1f" % kv for kv in row.items()))
+    return row
+
+
+if "--look" in argv:
+    # --look <head.fbx> <name>: the same pictures of any MetaHuman face mesh (Tools/mh_face.py MODE='export')
+    path, tag = argv[argv.index("--look") + 1:][:2]
+    lookV, lookT, lookMat, _, _ = load(path)
+    show = np.array([("Skin" in m and "LOD0" in m) or any(k in m for k in ("Eye_Left", "Eye_Right", "EyeL_", "EyeR_")) for m in lookMat])
+    skin = np.array([("Skin" in m and "LOD0" in m) for m in lookMat])
+    measure(tag, lookV, lookT[skin])
+    views(tag, lookV, lookT[show])
+    sys.exit(0)
 
 def neck_centre(bvh):
     """Front-to-back middle of the neck on the midline, 6.5 to 9 cm under the head joint (cm forward)."""
@@ -497,7 +518,7 @@ def spread(points, count):
 
 # Skin that lies on an eyeball (lids, their edges, the socket behind) moves with its eye and is held
 # there; a band around it is left to settle between the eye and her surface.
-ON_EYE, NEAR_EYE = 0.35, 1.3
+ON_EYE, NEAR_EYE = 0.18, 1.5
 held = np.zeros(len(W), bool)
 band = np.zeros(len(W), bool)
 target = W.copy()
@@ -511,7 +532,7 @@ for key, e in EYES.items():
     src.extend(W[some]); dst.extend(target[some]); names.extend([key] * len(some))
     print("FIT %s: %d vertices held on the eyeball, they move %.2f cm on average" % (key, on.sum(), np.linalg.norm(target[on] - W[on], axis=1).mean()))
 # far below the face nothing moves: the lower neck and chest are the body's
-low = np.where(W[:, 2] < J[2] - 13.0)[0]
+low = np.where(W[:, 2] < J[2] - 15.5)[0]
 anchors = low[spread(W[low], 30)]
 src.extend(W[anchors]); dst.extend(W[anchors]); names.extend(["neck"] * len(anchors))
 warp = rbf(src, dst)
@@ -541,7 +562,7 @@ for i in np.where((np.abs(rel[:, 0]) > 4.5) & (np.abs(rel[:, 1]) < 3.0) & (rel[:
     hit = selfBVH.ray_cast(Vector(W[i] + inward * 0.05), Vector(inward), 4.0)
     ear[i] = hit[0] is not None
 print("FIT ears: %d vertices follow the landmark warp only" % ear.sum())
-free = ~held & ~band & ~hollow & ~ear & (W[:, 2] > J[2] - 14.0)
+free = ~held & ~band & ~hollow & ~ear & (W[:, 2] > J[2] - 16.0)
 deg = np.bincount(E.ravel(), minlength=len(W)).astype(float)
 
 
@@ -577,9 +598,21 @@ for stiff, reach in ((8.0, 3.0), (4.0, 2.5), (2.0, 2.0), (1.0, 1.5), (0.5, 1.2),
     X, n, mean, p99 = settle(X, stiff, reach)
     print("FIT settle stiff %.2f: %d of %d free vertices found her surface; still off it by %.3f cm on average, %.3f at 99%%" % (stiff, n, free.sum(), mean, p99))
 
-# the neck: all hers above 7.5 cm under the joint, all the body's below 12.5
-t = np.clip((W[:, 2] - (J[2] - 12.5)) / 5.0, 0.0, 1.0)
+# the neck: all hers above 7 cm under the joint, all the body's below 15 (a shorter fade leaves a
+# step at the nape, where her neck is slimmer than the body's)
+t = np.clip((W[:, 2] - (J[2] - 15.0)) / 8.0, 0.0, 1.0)
 X = W + (t * t * (3.0 - 2.0 * t))[:, None] * (X - W)
+# under the jaw and down the neck her mesh has small creases where its head was joined on: keep the
+# shape there and lose the creases (each pass moves a vertex halfway to the middle of its neighbours)
+soft = np.clip((J[2] - 4.5 - W[:, 2]) / 2.0, 0.0, 1.0) * (t > 0.0)
+# and round the eyes, where the skin steps from the lids (deep, on the eyeball) up to her surface
+# (shallow: her face is nearly flat beside the eyes): ease that step out over the band and a little past it
+for e in EYES.values():
+    d = np.linalg.norm(W - e["c0"], axis=1) - e["radius"]
+    soft = np.maximum(soft, np.clip((NEAR_EYE + 1.0 - d) / 1.0, 0.0, 1.0) * (d > ON_EYE))
+soft = soft * ~held
+for _ in range(12):
+    X = X + (0.5 * soft)[:, None] * (neighbour_mean(X) - X)
 if not IDENTITY:
     newV[mhIds] = X[wid]
     for key in ("eye_l", "eye_r"):
@@ -597,6 +630,9 @@ if not IDENTITY:
     move = np.linalg.norm(X - W, axis=1)
     print("FIT head: vertices moved %.2f cm on average, %.2f at most; %d held on the eyes, %d in hollows, %d settled on her surface" % (
         move.mean(), move.max(), held.sum(), (hollow & ~held).sum(), free.sum()))
+    measure("her", herV, herT)
+    measure("mh", mhV, mhT[mhRows])
+    measure("fit", newV, mhT[mhRows])
     rows = np.concatenate([part(mhT, mhMat, k)[0] for k in ("head", "eye_l", "eye_r")])
     views("fit", newV, mhT[rows])
 # FIT-BODY

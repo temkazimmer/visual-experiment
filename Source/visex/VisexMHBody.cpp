@@ -51,6 +51,10 @@ static TAutoConsoleVariable<int32> CVarVisexMHHair(
 	TEXT("visex.Body.MetaHuman.Hair"), 1,
 	TEXT("1: the MetaHuman head wears its own hair, the groom assembled into the Blueprint (Tema, stage 5). 0: our card hairstyle from the Hair tab, fitted to this skull (stage 4). 2: no hair at all, to measure what the hair costs."));
 
+static TAutoConsoleVariable<FString> CVarVisexMHFace(
+	TEXT("visex.Body.MetaHuman.Face"), TEXT(""),
+	TEXT("Debug: face rig curves on the MetaHuman face, \"name=value,name=value\" (e.g. CTRL_expressions_eyeBlinkL=1,CTRL_expressions_eyeBlinkR=1). Empty: the face's own animation."));
+
 namespace
 {
 	/** A hairstyle's fit on the MetaHuman skull: "scale,up,front,side" (hair-asset cm to MetaHuman
@@ -491,6 +495,7 @@ void UVisexMHBodyComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 		ApplyOutfit();
 		ApplyDebug();
 		ApplyHair();   // after ApplyDebug: it may have bound a re-made Body
+		ApplyFace();
 	}
 }
 
@@ -545,6 +550,9 @@ void UVisexMHBodyComponent::Bind()
 	ClearOutfit();   // it hangs on the Body that is being replaced
 	ClearHair();
 	GroomMode = -1;   // a new figure: look at its hair again
+	bFaceDriven = false;   // and so does its face
+	FaceCurves.Reset();
+	FaceOwnClass = nullptr;
 	BodyMesh = nullptr;
 	FaceMesh = nullptr;
 	TInlineComponentArray<UPrimitiveComponent*> Prims(Figure);
@@ -582,6 +590,9 @@ void UVisexMHBodyComponent::Hide()
 	ClearOutfit();
 	ClearHair();
 	GroomMode = -1;   // the next figure says again which hair it wears
+	bFaceDriven = false;   // and so does its face
+	FaceCurves.Reset();
+	FaceOwnClass = nullptr;
 	if (Figure)
 	{
 		Figure->Destroy();
@@ -878,4 +889,81 @@ void UVisexMHBodyComponent::ApplyHair()
 	}
 	Hair->FitScale = Scale;
 	Hair->FitOffset = Offset;
+}
+
+/** The reference pose with the face rig curves set; the Face's post-process AnimBP does the rest. */
+struct FVisexMHFaceProxy : public FAnimInstanceProxy
+{
+	explicit FVisexMHFaceProxy(UAnimInstance* In) : FAnimInstanceProxy(In) {}
+
+	virtual void PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeconds) override
+	{
+		FAnimInstanceProxy::PreUpdate(InAnimInstance, DeltaSeconds);
+		if (const UVisexMHFaceAnimInstance* Inst = Cast<UVisexMHFaceAnimInstance>(InAnimInstance))
+		{
+			Curves = Inst->Curves;
+		}
+	}
+
+	virtual bool Evaluate(FPoseContext& Output) override
+	{
+		Output.ResetToRefPose();
+		for (const TPair<FName, float>& Curve : Curves)
+		{
+			Output.Curve.Set(Curve.Key, Curve.Value);
+		}
+		return true;
+	}
+
+	TArray<TPair<FName, float>> Curves;
+};
+
+FAnimInstanceProxy* UVisexMHFaceAnimInstance::CreateAnimInstanceProxy()
+{
+	return new FVisexMHFaceProxy(this);
+}
+
+void UVisexMHBodyComponent::ApplyFace()
+{
+	if (!IsValid(FaceMesh))
+	{
+		return;
+	}
+	const FString Want = CVarVisexMHFace.GetValueOnGameThread();
+	if (Want == FaceCurves && (bFaceDriven || Want.IsEmpty()))
+	{
+		return;
+	}
+	FaceCurves = Want;
+	if (Want.IsEmpty())
+	{
+		// back to what the Blueprint gave the Face (it may be nothing)
+		FaceMesh->SetAnimInstanceClass(FaceOwnClass);
+		bFaceDriven = false;
+		UE_LOG(LogTemp, Display, TEXT("VisexMH: face curves off"));
+		return;
+	}
+	if (!bFaceDriven)
+	{
+		FaceOwnClass = FaceMesh->GetAnimClass();
+		FaceMesh->SetAnimInstanceClass(UVisexMHFaceAnimInstance::StaticClass());
+		bFaceDriven = true;
+	}
+	UVisexMHFaceAnimInstance* Inst = Cast<UVisexMHFaceAnimInstance>(FaceMesh->GetAnimInstance());
+	if (!Inst)
+	{
+		return;
+	}
+	Inst->Curves.Reset();
+	TArray<FString> Pairs;
+	Want.ParseIntoArray(Pairs, TEXT(","));
+	for (const FString& Pair : Pairs)
+	{
+		FString Name, Value;
+		if (Pair.Split(TEXT("="), &Name, &Value))
+		{
+			Inst->Curves.Emplace(FName(*Name.TrimStartAndEnd()), FCString::Atof(*Value));
+		}
+	}
+	UE_LOG(LogTemp, Display, TEXT("VisexMH: face curves = %s (%d set; the Face's own class was %s)"), *Want, Inst->Curves.Num(), *GetNameSafe(FaceOwnClass));
 }
