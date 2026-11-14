@@ -7,6 +7,33 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-14 14:20 · VIS-EX-0627 Shipping (f130e81) · PASS: the pin-fix cures 0622's broken skeleton, she walks out at Start, film mirrored with a clean hand-off
+
+- **Cook:** `Success - 0 error(s), 0 warning(s)`, 926 packages ordered, Shipping binary rebuilt from HEAD. DMG md5 `daf95421…` (1.6 GB). Not copied to `-stable`.
+- **Tour:** two runs from the mounted DMG, 1440×1080 windowed. Both `VisexQA: done`, exit 0 (310 s, 297 s), no game `.ips`.
+  On ground at every report step (only photo motions 5/6/7/9 in mode 0, as 0612), `body page open`, `wardrobe open`, photo `moved 0.0 cm`, `layout save PASS`,
+  menu feet IN FRAME at 16:9 and 4:3. Back on the lean spot (9500 −900 152) after Body, Wardrobe and Photo.
+  Run 1: Tema's save (Elf hair). Run 2: the 0612 copy with Short hair. Load average 3–6, mostly idle (a visex-metahuman editor started between runs and settled first).
+- **Pose: fixed** (`sheets/pose_vs0612_0622_run1.jpg`, `pose_vs0612_0622_run2.jpg`: rows 0612 / 0622 / 0627; play, Body tab, photo Idle, photo Bookend).
+  0627 matches 0612 in every shot of both runs: no inverted body, no leg in the air. Menu feet check at y 0.76–0.78 for both feet (0622: 0.24–0.31), same as 0612.
+  `run1_all.jpg` / `run2_all.jpg`: outfits, Body tabs, Wardrobe, all 11 photo motions and the turnarounds look normal.
+- **Play step: she walks out.** At `play` (4 s after Start) she's at 9387 −1322 on `A_PhotoSeq_Walk` (rm mode 1), 440 cm out (0612/0622: still at the column).
+  At `walked` she's 1000 cm out (9236 −1885, down the dune). Same in both runs. `sheets/play_3fps.jpg`: Start orbit, then a steady walk away into the dunes.
+- **Film** (`run{1,2}/rec/arrival.mp4`, `sheets/arrival_2fps.jpg`, `run2_arrival_2fps.jpg`): plays mirrored, stride going left to right, ~6.5 s.
+  Then ~1 s black and the plaza fades up. No desktop or gap, both runs.
+- **Arrival** (`sheets/handoff_arrival_6fps.jpg`): she walks in from the left, turns and sinks into the lean in one move. No snap, and **no leg kick** in the walk-in.
+- **Menu moves** (`run2/rec/settings_body_wardrobe_photo.mp4`, `photo_back.mp4`, `sheets/moves_1fps.jpg`, `photo_back_2fps.jpg`): Settings (onto the drum and back down),
+  Body, Wardrobe and Photo all go out and come back to the lean. Run 1's recording of these was covered by another session's Development game window and was deleted.
+  - Minor, not new: on the Settings Graphics → Visuals tab switch she starts to stand up on the drum for ~0.2 s and drops back to sitting (`sheets/settings_flash_30fps.jpg`).
+    0622's recording shows the same blip at that moment, so it predates the pin-fix.
+- **Feet:** pass (`sheets/settings_standup_feet_4fps.jpg`, `feet_mounds_zoom.jpg`, `feet_play_walked_settings_turn.jpg`). The Settings stand-up lands on the sand,
+  the Body turn has both soles on the sand with contact shadows, play has the planted foot on the sand. Not measured in cm (no meter in Shipping).
+- **Mounds:** ring mounds and toe prints around her feet in the Body turn, a heel mound in play. At `walked` she's in the dune's shadow, so prints don't read there.
+- **Short hair:** `Hair: SKM_HairShort` all through run 2, the layered shag shows on the Body tabs, turnaround and photo.
+- **Perf** (load 3–6, comparable-ish): menu 18.6 / 16.2 ms (0558: 17.6), quality 4 32 / 38 ms (0622: 90 / 70, a busier machine).
+- **Saves:** backed up `VisexBody.sav` (`7ac129aa…`) and `GameUserSettings.ini` (`06e783cf…`). Restored after each run, both md5s match. No `Game.ini` before or after.
+  Raw screen recordings deleted after cutting game-only clips. Shots in `Saved/QA_0627ship_run{1,2}/` and `Tools/.bridge/shots/qa0627/run{1,2}/`, sheets in `sheets/`.
+
 ## 2026-11-14 13:05 · VIS-EX-0622 Shipping (b54e246) · FAIL: her legs are thrown upward, upside down in run 1, after the foot pin merge; film mirrored and hand-off clean
 
 - **Cook:** `Success - 0 error(s), 0 warning(s)`, 926 packages ordered. DMG md5 `4ee14590…` (1.6 GB). Not copied to `-stable`.
