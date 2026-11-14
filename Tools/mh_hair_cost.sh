@@ -20,10 +20,23 @@ print('ran', '''$1''')"; }
 nap() { python3 -c "import time; time.sleep($1)"; }
 cmd "visex.Body.MetaHuman 1; t.MaxFPS 0; r.VSync 0; r.ScreenPercentage 200" 1800 || { kill $GAME; exit 1; }
 nap 25                                  # the walk in, the lean, shaders and the groom settle
-for mode in 1 2 0 1; do                 # groom, none, cards, groom again (drift check)
-  cmd "visex.Body.MetaHuman.Hair $mode"; nap 6
+n=0
+for mode in 1 2 0 1 nosim; do           # groom, none, cards, groom again (drift check), groom with its physics off
+  if [ "$mode" = nosim ]; then cmd "r.HairStrands.Simulation 0"; else cmd "visex.Body.MetaHuman.Hair $mode"; fi
+  nap 6
   cmd "csvprofile start"; nap "$SECS"; cmd "csvprofile stop"; nap 3
-  f=$(ls -t Saved/Profiling/CSV/*.csv | head -1); mv "$f" "Saved/Profiling/CSV/hair_$mode_$(date +%s).csv"
-  echo "MODE $mode $(ls -t Saved/Profiling/CSV/*.csv | head -1)"
+  n=$((n + 1)); f=$(ls -t Saved/Profiling/CSV/*.csv | head -1); mv "$f" "Saved/Profiling/CSV/hair_${n}_${mode}.csv"
 done
 kill $GAME
+python3 - <<'PY'
+import csv, glob
+for path in sorted(glob.glob("Saved/Profiling/CSV/hair_*.csv")):
+    rows = list(csv.reader(open(path)))
+    head = rows[0]
+    cols = {k: head.index(k) for k in ("FrameTime", "GameThreadTime", "RenderThreadTime", "GPUTime") if k in head}
+    data = [r for r in rows[1:] if len(r) == len(head) and r[0] != head[0]][30:]   # the file repeats its header at the end; the first frames carry the switch
+    def mean(k):
+        v = [float(r[cols[k]]) for r in data if r[cols[k]] not in ("", "0")]
+        return sum(v) / len(v) if v else float("nan")
+    print("%-22s %4d frames  " % (path.split("/")[-1], len(data)) + "  ".join("%s %.2f ms" % (k, mean(k)) for k in cols))
+PY
