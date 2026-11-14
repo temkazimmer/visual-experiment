@@ -6,8 +6,9 @@ to the current one (Docs/AGENT_METAHUMAN.md, stage 1).
 
 WHO = 'play'          the player's skin mesh in a running Play session (default sliders
                       applied by the body component and the anim instance), or
-      'label:<name>'  an actor in the editor level by label (first skeletal component,
-                      or the one named COMP), or
+      'label:<name>'  an actor in the editor level by label or class name (first skeletal
+                      component, or the one named COMP; ALSO=['Face'] adds a MetaHuman's
+                      separate head to the height), or
       'asset:<path>'  a skeletal mesh asset in its reference pose (spawned, measured, removed).
 Reads the posed, skinned vertices (Geometry Script), so bone scales and morphs count.
 Circumferences are tape-style: the convex hull of the torso's cross-section.
@@ -123,6 +124,14 @@ def read_mesh(comp):
     tl = unreal.GeometryScript_MeshQueries.get_all_triangle_indices(dm, False)[1]
     V = [(v.x, v.y, v.z) for v in unreal.GeometryScript_List.convert_vector_list_to_array(vl)]
     T = [(t.x, t.y, t.z) for t in unreal.GeometryScript_List.convert_triangle_list_to_array(tl)]
+    # Drop what isn't skin: a MetaHuman body parks ~30 collapsed vertices on the component
+    # origin (2.4 cm under her soles), and unused vertex ids read as (0, 0, 0) too.
+    o = comp.get_world_location()
+    bad = set(i for i, v in enumerate(V) if abs(v[0] - o.x) + abs(v[1] - o.y) + abs(v[2] - o.z) < 0.01)
+    T = [t for t in T if not (t[0] in bad or t[1] in bad or t[2] in bad)]
+    used = set(i for t in T for i in t)
+    some = V[T[0][0]]
+    V = [v if i in used else some for i, v in enumerate(V)]
     return V, T
 
 
@@ -131,7 +140,7 @@ BONES = ["pelvis", "spine_01", "spine_03", "spine_05", "neck_01", "head",
          "middle_03_l", "thigh_l", "thigh_r", "calf_l", "foot_l", "ball_l"]
 
 
-def measure(comp):
+def measure(comp, also=()):
     V, tris = read_mesh(comp)
     raw = {b: comp.get_socket_location(b) for b in BONES}
     # her own frame: x across (left thigh to right thigh), y front-back, z up from the floor
@@ -153,6 +162,8 @@ def measure(comp):
     d = lambda a, b: math.dist(B[a], B[b])
     m = {"vertices": len(V), "triangles": len(tris)}
     m["height"] = max(v[2] for v in V)
+    for other in also:                      # a MetaHuman's head is a separate mesh
+        m["height"] = max(m["height"], max(v[2] for v in read_mesh(other)[0]) - floor)
     m["shoulder_joints"] = d("upperarm_l", "upperarm_r")
     near = [v for v in V if v[2] > B["upperarm_l"][2] - 3
             and min(math.dist(v, B["upperarm_l"]), math.dist(v, B["upperarm_r"])) < 12]
@@ -169,7 +180,9 @@ def measure(comp):
     m["bust"], m["bust_z"] = scan(V, T, B["spine_03"][2], top, 0, 9, max, True)
     m["waist"], m["waist_z"] = scan(V, T, B["pelvis"][2] + 2, m["bust_z"] - 6, 0, 9, min)
     m["underbust"] = scan(V, T, m["bust_z"] - 0.07 * m["height"], m["bust_z"] - 0.03 * m["height"], 0, 9, min, True)[0]
-    m["hip"], m["hip_z"] = scan(V, T, zc + 0.5, B["pelvis"][2] + 6, 0, 9, max)
+    # hip: fullest tape around the seat, from just under the hip joints up. Not down to the
+    # crotch: there the tape would span the gap between the thighs in a legs-apart pose.
+    m["hip"], m["hip_z"] = scan(V, T, B["thigh_l"][2] - 4, B["pelvis"][2] + 6, 0, 9, max)
     m["thigh"] = girth(V, T, zc - 3.0, B["thigh_l"][0], 7)
     m["calf"] = scan(V, T, B["foot_l"][2] + 12, B["calf_l"][2] - 4, B["calf_l"][0], 7, max)[0]
     m["neck"] = scan(V, T, B["neck_01"][2] + 1, B["head"][2] - 1, B["neck_01"][0], 6, min)[0]
@@ -202,7 +215,8 @@ def _component(who):
         actor = unreal.GameplayStatics.get_player_character(w, 0)
         want = want or "Skin"
     elif who.startswith("label:"):
-        actor = next(a for a in eas.get_all_level_actors() if a.get_actor_label() == who[6:])
+        actor = next(a for a in eas.get_all_level_actors()
+                     if who[6:] in (a.get_actor_label(), a.get_class().get_name()))
     else:
         actor = eas.spawn_actor_from_class(unreal.SkeletalMeshActor, unreal.Vector(0, 0, 0))
         actor.skeletal_mesh_component.set_skinned_asset_and_update(unreal.load_asset(who[6:]))
@@ -210,13 +224,15 @@ def _component(who):
     comps = actor.get_components_by_class(unreal.SkeletalMeshComponent)
     named = [c for c in comps if want and c.get_name() == want]
     print("components:", [(c.get_name(), c.get_skinned_asset().get_name() if c.get_skinned_asset() else None) for c in comps])
+    global ALSO_COMPS
+    ALSO_COMPS = [c for c in comps if c.get_name() in globals().get("ALSO", ())]
     return (named or comps)[0], lambda: None
 
 
 if "WHO" in globals():
     _comp, _done = _component(WHO)
     try:
-        RESULT = measure(_comp)
+        RESULT = measure(_comp, globals().get('ALSO_COMPS', ()))
     finally:
         _done()
     print("mesh:", _comp.get_skinned_asset().get_name(), "scale", _comp.get_world_scale())
