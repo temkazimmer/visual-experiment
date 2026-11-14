@@ -169,3 +169,162 @@ finger-volume bones driven by `ABP_Body_PostProcess`. Face: `Face_Archetype_Skel
 
 **Left for stage 1:** nothing blocking. Tema's calls: the face and hair (Ada's are
 placeholders), and how far to push the body toward her stylised silhouette.
+
+### 2026-11-14 · Stage 2 · the MetaHuman body moves in the game (`visex.Body.MetaHuman`)
+
+**How it follows.** No clip was rebaked and the graph was not ported. Today's character stays
+the driver: its mesh (`SKM_Quinn_Simple`, never drawn) keeps running `ABP_Unarmed`, every C++
+layer and the one ground-IK owner. With the cvar at 1, `UVisexMHBodyComponent` (made at runtime
+by `UVisexBodyComponent`, `Source/visex/VisexMHBody.*`) spawns `BP_MHC_Her` on the driver's
+origin, hides the skin, outfit, cloth and hair cards, and gives the MetaHuman's Body a native
+anim instance with no graph (`UVisexMHBodyAnimInstance`). Each frame, after the driver (a tick
+prerequisite), it copies the driver's component-space rotations onto the bones the skeletons
+share by name and keeps the MetaHuman's own bone lengths. The mesh's post-process AnimBP
+(`ABP_Body_PostProcess`: RigLogic twists and correctives) then runs on that pose, and the Face
+copies the body in its own post-process (`ABP_Face_PostProcess` has a Copy Pose From Mesh on the
+attached parent). At 0 nothing is spawned or loaded.
+
+Why not the other routes:
+- **Leader Pose**: a follower runs no post-process AnimBP, so no correctives.
+- **The Blueprint's own options**: the assembled Blueprint has no live-retarget setting. Its Body
+  has no anim class; `UMetaHumanComponentUE` only wires the post-process variables. The plugin
+  ships `RTG_MH_IKRig` / `IK_MH_IKRig`, but a Retarget Pose From Mesh node needs an AnimBP (Python
+  cannot add graph nodes), an IK Rig for our skeleton, and chains would lose our toe bones.
+- **Copy Pose From Mesh as it is** copies translations too: the driver is a 177.5 cm skeleton
+  scaled by 0.935 with bone scales on top, so the MetaHuman would be stretched to those lengths
+  (its arm is 7% longer, its hand 13%).
+
+What the copy does per bone (100 of the driver's 109 bones exist on the MetaHuman, parents agree):
+- 56 take the driver's rotation as it is: the two skeletons use the same bone axes (reference
+  poses differ by 0-20 degrees of A-pose, not by convention).
+- 20 toe bones go through their reference-pose difference: our added toes have other axes (125-140
+  degrees off).
+- 8 metacarpals take the driver's change from its reference pose, so the palm keeps its own shape.
+- 16 twist bones are left to RigLogic, like the 242 bones the driver does not have.
+- root and pelvis also take the driver's position (times 166 / 177.5).
+
+**The spike (Tema: "make sure we dont have this broken parts") and the blank eyes: one cause.**
+A strip of skin shot out sideways from her hip in every pose. It was 27 vertices of the *right
+wrist*, bound 100% to `root`: they stayed where the wrist is in the reference pose while the arm
+moved, and the triangles between them and the wrist stretched into a strip (the hip is just where
+the A-pose wrist hangs). Their mirror vertices on the left wrist hang on `wrist_outer_l`,
+`lowerarm_twist_02_l` and `lowerarm_twist_01_l`; the right ones of those are bones 256, 257 and
+258 of the skeleton. Stage 1 assembled the MetaHuman while the project had no
+`r.GPUSkin.Support16BitBoneIndex` (a MetaHuman project requirement: it also asks for
+`r.GPUSkin.UnlimitedBoneInfluences` and `SkeletalMesh.UseExperimentalChunking`). With 8-bit bone
+indices a mesh section holds 256 bones; the assembly dropped influences past that (the body's one
+section skins to 285 bones, the face's head to 639), and a vertex with nothing left falls back
+to root. The same build chunked the face (875 bones) into
+8 sections and wrote its LOD 1 and LOD 2 material maps two and one entries short, so those LODs
+drew the eyeballs with the eye-shell and lash materials: the "blank eyes" of stage 1. One face
+neck vertex (on `FACIAL_R_12IPV_NeckB4`) was stretching 8.7x the same way.
+
+Not the cause (checked): no corrective or twist joint was far from its parent, the follow step
+leaves no shared bone at the origin, there are no collapsed vertices on the origin in the
+assembled body (0 within 0.5 cm), and the strip was there with the post-process AnimBP off.
+
+Fix: `r.GPUSkin.Support16BitBoneIndex=True` and `SkeletalMesh.UseExperimentalChunking=1` in
+`Config/DefaultEngine.ini`, then the same Creator asset re-assembled
+(`STEPS=['build']` of `Tools/mh_create.py`; 105 files under `Content/Character/MH` rewritten).
+After it: no vertex on root, face LOD maps `[9,1,2,3,4,5,10,7,8]` and `[11,1,2,3,4,5,10,7]`, eyes
+drawn at LOD 0-3 with LOD Sync left alone (`Docs/Research/metahuman/stage2_eyes_lods.jpg`).
+Meshes with 256 bones or fewer keep 8-bit indices, so today's body is not rebuilt.
+`UnlimitedBoneInfluences` is still off: it changes the skinning path of every mesh, and the body
+needs 8 influences at most. The face has more at LOD 0; turn it on when the face work starts.
+
+**The spike check** (`Source/visex/VisexMHSpikes.*`, the rule at the top). It skins body and face
+on the CPU at LOD 0 every frame and compares each triangle edge with its reference length:
+`stretch` on edges of 1 cm or more (fails past 3x), `creases` on edges of 0.25-1 cm (reported),
+`grew` in cm on any edge (fails past 3 cm). Body, worst frame of each pose:
+
+| pose | before: stretch | after: stretch | after: creases | after: grew |
+|---|---|---|---|---|
+| arrival walk | 208x | 1.75x | 2.29x | 0.82 cm |
+| menu lean | 198x | 1.50x | 1.75x | 0.60 cm |
+| Settings sit | 243x | 2.38x | 4.06x | 1.66 cm |
+| photo Idle / Walk / Run | 157x / 135x / 134x | 1.50x / 1.75x / 2.08x | 2.26x / 2.55x / 3.40x | 0.59 / 0.91 / 1.30 cm |
+| photo Bookend / Crown / FeetUp | 121x / 224x / 401x | 1.88x / 1.92x / 2.10x | 2.74x / 4.39x / 4.39x | 0.92 / 1.45 / 1.45 cm |
+| photo Glance / Ledge / LegLift | 407x / 358x / 381x | 2.30x / 2.84x / 2.45x | 3.71x / 5.83x / 4.68x | 1.56 / 2.21 / 1.79 cm |
+| photo Mermaid / Peace | 243x / 257x | 2.15x / 2.15x | 3.81x / 3.81x | 1.38 / 1.38 cm |
+| Start walk | 198x | 1.74x | 2.07x | 0.78 cm |
+| proud idle | 157x | 1.48x | 1.98x | 0.55 cm |
+| height 145 / 185 | 158x / 151x | 1.47x / 1.46x | 2.08x / 1.87x | 0.54 / 0.54 cm |
+
+"Before" is the first run (edges of 0.02 cm and up in one number, the strip 36-122 cm long).
+Face after: stretch 1.35x, creases 2.56x, grew 0.79 cm, every pose. The crease numbers over 3x
+are short edges folded into the groin and under the seat (`pelvis`, `thigh_bck_lwr`) in the sits
+and leg lifts, and in the armpit (`upperarm_twistCor_01`) with the arms up: 0.26-0.43 cm edges
+opening to 1.3-1.9 cm. Looked at in 4K (`-visexshots`), nothing pokes out. They are the
+MetaHuman's own skinning in a deep bend, not ours to fix in the follow step.
+
+**Feet.** Copied rotations on other bone lengths leave each ankle within a centimetre of where
+it should be, and the MetaHuman's ankle sits higher over its sole (7.69 cm against the driver's
+7.26) with a foot 0.6 cm longer to the ball. Fixed in the follow step, with no second ground
+pass: each MetaHuman foot is put where its sole meets the driver's sole (one fixed offset in
+the foot bone's axes, halfway between matching under the ankle and under the ball, so it adds
+no slide of its own), the leg is closed onto it with a two-bone solve, and the pelvis is lifted
+by the ankle difference less what the hip joints already sit higher (-0.57 cm) plus the live
+leg-length difference. It reads no ground and traces nothing: the driver's Control Rig stays
+the one ground-IK owner and this repeats its answer on the other body. `visex.Body.MetaHuman.
+FootPin 0` switches it off to compare. The body's soles are 3.4 cm over its own origin (lowest
+vertex under the foot; stage 1's 2.4 was the Creator preview), measured from the mesh at start.
+
+Measured by the gaps tour (`-visexqa -visexgaps -visexcvar=visex.Body.MetaHuman=N -benchmark
+-fps=60`: a fixed 60 fps step, so both runs walk the same steps; hip bob is identical). With the
+cvar on the foot meter reads the MetaHuman body, at 0 the driver's mesh as before.
+
+| cm | cvar 0 | cvar 1 |
+|---|---|---|
+| arrival walk: drift median / max | 2.87 / 6.21 | 2.80 / 6.21 |
+| arrival walk: sole gap median | -0.16 | -0.32 |
+| menu lean: drift | 0.31 | 0.32 |
+| menu lean: sole vertex gap L / R | 0.19 / 0.19 | 0.35 / 0.27 |
+| Start walk: drift median / max | 2.17 / 2.60 | 1.49 / 2.69 |
+| Start walk: sole gap median | 0.76 | 0.59 |
+| proud idle: drift | 0.36 | 0.38 |
+| proud idle: sole vertex gap L / R | 0.19 / 0.18 | 0.24 / -0.09 |
+
+Standing (lean, idle) is inside the targets on both bodies (drift 1 cm, gap 0.5 cm). The walks
+are not, on either: 2.2-2.9 cm median drift is today's walk, and the MetaHuman body repeats it
+(the same on the arrival, less on the Start walk, where its longer foot plants 16 steps for
+13). That is the driver's to fix (root motion and the Control Rig), not the follow.
+
+**Correctives are live.** `stage2_correctives_on.png` / `_off.png` (4K, same camera): the
+reference pose with a deep knee and hip bend and the arm overhead
+(`visex.Body.MetaHuman.TestPose "ref;calf_r:0,0,-130;thigh_r:0,0,90;upperarm_r:0,120,0"`),
+post-process AnimBP on and off (`visex.Body.MetaHuman.Correctives`). Off, the seat goes flat,
+the thigh pinches where it meets the hip and the knee and shoulder thin out; on, they keep
+their volume. So the follow feeds RigLogic the way a normal anim graph would.
+
+**Captures** (`Docs/Research/metahuman/`, 3840x2160, game view with the grade, same camera and
+the same frame of the fixed-step tour): `stage2_lean_cvar0/1.png`, `stage2_walk_cvar0/1.png`
+(mid-stride, 4 s after Start), `stage2_idle_cvar0/1.png`; the corrective pair and
+`stage2_eyes_lods.jpg` (LOD 0-3) come from a scene capture, so without the grade;
+`stage2_walk_lean.mp4` (22 s, 720p): she walks in, leans, goes to the Body page and back with
+the cvar on (the feet tour's film mode).
+
+**Frame time.** Not separable at this size: in the real-time tours (1280x720 window, 2 s per
+phase) the idle ran 71 fps with the cvar off and 72 on, the lean 56 and 70. At 0 she wears the
+Silversuit and hair cards, at 1 the MetaHuman with strand grooms, and the foot meter skins a
+mesh on the CPU every frame in both. A real number needs a GPU capture at 4K.
+
+**Traps.**
+- A `-game` run of this project answers the folder bridge too (`init_unreal.py` loads there):
+  with an editor open in the same folder, jobs go to whichever picks them up first.
+- `set_editor_property` on a component of a spawned Blueprint actor re-runs its construction
+  script in Play and replaces its components. Hold LODs with `visex.Body.MetaHuman.LOD`.
+- An editor killed with unsaved packages shows a modal "Restore Packages" at the next launch
+  and the bridge never comes up (frame 0 forever). Move `Saved/Autosaves/PackageRestoreData.json`
+  aside before launching; stage 1's wanted to restore engine presets and Lvl_Studio.
+- `export_render_target` writes PNGs that `sips` reads and `ffmpeg` rejects; re-save with `sips`.
+- The spike ratio on its own is noise below about 0.25 cm of edge: 0.02 cm slivers read 30x.
+- Console variables keep their value across Play sessions in one editor (a leftover TestPose).
+
+**Left open.**
+- The cvar path loads the Blueprint by path, so it works in the editor and `-game`, not in a
+  packaged build until `/Game/Character/MH` is cooked (800 MB; not added to the DMG).
+- With the cvar on: no outfit, no hair cards, no body sliders except Height (it scales with the
+  driver); Ada's face and groom, and the MetaHuman's baked underwear. Hands land 1-2 cm off the
+  driver's contacts (its arm is longer): the lean's hand on the column is not corrected.
+- `r.GPUSkin.UnlimitedBoneInfluences` (face quality at LOD 0) and the walks' foot drift.
+- Bone scales from the Body page are not passed on: the copy takes rotations only.
