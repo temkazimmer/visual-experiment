@@ -829,6 +829,12 @@ private:
 	void SetUpFootTrace();
 	/** The menu's walks: the slow walk clip at her capsule's pace (visex.Menu.SlowWalk). */
 	void TickWalkClip(float DeltaSeconds, bool bMenuWalk);
+	/** One stretch of a root-motion move: Clip from From to To (clip seconds). */
+	struct FMoveSeg { class UAnimSequence* Clip = nullptr; float From = 0.f, To = 0.f; };
+	/** Plays Segs back to back as one root-motion montage on DefaultSlot: her capsule follows
+	 *  the clips (start, n x loop, stop), nothing moves her by hand. Returns its root travel (cm). */
+	float PlayRootMotionMove(const TArray<FMoveSeg>& Segs, float BlendIn, float BlendOut);
+	UPROPERTY(Transient) TObjectPtr<class UAnimMontage> MoveMontage;
 	UPROPERTY(Transient) TObjectPtr<class UAnimMontage> WalkMontage;
 	float WalkClipSpeed = 126.5f;   // cm/s, the clip's own root motion (measured when it starts)
 	float WalkClipIdle = 0.f;       // seconds she has been all but still on a menu walk

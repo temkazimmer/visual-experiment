@@ -1986,6 +1986,42 @@ void AVisexMenuDirector::TickWalkClip(float DeltaSeconds, bool bMenuWalk)
 	Anim->Montage_SetPlayRate(WalkMontage, Rate);
 }
 
+float AVisexMenuDirector::PlayRootMotionMove(const TArray<FMoveSeg>& Segs, float BlendIn, float BlendOut)
+{
+	UAnimInstance* Anim = GetPawnAnim();
+	if (!Anim || Segs.Num() == 0 || !Segs[0].Clip)
+	{
+		return 0.f;
+	}
+	UAnimMontage* M = NewObject<UAnimMontage>(this);
+	M->SetSkeleton(Segs[0].Clip->GetSkeleton());
+	FSlotAnimationTrack& Track = M->SlotAnimTracks[0];
+	Track.SlotName = FName(TEXT("DefaultSlot"));
+	float At = 0.f, Travel = 0.f;
+	for (const FMoveSeg& S : Segs)
+	{
+		FAnimSegment Seg;
+		Seg.SetAnimReference(S.Clip, true);
+		Seg.AnimStartTime = S.From;
+		Seg.AnimEndTime = S.To;
+		Seg.StartPos = At;
+		Track.AnimTrack.AnimSegments.Add(Seg);
+		At += S.To - S.From;
+		Travel += S.Clip->ExtractRootMotionFromRange(S.From, S.To, FAnimExtractContext()).GetTranslation().Size2D();
+	}
+	M->SetCompositeLength(At);
+	FCompositeSection Section;
+	Section.SectionName = TEXT("Default");
+	Section.Link(Segs[0].Clip, 0.f);
+	Section.SetTime(0.f);
+	M->CompositeSections.Add(Section);
+	M->BlendIn.SetBlendTime(BlendIn);
+	M->BlendOut.SetBlendTime(BlendOut);
+	Anim->SetRootMotionMode(ERootMotionMode::RootMotionFromMontagesOnly);
+	MoveMontage = Anim->Montage_Play(M, 1.f) > 0.f ? M : nullptr;
+	return Travel;
+}
+
 void AVisexMenuDirector::SetUpFootTrace()
 {
 	// the scene got it at BeginPlay (UVisexFootTrace); this adds what the menu spawned since
