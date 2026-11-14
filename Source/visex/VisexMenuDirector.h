@@ -440,10 +440,10 @@ public:
 	/** WalkStart's clip time the walk starts at: her left foot planted, the right about to lift. */
 	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
 	float WalkStartFrom = 1.0f;
-	/** The lean-up's clip time the walk takes over: its left foot is planted 8 cm behind where
-	 *  WalkStart's is, as the lean-down's is, so the walk back lands her on her spot. */
+	/** The lean-up's clip time the walk takes over: its left foot planted ~10 cm behind where
+	 *  WalkStart's is, so the walk back (two turns, the lean-down's hold) lands her on her spot. */
 	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
-	float LeanUpHandOff = 0.6f;
+	float LeanUpHandOff = 0.69f;
 	/** The short walk hands WalkStart (in this window, clip s) to WalkStop (WalkCutInto), right foot down. */
 	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
 	FVector2D WalkCutFrom = FVector2D(1.35f, 1.8f);
@@ -456,13 +456,13 @@ public:
 	float MoveBlend = 0.25f;
 	/** A turn hands on to the walk (or the lean) once this share of its yaw is in. */
 	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
-	float TurnHandOff = 0.95f;
+	float TurnHandOff = 0.93f;
 	/** The page opens this long before her walk out has stopped (s). */
 	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
 	float PageOpenEarly = 0.3f;
 	/** The walk back's play rate (its turns keep ReturnTurnRate). */
 	UPROPERTY(EditAnywhere, Category = "Menu|Walk")
-	float ReturnWalkRate = 1.f;
+	float ReturnWalkRate = 1.1f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean")
 	TSoftObjectPtr<class UAnimSequence> LeanDown = TSoftObjectPtr<class UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/Menu/A_Menu_Lean_Down.A_Menu_Lean_Down")));
 
@@ -526,7 +526,7 @@ public:
 
 	/** The return from a page: its turns' pace (the arrival keeps TurnClipRate). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "0.5"))
-	float ReturnTurnRate = 1.8f;
+	float ReturnTurnRate = 2.f;
 
 	/** The return: the last turn starts this far from her spot (cm), on her last step in. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu|Lean", meta = (ClampMin = "2"))
@@ -785,7 +785,7 @@ private:
 	void Lean(bool bFromStanding, float From = 0.f, float Rate = 1.f);
 	double LeanSettleAt = 0.0;
 	/** Plays the push-off; returns its length in seconds (0 if she wasn't leaning). */
-	float StandUp();
+	float StandUp(bool bIntoWalk = false);   // bIntoWalk: held on its last frame until a walk takes over
 	void SetColumnBlocksPawn(bool bBlock);
 	class UAnimInstance* GetPawnAnim() const;
 	bool bLeaning = false;

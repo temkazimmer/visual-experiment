@@ -654,7 +654,7 @@ void AVisexMenuDirector::OpenCharacterPage(int32 InPage)
 	BeginMotion(InPage == 1 ? TEXT("wardrobe in") : TEXT("body in"));
 	StepThen = 0;
 	// she pushes off the column first; the page opens as she finds her feet
-	const float Up = StandUp();
+	const float Up = StandUp(RootMoves() && LeanColumn != nullptr);
 	if (Up > 0.f)
 	{
 		bOpen = false;
@@ -1546,7 +1546,7 @@ void AVisexMenuDirector::OpenPhoto()
 	StepThen = 1;
 	// she pushes off the column and walks out as for the body page, then the photo camera
 	// takes over: one way of moving for every page
-	const float Up = StandUp();
+	const float Up = StandUp(RootMoves() && LeanColumn != nullptr);
 	if (Up > 0.f)
 	{
 		if (LeanColumn)
@@ -2273,7 +2273,7 @@ void AVisexMenuDirector::EndIdleBeat()
 	ScheduleIdleBeat();
 }
 
-float AVisexMenuDirector::StandUp()
+float AVisexMenuDirector::StandUp(bool bIntoWalk)
 {
 	if (!bLeaning)
 	{
@@ -2291,7 +2291,7 @@ float AVisexMenuDirector::StandUp()
 	if (UAnimSequence* Up = LeanUp.LoadSynchronous())
 	{
 		LoadedLean.AddUnique(Up);
-		Anim->PlaySlotAnimationAsDynamicMontage(Up, Slot, 0.15f, 0.35f, 1.f, 1);
+		Anim->PlaySlotAnimationAsDynamicMontage(Up, Slot, 0.15f, 0.35f, 1.f, 1, bIntoWalk ? 0.f : -1.f);
 		return Up->GetPlayLength();
 	}
 	Anim->StopSlotAnimation(0.4f, Slot);

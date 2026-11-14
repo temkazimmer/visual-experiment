@@ -119,6 +119,21 @@ void AVisexMenuDirector::HoldFoot(UAnimSequence* FromClip, float FromTime, UAnim
 		HoldBase = Mesh->GetRelativeLocation();
 	}
 	Char->AddActorWorldOffset(D, false, nullptr, ETeleportType::None);
+	// a lean or a turn stops where it is as it blends out (its own feet shuffle on; the walk
+	// clips' planted feet keep pace with their root, so they play on)
+	if (FromClip != WalkStart.Get() && FromClip != WalkLoop.Get())
+	{
+		if (UAnimInstance* Anim = Mesh->GetAnimInstance())
+		{
+			for (FAnimMontageInstance* Inst : Anim->MontageInstances)
+			{
+				if (Inst && Inst->Montage != Incoming)
+				{
+					Inst->Pause();
+				}
+			}
+		}
+	}
 	HoldOffset = Left - Char->GetActorTransform().InverseTransformVectorNoScale(D);
 	HoldMontage = Incoming;
 	bHolding = true;

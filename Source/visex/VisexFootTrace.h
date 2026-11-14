@@ -19,5 +19,5 @@ public:
 	{
 		return WorldType == EWorldType::Game || WorldType == EWorldType::PIE;
 	}
-	virtual void OnWorldBeginPlay(UWorld& InWorld) override { SetUp(&InWorld); }
+	virtual void OnWorldBeginPlay(UWorld& InWorld) override { Super::OnWorldBeginPlay(InWorld); SetUp(&InWorld); }
 };
