@@ -118,6 +118,12 @@ void AVisexMenuDirector::HoldFoot(UAnimSequence* FromClip, float FromTime, UAnim
 		: Mesh->GetComponentTransform().InverseTransformPosition(Mesh->GetBoneLocation(Foot ? FName(TEXT("foot_r")) : FName(TEXT("foot_l"))));
 	FVector D = Mesh->GetComponentTransform().TransformVector(Was - ClipFoot(ToClip, ToTime, Foot));
 	D.Z = 0.f;
+	if (!FromClip && D.Size2D() > 12.f)
+	{
+		// her pose is far from the clip's (a photo pose): no foot to hold, the clip blends in
+		UE_LOG(LogTemp, Log, TEXT("Menu move: (her pose) -> %s, %.1f cm off, not held"), *ToClip->GetName(), D.Size2D());
+		return;
+	}
 	// a hold still easing out is folded into this one
 	const FVector Left = bHolding ? Mesh->GetRelativeLocation() - HoldBase : FVector::ZeroVector;
 	if (!bHolding)
