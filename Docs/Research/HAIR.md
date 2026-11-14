@@ -219,19 +219,32 @@ with `STYLE='elf'` set first (see the scripts' headers).
   radial so the mass shades as one form.
 - **Its own atlas**, `T_HairAtlasFine`: a third more strands and roots ragged over the first 7%
   (upper-layer roots are in plain view). Twice the strands at half the width averaged into solid,
-  feather-like cards, so it is not finer than that.
+  feather-like cards, so it is not finer than that. It never streams: a re-imported atlas came in
+  late and the first shots showed low mips.
+- **Soft roots.** `RootFade` ramps coverage in over the first 16% of a card where vertex alpha is 1
+  (layers 1 and 2); the under layer keeps solid roots so the scalp stays covered. The under layer
+  is also baked lighter (0.76 instead of 0.6): on light hair it shows between the top cards.
+- **No edge-on highlight.** `GrazeFade` removes the highlight where a card is seen edge-on. With the
+  sun ahead and the camera behind, crown cards went white; lowering Specular alone did not fix it.
 - **Physics:** two bones a chain (15 chains), tips only, stiffness 0.4, 9 degrees: it holds its cut.
-  Its "top" chains were added to `SK_HairCards`.
+  Its "top" chains were added to `SK_HairCards`. Stable at 3 fps in a background editor (tips move
+  about 0.1 cm with her breathing).
+
+`RootFade`, `GrazeFade`, `BothSides` and the second colour are parameters of `M_HairCards` that
+default to off, so long and elf render as before.
 
 Review shots without Play: `Tools/hair_preview.py` (skin + hair in the open air above the menu spot).
-In Play: `Tools/hair_shots.py` with a `HairCam` SceneCapture2D placed before Play (don't save it).
+In Play: `Tools/hair_shots.py` with a `HairCam` SceneCapture2D placed before Play (don't save it);
+`GRADED=True` shoots the final LDR image with the level's grade. To put a style on the way the
+Hair tab does, set `profile.hair` on her `VisexBodyComponent` and call `apply()`.
 
-Traps: shots taken right after an import show low texture mips (solid feathers); the tools prestream
-now. With `skeleton=None` the importer still picks the existing hair skeleton in the folder, so never
-rename a skeleton the import did not create (it re-pointed every style once).
+Traps: with `skeleton=None` the importer still picks the existing hair skeleton in the folder, so
+never rename a skeleton the import did not create (it re-pointed every style once). Wait for her
+arrival (about 40 s into Play) before shooting; earlier her head socket is not where she ends up.
 
-Open: card roots still step visibly near the crown from behind; a sun glint goes white on cards at
-grazing angles; not yet seen through the game's post grade or checked in motion at real speed.
+Open: in hard side sun the top cards still cast a stepped shadow pattern on the layer under them
+near the crown; at menu distance the sunlit fringe cards read a little like leaves; not watched in
+motion at real speed (a background editor runs at 3 fps).
 
 ## What I could not verify
 

@@ -57,7 +57,9 @@ try:
         cap.set_actor_location_and_rotation(cam, rot, False, False)
         c = cap.capture_component2d
         c.set_editor_property("texture_target", rt)
-        c.set_editor_property("capture_source", unreal.SceneCaptureSource.SCS_FINAL_TONE_CURVE_HDR)
+        # GRADED: the final LDR image, with the level's post-process volume (the game's grade)
+        c.set_editor_property("capture_source", unreal.SceneCaptureSource.SCS_FINAL_COLOR_LDR if globals().get("GRADED")
+                              else unreal.SceneCaptureSource.SCS_FINAL_TONE_CURVE_HDR)
         c.set_editor_property("fov_angle", globals().get("FOV", 28.0))
         for _ in range(8):                      # let the temporal dither settle
             c.capture_scene()

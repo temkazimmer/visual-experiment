@@ -47,6 +47,8 @@ TINTS = dict(short=dict(
     streak=(0.38, 0.165, 0.050),                              # the copper fringe panel
     cap=(0.075, 0.038, 0.019),
     roughness=0.7, specular=0.08, anisotropy=-0.6,
+    graze_fade=1.0,                 # no white glint on cards seen edge-on against the sun
+    root_fade=0.16,
     both_sides=1.0,                 # the underside of a flicked lock is lit like its top
     atlas=("hair_atlas_fine.png", "T_HairAtlasFine"),   # finer strands, ragged roots (hair_textures.py)
     variation=(0.6, 0.7),           # a little calmer strand-to-strand contrast than the black hair
@@ -198,8 +200,26 @@ mel.connect_material_property(occ, "", MP.MP_BASE_COLOR)
 gain = mel.create_material_expression(m, unreal.MaterialExpressionMultiply, -800, 440)
 mel.connect_material_expressions(ts, "A", gain, "A")
 mel.connect_material_expressions(num("Coverage", HAIR["coverage"], -1000, 480), "", gain, "B")
-cov = mel.create_material_expression(m, unreal.MaterialExpressionSaturate, -650, 440)
-mel.connect_material_expressions(gain, "", cov, "")
+cov0 = mel.create_material_expression(m, unreal.MaterialExpressionSaturate, -650, 440)
+mel.connect_material_expressions(gain, "", cov0, "")
+# RootFade: coverage ramps in over this share of a card's length, on cards whose vertex alpha is 1
+# (a layered cut shows its upper layers' roots). 0 on the black styles: no change.
+rf = mel.create_material_expression(m, unreal.MaterialExpressionMultiply, -1000, 620)
+mel.connect_material_expressions(num("RootFade", 0.0, -1200, 600), "", rf, "A")
+mel.connect_material_expressions(vcol, "A", rf, "B")
+rmax = mel.create_material_expression(m, unreal.MaterialExpressionMax, -850, 620)
+ceps = mel.create_material_expression(m, unreal.MaterialExpressionConstant, -1000, 700)
+ceps.set_editor_property("r", 0.0001)
+mel.connect_material_expressions(rf, "", rmax, "A")
+mel.connect_material_expressions(ceps, "", rmax, "B")
+rdiv = mel.create_material_expression(m, unreal.MaterialExpressionDivide, -700, 620)
+mel.connect_material_expressions(ts, "B", rdiv, "A")
+mel.connect_material_expressions(rmax, "", rdiv, "B")
+rsat = mel.create_material_expression(m, unreal.MaterialExpressionSaturate, -560, 620)
+mel.connect_material_expressions(rdiv, "", rsat, "")
+cov = mel.create_material_expression(m, unreal.MaterialExpressionMultiply, -520, 500)
+mel.connect_material_expressions(cov0, "", cov, "A")
+mel.connect_material_expressions(rsat, "", cov, "B")
 dith = mel.create_material_expression(m, unreal.MaterialExpressionMaterialFunctionCall, -450, 440)
 dith.set_editor_property("material_function", unreal.load_asset("/Engine/Functions/Engine_MaterialFunctions02/Utility/DitherTemporalAA"))
 assert mel.connect_material_expressions(cov, "", dith, "Alpha Threshold"), "DitherTemporalAA input"
@@ -220,6 +240,23 @@ mel.connect_material_property(num("Roughness", HAIR["roughness"], -450, 200), ""
 spec = mel.create_material_expression(m, unreal.MaterialExpressionMultiply, -250, 280)
 mel.connect_material_expressions(num("Specular", HAIR["specular"], -450, 280), "", spec, "A")
 mel.connect_material_expressions(vcol, "G", spec, "B")       # a little less highlight deep inside the mass
+# GrazeFade 1: no highlight where a card is seen edge-on. With the sun ahead and the camera behind,
+# cards on the crown went white (light hair shows it; lowering Specular alone did not). 0: as before.
+fr = mel.create_material_expression(m, unreal.MaterialExpressionFresnel, -450, 760)
+fr.set_editor_property("exponent", 1.5)
+fr.set_editor_property("base_reflect_fraction", 0.0)
+fri = mel.create_material_expression(m, unreal.MaterialExpressionOneMinus, -300, 760)
+mel.connect_material_expressions(fr, "", fri, "")
+gz = mel.create_material_expression(m, unreal.MaterialExpressionLinearInterpolate, -150, 720)
+gone = mel.create_material_expression(m, unreal.MaterialExpressionConstant, -300, 700)
+gone.set_editor_property("r", 1.0)
+mel.connect_material_expressions(gone, "", gz, "A")
+mel.connect_material_expressions(fri, "", gz, "B")
+mel.connect_material_expressions(num("GrazeFade", 0.0, -300, 820), "", gz, "Alpha")
+spec2 = mel.create_material_expression(m, unreal.MaterialExpressionMultiply, -50, 300)
+mel.connect_material_expressions(spec, "", spec2, "A")
+mel.connect_material_expressions(gz, "", spec2, "B")
+spec = spec2
 mel.connect_material_property(spec, "", MP.MP_SPECULAR)
 if LIT:
     mel.connect_material_property(num("Anisotropy", HAIR["anisotropy"], -450, 360), "", MP.MP_ANISOTROPY)
@@ -300,7 +337,8 @@ if STYLE in TINTS:
     col(card_mat, "TipColor", T_["tip"])
     col(card_mat, "StreakColor", T_["streak"])
     for nm, key in (("Roughness", "roughness"), ("Specular", "specular"), ("Anisotropy", "anisotropy"),
-                    ("BothSides", "both_sides")):
+                    ("BothSides", "both_sides"), ("RootFade", "root_fade"),
+                    ("GrazeFade", "graze_fade")):
         mel.set_material_instance_scalar_parameter_value(card_mat, nm, T_[key])
     if "variation" in T_:
         mel.set_material_instance_scalar_parameter_value(card_mat, "VariationBase", T_["variation"][0])
@@ -312,8 +350,12 @@ if STYLE in TINTS:
         at.set_editor_property("destination_name", T_["atlas"][1])
         at.set_editor_property("replace_existing", True)
         at.set_editor_property("automated", True)
-        tools.import_asset_tasks([at])
+        # import once (REIMPORT_ATLAS = True after hair_textures.py changes): a re-import streams
+        # in late, and shots taken straight after show low mips, solid feather-like cards
+        if not eal.does_asset_exist(DIR + "/" + T_["atlas"][1]) or globals().get("REIMPORT_ATLAS"):
+            tools.import_asset_tasks([at])
         ftex = unreal.load_asset(DIR + "/" + T_["atlas"][1])
+        ftex.set_editor_property("never_stream", True)      # 2048x1024: always sharp, also on a camera cut
         ftex.set_editor_property("srgb", False)
         ftex.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_DEFAULT)
         ftex.set_editor_property("mip_gen_settings", unreal.TextureMipGenSettings.TMGS_SHARPEN4)

@@ -90,8 +90,8 @@ SHORT = dict(
     lift_mid=(0.26, 0.44),
     lift_low=(0.06, 0.16),
     stiff=(0.955, 0.87),       # heading kept per cm, root -> tip (short hair holds its shape)
-    flick=(0.3, 1.0),          # outward turn of the tips, per lock
-    kick=5.0,                  # cm a fully flicked tip may leave the volume envelope
+    flick=(0.45, 1.0),         # outward turn of the tips, per lock
+    kick=6.0,                  # cm a fully flicked tip may leave the volume envelope
     vol=(0.3, 0.9, 2.2, 3.0, 3.4),    # cm the hair stands off the scalp: nape hairline .. crown
     vol_fringe=1.0,
     crown_fill=220,
@@ -528,7 +528,7 @@ def grow_short(az, el, layer, lk, own=1.0):
                 out.normalize()
                 side_t = Vector((-out.y, out.x, 0.0)) * lk["twist"]
                 d = d.lerp((out + side_t + Vector((0, 0, 0.38))).normalized(),
-                           min(0.9, lk["flick"] * 0.42 * u * step)).normalized()
+                           min(0.9, lk["flick"] * 0.55 * u * step)).normalized()
         p = p + d * step
         travelled += step
         if z_cut is not None and p.z < z_cut:
@@ -753,10 +753,15 @@ for g_ in guides:
                 w *= min(1.0, max(0.25, de / 2.5))        # cards narrow beside an ear
             ao = (AO_LAYER[min(layer, 2)] * (0.75 + 0.25 * min(1.0, s * 5)), AO_SPEC[min(layer, 2)])
             if IS_SHORT:
+                # lighter hair: the under layer shows between the top cards, so it is not as dark
+                ao = ((0.76, 0.88, 1.0)[min(layer, 2)] * (0.8 + 0.2 * min(1.0, s * 5)), ao[1])
                 # B = 1 - copper; a fringe rooted far back on the head stays brown near its root
                 # copper comes in over the first third (no coloured root edge); later for a fringe
                 # rooted far back on the head, which stays brown near its root
                 ao = ao + (1.0 - streak * (_ss(0.05, 0.45, s) if root_el > 58 else _ss(0.0, 0.3, s)),)
+                # alpha = soft root (the material's RootFade): the upper layers' roots lie in plain
+                # view on a layered cut; the under layer keeps solid roots so the scalp stays covered
+                ao = ao + (0.0 if layer == 0 else 1.0,)
                 rr = p - np.array([C.x, C.y, min(p[2], C.z - 2.0)])
                 rr = rr / (np.linalg.norm(rr) + 1e-9)
                 nv = nn * (1 - SHORT["normal_round"]) + rr * SHORT["normal_round"]
@@ -825,7 +830,8 @@ vc = me.color_attributes.new(name="Col", type="BYTE_COLOR", domain="CORNER")
 for li, loop in enumerate(me.loops):
     k = COL[loop.vertex_index]
     # the FBX export puts byte colours through a 2.2 gamma (0.45 came out as 0.17): undo it here
-    vc.data[li].color = (k[0] ** (1 / 2.2), k[1] ** (1 / 2.2), (k[2] if len(k) > 2 else 1.0) ** (1 / 2.2), 1.0)
+    vc.data[li].color = (k[0] ** (1 / 2.2), k[1] ** (1 / 2.2), (k[2] if len(k) > 2 else 1.0) ** (1 / 2.2),
+                         k[3] if len(k) > 3 else 1.0)
 me.color_attributes.active_color = vc
 me.color_attributes.render_color_index = 0
 if IS_SHORT:
