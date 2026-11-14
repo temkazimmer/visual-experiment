@@ -11,7 +11,7 @@ follows the clip, so a planted foot stays put through starts and stops (FOOT_IK.
 
 Writes /Game/Characters/Menu/A_Menu_Walk_Start (Walk_F_Start), _Loop (Walk_F_Loop) and
 _Stop (Walk_F_End). The loop and the stop share their first second (the stop starts where
-the loop does). Idempotent.
+the loop does). Idempotent; -clips=A,B bakes only those.
 """
 import os
 import unreal
@@ -35,6 +35,9 @@ SRC = "/Game/FemaleMovement/Animation/"
 CLIPS = {"A_Menu_Walk_Start": SRC + "Walk/AS_F_Unarmed_Walk_F_Start",
          "A_Menu_Walk_Loop": SRC + "Walk/AS_F_Unarmed_Walk_F_Loop",
          "A_Menu_Walk_Stop": SRC + "Walk/AS_F_Unarmed_Walk_F_End"}
+_only = [a.split("=", 1)[1] for a in unreal.SystemLibrary.get_command_line().split() if a.lower().startswith("-clips=")]
+if _only:
+    CLIPS = {k: v for k, v in CLIPS.items() if k in _only[0].split(",")}
 MOVE = ("root", "pelvis")          # the only bones whose translation comes from the pack
 
 
@@ -49,6 +52,40 @@ def pose_at(seq, t):
         out[str(n)] = ((tr.translation.x, tr.translation.y, tr.translation.z), qnorm((r.x, r.y, r.z, r.w)))
     return out
 
+
+def replant_root(frames):
+    """The pack's root runs a little ahead of or behind the planted foot (1.5-2.5 cm a stance
+    on the loop). Re-derive the root from the feet: each frame it moves by the opposite of
+    what her grounded heels and balls move in root space, so a planted sole stays put."""
+    pts = [("foot_l", 0), ("ball_l", 0), ("foot_r", 1), ("ball_r", 1)]
+    n = len(frames)
+    loc = []
+    for fr in frames:
+        RP, RQ = _frame_world(fr, "root")
+        iq = qinv(RQ)
+        loc.append([rot(iq, sub(_frame_world(fr, b)[0], RP)) for b, _ in pts])
+    low = [min(loc[f][i][2] for f in range(n)) for i in range(len(pts))]
+    root = [fr["root"][0] for fr in frames]
+    out = [root[0]]
+    for f in range(1, n):
+        orig = sub(root[f], root[f - 1])
+        num, den = [0.0, 0.0], 0.0
+        for i in range(len(pts)):
+            d = sub(loc[f][i], loc[f - 1][i])
+            h = 0.5 * (loc[f][i][2] + loc[f - 1][i][2]) - low[i]
+            spd = (((d[0] + orig[0]) ** 2 + (d[1] + orig[1]) ** 2) ** 0.5) * FPS
+            w = max(0.0, 1.0 - h / 2.0) * max(0.0, 1.0 - spd / 60.0)
+            num[0] -= w * d[0]
+            num[1] -= w * d[1]
+            den += w
+        step = (num[0] / den, num[1] / den, orig[2]) if den > 0.3 else orig
+        out.append(add(out[-1], step))
+    for fr, p in zip(frames, out):
+        fr["root"] = (p, fr["root"][1], fr["root"][2])
+    return out[-1][1] - out[0][1], root[-1][1] - root[0][1]
+
+
+REPLANT = ("A_Menu_Walk_Loop",)
 
 for name, path in CLIPS.items():
     seq = unreal.load_asset(path)
@@ -70,6 +107,8 @@ for name, path in CLIPS.items():
                     p = tuple(v * scale for v in src[b][0])
             fr[b] = (p, q, s)
         frames.append(fr)
+    if name in REPLANT:
+        print("%s: root re-planted, lap %.1f cm (pack %.1f)" % ((name,) + replant_root(frames)))
     out = write(name, frames, folder=PHOTO_DIR, save=False)
     out.set_editor_property("enable_root_motion", True)
     out.set_editor_property("force_root_lock", False)
