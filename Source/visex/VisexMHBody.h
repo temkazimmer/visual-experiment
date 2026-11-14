@@ -74,6 +74,8 @@ public:
 
 private:
 	void Show();
+	/** Finds the figure's Body and Face, sets them up and starts the follow. */
+	void Bind();
 	void Hide();
 	/** Hides (or gives back) the driver's skin, outfit, cloth and hair. */
 	void HideDriver(bool bHide);
@@ -94,4 +96,5 @@ private:
 	bool bShown = false;
 	bool bFailed = false;
 	int32 LastCorrectives = -1;
+	int32 LastLOD = -2;
 };

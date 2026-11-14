@@ -109,9 +109,9 @@ def shot():
     cap = [a for a in unreal.GameplayStatics.get_all_actors_of_class(world, unreal.SceneCapture2D) if TAG in [str(t) for t in a.tags]][0]
     cap.set_actor_location_and_rotation(at(pos), unreal.MathLibrary.find_look_at_rotation(at(pos), at(target)), False, True)
     if "LOD" in globals():
-        for a in unreal.GameplayStatics.get_all_actors_of_class(world, unreal.Actor):
-            for sync in a.get_components_by_class(unreal.LODSyncComponent):
-                sync.set_editor_property("forced_lod", int(globals()["LOD"]))
+        # by cvar: set_editor_property on the figure's LOD Sync re-runs its construction script,
+        # which replaces the Body component (it then stood in the reference pose)
+        unreal.SystemLibrary.execute_console_command(world, "visex.Body.MetaHuman.LOD %d" % int(globals()["LOD"]))
     c = cap.capture_component2d
     c.set_editor_property("fov_angle", float(fov))
     c.capture_scene()

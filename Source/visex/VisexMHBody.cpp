@@ -1,6 +1,7 @@
 #include "VisexMHBody.h"
 #include "VisexBodyComponent.h"
 #include "Animation/AnimInstanceProxy.h"
+#include "Components/LODSyncComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/SkinnedMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
@@ -19,6 +20,10 @@ static TAutoConsoleVariable<int32> CVarVisexMHBody(
 static TAutoConsoleVariable<int32> CVarVisexMHCorrectives(
 	TEXT("visex.Body.MetaHuman.Correctives"), 1,
 	TEXT("0: the MetaHuman body's post-process AnimBP (RigLogic twist and corrective joints) is switched off, to compare."));
+
+static TAutoConsoleVariable<int32> CVarVisexMHLOD(
+	TEXT("visex.Body.MetaHuman.LOD"), -1,
+	TEXT("Debug: holds the MetaHuman's LOD Sync at this LOD (0-7); -1 gives it back to the view."));
 
 static TAutoConsoleVariable<int32> CVarVisexMHFootPin(
 	TEXT("visex.Body.MetaHuman.FootPin"), 1,
@@ -478,6 +483,23 @@ void UVisexMHBodyComponent::Show()
 	const UVisexBodyComponent* Body = Her->FindComponentByClass<UVisexBodyComponent>();
 	const float Reference = Body ? Body->ReferenceHeight : 177.5f;
 	Figure->SetActorRelativeTransform(FTransform(FQuat::Identity, FVector::ZeroVector, FVector(Reference / BuiltHeight)));
+	Bind();
+	bShown = true;
+	LastCorrectives = -1;
+	UE_LOG(LogVisexMH, Display, TEXT("VisexMH: showing %s on %s (body %s, face %s, scale %.4f)"), *Figure->GetName(), *Her->GetName(),
+		*GetNameSafe(BodyMesh), *GetNameSafe(FaceMesh), Reference / BuiltHeight);
+}
+
+void UVisexMHBodyComponent::Bind()
+{
+	ACharacter* Her = Cast<ACharacter>(GetOwner());
+	USkeletalMeshComponent* Driver = Her ? Her->GetMesh() : nullptr;
+	if (!Driver || !Figure)
+	{
+		return;
+	}
+	const UVisexBodyComponent* Body = Her->FindComponentByClass<UVisexBodyComponent>();
+	const float Reference = Body ? Body->ReferenceHeight : 177.5f;
 	const FLightingChannels& Ch = Driver->LightingChannels;
 	BodyMesh = nullptr;
 	FaceMesh = nullptr;
@@ -507,10 +529,8 @@ void UVisexMHBodyComponent::Show()
 		// after the driver's pose is final; the face copies the body's pose in its own post-process
 		BodyMesh->AddTickPrerequisiteComponent(Driver);
 	}
-	bShown = true;
 	LastCorrectives = -1;
-	UE_LOG(LogVisexMH, Display, TEXT("VisexMH: showing %s on %s (body %s, face %s, scale %.4f)"), *Figure->GetName(), *Her->GetName(),
-		*GetNameSafe(BodyMesh), *GetNameSafe(FaceMesh), Reference / BuiltHeight);
+	LastLOD = -2;
 }
 
 void UVisexMHBodyComponent::Hide()
@@ -554,7 +574,23 @@ void UVisexMHBodyComponent::HideDriver(bool bHide)
 }
 
 void UVisexMHBodyComponent::ApplyDebug()
-{	// the mesh re-creates its anim instance now and then (a rebuilt asset, a re-register): a new one
+{	// a Blueprint actor re-runs its construction when a tool edits one of its components (the editor
+	// does, a script can): the Body is then a new component with no anim class. Take it up again.
+	if (Figure && (!IsValid(BodyMesh) || BodyMesh->GetOwner() != Figure || BodyMesh->GetAnimClass() != UVisexMHBodyAnimInstance::StaticClass()))
+	{
+		UE_LOG(LogVisexMH, Display, TEXT("VisexMH: the figure's components were re-made, binding again"));
+		Bind();
+	}
+	const int32 LOD = CVarVisexMHLOD.GetValueOnGameThread();
+	if (Figure && LOD != LastLOD)
+	{
+		if (ULODSyncComponent* Sync = Figure->FindComponentByClass<ULODSyncComponent>())
+		{
+			Sync->ForcedLOD = LOD;
+		}
+		LastLOD = LOD;
+	}
+	// the mesh re-creates its anim instance now and then (a rebuilt asset, a re-register): a new one
 	// has no driver and would stand her in the reference pose
 	const ACharacter* Her = Cast<ACharacter>(GetOwner());
 	UVisexMHBodyAnimInstance* Inst = BodyMesh ? Cast<UVisexMHBodyAnimInstance>(BodyMesh->GetAnimInstance()) : nullptr;

@@ -515,10 +515,10 @@ void AVisexQATour::BuildGaps()
 	Add(3.f, [this, D] { Feet.SetPhase(TEXT("standup")); D->CloseSettings(); });
 	Add(8.f, [this, D] { Feet.SetPhase(TEXT("start")); D->OnItemChosen(AVisexMenuDirector::ItemStart); });
 	// Start: she stands up, walks off and stops on the open sand
-	Add(7.f, [Hi] { Hi(TEXT("walk1")); });
-	Add(1.5f, [Hi] { Hi(TEXT("walk2")); });
-	Add(1.5f, [Hi] { Hi(TEXT("walk3")); });
-	Add(4.f, [this] { Feet.SetPhase(TEXT("idle")); });
+	Add(3.f, [Hi] { Hi(TEXT("walk1")); });
+	Add(1.f, [Hi] { Hi(TEXT("walk2")); });
+	Add(1.f, [Hi] { Hi(TEXT("walk3")); });
+	Add(9.f, [this] { Feet.SetPhase(TEXT("idle")); });
 	Add(2.f, [this, Hi]
 	{
 		Hi(TEXT("idle"));
