@@ -436,6 +436,7 @@ void AVisexQATour::BuildFeet()
 	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
 	AVisexMenuDirector* D = Director;
 	auto Editor = [this]() -> AVisexBodyEditor* { for (TActorIterator<AVisexBodyEditor> It(GetWorld()); It; ++It) { return *It; } return nullptr; };
+	ApplyCvarArg();   // -visexcvar=name=value, as in the gaps tour (the film with the MetaHuman body on)
 	// one move: the phase starts with Run, four frames of her feet 0.6 s apart, then it settles
 	auto Move = [this, &Add](const FString& Name, float Settle, TFunction<void()> Run, float First = 0.6f, float Gap = 0.6f)
 	{
@@ -466,6 +467,18 @@ void AVisexQATour::BuildFeet()
 	});
 }
 
+void AVisexQATour::HiShot(const FString& What)
+{
+	FString Shots;
+	UGameViewportClient* View = GetWorld() ? GetWorld()->GetGameViewport() : nullptr;
+	if (FParse::Value(FCommandLine::Get(), TEXT("visexshots="), Shots) && View)
+	{
+		const FString File = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("QA") / FString::Printf(TEXT("%s_%s.png"), *Shots, *What.Replace(TEXT(" "), TEXT("_"))));
+		View->ConsoleCommand(FString::Printf(TEXT("HighResShot 3840x2160 filename=\"%s\""), *File));
+		QA_LOG(TEXT("VisexQA: 4K shot %s"), *File);
+	}
+}
+
 void AVisexQATour::ApplyCvarArg()
 {
 	FString Setting, Var, Value;
@@ -493,18 +506,7 @@ void AVisexQATour::BuildGaps()
 	ApplyCvarArg();
 	// -visexshots=<name>: 4K frames of the game view on the way (lean, three of the walk, idle),
 	// for a same-camera pair with a cvar off and on. Each costs a hitch, so only when asked.
-	FString Shots;
-	FParse::Value(FCommandLine::Get(), TEXT("visexshots="), Shots);
-	auto Hi = [this, Shots](const TCHAR* What)
-	{
-		UGameViewportClient* View = GetWorld() ? GetWorld()->GetGameViewport() : nullptr;
-		if (!Shots.IsEmpty() && View)
-		{
-			const FString File = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("QA") / FString::Printf(TEXT("%s_%s.png"), *Shots, What));
-			View->ConsoleCommand(FString::Printf(TEXT("HighResShot 3840x2160 filename=\"%s\""), *File));
-			QA_LOG(TEXT("VisexGaps: 4K shot %s"), *File);
-		}
-	};
+	auto Hi = [this](const TCHAR* What) { HiShot(What); };
 	// the clock holds through her walk in: six seconds into the lean, two seconds measured
 	Add(6.f, [this] { Feet.SetPhase(TEXT("lean")); });
 	// Settings: she climbs onto the drum and perches; eight seconds to settle, three measured
@@ -543,7 +545,7 @@ void AVisexQATour::BuildSpikes()
 	Add(4.f, [Phase] { Phase(TEXT("menu lean")); });
 	Add(3.f, [Phase, D] { Phase(TEXT("settings sit down")); D->OpenSettings(); });
 	Add(8.f, [Phase] { Phase(TEXT("settings sit")); });
-	Add(3.f, [Phase, D] { Phase(TEXT("settings stand up")); D->CloseSettings(); });
+	Add(3.f, [this, Phase, D] { HiShot(TEXT("settings_sit")); Phase(TEXT("settings stand up")); D->CloseSettings(); });
 	Add(8.f, [Phase, D] { Phase(TEXT("photo enter")); D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
 	Add(4.f, [] {});
 	for (int32 I = 0; I < 40; ++I)
@@ -556,7 +558,8 @@ void AVisexQATour::BuildSpikes()
 			if (P->GetMotion() != I) { Next = AfterPoses; return; }   // past the last motion
 			Phase(FString::Printf(TEXT("photo %02d %s"), I, *P->GetMotionName(I)));
 		});
-		Add(4.5f, [] {});
+		// -visexshots=<name>: a 4K frame of each settled pose, to look at what the numbers say
+		Add(4.5f, [this, I] { if (AVisexPhotoMode* P = Photo()) { HiShot(FString::Printf(TEXT("photo_%02d_%s"), I, *P->GetMotionName(I))); } });
 	}
 	AfterPoses = Steps.Num();
 	Add(0.5f, [this, Phase] { Phase(TEXT("photo close")); if (AVisexPhotoMode* P = Photo()) { P->Close(); } });
@@ -572,8 +575,9 @@ void AVisexQATour::BuildSpikes()
 		for (int32 I = 0; I < 2; ++I)
 		{
 			const FVisexSpike& S = Spikes.Total[I];
-			QA_LOG(TEXT("VisexSpikes: TOTAL %s: %s, stretch %.2fx on %s, %d edges over %.0fx, grew %.2f cm at most on %s"), Names[I],
-				!S.bValid ? TEXT("NOT MEASURED") : S.Fails() ? TEXT("FAIL") : TEXT("pass"), S.Ratio, *S.Bone.ToString(), S.Over, FVisexMHSpikes::Limit, S.Grow, *S.GrowBone.ToString());
+			QA_LOG(TEXT("VisexSpikes: TOTAL %s: %s, stretch %.2fx on %s (%d over %.0fx), creases %.2fx on %s (%d over), grew %.2f cm at most on %s"), Names[I],
+				!S.bValid ? TEXT("NOT MEASURED") : S.Fails() ? TEXT("FAIL") : TEXT("pass"), S.Ratio, *S.Bone.ToString(), S.Over, FVisexMHSpikes::Limit,
+				S.Crease, *S.CreaseBone.ToString(), S.CreaseOver, S.Grow, *S.GrowBone.ToString());
 		}
 		QA_LOG(TEXT("VisexQA: done"));
 		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);

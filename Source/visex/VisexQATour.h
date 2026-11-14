@@ -50,6 +50,8 @@ private:
 	 *  lean, Settings sit, each photo motion by name, Start walk, idle, height 145 and 185) with
 	 *  the MetaHuman's skin checked for stretched edges each frame (VisexMHSpikes.h). */
 	void BuildSpikes();
+	/** -visexshots=<name>: a 4K frame of the game view to Saved/QA/<name>_<What>.png (no-op without it). */
+	void HiShot(const FString& What);
 	/** -visexcvar=name=value: sets it before the tour starts. */
 	void ApplyCvarArg();
 	bool bSpikes = false;

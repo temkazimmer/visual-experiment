@@ -25,15 +25,24 @@ what we learned, so **write findings down in the log at the bottom as you go**.
 - Generated MetaHuman assets are large. Check sizes before committing; they go to LFS.
 - Feet rule stands: one ground-IK owner, drift ≤1 cm, sole gap ≤0.5 cm at real speed.
 - Review captures are 4K.
+- **Run the spike check on every pose before any capture goes to Tema.** `UnrealEditor visex.uproject
+  /Game/VisEx/Lvl_Dust -game -visexqa -visexspikes -visexcvar=visex.Body.MetaHuman=1` walks the arrival,
+  the lean, the Settings sit, every photo motion, the Start walk, the idle and height 145/185, and writes
+  a line per pose to `Saved/QA/report.txt` (add `-visexshots=<name>` for a 4K frame of each). Both TOTAL
+  lines must read `pass`, and look at any pose whose crease count jumps. `visex.MH.Spikes` checks the
+  pose on screen. Any re-assembly, new body shape or new pose set: run it again.
+- The project must keep `r.GPUSkin.Support16BitBoneIndex=True` (Config/DefaultEngine.ini). Assembling a
+  MetaHuman without it silently drops skin weights (see the stage 2 log).
 
 ## Stages
 
 1. **Her as a MetaHuman.** Create a MetaHumanCharacter asset, shape the body to her
    default proportions (measure `SKM_AndroidSkin` at default sliders), rig, textures,
    assemble. Done when she stands in `Lvl_Studio` next to the current body in one 4K shot.
-2. **Animation.** Retarget Quinn clips onto the MetaHuman skeleton (bake once): walk,
-   proud idle, menu lean first. Check which C++ layers in `VisexAnimInstance` find their
-   bones by name. Done when walk and lean play in Lvl_Dust with foot numbers measured.
+2. **Animation.** Done differently from the first plan (no rebake, no graph port): today's
+   character stays the driver and the MetaHuman body follows its final pose, behind
+   `visex.Body.MetaHuman` (see the stage 2 log). Done when walk and lean play in Lvl_Dust
+   with foot numbers measured.
 3. **One outfit.** Rebuild Silversuit on the new skin through `Tools/blender_outfit.py`
    (new skin FBX in, new fit data out). Done when it holds through walk, lean and a deep bend.
 4. **Spike review with Tema**: 4K side-by-side stills and a short clip, foot numbers, and

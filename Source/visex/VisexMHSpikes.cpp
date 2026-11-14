@@ -50,6 +50,7 @@ bool FVisexMHSpikes::Measure(USkeletalMeshComponent* Mesh, FVisexSpike& Out)
 	{
 		return false;
 	}
+	int32 GrowVertex = INDEX_NONE, CreaseVertex = INDEX_NONE;
 	for (int32 I = 0; I + 2 < Cache->Index.Num(); I += 3)
 	{
 		for (int32 E = 0; E < 3; ++E)
@@ -63,26 +64,36 @@ bool FVisexMHSpikes::Measure(USkeletalMeshComponent* Mesh, FVisexSpike& Out)
 			const uint32 A = Cache->Index[I + E], B = Cache->Index[I + (E + 1) % 3];
 			const float Now = FVector3f::Dist(P[A], P[B]);
 			const uint32 Third = Cache->Index[I + (E + 2) % 3];
+			// of the edge's two ends, the one that left its place: the further from the third corner
+			const int32 Far = FVector3f::Dist(P[A], P[Third]) > FVector3f::Dist(P[B], P[Third]) ? int32(A) : int32(B);
+			const float Ratio = Now / Ref;
 			if (Now - Ref > Out.Grow)
 			{
 				Out.Grow = Now - Ref;
 				Out.GrowRef = Ref;
-				Out.GrowVertex = FVector3f::Dist(P[A], P[Third]) > FVector3f::Dist(P[B], P[Third]) ? int32(A) : int32(B);
+				GrowVertex = Far;
 			}
-			if (Ref < MinRef)
+			if (Ref >= MinRef)
 			{
-				continue;
+				Out.Over += Ratio > Limit ? 1 : 0;
+				if (Ratio > Out.Ratio)
+				{
+					Out.Ratio = Ratio;
+					Out.Ref = Ref;
+					Out.Now = Now;
+					Out.Vertex = Far;
+				}
 			}
-			const float Ratio = Now / Ref;
-			Out.Over += Ratio > Limit ? 1 : 0;
-			if (Ratio > Out.Ratio)
+			else if (Ref >= MinCrease)
 			{
-				// of the edge's two ends, name the one that left its place: the further from its neighbours
-				Out.Ratio = Ratio;
-				Out.Ref = Ref;
-				Out.Now = Now;
-				const uint32 C = Cache->Index[I + (E + 2) % 3];
-				Out.Vertex = FVector3f::Dist(P[A], P[C]) > FVector3f::Dist(P[B], P[C]) ? int32(A) : int32(B);
+				Out.CreaseOver += Ratio > Limit ? 1 : 0;
+				if (Ratio > Out.Crease)
+				{
+					Out.Crease = Ratio;
+					Out.CreaseRef = Ref;
+					Out.CreaseNow = Now;
+					CreaseVertex = Far;
+				}
 			}
 		}
 	}
@@ -115,7 +126,8 @@ bool FVisexMHSpikes::Measure(USkeletalMeshComponent* Mesh, FVisexSpike& Out)
 		return Name;
 	};
 	Out.Bone = BoneOf(Out.Vertex);
-	Out.GrowBone = BoneOf(Out.GrowVertex);
+	Out.GrowBone = BoneOf(GrowVertex);
+	Out.CreaseBone = BoneOf(CreaseVertex);
 	Out.bValid = true;
 	return true;
 }
@@ -143,8 +155,15 @@ namespace
 		{
 			Into.Grow = S.Grow;
 			Into.GrowRef = S.GrowRef;
-			Into.GrowVertex = S.GrowVertex;
 			Into.GrowBone = S.GrowBone;
+		}
+		Into.CreaseOver = FMath::Max(Into.CreaseOver, S.CreaseOver);
+		if (!Into.bValid || S.Crease > Into.Crease)
+		{
+			Into.Crease = S.Crease;
+			Into.CreaseRef = S.CreaseRef;
+			Into.CreaseNow = S.CreaseNow;
+			Into.CreaseBone = S.CreaseBone;
 		}
 		Into.bValid = true;
 	}
@@ -185,9 +204,9 @@ void FVisexMHSpikes::SetPhase(const FString& Name)
 			Line += FString::Printf(TEXT(" %s not measured;"), Names[I]);
 			continue;
 		}
-		Line += FString::Printf(TEXT(" %s stretch %.2fx (%.2f to %.2f cm, vertex %d on %s), %d edges over %.0fx, grew %.2f cm at most (a %.2f cm edge, vertex %d on %s) %s;"),
-			Names[I], S.Ratio, S.Ref, S.Now, S.Vertex, *S.Bone.ToString(), S.Over, Limit, S.Grow, S.GrowRef, S.GrowVertex, *S.GrowBone.ToString(),
-			S.Fails() ? TEXT("FAIL") : TEXT("pass"));
+		Line += FString::Printf(TEXT(" %s %s: stretch %.2fx (%.2f to %.2f cm on %s), %d over %.0fx; creases %.2fx (%.2f to %.2f cm on %s), %d over; grew %.2f cm at most (a %.2f cm edge on %s);"),
+			Names[I], S.Fails() ? TEXT("FAIL") : TEXT("pass"), S.Ratio, S.Ref, S.Now, *S.Bone.ToString(), S.Over, Limit,
+			S.Crease, S.CreaseRef, S.CreaseNow, *S.CreaseBone.ToString(), S.CreaseOver, S.Grow, S.GrowRef, *S.GrowBone.ToString());
 		Merge(Total[I], S);
 	}
 	if (Frames > 0 && Log)
