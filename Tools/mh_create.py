@@ -1,15 +1,16 @@
 """Her as a MetaHuman (Docs/AGENT_METAHUMAN.md, stage 1). Re-runnable; each step is safe to repeat.
 
-  python3 Tools/ue.py Tools/mh_create.py                      # create + shape
+  python3 Tools/ue.py Tools/mh_create.py                      # create + shape + look
   python3 Tools/ue.py -c "STEPS=['rig']; exec(open(unreal.Paths.project_dir() + 'Tools/mh_create.py').read())"
 
-STEPS (default ['create', 'shape']):
+STEPS (default ['create', 'shape', 'look']):
   create    copy a MetaHuman Creator preset to /Game/Character/MH/MHC_Her (the face is a
             placeholder: PRESET picks it, Tema designs the real one later)
   shape     drive the parametric body toward her measured numbers (TARGETS, in cm)
+  look      take the preset's garment off and set a pale skin tone (SKIN_UV)
   rig       auto-rig through Epic's cloud (needs an Epic sign-in inside the editor)
   textures  download the high-resolution skin textures from Epic's cloud
-  build     assemble game-ready assets under /Game/Character/MH/Built
+  build     assemble game-ready assets under /Game/Character/MH/Built (PIPELINE, QUALITY)
 Every step saves the character asset, so a later step can run in a fresh editor.
 """
 import unreal
@@ -18,7 +19,7 @@ CHAR_DIR = "/Game/Character/MH"
 CHAR_NAME = "MHC_Her"
 CHAR_PATH = CHAR_DIR + "/" + CHAR_NAME
 PRESET = globals().get("PRESET", "Ada")
-STEPS = globals().get("STEPS", ["create", "shape"])
+STEPS = globals().get("STEPS", ["create", "shape", "look"])
 
 # Her default body in the MetaHuman Creator's own body constraints (cm). The Creator's tape
 # is not ours (its Inseam, Hip and arm lengths are measured differently), so these were
@@ -85,9 +86,74 @@ def shape(character):
                                                       c.min_measurement, c.max_measurement))
 
 
+SKIN_UV = globals().get("SKIN_UV", (0.12, 0.35))    # the Creator's skin tone picker: pale, like hers
+
+
+def look(character):
+    """Bare body in her skin tone: the preset's garment hides the torso under it."""
+    inst = character.internal_collection.default_instance
+    inst.set_single_slot_selection("Outfits", unreal.MetaHumanPaletteItemKey())
+    settings = character.skin_settings
+    skin = settings.skin
+    skin.u, skin.v = SKIN_UV
+    settings.skin = skin
+    mh.commit_skin_settings(character, settings)
+    mh.assemble_for_preview(character)
+    log("slots:", [str(d.selection.slot_name) for d in inst.get_slot_selection_data()])
+    log("skin:", character.skin_settings.skin.u, character.skin_settings.skin.v)
+
+
+# Cloud steps. BLOCKING=True (default) holds the editor until Epic's service answers, which
+# is what a batch re-run wants. The first time, run with BLOCKING=False and KEEP=True: if
+# no Epic sign-in is cached the plugin opens a browser login and a blocking call would
+# freeze the editor behind it. Then poll with STEPS=['status'].
+BLOCKING = globals().get("BLOCKING", True)
+KEEP = globals().get("KEEP", False)       # leave the character registered for editing
+
+
+def rig(character):
+    params = unreal.MetaHumanCharacterAutoRiggingRequestParams()
+    params.blocking = BLOCKING
+    params.report_progress = not BLOCKING
+    params.rig_type = unreal.MetaHumanRigType.JOINTS_ONLY   # blendshapes: face work, later
+    mh.request_auto_rigging(character, params)
+
+
+def textures(character):
+    params = unreal.MetaHumanCharacterTextureRequestParams()
+    params.blocking = BLOCKING
+    params.report_progress = not BLOCKING
+    mh.request_texture_sources(character, params)
+
+
+def status(character):
+    log("high-res textures:", character.has_high_resolution_textures)
+    log("can build:", mh.can_build_meta_human(character, True), "(the reason, if not, is in the editor log)")
+
+
+BUILD_DIR = CHAR_DIR + "/Built"
+PIPELINE = globals().get("PIPELINE", "CINEMATIC")     # or OPTIMIZED (+ QUALITY HIGH/MEDIUM/LOW)
+QUALITY = globals().get("QUALITY", "HIGH")
+
+
+def build(character):
+    """Assemble game-ready assets: skeletal meshes, materials, textures and a Blueprint."""
+    if not mh.can_build_meta_human(character, True):
+        raise RuntimeError("not ready to build: needs the rig and the textures steps (see the editor log)")
+    params = unreal.MetaHumanCharacterEditorBuildParameters()
+    params.pipeline_type = getattr(unreal.MetaHumanDefaultPipelineType, PIPELINE)
+    if PIPELINE == "OPTIMIZED":
+        params.pipeline_quality = getattr(unreal.MetaHumanQualityLevel, QUALITY)
+    params.absolute_build_path = BUILD_DIR
+    params.common_folder_path = CHAR_DIR + "/Common"
+    params.enable_wardrobe_item_validation = False
+    mh.build_meta_human(character, params)
+    log("built into", BUILD_DIR, unreal.EditorAssetLibrary.list_assets(BUILD_DIR, True, False)[:6])
+
+
 def run():
     character = create() if "create" in STEPS else unreal.load_asset(CHAR_PATH)
-    if not mh.try_add_object_to_edit(character):
+    if not mh.is_object_added_for_editing(character) and not mh.try_add_object_to_edit(character):
         raise RuntimeError("cannot edit %s: is it open in the MetaHuman editor?" % CHAR_PATH)
     try:
         for step in STEPS:
@@ -95,11 +161,11 @@ def run():
                 continue
             log("step", step)
             globals()[step](character)
-            save(character)
+            if step != "status" and not (KEEP and not BLOCKING):
+                save(character)
     finally:
-        if mh.is_object_added_for_editing(character):
+        if not KEEP and mh.is_object_added_for_editing(character):
             mh.remove_object_to_edit(character)
-    save(character)
     log("done", STEPS)
 
 
