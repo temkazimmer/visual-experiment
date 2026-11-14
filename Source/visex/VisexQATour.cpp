@@ -477,7 +477,7 @@ void AVisexQATour::BuildLayers()
 	// pin 0 is the layers as they were; the layer settings are measured without the pin
 	const TArray<FSetting> Settings = {
 		{TEXT("all"), {}, 0}, {TEXT("pin1"), {}, 1}, {TEXT("pin2"), {}, 2}, {TEXT("nocatwalk"), {1}, 0},
-		{TEXT("pin2loose"), {}, 2, TEXT("visex.Pin.Still=20;visex.Pin.Moving=60")}, {TEXT("pin2nocat"), {1}, 2}};
+		{TEXT("pin2strict"), {}, 2, TEXT("visex.Pin.Still=12;visex.Pin.Moving=40")}, {TEXT("pin2nocat"), {1}, 2}};
 	if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(TEXT("visex.Pin.Log"))) { V->Set(TEXT("1"), ECVF_SetByConsole); }
 	Add(2.f, [this] { Feet.SetPhase(TEXT("standing")); });
 	for (const FSetting& Set : Settings)
@@ -493,7 +493,7 @@ void AVisexQATour::BuildLayers()
 				if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(Vars[I])) { V->Set(I == 0 ? *FString::FromInt(Pin) : Off.Contains(I) ? TEXT("0") : TEXT("1"), ECVF_SetByConsole); }
 			}
 			TArray<FString> Pairs;
-			FString(TEXT("visex.Pin.Still=12;visex.Pin.Moving=40;") + Extra).ParseIntoArray(Pairs, TEXT(";"));
+			FString(TEXT("visex.Pin.Still=20;visex.Pin.Moving=60;") + Extra).ParseIntoArray(Pairs, TEXT(";"));
 			for (const FString& Pair : Pairs)
 			{
 				FString K, Val;

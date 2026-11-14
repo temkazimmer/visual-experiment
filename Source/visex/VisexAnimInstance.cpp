@@ -34,9 +34,9 @@ static TAutoConsoleVariable<float> CVarCatwalkSprint(TEXT("visex.Catwalk.Sprint"
 // Moving hold, from the Female Everyday idles (learning log 2026-11-10). Live: `visex.Hold.Breath 2`.
 static TAutoConsoleVariable<float> CVarPlant(TEXT("visex.Plant"), 1.f, TEXT("Plant pass, last of all: planted soles onto the visible sand. 0 off, 1 on"));
 static TAutoConsoleVariable<float> CVarPlantClear(TEXT("visex.Plant.Clear"), 0.2f, TEXT("Centimetres the plant pass leaves between her lowest sole vertex and the sand"));
-static TAutoConsoleVariable<float> CVarPin(TEXT("visex.Pin"), 1.f, TEXT("Pin pass: 0 off; 1 a foot the graph holds still stays put under the layers (catwalk, reshape, limits); 2 also a planted heel or ball keeps its spot in the world"));
-static TAutoConsoleVariable<float> CVarPinStill(TEXT("visex.Pin.Still"), 12.f, TEXT("Pin: the graph's heel or ball slower than this (cm/s) is planted"));
-static TAutoConsoleVariable<float> CVarPinMoving(TEXT("visex.Pin.Moving"), 40.f, TEXT("Pin: both faster than this (cm/s) is a swing"));
+static TAutoConsoleVariable<float> CVarPin(TEXT("visex.Pin"), 2.f, TEXT("Pin pass: 0 off; 1 a foot the graph holds still stays put under the layers (catwalk, reshape, limits); 2 also a planted heel or ball keeps its spot in the world"));
+static TAutoConsoleVariable<float> CVarPinStill(TEXT("visex.Pin.Still"), 20.f, TEXT("Pin: the graph's heel or ball slower than this (cm/s) is planted"));
+static TAutoConsoleVariable<float> CVarPinMoving(TEXT("visex.Pin.Moving"), 60.f, TEXT("Pin: both faster than this (cm/s) is a swing"));
 static TAutoConsoleVariable<int32> CVarPinLog(TEXT("visex.Pin.Log"), 0, TEXT("1 logs each stance: how far the graph's and the final heel or ball slid"));
 static TAutoConsoleVariable<float> CVarPinMax(TEXT("visex.Pin.Max"), 6.f, TEXT("Pin 2: the most (cm) a planted heel or ball is held off where the graph puts it"));
 static TAutoConsoleVariable<int32> CVarPlantLog(TEXT("visex.Plant.Log"), 0, TEXT("1 logs the plant pass about twice a second"));
