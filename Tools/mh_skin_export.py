@@ -10,8 +10,8 @@ import os
 import unreal
 
 MESH = globals().get("MESH", "/Game/Character/MH/Built/MHC_Her/Body/SKM_MHC_Her_BodyMesh")
-OUT = os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir()),
-                   "SourceArt", "Character", "MH", "mh_skin.fbx")
+OUT = globals().get("OUT") or os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir()),
+                   "SourceArt", "Character", "MH", "mh_skin.fbx")   # the head: MESH=<FaceMesh>, OUT=.../mh_head.fbx
 
 mesh = unreal.load_asset(MESH)
 assert mesh, "no mesh at " + MESH
