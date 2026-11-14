@@ -5,6 +5,8 @@
 #include "VisexBodyEditor.h"
 #include "VisexBodyComponent.h"
 #include "VisexBodyProfile.h"
+#include "VisexAnimInstance.h"
+#include "Engine/Engine.h"
 #include "VisexShellComponent.h"
 #include "EngineUtils.h"
 #include "Engine/SkeletalMesh.h"
@@ -466,6 +468,70 @@ void AVisexQATour::BuildFeet()
 	});
 }
 
+void AVisexQATour::BuildLayers()
+{
+	// one run, every layer's share: the body walk out and back once per setting, at real speed
+	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
+	AVisexMenuDirector* D = Director;
+	auto Editor = [this]() -> AVisexBodyEditor* { for (TActorIterator<AVisexBodyEditor> It(GetWorld()); It; ++It) { return *It; } return nullptr; };
+	static const TCHAR* Vars[] = {TEXT("visex.Pin"), TEXT("visex.Catwalk"), TEXT("visex.Plant"), TEXT("visex.Toes"), TEXT("visex.Limits"), TEXT("visex.Reshape"), TEXT("visex.SteadyHead"), TEXT("visex.Hold")};
+	struct FSetting { const TCHAR* Name; TArray<int32> Off; int32 Pin; const TCHAR* Extra = TEXT(""); };
+	// pin 0 is the layers as they were; the layer settings are measured without the pin
+	const TArray<FSetting> Settings = {
+		{TEXT("all"), {}, 0}, {TEXT("pin1"), {}, 1}, {TEXT("pin2"), {}, 2}, {TEXT("nocatwalk"), {1}, 0},
+		{TEXT("pin2strict"), {}, 2, TEXT("visex.Pin.Still=12;visex.Pin.Moving=40")}, {TEXT("pin2nocat"), {1}, 2}};
+	if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(TEXT("visex.Pin.Log"))) { V->Set(TEXT("1"), ECVF_SetByConsole); }
+	Add(2.f, [this] { Feet.SetPhase(TEXT("standing")); });
+	for (const FSetting& Set : Settings)
+	{
+		const FString Name = Set.Name;
+		const TArray<int32> Off = Set.Off;
+		const int32 Pin = Set.Pin;
+		const FString Extra = Set.Extra;
+		auto Apply = [Off, Pin, Name, Extra]
+		{
+			for (int32 I = 0; I < UE_ARRAY_COUNT(Vars); ++I)
+			{
+				if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(Vars[I])) { V->Set(I == 0 ? *FString::FromInt(Pin) : Off.Contains(I) ? TEXT("0") : TEXT("1"), ECVF_SetByConsole); }
+			}
+			TArray<FString> Pairs;
+			FString(TEXT("visex.Pin.Still=20;visex.Pin.Moving=60;") + Extra).ParseIntoArray(Pairs, TEXT(";"));
+			for (const FString& Pair : Pairs)
+			{
+				FString K, Val;
+				if (Pair.Split(TEXT("="), &K, &Val)) { if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(*K)) { V->Set(*Val, ECVF_SetByConsole); } }
+			}
+			QA_LOG(TEXT("VisexFeet: setting %s"), *Name);
+			UE_LOG(LogTemp, Display, TEXT("VisexPin: setting %s"), *Name);
+		};
+		Add(0.5f, [this, Apply, Name, D] { Apply(); Feet.SetPhase(TEXT("out ") + Name); if (Name == TEXT("all") || Name == TEXT("pin2")) { Feet.ArmStance(TEXT("out_") + Name); } D->OpenBody(); });
+		Add(4.5f, [] {});
+		Add(0.5f, [this, Name, Editor] { Feet.SetPhase(TEXT("back ") + Name); if (Name == TEXT("all") || Name == TEXT("pin2")) { Feet.ArmStance(TEXT("back_") + Name); } if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
+		Add(5.f, [] {});
+	}
+	// the other moves with the pin, then the photo return once more without it
+	auto Pin = [](const TCHAR* V) { if (IConsoleVariable* C = IConsoleManager::Get().FindConsoleVariable(TEXT("visex.Pin"))) { C->Set(V, ECVF_SetByConsole); } };
+	Add(0.5f, [this, D, Pin] { Pin(TEXT("2")); Feet.SetPhase(TEXT("wardrobe out pin2")); D->OpenWardrobe(); });
+	Add(4.5f, [] {});
+	Add(0.5f, [this, Editor] { Feet.SetPhase(TEXT("wardrobe back pin2")); if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
+	Add(5.f, [] {});
+	for (const TCHAR* P : {TEXT("2"), TEXT("0")})
+	{
+		const FString Tag = FString(TEXT(" pin")) + P;
+		Add(0.5f, [this, D, Pin, P, Tag] { Pin(P); if (const ACharacter* C = Her()) { QA_LOG(TEXT("VisexFeet: before photo%s: she stands at %s yaw %.1f"), *Tag, *C->GetActorLocation().ToCompactString(), C->GetActorRotation().Yaw); } Feet.SetPhase(TEXT("photo enter") + Tag); D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
+		Add(5.f, [] {});
+		Add(0.5f, [this, Tag] { Feet.SetPhase(TEXT("photo back") + Tag); if (AVisexPhotoMode* Ph = Photo()) { Ph->Close(); } });
+		Add(6.f, [this, Tag] { if (const ACharacter* C = Her()) { QA_LOG(TEXT("VisexFeet: photo back%s: she stands at %s yaw %.1f"), *Tag, *C->GetActorLocation().ToCompactString(), C->GetActorRotation().Yaw); } });
+	}
+	Add(0.5f, [this]
+	{
+		Feet.SetPhase(TEXT("done"));
+		QA_LOG(TEXT("VisexFeet: %d frames in %.1f s, %.1f fps"), FeetFrames, FPlatformTime::Seconds() - FeetT0, FeetFrames / FMath::Max(0.1, FPlatformTime::Seconds() - FeetT0));
+		QA_LOG(TEXT("VisexQA: done"));
+		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
+	});
+}
+
 void AVisexQATour::BuildGaps()
 {
 	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
@@ -503,6 +569,138 @@ void AVisexQATour::BuildGaps()
 	});
 }
 
+static FString GPinPhase = TEXT("held");
+
+void AVisexQATour::PinPhase(const FString& Name)
+{
+	float S[4];
+	VisexPinStats(S, true);
+	QA_LOG(TEXT("VisexPin: STATS %s: hold max %.2f cm, one-frame change max %.2f cm, straightest leg %.3f, clamped %d frames"), *GPinPhase, S[0], S[1], S[2], int32(S[3]));
+	GPinPhase = Name;
+	Feet.SetPhase(Name);
+}
+
+void AVisexQATour::BuildPin()
+{
+	// the pin where the layers tour never took it: each move once per mode, pin 2 as it is, pin 2
+	// gated (off in the air and turning on the spot, eased release), and no pin
+	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
+	AVisexMenuDirector* D = Director;
+	auto Editor = [this]() -> AVisexBodyEditor* { for (TActorIterator<AVisexBodyEditor> It(GetWorld()); It; ++It) { return *It; } return nullptr; };
+	auto Mode = [](const FString& M)
+	{
+		auto Set = [](const TCHAR* N, const TCHAR* V) { if (IConsoleVariable* C = IConsoleManager::Get().FindConsoleVariable(N)) { C->Set(V, ECVF_SetByConsole); } };
+		Set(TEXT("visex.Pin"), M == TEXT("pin0") ? TEXT("0") : TEXT("2"));
+		Set(TEXT("visex.Pin.Gate"), M == TEXT("gate") ? TEXT("1") : TEXT("0"));
+	};
+	auto Shot4K = [this](const FString& Name)
+	{
+		const FString File = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("QA") / FString::Printf(TEXT("pin_%s.png"), *Name));
+		// through the player's console, which reaches the viewport (GEngine->Exec wrote nothing)
+		if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0)) { PC->ConsoleCommand(FString::Printf(TEXT("HighResShot 3840x2160 filename=\"%s\""), *File)); }
+		QA_LOG(TEXT("VisexQA: shot %s"), *File);
+	};
+	FString Only;
+	FParse::Value(FCommandLine::Get(), TEXT("visexpinmodes="), Only);
+	TArray<FString> Modes = {TEXT("pin2"), TEXT("gate"), TEXT("pin0")};
+	if (!Only.IsEmpty()) { Only.ParseIntoArray(Modes, TEXT(",")); }
+	const FString Show = Modes.Contains(TEXT("gate")) ? TEXT("gate") : Modes[0];   // the mode the sheet shows
+	Add(2.f, [] {});
+	for (const FString& M : Modes)
+	{
+		Add(0.5f, [this, Mode, M] { Mode(M); PinPhase(TEXT("lean ") + M); });
+		Add(9.f, [] {});
+	}
+	// Settings: the jump onto the drum, the sit with a leg hanging, the way back down
+	for (const FString& M : Modes)
+	{
+		Add(0.5f, [this, D, Mode, M] { Mode(M); PinPhase(TEXT("sitdown ") + M); D->OpenSettings(); });
+		Add(3.5f, [this, M] { PinPhase(TEXT("sit ") + M); });
+		Add(3.f, [this, M, Show, Shot4K] { if (M == Show) { Shot4K(TEXT("sit")); } });
+		Add(2.f, [this, D, M] { PinPhase(TEXT("standup ") + M); D->CloseSettings(); });
+		Add(7.f, [] {});
+	}
+	// the Body page: walk out, a fast turn and a slow one, stillness, sliders and rows, walk back
+	for (const FString& M : Modes)
+	{
+		Add(0.5f, [this, D, Mode, M] { Mode(M); PinPhase(TEXT("body out ") + M); D->OpenBody(); });
+		Add(5.f, [this, Editor, M] { PinPhase(TEXT("body turn fast ") + M); if (AVisexBodyEditor* E = Editor()) { E->TurnSpeed = 150.f; } });
+		Add(1.2f, [this, M, Show, Shot4K] { if (M == Show) { Shot4K(TEXT("body_turn")); } });
+		Add(1.2f, [this, Editor, M] { PinPhase(TEXT("body turn slow ") + M); if (AVisexBodyEditor* E = Editor()) { E->TurnSpeed = -40.f; } });
+		Add(4.f, [this, Editor, M] { PinPhase(TEXT("body still ") + M); if (AVisexBodyEditor* E = Editor()) { E->TurnSpeed = 0.f; } });
+		Add(3.f, [this, Editor, M]
+		{
+			PinPhase(TEXT("body sliders ") + M);
+			if (AVisexBodyEditor* E = Editor()) { E->SelectRow(1); E->Adjust(8.f); }
+		});
+		Add(1.5f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Adjust(-8.f); E->SelectRow(4); E->Adjust(8.f); } });
+		Add(1.5f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Adjust(-8.f); E->SelectRow(8); E->Adjust(6.f); } });
+		Add(2.f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Adjust(-6.f); E->SelectRow(0); } });
+		Add(2.f, [this, Editor, M] { PinPhase(TEXT("body back ") + M); if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
+		Add(7.f, [] {});
+	}
+	// photo mode: the slow walk in place, the run, then poses by name (a raised or sliding foot)
+	auto Motion = [this](const FString& Name)
+	{
+		AVisexPhotoMode* P = Photo();
+		if (!P || !P->IsOpen()) { QA_LOG(TEXT("VisexPin: photo not open for %s"), *Name); return; }
+		for (int32 I = 0; I < 60 && !P->GetMotionName(I).IsEmpty(); ++I)
+		{
+			if (P->GetMotionName(I) == Name) { P->SetMotion(I); return; }
+		}
+		QA_LOG(TEXT("VisexPin: no motion %s"), *Name);
+	};
+	for (const FString& M : Modes)
+	{
+		Add(0.5f, [this, D, Mode, M] { Mode(M); PinPhase(TEXT("photo walk ") + M); D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
+		Add(7.f, [this, Motion, M] { PinPhase(TEXT("photo run ") + M); Motion(TEXT("Run")); });
+		for (const TCHAR* Pose : {TEXT("Ledge"), TEXT("Crown"), TEXT("Mermaid"), TEXT("LegLift"), TEXT("FeetUp")})
+		{
+			const FString Name = Pose;
+			Add(3.f, [this, Motion, M, Name] { PinPhase(TEXT("photo ") + Name + TEXT(" ") + M); Motion(Name); });
+			Add(4.5f, [this, M, Name, Show, Shot4K] { if (M == Show && Name == TEXT("Mermaid")) { Shot4K(TEXT("photo_mermaid")); } });
+		}
+		Add(1.f, [this, M] { PinPhase(TEXT("photo back ") + M); if (AVisexPhotoMode* P = Photo()) { P->Close(); } });
+		Add(8.f, [] {});
+	}
+	// Start, then third-person play on a scripted stick: walk, jog, run, stop, reversals, a zigzag,
+	// a turn on the spot, a jump in place and one out of a run
+	Add(0.5f, [this, D] { PinPhase(TEXT("start")); D->OnItemChosen(AVisexMenuDirector::ItemStart); });
+	Add(14.f, [] {});
+	auto Go = [this](float X, float Y) { Drive = FVector2D(X, Y); };
+	for (const FString& M : Modes)
+	{
+		Add(0.5f, [this, Mode, M, Go] { Mode(M); PinPhase(TEXT("tp walk ") + M); Go(0.3f, 0.f); });
+		Add(4.f, [this, M, Go] { PinPhase(TEXT("tp jog ") + M); Go(-0.6f, 0.f); });
+		Add(3.f, [this, M, Go] { PinPhase(TEXT("tp run ") + M); Go(1.f, 0.f); });
+		Add(3.f, [this, M, Go] { PinPhase(TEXT("tp stop ") + M); Go(0.f, 0.f); });
+		Add(2.5f, [this, M, Go] { PinPhase(TEXT("tp reverse ") + M); Go(1.f, 0.f); });
+		Add(1.5f, [Go] { Go(-1.f, 0.f); });
+		Add(1.5f, [Go] { Go(0.f, 0.f); });
+		Add(1.5f, [this, M, Go] { PinPhase(TEXT("tp zigzag ") + M); Go(0.5f, 0.5f); });
+		for (int32 K = 0; K < 4; ++K) { Add(0.6f, [Go, K] { Go(0.5f, K & 1 ? 0.5f : -0.5f); }); }
+		Add(0.6f, [Go] { Go(0.f, 0.f); });
+		Add(2.f, [this, M] { PinPhase(TEXT("tp spin ") + M); Spin = 90.f; });
+		Add(2.f, [this] { Spin = -200.f; });
+		Add(1.f, [this] { Spin = 0.f; });
+		Add(1.5f, [this, M] { PinPhase(TEXT("tp jump ") + M); if (ACharacter* C = Her()) { C->Jump(); } });
+		Add(0.3f, [this] { if (ACharacter* C = Her()) { C->StopJumping(); } });
+		Add(1.7f, [this, M, Go] { PinPhase(TEXT("tp runjump ") + M); Go(-1.f, 0.f); });
+		Add(1.5f, [this] { if (ACharacter* C = Her()) { C->Jump(); } });
+		Add(0.3f, [this] { if (ACharacter* C = Her()) { C->StopJumping(); } });
+		Add(0.5f, [this, M, Show, Shot4K] { if (M == Show) { Shot4K(TEXT("landing")); } });
+		Add(0.7f, [Go] { Go(0.f, 0.f); });
+		Add(2.5f, [] {});
+	}
+	Add(0.5f, [this]
+	{
+		PinPhase(TEXT("done"));
+		QA_LOG(TEXT("VisexFeet: %d frames in %.1f s, %.1f fps"), FeetFrames, FPlatformTime::Seconds() - FeetT0, FeetFrames / FMath::Max(0.1, FPlatformTime::Seconds() - FeetT0));
+		QA_LOG(TEXT("VisexQA: done"));
+		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
+	});
+}
+
 void AVisexQATour::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
@@ -511,10 +709,12 @@ void AVisexQATour::Tick(float DeltaSeconds)
 	{
 		const bool bGaps = FParse::Param(FCommandLine::Get(), TEXT("visexgaps"));
 		bFilm = FParse::Param(FCommandLine::Get(), TEXT("visexfilm"));
-		bFeet = bGaps || bFilm || FParse::Param(FCommandLine::Get(), TEXT("visexfeet"));
+		const bool bLayers = FParse::Param(FCommandLine::Get(), TEXT("visexlayers"));
+		const bool bPin = FParse::Param(FCommandLine::Get(), TEXT("visexpin"));
+		bFeet = bGaps || bFilm || bLayers || bPin || FParse::Param(FCommandLine::Get(), TEXT("visexfeet"));
 		FeetClock = 2e5f;   // until she first moves
 		Feet.Log = [](const FString& Line) { QA_LOG(TEXT("%s"), *Line); };
-		bGaps ? BuildGaps() : bFeet ? BuildFeet() : Build();
+		bPin ? BuildPin() : bGaps ? BuildGaps() : bLayers ? BuildLayers() : bFeet ? BuildFeet() : Build();
 		bBuilt = true;
 	}
 	if (bFeet)
@@ -552,6 +752,12 @@ void AVisexQATour::Tick(float DeltaSeconds)
 			const FRotator Yaw(0.f, UGameplayStatics::GetPlayerCameraManager(this, 0)->GetCameraRotation().Yaw, 0.f);
 			C->AddMovementInput(Yaw.Vector(), 1.f);
 		}
+	}
+	if (ACharacter* C = Her(); C && (!Drive.IsZero() || Spin != 0.f))
+	{
+		const FRotator Yaw(0.f, UGameplayStatics::GetPlayerCameraManager(this, 0)->GetCameraRotation().Yaw, 0.f);
+		if (!Drive.IsZero()) { C->AddMovementInput(Yaw.RotateVector(FVector(Drive.X, Drive.Y, 0.f)), 1.f); }
+		else { C->SetActorRotation(C->GetActorRotation() + FRotator(0.f, Spin * DeltaSeconds, 0.f)); }
 	}
 	// the tour starts once the launch cover has faded into the menu (VisexLaunchCover.h)
 	if (!bCoverLogged)

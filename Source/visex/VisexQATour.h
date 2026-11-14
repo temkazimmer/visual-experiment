@@ -31,6 +31,9 @@ private:
 	float Clock = 0.f;
 	bool bCoverLogged = false;
 	float WalkFor = 0.f;
+	// -visexpin's third-person drive: camera-relative stick (x forward, y right) and a turn on the spot (deg/s)
+	FVector2D Drive = FVector2D::ZeroVector;
+	float Spin = 0.f;
 	int32 ShotCount = 0;
 	int32 AfterPoses = INDEX_NONE;
 	bool bBuilt = false;
@@ -42,9 +45,12 @@ private:
 	/** -visexfeet: only the menu's walks (arrival, Body, Wardrobe, photo), her planted steps
 	 *  measured and her feet shot in close-up strips (VisexFootMeter.h). */
 	void BuildFeet();
+	void BuildLayers();   // -visexlayers: the menu walks once per layer switched off, then pinned
 	/** -visexgaps [-visexcvar=name=value]: her soles' gap to the sand while she stands still, at
 	 *  the menu lean and in the idle after Start, with one cvar set against the default. */
 	void BuildGaps();
+	void BuildPin();   // -visexpin: the pin under the sit, third-person play, photo poses and the Body turn, pin 2 / gated / 0
+	void PinPhase(const FString& Name);
 	bool bFeet = false;
 	bool bFilm = false;          // -visexfilm: every frame to Saved/QA/film
 	int32 FeetFrames = 0;

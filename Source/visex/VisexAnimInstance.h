@@ -22,6 +22,7 @@ struct FVisexAnimProxy : public FAnimInstanceProxy
 
 	virtual void PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeconds) override;
 	virtual bool Evaluate_WithRoot(FPoseContext& Output, FAnimNode_Base* InRootNode) override;
+	virtual void PreEvaluateAnimation(UAnimInstance* InAnimInstance) override;   // her transform after this frame's move
 
 private:
 	void Reshape(FCompactPose& Pose) const;
@@ -33,6 +34,8 @@ private:
 	/** Last of all: planted soles onto the visible sand (visex.Plant). */
 	void Plant(FCompactPose& Pose);
 	void PlantGround(UAnimInstance* Instance);   // game thread: the traces
+	void PinFrom(const FCompactPose& Pose);       // the graph's feet, before the layers
+	void Pin(FCompactPose& Pose);                 // planted feet back under the layers' moves
 
 public:
 	virtual void PostUpdate(UAnimInstance* InAnimInstance) const override;
@@ -104,7 +107,37 @@ private:
 	// what the plant pass did this frame, for the footprints' mounds (copied to the instance in PostUpdate)
 	float OutGap[2] = {1e4f, 1e4f};   // cm between the planted sole and the sand, component space
 	float OutPlant[2] = {0.f, 0.f};   // how planted each foot is, 0..1
+
+	// The pin: the layers' change to each foot (where they put it vs where the graph had it),
+	// frozen in world space while the graph's foot stands still, so they can't slide it
+	float PinOn = 1.f;                // the cvar
+	bool bPinFrom = false, bPinLast = false;
+	FTransform PinGraph[2];           // the graph's feet, component space, this frame
+	FVector PinBall[2];               // the graph's balls, component space, this frame
+	FVector PinLastHeel[2], PinLastBall[2];   // last frame's, world
+	FVector PinDelta[2] = {FVector::ZeroVector, FVector::ZeroVector};   // the layers' move, world
+	FQuat PinTurn[2] = {FQuat::Identity, FQuat::Identity};              // the layers' turn, world
+	float PinW[2] = {0.f, 0.f};       // how still the graph's foot stands, 0..1
+	FTransform EvalX;                 // the mesh's world transform as it is evaluated (after the move)
+	float PinSpeed[2][2] = {{0.f, 0.f}, {0.f, 0.f}};   // the graph's heel and ball, world cm/s
+	FVector PinAnchor[2][2];          // pin 2: where each planted heel and ball stays, world
+	float PinRefZ[2] = {-1.f, -1.f};  // heel (ankle) and ball over the sole, ref pose
+	// pin log: per stance, how far the graph's and the final contact point slid
+	float PinStance[2] = {0.f, 0.f}, PinGraphDrift[2] = {0.f, 0.f}, PinOutDrift[2] = {0.f, 0.f};
+	FVector PinGraphStart[2][2], PinOutStart[2][2];   // per foot: heel, ball
+	bool bPinDown[2][2] = {{false, false}, {false, false}};
+	// the gate (visex.Pin.Gate): off in the air and while she turns on the spot; the hold lets go gently
+	bool bPinAir = false;
+	float PinYawRate = 0.f, PinCapSpeed = 0.f, PinLastYaw = 0.f, PinGate = 1.f;
+	bool bPinYaw = false;
+	FVector PinApplied[2] = {FVector::ZeroVector, FVector::ZeroVector};   // world cm, after the release slew
+	float PinHeld[2] = {0.f, 0.f};    // seconds each foot has stood held
 };
+
+/** The pin's numbers since the last reset, for the tours: [0] largest hold (cm), [1] largest
+ *  one-frame change of the hold (cm), [2] straightest leg the hold asked for (reach over leg
+ *  length, only where it straightened past the layers), [3] frames clamped at visex.Pin.Max. */
+VISEX_API void VisexPinStats(float Out[4], bool bReset);
 
 UCLASS(Transient, Blueprintable)
 class VISEX_API UVisexAnimInstance : public UAnimInstance

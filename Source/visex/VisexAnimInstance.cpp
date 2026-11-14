@@ -9,6 +9,7 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "HAL/IConsoleManager.h"
+#include "Misc/ScopeLock.h"
 
 // Catwalk tuning. Live in the console (also during Play): e.g. `visex.Catwalk.HipRoll 9`.
 // off: it lifted the lean (5.5/6.6 cm sole gap); the mesh drops by LegDelta instead (VisexBodyComponent)
@@ -34,6 +35,20 @@ static TAutoConsoleVariable<float> CVarCatwalkSprint(TEXT("visex.Catwalk.Sprint"
 // Moving hold, from the Female Everyday idles (learning log 2026-11-10). Live: `visex.Hold.Breath 2`.
 static TAutoConsoleVariable<float> CVarPlant(TEXT("visex.Plant"), 1.f, TEXT("Plant pass, last of all: planted soles onto the visible sand. 0 off, 1 on"));
 static TAutoConsoleVariable<float> CVarPlantClear(TEXT("visex.Plant.Clear"), 0.2f, TEXT("Centimetres the plant pass leaves between her lowest sole vertex and the sand"));
+static TAutoConsoleVariable<float> CVarPin(TEXT("visex.Pin"), 2.f, TEXT("Pin pass: 0 off; 1 a foot the graph holds still stays put under the layers (catwalk, reshape, limits); 2 also a planted heel or ball keeps its spot in the world"));
+static TAutoConsoleVariable<float> CVarPinStill(TEXT("visex.Pin.Still"), 20.f, TEXT("Pin: the graph's heel or ball slower than this (cm/s) is planted"));
+static TAutoConsoleVariable<float> CVarPinMoving(TEXT("visex.Pin.Moving"), 60.f, TEXT("Pin: both faster than this (cm/s) is a swing"));
+static TAutoConsoleVariable<int32> CVarPinLog(TEXT("visex.Pin.Log"), 0, TEXT("1 logs each stance: how far the graph's and the final heel or ball slid"));
+static TAutoConsoleVariable<float> CVarPinMax(TEXT("visex.Pin.Max"), 6.f, TEXT("Pin 2: the most (cm) a planted heel or ball is held off where the graph puts it"));
+static TAutoConsoleVariable<int32> CVarPinGate(TEXT("visex.Pin.Gate"), 1, TEXT("1: the pin lets go in the air and while she turns on the spot, drags its anchor at visex.Pin.Max, and releases at visex.Pin.Release cm/s"));
+static TAutoConsoleVariable<float> CVarPinBleed(TEXT("visex.Pin.Bleed"), 3.f, TEXT("Pin gate: once a foot has stood over a second, its hold past 2 cm eases back to the graph at this many cm/s (a turn, a stand-up or a pose flow leaves none behind)"));
+static TAutoConsoleVariable<float> CVarPinRelease(TEXT("visex.Pin.Release"), 40.f, TEXT("Pin gate: the most (cm/s) the hold may change by, so a foot's release eases"));
+namespace { FCriticalSection GPinStatLock; float GPinStat[4] = {0.f, 0.f, 0.f, 0.f}; }
+void VisexPinStats(float Out[4], bool bReset)
+{
+	FScopeLock L(&GPinStatLock);
+	for (int32 I = 0; I < 4; ++I) { Out[I] = GPinStat[I]; if (bReset) { GPinStat[I] = 0.f; } }
+}
 static TAutoConsoleVariable<int32> CVarPlantLog(TEXT("visex.Plant.Log"), 0, TEXT("1 logs the plant pass about twice a second"));
 static TAutoConsoleVariable<int32> CVarReshape(TEXT("visex.Reshape"), 1, TEXT("Body reshape layer (bone lengths, KeepFeet): 0 off, for measuring"));
 static TAutoConsoleVariable<int32> CVarSteadyHead(TEXT("visex.SteadyHead"), 1, TEXT("SteadyHead layer: 0 off, for measuring"));
@@ -130,6 +145,19 @@ void FVisexAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSecond
 	HoldTune.Head = CVarHoldHead.GetValueOnGameThread();
 	HoldTune.Pin = CVarHoldPin.GetValueOnGameThread();
 	HoldTune.LyingBreath = CVarHoldLyingBreath.GetValueOnGameThread();
+	PinOn = FMath::Clamp(CVarPin.GetValueOnGameThread(), 0.f, 2.f);
+	bPinAir = false;
+	PinCapSpeed = 0.f;
+	if (const ACharacter* Character = Cast<ACharacter>(InAnimInstance->TryGetPawnOwner()))
+	{
+		const UCharacterMovementComponent* Move = Character->GetCharacterMovement();
+		bPinAir = Move && Move->IsFalling();
+		PinCapSpeed = float(Character->GetVelocity().Size2D());
+		const float Yaw = float(Character->GetActorRotation().Yaw);
+		PinYawRate = bPinYaw && DeltaSeconds > 1e-4f ? FMath::Abs(FMath::FindDeltaAngleDegrees(PinLastYaw, Yaw)) / DeltaSeconds : 0.f;
+		PinLastYaw = Yaw;
+		bPinYaw = true;
+	}
 	PlantGround(InAnimInstance);
 }
 
@@ -138,6 +166,7 @@ bool FVisexAnimProxy::Evaluate_WithRoot(FPoseContext& Output, FAnimNode_Base* In
 	EvaluateAnimationNode_WithRoot(Output, InRootNode);
 	if (InRootNode == GetRootNode())
 	{
+		PinFrom(Output.Pose);
 		Catwalk(Output.Pose);
 		Alive(Output.Pose);
 		Toes(Output.Pose);
@@ -162,6 +191,7 @@ bool FVisexAnimProxy::Evaluate_WithRoot(FPoseContext& Output, FAnimNode_Base* In
 		Limits(Output.Pose);  // nothing bends past human range of motion
 		const float Z2 = bTrace ? FootZ() : 0.f;
 		if (CVarSteadyHead.GetValueOnAnyThread() != 0) { SteadyHead(Output.Pose); } // after the limits, which clamp the spine but not the neck's counter-turn
+		Pin(Output.Pose);     // the planted feet back where the graph keeps them
 		Plant(Output.Pose);   // last: the soles onto the sand
 		static int32 Every = 0;
 		if (bTrace && (Every++ % 60) == 0)
@@ -1168,5 +1198,189 @@ void FVisexAnimProxy::MeasureSole(const USkeletalMeshComponent* Mesh)
 			if (V.Z < Low.Z && V.Z < H.Z && FVector::Dist2D(V, Mid) < Near) { Low = V; }
 		}
 		if (Low.Z < 1e8) { bSole[F] = true; SoleUnder[F] = float(Low.Z - H.Z); SoleAt[F] = Low; }
+	}
+}
+
+
+/**
+ * The pin. The graph's feet come in planted (the clip, or Foot Placement's lock); the layers
+ * after it (catwalk hips and leg line, reshape, limits) move the legs, and with them a foot that
+ * should stay put. Pin 1: the layers' change to each foot (offset and turn, world) is frozen
+ * while the graph's foot stands still, so the leg reaches for the graph's foot plus that change.
+ * Pin 2 also holds the contact point itself: a planted heel or ball keeps its world spot even
+ * when the graph slides it (root motion against the capsule, the director's curves), the foot
+ * lock ALS uses, by the plant pass's ground. In the swing it all follows the layers again.
+ */
+void FVisexAnimProxy::PreEvaluateAnimation(UAnimInstance* InAnimInstance)
+{
+	FAnimInstanceProxy::PreEvaluateAnimation(InAnimInstance);
+	if (const USkeletalMeshComponent* Mesh = InAnimInstance ? InAnimInstance->GetSkelMeshComponent() : nullptr) { EvalX = Mesh->GetComponentTransform(); }
+}
+
+void FVisexAnimProxy::PinFrom(const FCompactPose& Pose)
+{
+	bPinFrom = false;
+	FShaper S{const_cast<FCompactPose&>(Pose), Pose.GetBoneContainer()};
+	const FCompactPoseBoneIndex Foot[2] = {S.Find(TEXT("foot_l")), S.Find(TEXT("foot_r"))};
+	const FCompactPoseBoneIndex Ball[2] = {S.Find(TEXT("ball_l")), S.Find(TEXT("ball_r"))};
+	if (!Foot[0].IsValid() || !Foot[1].IsValid() || !Ball[0].IsValid() || !Ball[1].IsValid()) { return; }
+	if (PinRefZ[0] < 0.f)
+	{
+		const FBoneContainer& Bones = Pose.GetBoneContainer();
+		auto RefZ = [&Bones](FCompactPoseBoneIndex I) { FTransform T = Bones.GetRefPoseTransform(I); for (FCompactPoseBoneIndex P = Bones.GetParentBoneIndex(I); P.IsValid(); P = Bones.GetParentBoneIndex(P)) { T = T * Bones.GetRefPoseTransform(P); } return float(T.GetLocation().Z); };
+		PinRefZ[0] = RefZ(Foot[0]);
+		PinRefZ[1] = RefZ(Ball[0]);
+	}
+	const FTransform& X = EvalX;
+	const float Still = CVarPinStill.GetValueOnAnyThread(), Moving = FMath::Max(CVarPinMoving.GetValueOnAnyThread(), Still + 1.f);
+	for (int32 F = 0; F < 2; ++F)
+	{
+		PinGraph[F] = S.Component(Foot[F]);
+		PinBall[F] = S.Component(Ball[F]).GetLocation();
+		const FVector H = X.TransformPosition(PinGraph[F].GetLocation()), B = X.TransformPosition(PinBall[F]);
+		float W = 0.f;
+		if (bPinLast && Dt > 1e-4f)
+		{
+			PinSpeed[F][0] = float((H - PinLastHeel[F]).Size()) / Dt;
+			PinSpeed[F][1] = float((B - PinLastBall[F]).Size()) / Dt;
+			W = 1.f - FMath::SmoothStep(Still, Moving, FMath::Min(PinSpeed[F][0], PinSpeed[F][1]));
+			if (FMath::Min(PinSpeed[F][0], PinSpeed[F][1]) > 2000.f) { W = 0.f; }   // a teleport or a cut
+		}
+		PinW[F] = W;
+		PinLastHeel[F] = H;
+		PinLastBall[F] = B;
+	}
+	bPinLast = true;
+	bPinFrom = true;
+}
+
+void FVisexAnimProxy::Pin(FCompactPose& Pose)
+{
+	if (!bPinFrom) { return; }
+	FShaper S{Pose, Pose.GetBoneContainer()};
+	const FCompactPoseBoneIndex Leg[2][3] = {{S.Find(TEXT("thigh_l")), S.Find(TEXT("calf_l")), S.Find(TEXT("foot_l"))},
+		{S.Find(TEXT("thigh_r")), S.Find(TEXT("calf_r")), S.Find(TEXT("foot_r"))}};
+	const FQuat Xq = EvalX.GetRotation();
+	const int32 Mode = PinOn > 1.5f ? 2 : PinOn > 0.5f ? 1 : 0;
+	const float Still = CVarPinStill.GetValueOnAnyThread(), Moving = FMath::Max(CVarPinMoving.GetValueOnAnyThread(), Still + 1.f);
+	// held outright once mostly planted (a leaky hold let a planted point creep 2 cm), free once mostly not
+	auto FollowOf = [](float W) { return 1.f - FMath::SmoothStep(0.3f, 0.9f, W); };
+	// the gate: no hold in the air, nor while she turns on the spot (the Body turntable, a turn
+	// with no step): there a held foot would twist the leg and drag. Eased both ways
+	const bool bGate = CVarPinGate.GetValueOnAnyThread() != 0;
+	float GateWant = 1.f;
+	if (bGate)
+	{
+		const float Turning = FMath::SmoothStep(10.f, 30.f, PinYawRate) * (1.f - FMath::SmoothStep(40.f, 120.f, PinCapSpeed));
+		GateWant = bPinAir ? 0.f : 1.f - Turning;
+	}
+	PinGate = FMath::FInterpConstantTo(PinGate, GateWant, Dt, GateWant < PinGate ? 8.f : 4.f);
+	const float MaxHold = CVarPinMax.GetValueOnAnyThread();
+	float Stat[4] = {0.f, 0.f, 0.f, 0.f};
+	for (int32 F = 0; F < 2; ++F)
+	{
+		if (!Leg[F][0].IsValid() || !Leg[F][1].IsValid() || !Leg[F][2].IsValid()) { continue; }
+		const FTransform Post = S.Component(Leg[F][2]);
+		const FVector Move = Xq.RotateVector(Post.GetLocation() - PinGraph[F].GetLocation());
+		const FQuat Turn = Xq * (Post.GetRotation() * PinGraph[F].GetRotation().Inverse()) * Xq.Inverse();
+		// pin 1: the layers' change, frozen while the graph's foot stands still
+		const float Follow = Mode == 0 ? 1.f : FMath::Lerp(1.f, FollowOf(PinW[F]), PinGate);
+		PinDelta[F] = FMath::Lerp(PinDelta[F], Move, Follow);
+		PinTurn[F] = FQuat::Slerp(PinTurn[F], Turn, Follow).GetNormalized();
+		FVector Want = Post.GetLocation();
+		FQuat WantRot = Post.GetRotation();
+		if (Follow < 1.f)
+		{
+			Want = PinGraph[F].GetLocation() + Xq.UnrotateVector(PinDelta[F]);
+			WantRot = ((Xq.Inverse() * PinTurn[F] * Xq) * PinGraph[F].GetRotation()).GetNormalized();
+		}
+		// the heel (ankle) and ball where the foot would end up, world; how planted each is in the graph
+		const FVector BallAt = Want + WantRot.RotateVector(PinGraph[F].GetRotation().UnrotateVector(PinBall[F] - PinGraph[F].GetLocation()));
+		const FVector P[2] = {EvalX.TransformPosition(Want), EvalX.TransformPosition(BallAt)};
+		const FVector G[2] = {EvalX.TransformPosition(PinGraph[F].GetLocation()), EvalX.TransformPosition(PinBall[F])};
+		const float Z[2] = {float(PinGraph[F].GetLocation().Z), float(PinBall[F].Z)};
+		float W[2];
+		for (int32 I = 0; I < 2; ++I)
+		{
+			const float Height = bGround[F] ? Z[I] - PinRefZ[I] - GroundZ[F] : 0.f;
+			// the graph's soles float ~1.5 cm before the plant pass, so "down" is within a few cm
+			W[I] = (1.f - FMath::SmoothStep(3.f, 6.f, Height)) * (1.f - FMath::SmoothStep(Still, Moving, PinSpeed[F][I]));
+			if (PinW[F] <= 0.f) { W[I] = 0.f; }   // a cut
+			W[I] *= PinGate;
+		}
+		if (Mode == 2)
+		{
+			FVector Corr = FVector::ZeroVector;
+			for (int32 I = 0; I < 2; ++I)
+			{
+				PinAnchor[F][I] = FMath::Lerp(PinAnchor[F][I], P[I], FollowOf(W[I]));
+				if (bGate)
+				{
+					// a long stance lets a stored hold past 2 cm go, slowly
+					const float Off = float((PinAnchor[F][I] - P[I]).Size()), Ease = CVarPinBleed.GetValueOnAnyThread() * FMath::SmoothStep(0.8f, 1.6f, PinHeld[F]) * Dt;
+					if (Off > 2.f && Ease > 0.f) { PinAnchor[F][I] = P[I] + (PinAnchor[F][I] - P[I]) * (FMath::Max(Off - Ease, 2.f) / Off); }   // an idle's slow creep stays held
+				}
+				Corr += (PinAnchor[F][I] - P[I]) * W[I];
+			}
+			Corr /= FMath::Max(W[0] + W[1], 1.f);
+			Corr.Z = 0.f;
+			PinHeld[F] = FMath::Max(W[0], W[1]) > 0.9f ? PinHeld[F] + Dt : 0.f;
+			const float Size = float(Corr.Size());
+			if (Size > MaxHold)
+			{
+				Corr *= MaxHold / Size;
+				Stat[3] += 1.f;
+				// gated: the anchors come along, so the hold never stores more than it shows
+				if (bGate) { for (int32 I = 0; I < 2; ++I) { PinAnchor[F][I] = P[I] + (PinAnchor[F][I] - P[I]) * (MaxHold / Size); } }
+			}
+			const FVector Prev = PinApplied[F];
+			PinApplied[F] = bGate ? Prev + (Corr - Prev).GetClampedToMaxSize(CVarPinRelease.GetValueOnAnyThread() * Dt) : Corr;
+			Stat[0] = FMath::Max(Stat[0], float(PinApplied[F].Size()));
+			Stat[1] = FMath::Max(Stat[1], float(FVector::Dist(PinApplied[F], Prev)));
+			Want += Xq.UnrotateVector(PinApplied[F]);
+		}
+		else
+		{
+			PinAnchor[F][0] = P[0];
+			PinAnchor[F][1] = P[1];
+			PinApplied[F] = FVector::ZeroVector;
+		}
+		if (Mode > 0 && (FVector::Dist(Want, Post.GetLocation()) > 0.005f || WantRot.AngularDistance(Post.GetRotation()) > 1e-4f))
+		{
+			// the stat: how straight the hold asks the leg to be, where it straightens past the layers
+			const FVector Hip = S.Component(Leg[F][0]).GetLocation(), Knee = S.Component(Leg[F][1]).GetLocation();
+			const float Len = float((Knee - Hip).Size() + (Post.GetLocation() - Knee).Size());
+			const float RW = Len > 1.f ? float((Want - Hip).Size()) / Len : 0.f, RP = Len > 1.f ? float((Post.GetLocation() - Hip).Size()) / Len : 0.f;
+			if (RW > RP + 0.002f) { Stat[2] = FMath::Max(Stat[2], RW); }
+			S.Reach(Leg[F][0], Leg[F][1], Leg[F][2], Want, WantRot, 1.f);
+		}
+		if (F == 1)
+		{
+			FScopeLock L(&GPinStatLock);
+			for (int32 I = 0; I < 3; ++I) { GPinStat[I] = FMath::Max(GPinStat[I], Stat[I]); }
+			GPinStat[3] += Stat[3];
+		}
+		if (CVarPinLog.GetValueOnAnyThread() == 0) { continue; }
+		// the log: each heel or ball's slide while it is down, the graph's and the final one's
+		const FCompactPoseBoneIndex BallBone = S.Find(F ? TEXT("ball_r") : TEXT("ball_l"));
+		const FVector O[2] = {EvalX.TransformPosition(S.Component(Leg[F][2]).GetLocation()), BallBone.IsValid() ? EvalX.TransformPosition(S.Component(BallBone).GetLocation()) : P[1]};
+		bool bAny = false;
+		for (int32 I = 0; I < 2; ++I)
+		{
+			if (W[I] > 0.5f)
+			{
+				if (!bPinDown[F][I]) { bPinDown[F][I] = true; PinGraphStart[F][I] = G[I]; PinOutStart[F][I] = O[I]; }
+				PinGraphDrift[F] = FMath::Max(PinGraphDrift[F], float(FVector::Dist2D(G[I], PinGraphStart[F][I])));
+				PinOutDrift[F] = FMath::Max(PinOutDrift[F], float(FVector::Dist2D(O[I], PinOutStart[F][I])));
+				bAny = true;
+			}
+			else { bPinDown[F][I] = false; }
+		}
+		if (bAny) { PinStance[F] += Dt; continue; }
+		if (PinStance[F] > 0.15f)
+		{
+			UE_LOG(LogTemp, Display, TEXT("VisexPin: %s stance %.2f s, pin %d: graph slid %.2f cm, final %.2f cm"), F ? TEXT("R") : TEXT("L"), PinStance[F], Mode, PinGraphDrift[F], PinOutDrift[F]);
+		}
+		PinStance[F] = PinGraphDrift[F] = PinOutDrift[F] = 0.f;
 	}
 }
