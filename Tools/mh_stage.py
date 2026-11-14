@@ -151,7 +151,7 @@ def hand_view(world, side):
     h, t = body.get_socket_location("hand_" + side), body.get_socket_location("middle_03_" + side)
     m = (h + t) * 0.5
     out = 1.0 if h.y > mhs[0].get_actor_location().y else -1.0
-    return (m.x + 40.0, m.y + out * 34.0, m.z + 16.0), (m.x, m.y, m.z - 1.0), 26.0
+    return (m.x + 40.0, m.y + out * 34.0, m.z + 16.0), (m.x, m.y, m.z - 1.0), 42.0
 
 
 def shot():
