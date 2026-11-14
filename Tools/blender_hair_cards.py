@@ -94,7 +94,9 @@ SHORT = dict(
     kick=5.0,                  # cm a fully flicked tip may leave the volume envelope
     vol=(0.3, 0.9, 2.2, 3.0, 3.4),    # cm the hair stands off the scalp: nape hairline .. crown
     vol_fringe=1.0,
-    crown_fill=220,            # extra strands round the whorl, where the hair parts in every direction
+    crown_fill=220,
+    nape_fill=170,             # extra short strands along the nape hairline, so the cap's edge never shows
+    ear_fill=150,              # extra strands rooted above the ears: they fall over them, tips and all            # extra strands round the whorl, where the hair parts in every direction
     flick_from=0.55,           # share of the length where the flick starts
     wave_amp=0.6, wave_len=13.0,   # the S through each lock, cm
     fringe_az=40.0, fringe_el=64.0,
@@ -412,10 +414,10 @@ def clear_body(p, margin):
             p = hit + nrm * margin
             pushed = nrm
     _, _, de = ear_kd.find(p)
-    if de < 0.9:                                   # over the ear, outward
+    if de < 1.6:                                   # over the ear, outward
         o = Vector((p.x - C.x, p.y - C.y, 0.0))
         if o.length > 1e-3:
-            p = p + o.normalized() * (0.9 - de)
+            p = p + o.normalized() * (1.6 - de)
     return p, pushed
 
 
@@ -594,12 +596,18 @@ def short_guides():
     out = []
     n_ = LOOK["steps"] + 1
     wconv = np.linspace(0, 1, n_) ** 1.3
-    for k in range(S["guides"] + S["crown_fill"]):
+    for k in range(S["guides"] + S["crown_fill"] + S["nape_fill"] + S["ear_fill"]):
         az = rng.uniform(-180, 180)
         lo = hairline(az)
         u = rng.uniform(0, 1) ** 0.85
         el = lo + (88.0 - lo) * u
-        if k >= S["guides"]:                           # round the whorl
+        if k >= S["guides"] + S["crown_fill"] + S["nape_fill"]:   # above the ears
+            az = (1 if k % 2 else -1) * rng.uniform(EAR_AZ_FRONT - 22, EAR_AZ_BACK + 12)
+            el = rng.uniform(EAR_EL_TOP + 2.0, EAR_EL_TOP + 30.0)
+        elif k >= S["guides"] + S["crown_fill"]:       # along the nape and behind the ears
+            az = rng.uniform(95, 265)
+            el = hairline(az) + rng.uniform(0.0, 13.0)
+        elif k >= S["guides"]:                         # round the whorl
             dv_ = (direction(*S["whorl"]) + Vector(rng.normal(0, 0.2, 3))).normalized()
             az = math.degrees(math.atan2(dv_.x, -dv_.y))
             el = math.degrees(math.asin(max(-1.0, min(1.0, dv_.z))))
@@ -746,7 +754,9 @@ for g_ in guides:
             ao = (AO_LAYER[min(layer, 2)] * (0.75 + 0.25 * min(1.0, s * 5)), AO_SPEC[min(layer, 2)])
             if IS_SHORT:
                 # B = 1 - copper; a fringe rooted far back on the head stays brown near its root
-                ao = ao + (1.0 - streak * (_ss(0.05, 0.4, s) if root_el > 58 else 1.0),)
+                # copper comes in over the first third (no coloured root edge); later for a fringe
+                # rooted far back on the head, which stays brown near its root
+                ao = ao + (1.0 - streak * (_ss(0.05, 0.45, s) if root_el > 58 else _ss(0.0, 0.3, s)),)
                 rr = p - np.array([C.x, C.y, min(p[2], C.z - 2.0)])
                 rr = rr / (np.linalg.norm(rr) + 1e-9)
                 nv = nn * (1 - SHORT["normal_round"]) + rr * SHORT["normal_round"]
@@ -823,8 +833,11 @@ if IS_SHORT:
 hair = bpy.data.objects.new("Hair", me)
 bpy.context.collection.objects.link(hair)
 
-atlas = os.path.join(OUT, "hair_atlas.png")
-hair_textures.make_atlas(atlas, tiles=TILES)
+atlas = os.path.join(OUT, "hair_atlas_fine.png" if IS_SHORT else "hair_atlas.png")
+if IS_SHORT:
+    hair_textures.make_atlas(atlas, tiles=TILES, fine=True)
+else:
+    hair_textures.make_atlas(atlas, tiles=TILES)
 
 # ---- preview material (the Unreal one is built separately) ----------------------------------
 m = bpy.data.materials.new("HairPreview")
@@ -841,8 +854,8 @@ nt.links.new(sep.outputs["Blue"], ramp.inputs["Fac"])
 # preview colours; the game's are in Tools/char_hair_cards.py (keep the short cut's in step)
 COLOURS = dict(root=(0.004, 0.005, 0.010), tip=(0.035, 0.042, 0.075), streak=None, cap=(0.008, 0.007, 0.006))
 if IS_SHORT:
-    COLOURS = dict(root=(0.060, 0.024, 0.010), tip=(0.250, 0.105, 0.034), streak=(0.42, 0.140, 0.030),
-                   cap=(0.085, 0.034, 0.013))
+    COLOURS = dict(root=(0.050, 0.026, 0.014), tip=(0.215, 0.110, 0.048), streak=(0.38, 0.165, 0.050),
+                   cap=(0.075, 0.038, 0.019))
 ramp.color_ramp.elements[0].position = 0.0
 ramp.color_ramp.elements[0].color = COLOURS["root"] + (1,)
 ramp.color_ramp.elements[1].position = 1.0

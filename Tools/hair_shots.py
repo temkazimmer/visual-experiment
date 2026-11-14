@@ -15,7 +15,8 @@ TAG = globals().get("TAG", "before")
 STYLE = globals().get("STYLE", "long")
 VIEWS = globals().get("VIEWS", ("top", "front", "front34", "side", "back"))
 RES = globals().get("RES", (3840, 2160))
-MESH = {"long": "/Game/Character/Hair/SKM_HairCards", "elf": "/Game/Character/Hair/SKM_HairElf"}[STYLE]
+MESH = {"long": "/Game/Character/Hair/SKM_HairCards", "elf": "/Game/Character/Hair/SKM_HairElf",
+        "short": "/Game/Character/Hair/SKM_HairShort"}[STYLE]
 
 world = unreal.EditorLevelLibrary.get_game_world()
 if world is None:
@@ -26,11 +27,15 @@ comps = {c.get_name(): c for c in char.get_components_by_class(unreal.SkeletalMe
 body = comps["Shell"]
 hair = comps.get("Hair")
 if hair and hair.get_skeletal_mesh_asset().get_path_name().split(".")[0] != MESH:
+    # the mesh and its own physics AnimBP, as UVisexBodyComponent::ApplyHair does
     hair.set_skeletal_mesh_asset(unreal.load_asset(MESH))
+    hair.set_anim_instance_class(unreal.load_class(None, MESH.replace("SKM_HairCards", "ABP_HairCards").replace("SKM_", "ABP_") + "." + MESH.split("/")[-1].replace("SKM_HairCards", "ABP_HairCards").replace("SKM_", "ABP_") + "_C"))
 # FIXBOUNDS: borrow the body's bounds (leader pose: the locks hang at rest, no physics), so a
 # shot shows the shading even where the hair's own rest-pose bounds would cull it
 if globals().get("FIXBOUNDS", True):
     hair.set_leader_pose_component(body)
+else:
+    hair.set_bounds_scale(4.0)                        # physics stays on; the bounds just grow
 cap =next(a for a in unreal.GameplayStatics.get_all_actors_of_class(world, unreal.SceneCapture2D)
            if a.get_actor_label() == "HairCam")   # placed in the editor level before Play: Python can't spawn into Play
 try:
