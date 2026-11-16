@@ -11,7 +11,8 @@ STEPS (default ['create', 'shape', 'look']):
   shape     drive the parametric body toward her measured numbers (TARGETS, in cm)
   face      fit the face to her current head, ears included (Tools/mh_face_fit.py wrote the target,
             Tools/mh_face.py imports it); without this step the preset's face stays
-  look      take the preset's garment and baked top off and set her skin tone (SKIN_UV, TOP_UNDERWEAR)
+  look      take the preset's garment, baked top and eye makeup off and set her skin tone (SKIN_UV,
+            TOP_UNDERWEAR, EYE_MAKEUP)
   hair      wear a MetaHuman groom in black (HAIR, default Hair_L_StraightBangs; HAIR_COLOUR), brows to match
   rig       auto-rig through Epic's cloud (needs an Epic sign-in inside the editor)
   textures  download the high-resolution skin textures from Epic's cloud
@@ -139,6 +140,9 @@ def face(character):
 # hers there (stage 6 log); stages 1-5 wore (0.12, 0.35), darker and redder than her.
 SKIN_UV = globals().get("SKIN_UV", (0.01, 0.40))
 TOP_UNDERWEAR = globals().get("TOP_UNDERWEAR", False)     # the baked grey top: off, a real bare chest (stage 3 asked)
+# The preset's eye makeup ("SoftSmokey", black, 0.85) read as bruising in Lvl_Dust's light: off (Tema,
+# stage 7b). Only the eyes: foundation, blush and lips stay the preset's.
+EYE_MAKEUP = globals().get("EYE_MAKEUP", False)
 
 
 def look(character):
@@ -151,6 +155,14 @@ def look(character):
     skin.show_top_underwear = TOP_UNDERWEAR
     settings.skin = skin
     mh.commit_skin_settings(character, settings)
+    if not EYE_MAKEUP:
+        makeup = character.makeup_settings
+        eyes = makeup.eyes
+        was = str(eyes.type)
+        eyes.type = unreal.MetaHumanCharacterEyeMakeupType.NONE
+        makeup.eyes = eyes
+        mh.commit_makeup_settings(character, makeup)
+        log("eye makeup:", was, "->", str(character.makeup_settings.eyes.type))
     mh.assemble_for_preview(character)
     log("slots:", [str(d.selection.slot_name) for d in inst.get_slot_selection_data()])
     log("skin:", character.skin_settings.skin.u, character.skin_settings.skin.v, "top underwear:", character.skin_settings.skin.show_top_underwear)
