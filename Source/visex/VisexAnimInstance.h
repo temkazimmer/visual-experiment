@@ -15,6 +15,37 @@
  * Being the last step before skinning, it works for every animation, montage and
  * photo-mode pose, and the shell (Leader Pose) follows for free.
  */
+/** One evaluated frame of her feet and legs, for the jitter tour (-visexjitter). World space, cm.
+ *  Everything comes from the one evaluation, so the tracks line up frame for frame. */
+struct FVisexFootDebug
+{
+	uint64 Serial = 0;
+	float Dt = 0.f;
+	FVector Pelvis = FVector::ZeroVector, PelvisGraph = FVector::ZeroVector;   // final; as the graph left it
+	float PelvisFix = 0.f, PelvisDrop = 0.f, PinGate = 0.f, Moving = 0.f;
+	struct FLeg
+	{
+		FVector Hip = FVector::ZeroVector, Knee = FVector::ZeroVector, Foot = FVector::ZeroVector, Ball = FVector::ZeroVector;   // final
+		FVector HipGraph = FVector::ZeroVector;   // the hip as the graph left it
+		FVector FootGraph = FVector::ZeroVector, FootLayers = FVector::ZeroVector, FootPin = FVector::ZeroVector;   // after the graph, the layers, the pin
+		FVector PinWant = FVector::ZeroVector, PlantWant = FVector::ZeroVector;   // the two IK targets
+		FVector TraceAt = FVector::ZeroVector, Normal = FVector::UpVector;       // the plant trace's hit
+		bool bGround = false;
+		float SoleUnder = 0.f, Gap = 0.f, PlantW = 0.f, PlantAsk = 0.f, PlantFix = 0.f;
+		float PinW = 0.f, HeelW = 0.f, BallW = 0.f, HeelSpeed = 0.f, BallSpeed = 0.f, PinHold = 0.f, PinHeld = 0.f;
+		float Extension = 0.f;   // hip to ankle over thigh + calf
+		// the knee after each step of the frame: the graph, catwalk, alive, toes, reshape, contact,
+		// limits, steady head, pin, plant
+		static constexpr int32 Stages = 10;
+		FVector KneeAt[Stages] = {FVector::ZeroVector, FVector::ZeroVector, FVector::ZeroVector, FVector::ZeroVector, FVector::ZeroVector,
+			FVector::ZeroVector, FVector::ZeroVector, FVector::ZeroVector, FVector::ZeroVector, FVector::ZeroVector};
+	} Leg[2];
+};
+/** Asks the proxy animating Mesh (a USkeletalMeshComponent) to publish its frames; nullptr stops it. */
+VISEX_API void VisexFootDebugFor(const void* Mesh);
+/** The newest published frame; false until there is one. */
+VISEX_API bool VisexFootDebugRead(FVisexFootDebug& Out);
+
 struct FVisexAnimProxy : public FAnimInstanceProxy
 {
 	FVisexAnimProxy() = default;
@@ -144,6 +175,13 @@ private:
 	bool bPinLastX = false;
 	int32 PinSkips = 0;
 	void PinReset();
+	// the jitter tour's frame (FVisexFootDebug): filled only for the mesh it asked for
+	FVisexFootDebug Dbg;
+	const void* DbgMesh = nullptr;
+	bool bDbg = false;
+	FVector GroundAt[2] = {FVector::ZeroVector, FVector::ZeroVector}, GroundN[2] = {FVector::UpVector, FVector::UpVector};   // the plant trace's hit, world
+	void DebugOut(FCompactPose& Pose);
+	void DebugKnees(FCompactPose& Pose, int32 Stage);
 };
 
 /** The pin's numbers since the last reset, for the tours: [0] largest hold (cm), [1] largest
