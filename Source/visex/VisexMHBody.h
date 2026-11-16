@@ -10,6 +10,20 @@ class ACharacter;
 class USkeletalMeshComponent;
 
 /**
+ * The Body page's bone-scale sliders as the MetaHuman body takes them: each term is the slider's
+ * value over its default, because the MetaHuman was shaped to her at the defaults (1 = as built).
+ * Width and depth are separate terms on the torso, as in UVisexAnimInstance's Reshape.
+ */
+struct FVisexMHShape
+{
+	enum { Head, Neck, Shoulders, ChestW, ChestD, WaistW, WaistD, HipsW, HipsD, Legs, Thighs, Calves, ArmLength, Arms, Hands, Feet, Count };
+	float V[Count];
+	FVisexMHShape() { for (float& X : V) { X = 1.f; } }
+	bool operator==(const FVisexMHShape& O) const { return FMemory::Memcmp(V, O.V, sizeof(V)) == 0; }
+	bool operator!=(const FVisexMHShape& O) const { return !(*this == O); }
+};
+
+/**
  * The MetaHuman body's main anim instance: no graph, it follows another mesh's final pose.
  * Each frame it takes the driver's component-space pose (today's Quinn-skeleton character, after
  * ABP_Unarmed, the C++ layers and the one ground-IK owner), copies the rotations of the bones
@@ -32,6 +46,15 @@ public:
 
 	float SourceScale = 1.f;
 	float FeetScale = 1.f;
+
+	/** The Body page's bone scales, set every frame by UVisexMHBodyComponent (game thread). */
+	FVisexMHShape Shape;
+
+	/** Corrective joints whose axes are turned a quarter against the scaled bone they hang on (the
+	 *  pectoral and latissimus joints under spine_05): bone index and what their component-space
+	 *  scale is multiplied by once the post-process AnimBP has run (UVisexMHBodyComponent::FixScales).
+	 *  Filled by the proxy on the game thread. */
+	TArray<TPair<int32, FVector>> ScaleFixes;
 
 	/** The foot (ankle) and ball bones' height over the sole in the reference pose, cm. */
 	float HeelOverSole = 0.f, BallOverSole = 0.f;
@@ -139,6 +162,24 @@ private:
 	void ClearHair();
 	/** Drives face rig curves from visex.Body.MetaHuman.Face (a debug look at expressions). */
 	void ApplyFace();
+	/** Hands the Body page's bone-scale sliders (over their defaults) and the Feet value to the follower. */
+	void ApplyShape();
+	/** Skin tone from the Body page on the MetaHuman's skin: body, face (every LOD's material) and the
+	 *  bare-skin copies worn under outfits, through the tone parameters of the copied skin materials. */
+	void ApplySkin();
+	/** After the Body's bones are final (post-process AnimBP included): puts the segment's scale on
+	 *  the right axes of the joints in UVisexMHBodyAnimInstance::ScaleFixes. RigLogic writes those
+	 *  joints' local scale itself, so this cannot be done in the pose. */
+	void FixScales();
+	TWeakObjectPtr<USkeletalMeshComponent> FixBound;
+	TArray<FVector> FixWritten;
+
+	/** Body and face skin materials the tone is set on (made over whatever the slots hold). */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<class UMaterialInstanceDynamic>> ToneMaterials;
+	/** Per body and face material slot: what it held when the tone was last put on it. */
+	TArray<TWeakObjectPtr<class UMaterialInterface>> ToneSeen;
+	float LastTone = -1.f;
 
 	/** The console value the Face was last set up for, and the anim class it had before. */
 	FString FaceCurves;

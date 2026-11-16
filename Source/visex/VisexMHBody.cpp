@@ -2,6 +2,8 @@
 #include "VisexBodyComponent.h"
 #include "VisexShellComponent.h"
 #include "Materials/MaterialInterface.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "VisexBodyProfile.h"
 #include "Misc/PackageName.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Animation/AnimInstanceProxy.h"
@@ -32,6 +34,10 @@ static TAutoConsoleVariable<int32> CVarVisexMHLOD(
 static TAutoConsoleVariable<int32> CVarVisexMHFootPin(
 	TEXT("visex.Body.MetaHuman.FootPin"), 1,
 	TEXT("1: each MetaHuman sole is pinned to the driver's sole (two-bone leg solve, no ground trace). 0: rotations only."));
+
+static TAutoConsoleVariable<int32> CVarVisexMHReshape(
+	TEXT("visex.Body.MetaHuman.Reshape"), 1,
+	TEXT("1: the Body page's bone-scale sliders and skin tone reach the MetaHuman body (each over its default). 0: it stays as built, to compare."));
 
 // "bone:roll,pitch,yaw;bone:..." in each bone's own axes, added on top of the followed pose
 static TAutoConsoleVariable<FString> CVarVisexMHTestPose(
@@ -126,6 +132,10 @@ struct FVisexMHBodyProxy : public FAnimInstanceProxy
 	FLeg Legs[2];
 	int32 Pelvis = INDEX_NONE;
 	float Scale = 1.f, Feet = 1.f;
+	FVisexMHShape Shape;            // the Body page's bone scales, over their defaults
+	TArray<FVector> BoneScale;      // by our mesh's bone index: local scale
+	TArray<float> BoneReach;        // ... and what its offset from the parent is multiplied by
+	TArray<TPair<int32, FVector>> Fixes;   // see UVisexMHBodyAnimInstance::ScaleFixes
 	float PelvisBase = 0.f;         // pelvis lift before the live leg-length term
 	bool bPin = true, bTest = false;
 	bool bRef = false;              // test pose on the reference pose, the driver ignored
@@ -231,8 +241,100 @@ void FVisexMHBodyProxy::Build(const USkeletalMesh* SourceMesh, const USkeletalMe
 		}
 		++Count[int32(R.Mode)];
 	}
+	// The Body page's bone scales: the driver's Reshape (UVisexAnimInstance) on the same bones, each
+	// term over the default the MetaHuman was built at. A segment's scale sits on its bone and the
+	// next followed bone gets the inverse, so the change stays in the segment and carries through to
+	// the joints below as an offset. Twist and corrective joints are left alone on purpose: RigLogic
+	// writes their whole local transform every frame (translation, rotation and scale, in the
+	// parent's space), so anything set on them is lost at LOD 0-1 and kept past it. Inheriting is the
+	// one behaviour that holds at every LOD: they sit and scale with the segment they belong to.
+	BoneScale.Init(FVector::OneVector, TR.GetNum());
+	BoneReach.Init(1.f, TR.GetNum());
+	// Scale passes down by axis index, not by direction. Nearly every corrective joint has its
+	// segment's axes (or Y and Z swapped, which a limb's girth does not notice); the four under
+	// spine_05 (clavicle_pec, spine_04_latissimus: the bust and the lats) have X and Z swapped, so the
+	// ribcage's width reached them as height. Those get the terms moved to the axes they belong on,
+	// after RigLogic (Fixes). A joint more than 30 degrees off every axis (upperarm_in) is left as it is.
+	Fixes.Reset();
+	const auto Segment = [this, &TR, &TCS](int32 I, const FVector& S)
+	{
+		if (I == INDEX_NONE || S.Equals(FVector::OneVector, 1e-5f)) { return; }
+		BoneScale[I] *= S;
+		for (int32 C = I + 1; C < TR.GetNum(); ++C)
+		{
+			if (TR.GetParentIndex(C) != I) { continue; }
+			if (Rows[C].Mode != EMode::None) { BoneScale[C] /= S; continue; }
+			const FQuat Rel = TCS[I].GetRotation().Inverse() * TCS[C].GetRotation();
+			const FVector Axes[3] = {Rel.GetAxisX(), Rel.GetAxisY(), Rel.GetAxisZ()};
+			FVector Fix(1.f);
+			bool bNear = true;
+			for (int32 A = 0; A < 3; ++A)
+			{
+				int32 Best = 0;
+				for (int32 B = 1; B < 3; ++B) { if (FMath::Abs(Axes[A][B]) > FMath::Abs(Axes[A][Best])) { Best = B; } }
+				bNear &= FMath::Abs(Axes[A][Best]) > 0.866f;
+				Fix[A] = S[Best] / S[A];
+			}
+			if (bNear && !Fix.Equals(FVector::OneVector, 1e-4f)) { Fixes.Emplace(C, Fix); }
+		}
+	};
+	// torso: each local axis takes the term of the body axis it is closest to (X side, Y front, Z up)
+	const auto Torso = [&](const TCHAR* Bone, float Width, float Depth)
+	{
+		const int32 I = TR.FindBoneIndex(Bone);
+		if (I == INDEX_NONE) { return; }
+		const FQuat R = TCS[I].GetRotation();
+		const FVector Axes[3] = {R.GetAxisX(), R.GetAxisY(), R.GetAxisZ()};
+		const float Terms[3] = {Width, Depth, 1.f};
+		FVector S(1.f);
+		for (int32 A = 0; A < 3; ++A)
+		{
+			int32 Best = 0;
+			for (int32 B = 1; B < 3; ++B) { if (FMath::Abs(Axes[A][B]) > FMath::Abs(Axes[A][Best])) { Best = B; } }
+			S[A] = Terms[Best];
+		}
+		Segment(I, S);
+	};
+	const float* V = Shape.V;
+	Torso(TEXT("spine_04"), V[FVisexMHShape::ChestW], V[FVisexMHShape::ChestD]);
+	Torso(TEXT("spine_05"), V[FVisexMHShape::ChestW], V[FVisexMHShape::ChestD]);
+	Torso(TEXT("spine_01"), V[FVisexMHShape::WaistW], V[FVisexMHShape::WaistD]);
+	Torso(TEXT("spine_02"), V[FVisexMHShape::WaistW], V[FVisexMHShape::WaistD]);
+	Torso(TEXT("pelvis"), V[FVisexMHShape::HipsW], V[FVisexMHShape::HipsD]);
+	// neck: longer by moving neck_02 and the head along it, with no scale. The Face mesh hangs ~60
+	// neck joints of its own on neck_01 and neck_02 with their axes turned a quarter (X is not the
+	// neck's length), and bone scale passes down by axis index: a length scale here would thicken
+	// the Face's neck sideways and leave the Body's neck long, opening the seam between the two.
+	for (const TCHAR* Bone : {TEXT("neck_02"), TEXT("head")})
+	{
+		if (const int32 I = TR.FindBoneIndex(Bone); I != INDEX_NONE) { BoneReach[I] = V[FVisexMHShape::Neck]; }
+	}
+	if (const int32 Head = TR.FindBoneIndex(TEXT("head")); Head != INDEX_NONE)
+	{
+		BoneScale[Head] *= V[FVisexMHShape::Head];   // uniform: the Face's joints under it take it whole
+	}
+	FVector ThighS(1.f), CalfS(1.f);
+	for (const TCHAR* Side : {TEXT("_l"), TEXT("_r")})
+	{
+		const auto Bone = [&TR, Side](const TCHAR* Base) { return TR.FindBoneIndex(FName(*(FString(Base) + Side))); };
+		// shoulders: the collarbone longer along itself (X), so the joints riding it spread with it;
+		// the upper arm ends up where the driver's Offset puts it (its offset is the collarbone's X)
+		Segment(Bone(TEXT("clavicle")), FVector(V[FVisexMHShape::Shoulders], 1.f, 1.f));
+		// limbs: X runs along the bone (length), Y and Z take the girth
+		ThighS = FVector(V[FVisexMHShape::Legs], V[FVisexMHShape::Thighs], V[FVisexMHShape::Thighs]);
+		CalfS = FVector(V[FVisexMHShape::Legs], V[FVisexMHShape::Calves], V[FVisexMHShape::Calves]);
+		const FVector ArmS(V[FVisexMHShape::ArmLength], V[FVisexMHShape::Arms], V[FVisexMHShape::Arms]);
+		Segment(Bone(TEXT("thigh")), ThighS);
+		Segment(Bone(TEXT("calf")), CalfS);
+		Segment(Bone(TEXT("upperarm")), ArmS);
+		Segment(Bone(TEXT("lowerarm")), ArmS);
+		// hands and feet whole, fingers and toes with them
+		if (const int32 I = Bone(TEXT("hand")); I != INDEX_NONE) { BoneScale[I] *= V[FVisexMHShape::Hands]; }
+		if (const int32 I = Bone(TEXT("foot")); I != INDEX_NONE) { BoneScale[I] *= V[FVisexMHShape::Feet]; }
+	}
 	// legs: where each sole sits against its foot bone on both bodies (the MetaHuman's ankle is
 	// higher and its foot longer), as one fixed offset in the foot bone's axes
+	const float FootS = V[FVisexMHShape::Feet];
 	float AnkleM = 0.f, AnkleD = 0.f, BallM = 0.f;
 	static const TCHAR* Sides[2] = {TEXT("l"), TEXT("r")};
 	for (int32 Side = 0; Side < 2; ++Side)
@@ -255,18 +357,20 @@ void FVisexMHBodyProxy::Build(const USkeletalMesh* SourceMesh, const USkeletalMe
 		const FVector TF = TCS[L.Foot].GetTranslation(), TB = TCS[TBall].GetTranslation();
 		const FVector SF = SCS[L.SrcFoot].GetTranslation(), SB = SCS[SBall].GetTranslation();
 		const float Sole = SoleZ(TargetMesh, TF, TB);
-		AnkleM = TF.Z - Sole;
-		BallM = TB.Z - Sole;
+		// our foot is scaled whole about its ankle (the Feet slider over its default), like the driver's
+		AnkleM = (TF.Z - Sole) * FootS;
+		BallM = (TB.Z - Sole) * FootS;
 		AnkleD = SF.Z * Scale * Feet;   // the driver's soles are on its origin
 		const FQuat TQi = TCS[L.Foot].GetRotation().Inverse(), SQi = SCS[L.SrcFoot].GetRotation().Inverse();
-		FVector Bm = TB - TF, Bd = (SB - SF) * Scale * Feet;
+		FVector Bm = (TB - TF) * FootS, Bd = (SB - SF) * Scale * Feet;
 		Bm.Z = -AnkleM;
 		Bd.Z = -AnkleD;
 		const FVector Hm = TQi.RotateVector(FVector(0.f, 0.f, -AnkleM)), Hd = SQi.RotateVector(FVector(0.f, 0.f, -AnkleD));
 		// halfway between matching under the ankle and under the ball: fixed, so it adds no slide
 		L.SoleOffset = ((Hd - Hm) + (SQi.RotateVector(Bd) - TQi.RotateVector(Bm))) * 0.5f;
 		L.ToeLocal = TQi.RotateVector(TB - TF).GetSafeNormal();
-		L.Length = FVector::Dist(TCS[L.Thigh].GetTranslation(), TCS[L.Calf].GetTranslation()) + FVector::Dist(TCS[L.Calf].GetTranslation(), TF);
+		// thigh plus calf as they are drawn: the offsets to knee and ankle under the segments' scales
+		L.Length = float((TR.GetRefBonePose()[L.Calf].GetTranslation() * ThighS).Size() + (TR.GetRefBonePose()[L.Foot].GetTranslation() * CalfS).Size());
 	}
 	// the pelvis: lifted by the ankle difference, less what the hip joints already sit higher
 	PelvisBase = 0.f;
@@ -298,11 +402,13 @@ void FVisexMHBodyProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeco
 	{
 		return;
 	}
-	if (BuiltSource != SourceMesh || BuiltTarget != TargetMesh || Scale != Inst->SourceScale || Feet != Inst->FeetScale)
+	if (BuiltSource != SourceMesh || BuiltTarget != TargetMesh || Scale != Inst->SourceScale || Feet != Inst->FeetScale || Shape != Inst->Shape)
 	{
 		Scale = Inst->SourceScale;
 		Feet = Inst->FeetScale;
+		Shape = Inst->Shape;
 		Build(SourceMesh, TargetMesh, Inst);
+		Inst->ScaleFixes = Fixes;
 	}
 	const FString Test = CVarVisexMHTestPose.GetValueOnGameThread();
 	if (Test != TestPose)
@@ -344,6 +450,13 @@ bool FVisexMHBodyProxy::Evaluate(FPoseContext& Output)
 		const int32 M = RB.MakeMeshPoseIndex(I).GetInt();
 		const FTransform ParentCS = I.IsRootBone() ? FTransform::Identity : CS[RB.GetParentBoneIndex(I).GetInt()];
 		FTransform Local = Pose[I];
+		if (BoneScale.IsValidIndex(M))
+		{
+			// the Body page's reshape, on the way down from the root: each bone's component space is
+			// its local transform times its parent's, so offsets take the scales above them
+			Local.SetScale3D(BoneScale[M]);
+			Local.SetTranslation(Local.GetTranslation() * BoneReach[M]);
+		}
 		if (Rows.IsValidIndex(M))
 		{
 			const FRow& R = Rows[M];
@@ -496,7 +609,132 @@ void UVisexMHBodyComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 		ApplyDebug();
 		ApplyHair();   // after ApplyDebug: it may have bound a re-made Body
 		ApplyFace();
+		ApplyShape();
+		ApplySkin();   // after ApplyOutfit: it puts other skin materials in the slots
 	}
+}
+
+void UVisexMHBodyComponent::ApplyShape()
+{
+	const ACharacter* Her = Cast<ACharacter>(GetOwner());
+	const UVisexBodyComponent* Body = Her ? Her->FindComponentByClass<UVisexBodyComponent>() : nullptr;
+	UVisexMHBodyAnimInstance* Inst = BodyMesh ? Cast<UVisexMHBodyAnimInstance>(BodyMesh->GetAnimInstance()) : nullptr;
+	if (!Body || !Inst)
+	{
+		return;
+	}
+	FVisexMHShape S;
+	if (CVarVisexMHReshape.GetValueOnGameThread() != 0)
+	{
+		// a slider over its default; Part is how much of the slider a torso depth term takes (Reshape)
+		const auto Rel = [Body](const TCHAR* Name, float Part = 1.f)
+		{
+			const FVisexBodySlider* Row = FVisexBodyProfile::Find(Name);
+			const float Built = 1.f + ((Row ? Row->Default : 1.f) - 1.f) * Part;
+			return (1.f + (Body->GetValue(Name) - 1.f) * Part) / FMath::Max(Built, 0.01f);
+		};
+		S.V[FVisexMHShape::Head] = Rel(TEXT("Head"));
+		S.V[FVisexMHShape::Neck] = Rel(TEXT("Neck"));
+		S.V[FVisexMHShape::Shoulders] = Rel(TEXT("Shoulders"));
+		S.V[FVisexMHShape::ChestW] = Rel(TEXT("Chest"));
+		S.V[FVisexMHShape::ChestD] = Rel(TEXT("Chest"), 0.6f);
+		S.V[FVisexMHShape::WaistW] = Rel(TEXT("Waist"));
+		S.V[FVisexMHShape::WaistD] = Rel(TEXT("Waist"), 0.7f);
+		S.V[FVisexMHShape::HipsW] = Rel(TEXT("Hips"));
+		S.V[FVisexMHShape::HipsD] = Rel(TEXT("Hips"), 0.5f);
+		S.V[FVisexMHShape::Legs] = Rel(TEXT("Legs"));
+		S.V[FVisexMHShape::Thighs] = Rel(TEXT("Thighs"));
+		S.V[FVisexMHShape::Calves] = Rel(TEXT("Calves"));
+		S.V[FVisexMHShape::ArmLength] = Rel(TEXT("ArmLength"));
+		S.V[FVisexMHShape::Arms] = Rel(TEXT("Arms"));
+		S.V[FVisexMHShape::Hands] = Rel(TEXT("Hands"));
+		S.V[FVisexMHShape::Feet] = Rel(TEXT("Feet"));
+	}
+	Inst->Shape = S;
+	Inst->FeetScale = Body->GetValue(TEXT("Feet"));   // the driver's, as it is: its sole sits under a foot of that size
+	if (FixBound != BodyMesh)
+	{
+		// once per Body component: it goes with the component when the figure is re-made
+		BodyMesh->RegisterOnBoneTransformsFinalizedDelegate(FOnBoneTransformsFinalizedMultiCast::FDelegate::CreateUObject(this, &UVisexMHBodyComponent::FixScales));
+		FixBound = BodyMesh;
+		FixWritten.Reset();
+	}
+}
+
+void UVisexMHBodyComponent::FixScales()
+{
+	const UVisexMHBodyAnimInstance* Inst = IsValid(BodyMesh) ? Cast<UVisexMHBodyAnimInstance>(BodyMesh->GetAnimInstance()) : nullptr;
+	if (!Inst || Inst->ScaleFixes.Num() == 0)
+	{
+		return;
+	}
+	// The bones are final and nothing has read them yet this frame (the garment's Leader Pose and
+	// the renderer take them at the end of the frame, the Face copies them when it ticks after the
+	// Body). A scale only: these joints have no children, so no position hangs on them.
+	TArray<FTransform>& CS = const_cast<TArray<FTransform>&>(BodyMesh->GetComponentSpaceTransforms());
+	FixWritten.SetNum(Inst->ScaleFixes.Num());
+	for (int32 K = 0; K < Inst->ScaleFixes.Num(); ++K)
+	{
+		const TPair<int32, FVector>& Fix = Inst->ScaleFixes[K];
+		if (!CS.IsValidIndex(Fix.Key))
+		{
+			continue;
+		}
+		const FVector Now = CS[Fix.Key].GetScale3D();
+		if (Now == FixWritten[K])
+		{
+			continue;   // finalized again without a new pose: already done
+		}
+		FixWritten[K] = Now * Fix.Value;
+		CS[Fix.Key].SetScale3D(FixWritten[K]);
+	}
+}
+
+void UVisexMHBodyComponent::ApplySkin()
+{
+	const ACharacter* Her = Cast<ACharacter>(GetOwner());
+	const UVisexBodyComponent* Body = Her ? Her->FindComponentByClass<UVisexBodyComponent>() : nullptr;
+	if (!Body || !IsValid(BodyMesh))
+	{
+		return;
+	}
+	// The assembled skin material (body, every face LOD, and the copies worn under outfits: all one
+	// material, M_skin_unified_baked or its masked copy) multiplies its baked base colour by this
+	// parameter, and its instances have the switch for it on. The baked colour is her default tone
+	// (stage 6), so the multiplier is the slider's colour over the default's: 1 at the default, and
+	// the same relative range as the android skin's tone ramp. Nothing in the assets is changed.
+	static const FName Param(TEXT("Basecolor Global Multiply Post-Bake"));
+	const FVisexBodySlider* Row = FVisexBodyProfile::Find(TEXT("Skin"));
+	const float Built = Row ? Row->Default : 0.25f;
+	const float Tone = CVarVisexMHReshape.GetValueOnGameThread() != 0 ? Body->GetValue(TEXT("Skin")) : Built;
+	const FLinearColor A = FVisexBodyProfile::SkinColor(Tone), B = FVisexBodyProfile::SkinColor(Built);
+	const FLinearColor Tint(A.R / FMath::Max(B.R, 1e-3f), A.G / FMath::Max(B.G, 1e-3f), A.B / FMath::Max(B.B, 1e-3f), 1.f);
+	int32 K = 0;
+	for (USkeletalMeshComponent* Mesh : {BodyMesh.Get(), FaceMesh.Get()})
+	{
+		for (int32 Slot = 0; IsValid(Mesh) && Slot < Mesh->GetNumMaterials(); ++Slot, ++K)
+		{
+			UMaterialInterface* Mat = Mesh->GetMaterial(Slot);
+			if (!ToneSeen.IsValidIndex(K)) { ToneSeen.SetNum(K + 1); }
+			if (ToneSeen[K] == Mat && Tone == LastTone)
+			{
+				continue;   // looked at, and nothing moved
+			}
+			UMaterialInstanceDynamic* Dyn = Cast<UMaterialInstanceDynamic>(Mat);
+			FLinearColor Was;
+			if (!Dyn && Mat && Mat->GetVectorParameterValue(FHashedMaterialParameterInfo(Param), Was))
+			{
+				Dyn = Mesh->CreateDynamicMaterialInstance(Slot, Mat);   // skin: an outfit's or the body's own
+				ToneMaterials.Add(Dyn);
+			}
+			if (Dyn && ToneMaterials.Contains(Dyn))
+			{
+				Dyn->SetVectorParameterValue(Param, Tint);
+			}
+			ToneSeen[K] = Mesh->GetMaterial(Slot);
+		}
+	}
+	LastTone = Tone;
 }
 
 void UVisexMHBodyComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -549,6 +787,9 @@ void UVisexMHBodyComponent::Bind()
 	const FLightingChannels& Ch = Driver->LightingChannels;
 	ClearOutfit();   // it hangs on the Body that is being replaced
 	ClearHair();
+	ToneMaterials.Reset();   // the tone is put on the new figure's materials
+	ToneSeen.Reset();
+	LastTone = -1.f;
 	GroomMode = -1;   // a new figure: look at its hair again
 	bFaceDriven = false;   // and so does its face
 	FaceCurves.Reset();
