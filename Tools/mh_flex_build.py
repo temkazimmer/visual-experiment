@@ -211,8 +211,8 @@ def belly(name, window, creator, peak, lift=None, smooth=3):
 
 # ---- the muscles -------------------------------------------------------------------------------------
 # peak height of each belly at weight 1, cm (a slim woman's; the game multiplies by visex.Body.MetaHuman.FlexScale)
-PEAK = {"Biceps": 0.55, "Triceps": 0.40, "Forearm": 0.35, "Deltoid": 0.40, "Quad": 0.65, "Ham": 0.45,
-        "Calf": 0.55, "Glute": 0.60, "Oblique": 0.30, "Lat": 0.40, "Abs": 0.40}
+PEAK = {"Biceps": 0.85, "Triceps": 0.80, "Forearm": 0.45, "Deltoid": 0.65, "Quad": 0.80, "Ham": 0.55,
+        "Calf": 0.65, "Glute": 0.70, "Oblique": 0.35, "Lat": 0.50, "Abs": 0.40}
 UP = np.array([0.0, 0.0, 1.0])
 
 for side, S in ((1.0, "L"), (-1.0, "R")):

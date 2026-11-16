@@ -6,9 +6,13 @@ runs after every assembly (like Tools/mh_bare_skin.py). In the editor, through t
   python3 Tools/ue.py -c "STEP='apply'; exec(open('<project>/Tools/mh_morphs.py').read())"
 
 STEP
-  apply     (default) add every morph in SourceArt/Character/MH/Morphs/mh_morphs.json to body LOD 0
-            and save the mesh (only that asset). Stops if the body's vertices are not the ones the
-            deltas were made on (a new shape: make the deltas again, see below).
+  apply     (default) put the base correction on the body's own vertices if it is not there yet
+            (her softened bust, Tools/mh_base_fix.py), then add every morph in
+            SourceArt/Character/MH/Morphs/mh_morphs.json to body LOD 0 and save the mesh (only that
+            asset). Stops if the body's vertices are neither the built nor the corrected ones (a new
+            shape: make the deltas again, see below).
+  unfix     take the base correction off again: the body as the assembly wrote it, which is what
+            'base', the variants and Tools/mh_morph_build.py work on
   base      write the body's LOD 0 vertices and triangles, in the mesh's own vertex order, to
             Saved/MH/morphs/base.json (what the Blender side matches its copy of the skin to)
   variants  one Creator body variant on a scratch character (VARIANT='bust', of VARIANTS below; run
@@ -20,7 +24,8 @@ Making the deltas (only for a new body shape; the json is committed):
   2. Blender -b --factory-startup --python Tools/blender_outfit.py -- SourceArt/Character/MH/mh_skin.fbx \
          SourceArt/Character/MH/Outfits --body=mh --mh-morphs      (Tools/mh_morph_build.py: variants and the
          old body's shape keys through the kit's landmark map -> mh_morphs.json)
-  3. STEP='apply', then Tools/mh_vertex_order.py and the spike tour
+  3. python3 Tools/mh_base_fix.py (the base correction and the Bust height slider's new reach)
+  4. STEP='apply', a new skin export, Tools/mh_flex_build.py, STEP='apply' again, then the spike tour
 Tools/mh_after_build.sh runs all of it in order after an assembly.
 """
 import json
@@ -50,8 +55,61 @@ def body_mesh():
     return skm, dm, P
 
 
+def _off(P, V):
+    """How far the mesh's vertices are from a list of positions, cm at most."""
+    return max(abs(P[i].x - v[0]) + abs(P[i].y - v[1]) + abs(P[i].z - v[2]) for i, v in enumerate(V))
+
+
+def _state(P, data):
+    """'base': the mesh holds the corrected base (built + fix, Tools/mh_base_fix.py); 'built': as the
+    assembly wrote it; None: another body (a new shape needs new deltas)."""
+    if len(P) != data["vertices"]:
+        return None
+    if _off(P, data["base"]) < 0.02:
+        return "base"
+    return "built" if "built" in data and _off(P, data["built"]) < 0.02 else None
+
+
+def _move_base(skm, dm, P, data, sign):
+    """Adds (sign 1) or takes off (-1) the base correction on the mesh's own vertices: LOD 0's source
+    model is written back with the same vertex order, triangles, weights and user data (checked on a
+    copy in stage 8), normals recomputed where the skin moved. Returns the new positions."""
+    fix = data["fix"]
+    Q = [unreal.Vector(p.x, p.y, p.z) for p in P]
+    for k, i in enumerate(fix["i"]):
+        Q[i] = unreal.Vector(P[i].x + sign * fix["d"][3 * k], P[i].y + sign * fix["d"][3 * k + 1], P[i].z + sign * fix["d"][3 * k + 2])
+    unreal.GeometryScript_MeshEdits.set_all_mesh_vertex_positions(dm, GL.convert_array_to_vector_list(Q))
+    sel = unreal.GeometryScript_MeshSelection.convert_index_array_to_mesh_selection(dm, fix["i"], unreal.GeometryScriptMeshSelectionType.VERTICES)
+    sel = sel[1] if isinstance(sel, tuple) else sel
+    unreal.GeometryScript_Normals.recompute_normals_for_mesh_selection(dm, sel, unreal.GeometryScriptCalculateNormalsOptions())
+    opt = unreal.GeometryScriptCopyMeshToAssetOptions()
+    for k, v in (("enable_recompute_normals", False), ("enable_recompute_tangents", False), ("enable_remove_degenerates", False),
+                 ("replace_materials", False), ("emit_transaction", False), ("use_original_vertex_order", True)):
+        opt.set_editor_property(k, v)
+    lod = unreal.GeometryScriptMeshWriteLOD()
+    lod.set_editor_property("lod_index", 0)
+    out = AU.copy_mesh_to_skeletal_mesh(dm, skm, opt, lod)
+    assert out[1] == unreal.GeometryScriptOutcomePins.SUCCESS, "could not write the body's base"
+    print("MORPHS base correction %s: %d vertices" % ("put on" if sign > 0 else "taken off", len(fix["i"])))
+    return Q
+
+
+def step_unfix():
+    """Back to the body as the assembly wrote it (before new variants and deltas are made on it)."""
+    data = json.load(open(MORPHS))
+    skm, dm, P = body_mesh()
+    state = _state(P, data)
+    if state == "base" and "fix" in data:
+        _move_base(skm, dm, P, data, -1.0)
+        unreal.EditorAssetLibrary.save_loaded_asset(skm, only_if_is_dirty=False)
+    print("MORPHS unfix: the mesh was %s" % ("corrected, now as built" if state == "base" and "fix" in data else "as built already" if state else "another body"))
+
+
 def step_base():
     skm, dm, P = body_mesh()
+    if os.path.exists(MORPHS):
+        data = json.load(open(MORPHS))
+        assert not ("fix" in data and _state(P, data) == "base"), "the mesh carries the base correction: STEP='unfix' first"
     T = GL.convert_triangle_list_to_array(unreal.GeometryScript_MeshQueries.get_all_triangle_indices(dm, False)[1])
     out = {"v": [(round(p.x, 4), round(p.y, 4), round(p.z, 4)) for p in P], "t": [(t.x, t.y, t.z) for t in T]}
     json.dump(out, open(os.path.join(WORK, "base.json"), "w"))
@@ -62,8 +120,10 @@ def step_apply():
     data = json.load(open(MORPHS))
     skm, dm, P = body_mesh()
     assert len(P) == data["vertices"], "the body has %d vertices, the deltas were made on %d" % (len(P), data["vertices"])
-    worst = max(abs(P[i].x - x) + abs(P[i].y - y) + abs(P[i].z - z) for i, x, y, z in data["check"])
-    assert worst < 0.02, "the body's vertices moved (%.2f cm at a check vertex): a new shape needs new deltas" % worst
+    state = _state(P, data)
+    assert state, "the body's vertices are neither the built nor the corrected base: a new shape needs new deltas"
+    if state == "built" and "fix" in data:
+        P = _move_base(skm, dm, P, data, 1.0)     # first, so every morph below is a delta on the corrected base
     opts = unreal.GeometryScriptCopyMorphTargetToAssetOptions()
     opts.set_editor_property("overwrite_existing_target", True)
     opts.set_editor_property("emit_transaction", False)
@@ -101,6 +161,9 @@ VARIANTS = globals().get("VARIANTS", {
     "thigh":  {"set": {"Thigh": -6.0}},
     "fat0":   {"free": "girths", "set": {"Fat": 0.0}},                  # girths let go so fat has somewhere to go
     "fat1":   {"free": "girths", "set": {"Fat": 1.2}},
+    # the flex layer (Tools/mh_flex_build.py): where a real body puts muscle
+    "musc0":  {"free": "girths", "set": {"Muscularity": 0.0}},
+    "musc1":  {"free": "girths", "set": {"Muscularity": 1.5}},
 })
 GIRTHS = ("Chest", "Waist", "Hip", "Thigh", "Calf", "Knee", "Bicep", "Forearm", "Wrist", "Underbust", "Bust Span", "Hand Circumference")
 PRESET = "/MetaHumanCharacter/Optional/Presets/Ada"
@@ -164,5 +227,7 @@ if STEP == "base":
     step_base()
 elif STEP == "variants":
     step_variant(globals().get("VARIANT", "base"))      # one per bridge job: VARIANT='bust'
+elif STEP == "unfix":
+    step_unfix()
 elif STEP == "apply":
     step_apply()
