@@ -946,11 +946,11 @@ void AVisexQATour::ClipFrame()
 		// her torso almost in profile, from her right (the side the photo spot's light rims): the bust and
 		// the seat read against the dunes. The direction and the height are kept for the whole clip
 		ClipOffset = C->GetActorForwardVector().RotateAngleAxis(72.f, FVector::UpVector) * 250.f + FVector(0.f, 0.f, 4.f);
-		ClipZ = C->GetMesh()->GetComponentLocation().Z + 106.f;
+		ClipZ = C->GetMesh()->GetComponentLocation().Z + 106.f - C->GetActorLocation().Z;
 	}
-	// the camera travels with her capsule (level, no bob), so the walk stays in frame and what moves in
-	// the picture is her own body
-	const FVector Target(C->GetActorLocation().X, C->GetActorLocation().Y, ClipZ);
+	// the camera travels with her capsule, up and down the dunes too, so what moves in the picture is
+	// her own body (the photo Walk itself lifts and drops her torso about 9 cm a step)
+	const FVector Target = C->GetActorLocation() + FVector(0.f, 0.f, ClipZ);
 	ClipCapture->SetWorldLocationAndRotation(Target + ClipOffset, (-ClipOffset).Rotation());
 	ClipCapture->CaptureScene();
 	UKismetRenderingLibrary::ExportRenderTarget(this, ClipCapture->TextureTarget, FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("QA")),

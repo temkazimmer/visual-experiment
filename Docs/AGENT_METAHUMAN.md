@@ -31,6 +31,10 @@ what we learned, so **write findings down in the log at the bottom as you go**.
   a line per pose to `Saved/QA/report.txt` (add `-visexshots=<name>` for a 4K frame of each). The TOTAL
   lines (body, face, and with an outfit on: garment, poke) must read `pass`, and look at any pose whose crease count jumps. `visex.MH.Spikes` checks the
   pose on screen. Any re-assembly, new body shape or new pose set: run it again.
+- **After every assembly run `Tools/mh_after_build.sh`** (with `shape` if the body's vertices moved): the
+  assembly rewrites the body mesh without morph targets, so the shape sliders and the jiggle stop
+  working on it until they are put back, and the outfits and bare-skin maps are per vertex and per bake
+  (see the stage 7b log).
 - The project must keep `r.GPUSkin.Support16BitBoneIndex=True` (Config/DefaultEngine.ini). Assembling a
   MetaHuman without it silently drops skin weights (see the stage 2 log).
 
@@ -1319,3 +1323,247 @@ ghost of the hair hang in some cells, and the light is the lean's back light.
   of the four fixed joints read the corrected scale (its chest strip showed nothing at Ribcage 0.85 /
   1.20, face stretch 1.11x); the Body page's own close-up cameras on the MetaHuman.
 - The driver's float at short legs and slide at long legs (both bodies), for the movement branch.
+
+### 2026-11-16 · Stage 7b · no eye shadow; the shape sliders and the jiggle on the MetaHuman body (captures `stage7b_*`)
+
+Two steps. Commits 9fa8953 (the rebuild), b0811cb (tools, runtime, checks), then the assets, sheets and this log.
+
+**Step 1: rebuilt without the eye shadow** (Tema: "Yes, remove it"; the preset's SoftSmokey read as
+bruising in Lvl_Dust's light). `Tools/mh_create.py`'s `look` step now sets the eye makeup's type to
+None (`EYE_MAKEUP = False`; eyes only: foundation, blush and lips are the preset's as before), then the
+one clean pass `fresh, create, shape, face, look, hair, rig, textures, build`. The brief's step list left
+`face` out; without it she would have come back with Ada's face, so it ran as in stage 6. Same TARGETS,
+face template, ears, `SKIN_UV`, hair, brows, lashes, bare top. Sign-in was cached, no prompt.
+- **Vertex order** (`mh_vertex_order.py`): body 30,455 and face 33,845 vertices, same triangles, moved
+  0.000 cm on both. The Silversuit cut, the cover mask and the follower hold; the bare-skin maps were
+  remade (`mh_bare_skin.py`: the head's changed with the bake, the body's did not).
+- **`r.GPUSkin.Support16BitBoneIndex=True`** still in `Config/DefaultEngine.ini`; no line was added by the
+  plugin's toast this time.
+- **Spike and poke tour** (cvar on, Silversuit), the run before the rebuild in brackets: body pass,
+  stretch 2.77x (2.70), creases 6.11x (5.42; this number moves 5.4-6.6 from run to run, see stages 3 and 6), grew 2.12 cm (2.03);
+  face pass 1.38x (1.38); garment pass 1.73x (1.82); poke pass, 95 fabric vertices under drawn skin,
+  deepest 0.08 cm on `pelvis` (129, 0.08).
+- **Stage 7's bone-scale sliders**, a subset (`-visexsetups=Chest+Hips+Legs+Neck+Feet`, both ends, three
+  poses): every number equals stage 7's table to the digit (default 1.48 / 2.14 / 1.61, Hips 1.50 creases
+  5.86, Leg length capsule 79.9 / 88.9, hem poke 0.07 cm at most).
+- **Eyes**: `stage7b_eyes_before_after.jpg` (3840 wide: the stage 6 portrait framing, both eyes in the
+  photo Idle, one eye in the idle's light; before | after, same cameras, same fixed-step frame). The dark
+  band over the lid and the smudge under the eye are gone; the lid is skin. What is left under the eye is
+  the skin texture's own redness.
+- **Brows at face LOD 2: not fixed.** Looked at for the 20 minutes allowed. The brows groom is strands
+  at LOD 0-1 and cards at LOD 2-4 (visible), and the assembly bakes the brows into the LOD 2 and LOD 5-7
+  skin maps as well (`T_PreBakedGroom_*`: pipeline intermediates, "can now be deleted" in
+  `MetaHumanDefaultEditorPipelineBase.cpp`; they stay dirty in memory after a build, cannot be saved and
+  are not the cause). A LOD 2 close-up after the rebuild (`visex.Body.MetaHuman.LOD=2`) shows the hair as
+  cards, no lashes, and the fringe over the brow line from every camera tried, so it could not be told
+  whether the brow cards draw. No setting was found. In the game it does not show: she is held at LOD 0
+  whenever a garment is worn, and now whenever the morphs are live (below).
+
+**Step 2: the shape sliders.** With the cvar on, Bust, Bust height, Bust spacing, Glutes, Abs, Body fat
+and Thigh gap now reshape the MetaHuman body, the Silversuit follows them, and the driver's jiggle
+springs move her bust and seat. `visex.Body.MetaHuman.Morphs 0` gives the body as built. Cvar off:
+`UVisexBodyComponent` and the driver are untouched (the only shared code that changed is the QA tour).
+
+**The recipe's first question: does adding a morph keep the mesh? Yes.** Geometry Script's
+`copy_morph_target_to_skeletal_mesh` on the assembled body (LOD 0's source model), tried with one test
+morph before anything was built on it: 0.6 s per morph; the skin weights in the mesh description are
+the same before and after (a hash over every fifth vertex's weights, up to 16 influences each); the
+`DNAAsset` user data and the post-process AnimBP are still on the mesh; `mh_vertex_order.py` reads 0.000
+cm moved, order kept, with all 24 morphs on; and the tours pass with the same crease numbers as before,
+so RigLogic still drives the correctives. The morphs are asset data on `SKM_MHC_Her_BodyMesh` and are
+lost at every assembly: `Tools/mh_morphs.py` (`STEP='apply'`, 15 s) puts them back from
+`SourceArt/Character/MH/Morphs/mh_morphs.json`, and stops if the body's vertices are not the ones the
+deltas were made on.
+
+**Where the deltas come from** (`Tools/mh_morph_build.py`, run through `blender_outfit.py --body=mh
+--mh-morphs`, 40 s):
+- **Creator variants.** `mh_morphs.py STEP='variants'` copies the preset to a scratch character, shapes
+  it once like the build (TARGETS plus one control moved), reads the preview body and deletes the
+  scratch. The `base` variant comes back as the assembled body exactly: 30,455 vertices, the same
+  order, 0.000 cm. So a variant less another is a delta in the mesh's own vertex order, with nothing to
+  match. Each is kept inside the old slider's footprint (where today's shape key moves the skin,
+  faded out round it), because a control moves more than its name says (Chest -9 cm also lifts the bust
+  4 cm and shortens the front; Hip +7 moves every vertex 1.5 cm on average).
+- **The old shape keys, by landmark**, for what no control gives (abs lines and pack, the 16 jiggle
+  keys): stage 3's map (`mh_kit_tpose`) puts each MetaHuman vertex on the old body's T-pose; the key's
+  delta is read at the closest point of the old skin on the same side of her (barycentric; the body sits
+  0.80 cm from the old skin at the median, 2.64 at the 95th percentile, torso only) and scaled back by
+  the band's width, depth and height. Arms are left out (the T-pose turns them).
+- **Size.** Each Creator delta is sized against the old key carried over the same way, so a slider moves
+  her about as far as today: by root mean square over the footprint (Bust, Glutes, Thigh gap), by the
+  peak (Body fat), by the travel of the bust's tips (Bust height, Bust spacing). A least-squares fit
+  shrinks a delta by the cosine between the two shapes and was dropped.
+
+| morph (slider) | source | how like the old key (cosine) | at most per unit | at the slider's ends |
+|---|---|---|---|---|
+| `Bust` | Creator: Chest 93.8 against 84.8, Underbust, Bust Span and Waist held | 0.83 | 6.3 cm (old key 8.0) | 0: tips 4.5 cm back; 1: 1.1 cm forward |
+| `BustLift` (Bust height) | Creator: Shoulder to Apex +3 cm | 0.86 | 2.5 cm (3.0); tips 2.0 cm up | -1: tips 3.0 cm lower; 1: 1.0 higher |
+| `BustApart` (Bust spacing) | Creator: Bust Span +3 cm, resized (below) | 0.79 | 1.2 cm (2.5); tips 0.8 cm apart | -1: each tip 2.0 cm in; 1: 0.2 out |
+| `Glutes` | Creator: Hip +7 cm, High Hip held | 0.70 | 4.8 cm (5.1) | 0: 2.4 cm in; 1: 2.4 out |
+| `Fat` (Body fat) | Creator: the Fat axis +1.2 with the girths let go | 0.52 | 1.6 cm (1.6) | 0: 0.6 cm in; 1: 1.0 out |
+| `ThighGap` | Creator: Thigh -6 cm | 0.54 | 1.7 cm (1.6) | 1: 1.7 cm off the inner thigh |
+| `AbsLines`, `AbsPack` | old keys | (themselves) | 0.71, 0.32 cm | Abs 0: lines -0.73, pack -0.12; Abs 1: pack +0.61 |
+| `BustBounce{L,R}_{Up,Down}`, `BustSway{L,R}_{Out,In,Fwd,Back}`, `GluteBounce{L,R}_{Up,Down}` | old keys | (themselves) | 2.2, 1.3-1.9, 1.8 cm | the springs' |
+
+**Bust spacing is a third of today's reach, on purpose (Tema's call if he wants more).** Today's key
+takes each bust tip 5.6 cm toward the other at -1 and carves a cleavage on the way. Sized by root mean
+square the Creator's shape took each tip 4.4 cm in, and two real breasts moved that far run through
+each other and come out as one cone (seen on the first frames, bare and in the suit). It is sized so the minimum brings each tip 2.0 cm in, where they meet
+(`SPAN_IN` in `mh_morph_build.py`). The slider's range is the same; its maximum moves almost nothing,
+as on the current body (the default is 0.8 of a range that ends at 1).
+
+**Runtime** (`UVisexMHBodyComponent::ApplyMorphs`, every frame after `ApplyShape`). Each weight is the
+slider less its default, since she was built at the defaults: Bust 0 is -0.80, Glutes 0..1 is -0.5..0.5.
+Bust spacing keeps the driver's factor (`1.2 x min(Bust / 0.7, 1.2)`: less bust, less to move). Abs is
+`FVisexBodyProfile::AbsWeights` now less at the defaults (lines 0.734, pack 0.122), so Body fat still
+blurs the abs. The jiggle is not a second set of springs: `UVisexBodyComponent::TickJiggle` already
+writes its weights on the driver's mesh every frame, and they are read from there. Its bust bounce
+carries the standing bust height (`BustLift x BustLiftRange`), which is the `BustLift` morph here, so
+that part is taken out and the swing kept. Negative weights are plain extrapolation; nothing clamps.
+The morphs exist on body LOD 0 only, so while they are live she is held at LOD 0, as she already was
+under a garment (face and grooms with her; cost not measured).
+
+**The neck seam cannot open.** The Body's only open edge is the neck opening it shares with the Face
+mesh (92 vertices, 131-142 cm up: it comes down to the top of the chest). Every delta is faded to
+nothing from 7 cm to 2 cm off that edge. Read back from the file: no morph moves a vertex nearer than
+2.6 cm to it, and within 4 cm none moves more than 0.10 cm per unit (Bust, Bust spacing). The Face mesh
+gets no morphs and needs none. Seen: the collarbones and the top of the chest run through at every
+slider end on the bare sheets.
+
+**The Silversuit follows.** `mh_outfit_body.py` reads the same file onto the split skin and `finalize`
+hands the deltas to the fabric like the old body's shape keys (each split vertex takes the mean of
+the two body vertices it sits between); `mh_outfit.py` imports morph targets now. In the game the
+garment is a Leader Pose follower and takes the Body's morph weights by name. The cover mask and the
+hem logic did not change. The build prints each morph's worst edge stretch on the fabric at weight
+-1 and +1 (Bust 2.36x, Glutes 1.94x, the rest under 1.9x): a torn edge shows there, not in the game.
+
+**After an assembly: `Tools/mh_after_build.sh`** (editor open, right after `mh_create.py`'s pass) runs
+what hangs on the assembled meshes in order: bare-skin maps, skin export, the morphs back on the body
+mesh, the Silversuit re-cut and import. With `shape` (new TARGETS: the body's vertices moved) it first
+makes the deltas again (base, seven variants, `mh_morph_build.py`). Not run end to end yet: each of its
+steps was run by hand this stage, in that order.
+
+**The check** (`Tools/mh_sliders.sh m7 1 -benchmark -fps=30 -visexsetups=shape ...`, see its header). The
+spike and poke check skinned the reference shape only (`ComputeSkinnedPositions` knows no morphs), so it
+would have passed anything: it now adds the worn morphs to body and garment, each delta turned by its
+vertex's own blend of bone matrices (`AddMorphs` in `VisexMHSpikes.cpp`), with the weights read from
+the Body. Limits as before: stretch 3x, growth 3 cm, fabric 0.10 cm under drawn skin. Each of the seven
+sliders at its minimum and maximum, in the menu lean, the photo LegLift and the photo Walk, fixed 30 fps
+step, Silversuit worn (body stretch, creases and growth as lean / LegLift / walk; hem poke is fabric
+vertices under drawn skin and the deepest, same order):
+
+| setup | body stretch | creases | grew cm | garment stretch | hem poke: vertices, cm |
+|---|---|---|---|---|---|
+| default | 1.48 / 2.14 / 1.65 | 1.83 / 4.31 / 2.71 | 0.58 / 1.36 / 1.04 | 1.18 / 1.35 / 1.36 | 0 / 0 / 0 |
+| Bust 0 / 1 | 1.48, 1.50 / 2.14 / 1.65 | 1.86, 1.81 / 4.31 / 2.71 | 0.58, 0.60 / 1.36 / 1.04 | 1.18 / 1.35 / 1.36 | 0 / 10, 0.07 at 0 / 0 |
+| Bust height -1 / 1 | 1.64, 1.49 / 2.14 / 1.71, 1.65 | 1.81, 1.87 / 4.31 / 2.71 | 0.99, 0.59 / 1.36 / 1.23, 1.04 | 1.42, 1.18 / 1.49, 1.35 / 1.53, 1.36 | 0 / 3, 0.02 and 8, 0.04 / 0 |
+| Bust spacing -1 / 1 | 1.48, 1.50 / 2.14 / 1.65 | 2.02, 1.92 / 4.31 / 2.71 | 0.59 / 1.36 / 1.04 | 1.23, 1.18 / 1.35 / 1.36 | 0 / 10, 0.06 at 1 / 0 |
+| Glutes 0 / 1 | 1.41, 1.58 / 2.09, 2.19 / 1.54, 1.82 | 1.86, 1.81 / 4.31 / 2.71 | 0.49, 0.76 / 1.31, 1.43 / 0.66, 1.31 | 1.13, 1.29 / 1.35, 1.38 / 1.27, 1.54 | 0 / 10, 0.07 at 0 / 0 |
+| Abs 0 / 1 | 1.48, 1.50 / 2.14 / 1.65 | 1.86, 1.82 / 4.31 / 2.71, 2.60 | 0.57, 0.60 / 1.36 / 1.04 | 1.18 / 1.35 / 1.36 | 0 / 0 / 0 |
+| Body fat 0 / 1 | 1.49 / 2.14 / 1.65 | 1.79 / 4.31 / 2.60 | 0.59 / 1.36 / 1.04 | 1.18 / 1.35 / 1.36 | 0 / 16, 0.06 at 1 / 0 |
+| Thigh gap 0 / 1 | 1.50, 1.49 / 2.14, 2.11 / 1.65, 1.67 | 1.81, 1.77 / 4.31, 4.38 / 2.71, 2.83 | 0.60 / 1.36, 1.35 / 1.04, 1.06 | 1.18, 1.20 / 1.35 / 1.36, 1.38 | 0 / 10, 0.06 at 1 / 0 |
+
+**Every slider end passes in all three poses**, and on bare skin too (the same body numbers; no garment
+lines). Worst over the 15 setups: body stretch 2.19x and growth 1.43 cm (LegLift, Glutes 1), creases
+4.38x (LegLift, Thigh gap 1), garment stretch 1.54x (walk, Glutes 1), hem poke 0.07 cm (LegLift, Bust 0
+and Glutes 0; 16 vertices at most, Body fat 1), face stretch 1.22x. The hem numbers are stage 4b's hip hem, which
+reads 0.00-0.09 cm from second to second on the default body in LegLift: no slider end adds to it.
+The walk's default row grew from stage 7's 1.61x / 0.74 cm to 1.65x / 1.04 cm: that is the jiggle,
+which the check now sees. Soles in the lean 0.20-0.34 cm over the sand at every setup. These are the
+numbers of the deltas as committed (the Glutes row from a re-run after its delta was smoothed, the rest
+from the run before that, which the smoothing does not touch); the sizing before it (larger Bust
+spacing, smaller Body fat) was toured the same way and passed as well.
+
+**Traps.**
+- `-visexclose=idle:...` also fires on `photo_00_Idle` (the match ignores case), and the stage 6
+  portrait's `idle` frame is the gaps / feet tour's, not the spike tour's.
+- **`MH_BASE_VERTS` is not "the body's own vertices come first".** bmesh gives the slots of the
+  welded-away duplicates to new vertices: about 1,500 split vertices carry a number under it and as
+  many of the body's own (soles and toes) sit above it, and `MH_PARENTS` makes those split vertices
+  their own parent. Harmless for stage 4b's hems; for morphs it left 1,500 fabric vertices behind and
+  the first garment tore (stretch 5.0x, creases 13x at Bust 0). `mh_morph_deltas` matches every vertex by
+  place and reads a split vertex's two corners from the mesh's edges.
+- The fabric's morphs are checked at build time (edge stretch per morph at -1 and +1). Import and
+  tour to find a torn garment costs ten minutes.
+- A least-squares fit of one shape to another returns the cosine times the size: Body fat came out at
+  a third of today's depth. And matching the size of two different shapes over a region is not the same
+  as matching what the slider is for (Bust spacing).
+- The Creator's girth controls pull on each other. Body fat with the girths pinned has nowhere to
+  go (stage 3 saw the same): both ends of that variant are solved with the girths let go.
+- Importing a garment with morph targets leaves `metahuman_base_skel` dirty. It was not saved and the
+  garment follows the morphs without it (weights go by name), so a re-assembly's fresh skeleton is fine.
+- The photo Idle is not a still pose (she shifts and turns) and the walk never shows two setups in
+  the same step: shapes are compared in the reference pose (`visex.Body.MetaHuman.TestPose ref`, the
+  tour's "stand" pass). The torso and side framings aim at standing height and miss her in LegLift.
+- The system `python3` has no numpy; Blender's has. The tour's PNGs make this ffmpeg print "Invalid
+  PNG signature" and decode anyway.
+- `Tools/ue.py` gives up after `UE_WAIT`, but its job stays in `Tools/.bridge/in` and runs when the
+  editor gets to it: a first launch after a C++ build took over four minutes.
+- A killed editor writes `Saved/Autosaves/PackageRestoreData.json` every time: move it aside before the
+  next launch (stage 2's trap), not once.
+
+**The standard tour on the committed assets** (`-visexqa -visexspikes`, cvar on, Silversuit, default
+sliders, the morphs live and the jiggle running): body pass, stretch 2.67x, creases 5.39x, grew 2.00 cm;
+face pass 1.38x; garment pass 1.85x; poke pass, 95 fabric vertices under drawn skin, deepest 0.08 cm on
+`pelvis`. Vertex order after the last apply: 0.000 cm, kept. **Cvar off**: the same tour with
+`visex.Body.MetaHuman=0` runs through with no MetaHuman spawned or logged and nothing to measure; the
+source diff of this stage touches `VisexMHBody.*`, `VisexMHSpikes.cpp` and the QA tour only, and
+`ApplyMorphs` runs only while the MetaHuman is shown. That is a reading of the code and one clean run,
+not a frame-by-frame comparison with the old build.
+
+**Seen** (every sheet at full size, and min | default | max crops of the tour's 1280x2160 frames):
+
+| slider | what it does on her | verdict |
+|---|---|---|
+| Bust | 0 is a small natural bust, not a flat chest (the tips 4.5 cm back; the old key's 0 is 5.4); 1 a little fuller than the default. Smooth on skin and under the suit, the keyhole opens and closes with it, no step where the delta fades out on the upper chest | works |
+| Bust height | -1 hangs 3 cm lower and heavier, the keyhole's lower end closes; 1 sits 1 cm higher. The tips travel two thirds of today's (2.0 against 3.0 cm per unit) | works |
+| Bust spacing | -1 brings the breasts together until they meet, 1 is hardly different from the default | works, at a third of today's reach (above) |
+| Glutes | 0 a flat seat, 1 a round one, in profile and from behind; it also narrows and widens the hips a little (the Creator's Hip is a girth). In the first version the top of the cleft (94-98 cm up) came out 0.1 cm proud of the cheeks at 0; the delta is now spread across the cleft and the groove reads 0.0-0.2 cm there. In the suit the cleft still shows as a dark slit at 0: that is the body's own groove (2.3 cm deep lower down) between cheeks flat enough to mirror the sky | works |
+| Abs | 0 a smooth belly, 1 lines down the middle and under the ribs. On skin it reads; under the suit it barely shows. The lines are the old key's on a mesh 0.7 cm coarse: soft, not faceted | works, subtle |
+| Body fat | 0 a slimmer waist and belly, 1 a fuller one (1.0 cm at most). Spread over belly, flanks and hips like a real body rather than today's belly | works, subtle |
+| Thigh gap | 1 opens a gap up to the crotch. It thins the upper thigh all round, not only the inside (the Creator's Thigh is a girth; cosine 0.54 with the old key). In the suit the inner thigh's highlight breaks into two or three flat patches at 1 | works with a flaw |
+
+On bare skin (sheets 3 and 4) nothing is dented or stepped at any end. There are no nipples or navel
+detail beyond the texture's: Epic's bare skin.
+
+**The jiggle** (`stage7b_jiggle.mp4`, 3840x2160, 30 fps, 10 s: the photo Walk in the Silversuit, then on
+bare skin; a scene capture with the grade from her right, travelling with her capsule; `-visexclip`).
+Bust and seat swing with the driver's springs, each breast on its own, and the suit goes with the skin.
+With the morphs live the walk's default row in the check grew from stage 7's 1.61x / 0.74 cm to
+1.65x / 1.04 cm: the bounce and sway deltas (up to 2.2 cm per unit) are on the mesh and moving. Two
+things about the clip are not the jiggle's: the photo Walk lifts and drops her whole torso about 9 cm
+twice a second and turns it with each step (the driver's catwalk walk; the feet meter reads
+hip bobs of 6-7 cm on other walks too), so the tissue is thrown hard; and the hair's ends flick in
+front of the shoulder. Judged from frames laid side by side and the encoded clip's frame count, not
+watched in motion.
+
+**Captures** (`Docs/Research/metahuman/`, 3840 px wide; cells are the tour's 1280x2160 scene captures
+with the level's grade, MetaHuman hair): `stage7b_eyes_before_after.jpg`; `stage7b_shape_sheet_1.jpg`
+(Silversuit, menu lean, from her front right) and `_2` (Silversuit, standing in the reference pose:
+profile, front right, behind, thighs); `_3` and `_4` the same two on bare skin (no outfit: Epic's bare
+chest, the baked briefs); `_5` Bust, Glutes, Body fat and Thigh gap in the photo LegLift and Walk, full
+figure; `stage7b_jiggle.mp4`. One cell per slider: min | default | max. Reshoot: the two
+`Tools/mh_sliders.sh` lines in that script's header, then `Tools/mh_shape_sheets.sh <suit run> <bare
+run>`. The lean frames differ a little from cell to cell because she looks about in the lean; the
+standing ones do not move at all.
+
+**Left open.**
+- **Tema's calls**: Bust spacing's reach (a third of today's); whether Bust 0 should go flatter (a second,
+  smaller Creator variant would give it a real shape instead of more extrapolation); Thigh gap as a
+  whole-thigh thinning against today's inside-only cut (`--mh-old=ThighGap` on the build line is meant to
+  take the old key instead, for any slider named there; the option was written and not run).
+- A morph moves skin, not joints: the corrective and twist joints stay where the built body has them.
+  Nothing showed at these sizes; a much larger bust or seat would sit off its correctives.
+- The morphs are on body LOD 0 only and hold her there while they are on (the garment already did).
+  Cost at a distance, face and grooms included, not measured. LOD 1-3 would need the deltas carried to
+  their vertices.
+- Only the Silversuit exists on this body. Any other outfit cut with `--body=mh` carries the morphs the
+  same way; none was built. There are no fit morphs (`Fit_*`) here: fabric follows the skin exactly.
+- The driver's ArmUp / ThighUp helper morphs have no counterpart (RigLogic's correctives do that job).
+- Not checked: two or more shape sliders pushed together, or with the bone-scale sliders at their ends
+  (the tall body's hip hem was already over the limit in stage 7); the Settings sit and the other photo
+  poses at slider ends; the Body page's own close-up cameras and live dragging of a slider (the tour
+  sets values); a packaged build (`/Game/Character/MH` is still not cooked); `Tools/mh_after_build.sh` end
+  to end; the hips-and-thighs TARGETS change that was asked about (no new TARGETS arrived, so they are
+  as in stage 3).
+- Brows at face LOD 2 (step 1 above).
