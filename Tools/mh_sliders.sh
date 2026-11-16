@@ -10,7 +10,8 @@
 #   Tools/mh_sliders.sh m7b 1 -benchmark -fps=30 -visexsetups=shape -visexframe=body+torso+side+back -visexoutfit=None
 #   Tools/mh_shape_sheets.sh m7 m7b
 # -visexsetups=Hips+Legs (any sliders, "shape" = the seven morph sliders) is also the short re-check;
-# a subset run adds a fourth pose, the photo Idle (standing still in the open).
+# a subset run adds a fourth pose, "stand" (the reference pose, standing still in the open), and
+# -visexposes=lean+stand runs only those passes.
 set -e
 cd "$(dirname "$0")/.."
 UE="/Users/Shared/Epic Games/UE_5.7/Engine/Binaries/Mac/UnrealEditor.app/Contents/MacOS/UnrealEditor"

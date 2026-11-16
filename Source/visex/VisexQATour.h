@@ -69,12 +69,14 @@ private:
 	TMap<FString, TPair<FVector, FVector>> PortraitCameras;   // pose and framing -> from, target
 	bool bSliders = false;
 	/** -visexclip [-visexoutfit=None] -visexshots=<name>: she walks in, the photo Walk starts, and 150
-	 *  frames of her torso (4K scene capture, grade on, one fixed camera) go to
+	 *  frames of her torso (4K scene capture, grade on, a camera level with her from her right) go to
 	 *  Saved/QA/<name>_clip_NNNN.png: the jiggle in the walk. Run at a fixed step (-benchmark -fps=30). */
 	void BuildClip();
 	void ClipFrame();
 	UPROPERTY(Transient) TObjectPtr<class USceneCaptureComponent2D> ClipCapture;
 	int32 ClipLeft = 0, ClipN = 0;
+	FVector ClipOffset = FVector::ZeroVector;
+	float ClipZ = 0.f;
 	/** -visexbody=Name=value+Name=value: Body page values set in memory before any tour (not saved). */
 	void ApplyBodyArg();
 	/** -visexshots=<name>: a 4K frame of the game view to Saved/QA/<name>_<What>.png (no-op without it). */

@@ -18,6 +18,8 @@ STEPS (default ['create', 'shape', 'look']):
   textures  download the high-resolution skin textures from Epic's cloud
   build     assemble game-ready assets under /Game/Character/MH/Built (PIPELINE, QUALITY)
 Every step saves the character asset, so a later step can run in a fresh editor.
+After 'build': Tools/mh_after_build.sh (bare-skin maps, skin export, the shape sliders' morph targets,
+the Silversuit): the assembly rewrites the meshes and writes no morph targets.
 """
 import unreal
 

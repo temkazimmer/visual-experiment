@@ -180,6 +180,7 @@ SHAPE = [
 ONLY_OLD = next((a.split("=", 1)[1].split(",") for a in args if a.startswith("--mh-old=")), ())    # --mh-old=Fat,Glutes: these from the old keys
 BY_APEX = ("BustApart", "BustLift")
 BY_PEAK = ("Fat",)
+SMOOTH = {"Glutes": 8}       # passes of diffusion over the mesh's edges (about 0.7 cm each)
 SPAN_IN = 2.0       # cm each bust tip moves toward the other at Bust spacing -1
 MIN_COS = 0.35      # under this the variant is not the slider's shape: the old key is used instead
 MORPHS = {}
@@ -208,6 +209,11 @@ for _name, _keys, _pair in SHAPE:
             _src = "Creator %s - %s, x%.2f, cos %.2f" % (_pair[0], _pair[1], _k, _cos)
         else:
             _src = "old shape key (Creator %s - %s reads differently: cos %.2f)" % (_pair[0], _pair[1], _cos)
+    if _name in SMOOTH and _src.startswith("Creator"):
+        # the cleft between the glutes moves less than the cheeks in the variant, and at Glutes 0 its top
+        # (94-98 cm up) came out 0.1 cm proud of them: a pinch on the suit's chrome. Spread the delta
+        # sideways so the cleft goes with its cheeks.
+        _d = _blur_u(_d, SMOOTH[_name])
     if _name == "BustApart" and _src.startswith("Creator"):
         # At today's travel (each tip 2.3 cm per unit, 5.6 cm inward at the slider's minimum) two real
         # breasts run through each other and come out as one cone. Sized so the minimum (-2.47 units at

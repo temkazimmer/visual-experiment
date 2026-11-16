@@ -848,21 +848,43 @@ void AVisexQATour::BuildSliders()
 	Spikes.SetPhase(TEXT("arrival walk"));
 	// the clock holds through her walk in
 	Add(4.f, [] {});
-	Pass(TEXT("lean"));
-	Add(1.f, [D] { D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
-	Add(5.f, [Motion] { Motion(TEXT("LegLift")); });
-	Add(5.f, [] {});
-	Pass(TEXT("leglift"));
-	Add(0.5f, [Motion] { Motion(TEXT("Walk")); });
-	Add(4.f, [] {});
-	Pass(TEXT("walk"));
-	if (bOnly)
+	// -visexposes=lean+stand: only these passes (default: all three, and "stand" too on a subset run)
+	FString Poses = bOnly ? TEXT("lean+leglift+walk+stand") : TEXT("lean+leglift+walk");
+	FParse::Value(FCommandLine::Get(), TEXT("visexposes="), Poses, false);
+	const auto Want = [Poses](const TCHAR* Name) { return (TEXT("+") + Poses + TEXT("+")).Contains(FString(TEXT("+")) + Name + TEXT("+")); };
+	if (Want(TEXT("lean")))
 	{
-		// a subset run also stands her still in the open (the photo Idle), where a shape can be judged:
-		// the lean hides her seat and the walk never shows two setups in the same step
-		Add(0.5f, [Motion] { Motion(TEXT("Idle")); });
+		Pass(TEXT("lean"));
+	}
+	Add(1.f, [D] { D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
+	if (Want(TEXT("leglift")))
+	{
+		Add(5.f, [Motion] { Motion(TEXT("LegLift")); });
+		Add(5.f, [] {});
+		Pass(TEXT("leglift"));
+	}
+	if (Want(TEXT("walk")))
+	{
+		Add(Want(TEXT("leglift")) ? 0.5f : 5.f, [Motion] { Motion(TEXT("Walk")); });
 		Add(4.f, [] {});
-		Pass(TEXT("idle"));
+		Pass(TEXT("walk"));
+	}
+	if (Want(TEXT("stand")))
+	{
+		// standing still in the open, in the MetaHuman's reference pose (visex.Body.MetaHuman.TestPose
+		// "ref"): the one pose where two setups can be laid side by side. The lean hides her seat, the
+		// walk never shows two setups in the same step, and the photo Idle shifts her about.
+		Add(Want(TEXT("leglift")) || Want(TEXT("walk")) ? 0.5f : 5.f, [Motion]
+		{
+			Motion(TEXT("Idle"));
+			if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(TEXT("visex.Body.MetaHuman.TestPose"))) { V->Set(TEXT("ref"), ECVF_SetByConsole); }
+		});
+		Add(4.f, [] {});
+		Pass(TEXT("stand"));
+		Add(0.3f, []
+		{
+			if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(TEXT("visex.Body.MetaHuman.TestPose"))) { V->Set(TEXT("off"), ECVF_SetByConsole); }
+		});
 	}
 	Add(0.5f, [this]
 	{
@@ -919,15 +941,17 @@ void AVisexQATour::ClipFrame()
 		ClipCapture->bCaptureEveryFrame = false;
 		ClipCapture->bCaptureOnMovement = false;
 		ClipCapture->bAlwaysPersistRenderingState = true;
-		ClipCapture->FOVAngle = 20.f;
+		ClipCapture->FOVAngle = 28.f;   // across; 16 degrees up and down: 70 cm of her at this distance, bust to seat
 		ClipCapture->RegisterComponent();
-		// one camera for the whole clip: her torso from the front and a little to her left
-		const FVector Pelvis = C->GetMesh()->GetSocketLocation(TEXT("pelvis"));
-		const FVector Target(Pelvis.X, Pelvis.Y, C->GetMesh()->GetComponentLocation().Z + 122.f);
-		const FVector From = Target + C->GetActorForwardVector().RotateAngleAxis(-32.f, FVector::UpVector) * 215.f + FVector(0.f, 0.f, 4.f);
-		ClipCapture->SetWorldLocationAndRotation(From, (Target - From).Rotation());
-		QA_LOG(TEXT("VisexClip: camera %s at %s"), *From.ToCompactString(), *Target.ToCompactString());
+		// her torso almost in profile, from her right (the side the photo spot's light rims): the bust and
+		// the seat read against the dunes. The direction and the height are kept for the whole clip
+		ClipOffset = C->GetActorForwardVector().RotateAngleAxis(72.f, FVector::UpVector) * 250.f + FVector(0.f, 0.f, 4.f);
+		ClipZ = C->GetMesh()->GetComponentLocation().Z + 106.f;
 	}
+	// the camera travels with her capsule (level, no bob), so the walk stays in frame and what moves in
+	// the picture is her own body
+	const FVector Target(C->GetActorLocation().X, C->GetActorLocation().Y, ClipZ);
+	ClipCapture->SetWorldLocationAndRotation(Target + ClipOffset, (-ClipOffset).Rotation());
 	ClipCapture->CaptureScene();
 	UKismetRenderingLibrary::ExportRenderTarget(this, ClipCapture->TextureTarget, FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("QA")),
 		FString::Printf(TEXT("%s_clip_%04d.png"), *Shots, ClipN++));

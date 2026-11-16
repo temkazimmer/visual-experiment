@@ -21,6 +21,7 @@ Making the deltas (only for a new body shape; the json is committed):
          SourceArt/Character/MH/Outfits --body=mh --mh-morphs      (Tools/mh_morph_build.py: variants and the
          old body's shape keys through the kit's landmark map -> mh_morphs.json)
   3. STEP='apply', then Tools/mh_vertex_order.py and the spike tour
+Tools/mh_after_build.sh runs all of it in order after an assembly.
 """
 import json
 import os
@@ -100,8 +101,6 @@ VARIANTS = globals().get("VARIANTS", {
     "thigh":  {"set": {"Thigh": -6.0}},
     "fat0":   {"free": "girths", "set": {"Fat": 0.0}},                  # girths let go so fat has somewhere to go
     "fat1":   {"free": "girths", "set": {"Fat": 1.2}},
-    "musc0":  {"free": "girths", "set": {"Muscularity": 0.0, "Fat": 0.0}},
-    "musc1":  {"free": "girths", "set": {"Muscularity": 1.5, "Fat": 0.0}},
 })
 GIRTHS = ("Chest", "Waist", "Hip", "Thigh", "Calf", "Knee", "Bicep", "Forearm", "Wrist", "Underbust", "Bust Span", "Hand Circumference")
 PRESET = "/MetaHumanCharacter/Optional/Presets/Ada"
