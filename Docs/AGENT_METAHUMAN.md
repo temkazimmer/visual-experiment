@@ -47,7 +47,8 @@ what we learned, so **write findings down in the log at the bottom as you go**.
    (new skin FBX in, new fit data out). Done when it holds through walk, lean and a deep bend.
 4. **Spike review with Tema**: 4K side-by-side stills and a short clip, foot numbers, and
    a list of what broke. He decides whether to continue.
-5. Body page: bone-scale sliders against the corrective joints; morph sliders rebuilt
+5. Body page: bone-scale sliders against the corrective joints (done with skin tone, see the stage 7
+   log); morph sliders rebuilt
    from MetaHuman body variants (same topology, so a variant minus the base is a morph).
 6. Remaining outfits, then hair refit to the new head.
 7. Muscle flex layer (morphs by joint angle and load), tension wrinkles, face expressions
@@ -1079,3 +1080,242 @@ on a scratch character (`CHAR_NAME='MHC_Try'; STEPS=['create','shape','face']`, 
   `mh_hair_fit.py` against `mh_head_fit.fbx` if they are used again. The groom was re-bound by the
   assembly; the ear tip comes through it at the side (`stage6_portrait.png`).
 - Unlimited bone influences (above); `/Game/Character/MH` is still not cooked into the DMG.
+
+### 2026-11-16 · Stage 7 · Body page sliders on the MetaHuman body (captures `stage7_*`)
+
+With `visex.Body.MetaHuman 1` every bone-scale slider of the Body page and Skin tone now reach the
+MetaHuman: Head, Neck, Shoulders, Ribcage, Waist, Hips, Leg length, Thighs, Calves, Arm length, Arms,
+Hands, Feet (Height already did). The seven morph sliders (Bust, Bust height, Bust spacing, Glutes,
+Abs, Body fat, Thigh gap) still do nothing on it: next step, recipe at the end. C++ only, no asset
+was added or changed. `visex.Body.MetaHuman.Reshape 0` gives the body as built, to compare.
+Commits 15521a3 (the follower), e3c076c (the sliders tour and its tools), then this log and the sheets.
+
+**Each slider over its default.** The MetaHuman was shaped to her at the default sliders (stage 1,
+3, 6: the head's 1.04 is in the face fit, the thigh's 1.208 in the tape), so the follower takes
+`value / default` per slider (`UVisexMHBodyComponent::ApplyShape`, `FVisexMHShape`): 1 everywhere at
+the defaults, and the same relative range as the driver's. Torso depth terms keep Reshape's
+weights (ribcage 0.6, waist 0.7, hips 0.5 of the width's change).
+
+**Where it goes** (`FVisexMHBodyProxy::Build` and `Evaluate`, `Source/visex/VisexMHBody.cpp`). The
+driver's Reshape on the same bones: spine_04/05 (Ribcage), spine_01/02 (Waist), pelvis (Hips), each
+local axis taking the term of the body axis it is closest to; thigh and calf (Leg length along X,
+Thighs / Calves around it); upperarm and lowerarm (Arm length, Arms); head, hand and foot whole. A
+segment's scale sits on its bone and the next *followed* bone gets the inverse, so the change stays in
+the segment and reaches the joints below as an offset. It is put on in the same root-down pass that
+builds the pose (local transform times the parent's component space), before the foot pin: the stage
+2 bug class (layers composed child-first under non-uniform scale) has no second composition to
+disagree with. Two sliders are done differently from the driver, on purpose:
+- **Neck: an offset, no scale.** neck_02 and head move along the neck by the factor. The Face mesh
+  hangs 58 neck joints of its own on neck_01 / neck_02 with their axes turned a quarter (X is not the
+  neck's length), and scale passes down by axis *index*: a length scale would have thickened the
+  Face's neck sideways (up to 1.44x) while the Body's neck grew long, and opened the seam.
+- **Shoulders: the collarbone longer along X**, upper arm compensated. The upper arm lands where the
+  driver's offset puts it (its offset is 13.0, 0.0, -0.1), and `clavicle_out` / `clavicle_scap`
+  spread with the collarbone instead of the whole stretch landing at the shoulder joint.
+
+**The 172 corrective, twist and volume joints: they inherit, and four are corrected after.** RigLogic
+writes each driven joint's whole local transform every frame, translation, rotation and scale
+(`FAnimNode_RigLogic::UpdateJoints`: neutral + delta, in the parent's space), and reads only the
+driver joints' rotations. So a scale or a compensation set on a driven joint is lost at LOD 0-1 and
+kept past LOD 1 (where RigLogic stops): the one behaviour that is the same at every LOD is to leave
+them alone. They then sit and scale with the segment they hang on, offsets included, which is the
+rigid-lump answer a bone scale means. The catch is that FTransform passes scale down per axis index,
+not per direction. Checked on the reference pose (`Saved/MH/skel_dump.json`, dumped through the
+bridge): of the joints that inherit a non-uniform scale, all on the limbs have the segment's axes or
+Y and Z swapped (harmless: girth is the same on both), except:
+- `clavicle_pec_l/r` and `spine_04_latissimus_l/r` under spine_05: X and Z swapped. The bust hangs
+  on the pec joints, and the Ribcage's width reached it as *height* (the keyhole grew taller at
+  max and shrank at min instead of widening: seen in the first frames). Fixed after the post-process
+  AnimBP: `UVisexMHBodyComponent::FixScales`, on the Body's bones-finalized delegate, moves the terms
+  to the axes they belong on in the finished component-space transforms (a scale only: the four have
+  no children), before the garment's Leader Pose and the renderer read them. The list is built from
+  the reference pose, not by name (`UVisexMHBodyAnimInstance::ScaleFixes`).
+- `upperarm_in_l/r` (armpit): 42 degrees off every axis, so neither answer is right. Left inheriting.
+  Under Arms and Arm length its patch of skin takes length where it should take some girth; nothing
+  shows in the frames.
+
+**Soles, pelvis, capsule.** The foot pin's sole offset and the pelvis lift are rebuilt when a slider
+moves: the MetaHuman's ankle and ball heights over the sole take the Feet factor, and the leg length
+that sets the pelvis is thigh plus calf under their scales. The pin still reads no ground: it
+repeats the driver's answer on a leg and foot of the new size. Capsule, mesh placement and camera are
+the driver's (`UVisexBodyComponent`, untouched), so they are the current body's by construction; the
+sliders tour logs the capsule per setup (half height 72.8 at 145 cm, 92.9 at 185, 79.9 / 88.9 at Leg
+length 0.90 / 1.12, radius unchanged by the legs) and reads the same numbers with the cvar off.
+
+**The check: `Tools/mh_sliders.sh <name> [cvar]`** (`-visexqa -visexsliders`, `AVisexQATour::
+BuildSliders`). It puts 35 setups on her one after another (the default body; each of the 13
+bone-scale sliders and Height at minimum and maximum; skin tone 0 / 0.5 / 0.75 / 1; two combined
+bodies), each in the menu lean, the photo LegLift and the photo Walk: 1.6 s to settle, a second
+measured under its own phase (spike, poke, the soles' vertex gap, how far the MetaHuman's hand, foot,
+head and pelvis joints sit from the driver's, the capsule), then a 1280x2160 portrait from one fixed
+camera per pose and a head-and-shoulders frame. The profile is changed in memory and loaded back at
+the end; nothing is saved (`VisexBody.sav` was backed up first and is byte-identical after).
+`Tools/mh_slider_table.py` turns the report into the table, `Tools/mh_slider_sheets.sh` the frames
+into the sheets. `-visexbody=Legs=1.12+Feet=1.15` puts values on her for any other tour.
+The combined bodies: *small and slight* Height 150, Head 1.0, Neck 0.84, Shoulders 0.82, Ribcage 0.90,
+Waist 0.74, Hips 0.88, Leg length 0.92, Thighs 0.90, Calves 0.90, Arm length 0.93, Arms 0.84, Hands
+0.85, Feet 0.87; *tall and strong* 183, 1.08, 1.10, 1.15, 1.15, 1.05, 1.15, 1.10, 1.35, 1.22, 1.06,
+1.22, 1.10, 1.10.
+
+Numbers (fixed 30 fps step, cvar on, Silversuit worn; body stretch and creases as worst frame in
+lean / LegLift / walk; the hem column is fabric vertices under drawn skin and the deepest, LegLift;
+sole gap is the lowest sole vertex over the sand in the lean; hand is the MetaHuman's hand joint
+from the driver's in the lean, cm):
+
+| setup | body stretch | creases | hem poke | sole gap L / R | hand L / R |
+|---|---|---|---|---|---|
+| default | 1.48 / 2.14 / 1.61 | 1.83 / 4.31 / 2.71 | 0 | 0.33 / 0.28 | 1.34 / 1.23 |
+| Head 0.85 / 1.15 | 1.48, 1.49 / 2.14 / 1.61 | 1.86, 1.79 / 4.31 / 2.71 | 10, 0.07 / 0 | 0.33 / 0.26 | 1.35 / 1.24 |
+| Neck 0.80 / 1.30 | 1.49 / 2.14 / 1.61 | 2.01, 1.97 / 4.31 / 2.71 | 3, 0.02 / 8, 0.04 | 0.33 / 0.26 | 1.36 / 1.23 |
+| Shoulders 0.80 / 1.20 | 1.49 / 2.14 / 1.61 | 2.00, 1.96 / 4.31 / 2.71 | 0 / 10, 0.06 | 0.34 / 0.26 | 1.34, 1.44 / 1.22, 1.30 |
+| Ribcage 0.85 / 1.20 | 1.50, 1.49 / 2.14 / 1.61 | 1.81 / 4.31 / 2.71 | 0 / 8, 0.05 | 0.33 / 0.28 | 1.42, 1.26 / 1.29, 1.16 |
+| Waist 0.60 / 1.20 | 1.48, 1.50 / 2.14 / 1.61 | 1.86 / 4.31 / 2.71 | 0 / 60, 0.10 | 0.33 / 0.26 | 1.35 / 1.24 |
+| Hips 0.85 / 1.50 | 1.48, 1.64 / 2.12, 2.23 / 1.61, 1.79 | 1.85, 2.94 / 4.05, 5.86 / 2.58, 3.50 | 14, 0.05 / 0 | 0.34 / 0.29 | 1.36 / 1.26 |
+| Leg length 0.90 / 1.12 | 1.42, 1.61 / 2.03, 2.31 / 1.54, 1.91 | 1.79, 2.03 / 4.07, 4.70 / 2.61, 3.02 | 0 / 14, 0.07 | 0.33 / 0.26, 0.34 | 1.28, 1.42 / 1.21, 1.30 |
+| Thighs 0.80 / 1.40 | 1.38, 1.55 / 1.99, 2.20 / 1.48, 1.66 | 2.02, 1.97 / 4.73, 4.17 / 2.96, 2.76 | 0 / 13, 0.09 | 0.33 / 0.28 | 1.34 / 1.24 |
+| Calves 0.80 / 1.25 | 1.48, 1.50 / 2.14 / 1.61, 1.63 | 1.86 / 4.31 / 2.71 | 0 | 0.33 / 0.27 | 1.35 / 1.24 |
+| Arm length 0.92 / 1.08 | 1.50 / 2.14 / 1.63 | 1.81, 2.01 / 4.31 / 2.71 | 10, 0.07 / 0 | 0.33 / 0.28, 0.12 | 1.25, 1.51 / 1.13, 1.42 |
+| Arms 0.80 / 1.25 | 1.48, 1.50 / 2.14 / 1.63 | 1.84, 2.08 / 4.31 / 2.71 | 8, 0.05 / 0 | 0.20, 0.31 / 0.33, 0.26 | 1.35 / 1.28 |
+| Hands 0.85 / 1.15 | 1.50, 1.48 / 2.14 / 1.61 | 1.81, 2.34 / 4.31 / 2.71 | 0 | 0.33 / 0.28 | 1.34 / 1.24 |
+| Feet 0.85 / 1.15 | 1.48, 1.49 / 2.14 / 1.57, 1.74 | 1.86, 1.80 / 4.31 / 2.74, 2.61 | 0 | 0.32, 0.35 / 0.26, 0.30 | 1.39, 1.28 / 1.28, 1.15 |
+| Height 145 / 185 | 1.49 / 2.14 / 1.65, 1.60 | 2.01, 1.97 / 4.31 / 2.72 | 10, 0.06 / 0 | 0.29, 0.37 / 0.23, 0.29 | 1.19, 1.52 / 1.08, 1.37 |
+| small and slight | 1.32 / 1.93 / 1.36 | 1.73 / 4.23 / 2.57 | 0 | 0.29 / 0.22 | 1.17 / 1.09 |
+| tall and strong | 1.68 / 2.37 / 2.01 | 2.24 / 5.02 / 3.09 | **56, 0.14 FAIL** | 0.39 / 0.29 | 1.68 / 1.52 |
+
+Worst over every setup and pose: body stretch 2.37x (limit 3) and grew 1.73 cm (limit 3), both
+LegLift on the tall body; creases 5.86x (LegLift, Hips 1.50: the groin's short edges; the standard tour's
+Ledge reads 5.8-6.6 on the default body); face stretch 1.73x (the neck at 1.30, which is the neck getting 44%
+longer); garment stretch 1.51x. **Poke: one FAIL**, the tall body in LegLift, 56 fabric vertices up to
+0.14 cm under the skin at the hip cutout's edge where it crosses the hip crease (limit 0.10; Waist
+1.20 alone sits on the limit, 60 at 0.10). It is stage 4b's hem. That hem reads 0.00-0.09 cm from
+second to second on the default body in this pose (the Head and Height rows above show it: those
+sliders do not touch the hip), so single sliders stay inside the limit and the big body goes past it.
+Soles in the lean: 0.12-0.39 cm over the sand at every setup (target 0.5). Hands in the lean: 1.1-1.7
+cm from the driver's hand joint at every setup, 1.34 / 1.23 on the default body: the gap stage 2
+left (a longer arm), scaled with her, not opened by any slider. In LegLift the left hand is 2.2-3.0
+cm off (2.6 on the default body).
+
+**The real walk and the idle** (gaps tour, fixed 60 fps step, `-visexbody`), MetaHuman / current body:
+
+| cm | Start walk drift, median | Start walk sole gap, median | lean sole gap L, R | idle sole gap L, R |
+|---|---|---|---|---|
+| default | 1.50 / 2.17 | 0.58 / 0.76 | 0.33, 0.26 / 0.19, 0.19 | 0.23, -0.11 / 0.19, 0.18 |
+| Leg length 1.12 | 8.38 / 8.32 | -0.42 / -0.23 | 0.33, 0.40 / 0.19, 0.34 | 0.23, -0.11 / 0.20, 0.19 |
+| Leg length 0.90 | 0.90 / 1.10 | 2.80 / 2.80 | 0.33, 0.28 / 0.19, 0.19 | **6.43, 4.50 / 6.40, 4.80** |
+| small and slight | 2.80 / 2.78 | 6.63 / 6.77 | 0.29, 0.24 / 0.17, 0.17 | **3.80, 7.03 / 3.87, 7.11** |
+| tall and strong | 4.98 / 5.65 | -0.93 / -0.52 | 0.39, 0.31 / 0.21, 0.21 | 0.26, 0.25 / 0.22, 0.21 |
+
+The MetaHuman stays within 0.3 cm of the current body in every cell: the pin holds under the leg and
+foot sliders. What the table also shows is **the current body's own**, with the MetaHuman repeating
+it: with short legs she floats 4-7 cm over the sand after Start and in the photo Walk (3.9-5.0 cm
+with the cvar off and on), and with long legs her Start walk slides 8 cm a step. Those are the
+driver's (the capsule and KeepFeet outside the lean, the walk's play rate against a longer stride),
+not the follow, and were not touched. The default rows are stage 6's and stage 2's numbers to the
+digit, so the default body and the cvar-off game are unchanged.
+
+**Seen in the frames** (the 1280x2160 portraits of the lean at full size, min and max beside the
+default, cropped to the part the slider moves; LegLift and walk on their sheets and in crops):
+
+| slider | min and max | verdict |
+|---|---|---|
+| Height | the whole figure, suit and hair with it; soles on the sand at both ends | works |
+| Head | head, face, ears and hair scale as one; nothing detaches, no step at the neck | works |
+| Neck | shorter, and 4.5 cm longer at 1.30: a long even neck, no seam between the Face and Body meshes, the scoop neckline stays put | works |
+| Shoulders | narrower; at 1.20 broad, the collarbones and the neckline widen with them, no pinch at the armpit | works |
+| Ribcage | the ribcage and the bust narrow and widen; the keyhole changes width, not height (after the fix above) | works |
+| Waist | a wasp waist at 0.60, a thick one at 1.20 where the belt stands a little proud at the sides (garment grew 1.47 cm); hip cutouts stay on the skin | works; LegLift hem at the 0.10 cm limit at 1.20 |
+| Hips | at 1.50 a very wide pelvis with the thighs set apart and a web of suit across the gap at the crotch. The current body does the same | works (the slider's own look at 1.50) |
+| Leg length | knees and cuffs move, the feet do not: same place on the sand in all three frames | works in the lean; see the driver's float and slide above |
+| Thighs | thin thighs under her hips at 0.80 with a gap at the crotch (same on the current body), heavy at 1.40; knees clean | works |
+| Calves | thin and thick calves, the ankle cuff follows | works |
+| Arm length | wrists and cuffs move; the hand stays on the ledge in the lean and on the calf in LegLift | works |
+| Arms | thinner and thicker, elbows clean, nothing seen at the armpit joint that is left inheriting | works |
+| Hands | at 1.15 large hands (the MetaHuman's are already 13% longer than hers), the cuff stays on the forearm. **In LegLift the fingertips come through the lifted calf**; the current body's hand at 1.15 rests on it | works with a flaw |
+| Feet | smaller and larger feet flat on the sand | works |
+| small and slight | reads as one slim figure in the lean and the walk | works |
+| tall and strong | reads as one big figure; in LegLift the hand sinks into the calf (the current body's does too) and the hip hem fails the poke check | works with a flaw |
+
+Not the sliders: with the legs at 0.90 and on the small body her hands cannot be seen from the front
+in the lean (the arms end at the cuffs) on both bodies; in the lean one foot now and then rests on
+its toes (her idle), on both bodies. Neither was looked into.
+
+
+**Skin tone.** One material draws all of her skin: the body, every face LOD (slots 0, 9, 11-14) and
+the copies worn under outfits (`MI_Body_<Outfit>` on stage 3's `M_Body_Under`, `MI_Head_Bare`) are
+instances of `M_skin_unified_baked` or its masked copy, and all of them have "Use Global Adjustments
+Post-Bake" on and "Basecolor Global Multiply Post-Bake" at white. `UVisexMHBodyComponent::ApplySkin`
+puts a dynamic instance on each skin slot (found by that parameter, so an outfit's body material is
+picked up when it goes on) and sets the multiplier to the slider's colour over the default's colour
+(`FVisexBodyProfile::SkinColor`, linear, per channel). At the default 0.25 that is exactly 1: the skin
+is stage 6's, untouched. Multipliers: 0 -> (1.02, 1.20, 1.18), 0.5 -> (0.70, 0.60, 0.44), 0.75 ->
+(0.38, 0.27, 0.17), 1 -> (0.12, 0.08, 0.06). It is the android skin's own ramp taken relative to its
+default, so both bodies cover the same range. Nothing in the plugin's or the assembled materials is
+edited, and no new asset is needed (the brief expected a copy to extend: the parameter was already
+there). Seen (`stage7_tone.jpg`): face, neck, shoulders and the bare skin in the suit's keyhole move
+together at every step; at 1 it is a deep brown that keeps its highlights; lips, the preset's eye
+shadow and the ear darken with the rest. What a multiplier cannot do: the palms, soles and lips of a
+dark skin stay as dark as the rest (real ones are lighter), and the subsurface profile is one for
+every tone. Brows, lashes and the groom are not touched.
+
+**Ground for the morph sliders (nothing built).**
+- The assembled body mesh has no morph targets (0 on body and face, 4 LODs, checked in the editor), and the Creator's Python API has no morph step
+  (`MetaHumanCharacterSkelMeshUtils.h` lists morph targets as a TODO). A re-assembly rewrites
+  `SKM_MHC_Her_BodyMesh`, so anything added to it is lost each time and must be re-applied.
+- What can add them from a script: Geometry Script's `GeometryScript_AssetUtils.
+  copy_morph_target_to_skeletal_mesh(dynamic_mesh, skeletal_mesh, name, options, lod)` (the plugin
+  is on: MetaHumanCharacter depends on it, and Python sees the function). It writes the morph into the LOD's mesh description
+  and rebuilds, so it is real asset data (cooked, kept through a DDC rebuild), and it asks only for
+  the same vertex count as the LOD. Not run here: the first thing to check is that the rebuild
+  leaves the skin weights, the DNA user data and the vertex order as assembled.
+- Recommended recipe: (1) deltas per body LOD 0 vertex in a file under `SourceArt/Character/MH/Morphs`,
+  in the vertex order `mh_vertex_order.py` already guards. (2) Where the Creator has a control, take
+  the delta from a body variant on a scratch character (same topology: variant minus base): Chest at
+  a held Underbust for Bust, Bust Span for Bust spacing, Shoulder to Apex for Bust height, Hip at a
+  held High Hip for Glutes, the Fat axis for Body fat, Thigh for Thigh gap. (3) For Abs (lines and
+  pack), which no control gives, carry the old body's shape keys over with stage 3's landmark map:
+  `mh_kit_tpose()` already gives every MetaHuman vertex its place on the old body's T-pose; take the
+  closest point on the old skin, read the shape key's delta there (barycentric), and scale it back by
+  the band's width, depth and height factors. The same route can stand in for any of (2) that reads
+  wrong. (4) `Tools/mh_morphs.py`, run after every assembly like `mh_bare_skin.py`: copy LOD 0 to a
+  dynamic mesh, add each delta, `copy_morph_target_to_skeletal_mesh`, save, then `mh_vertex_order.py`
+  and the spike tour. (5) Runtime: `ApplyShape` sets each weight as slider minus default on the Body
+  (the body is built at Bust 0.80, so less bust is a negative weight). (6) Outfits: export the skin
+  with its morphs and `blender_outfit.py --body=mh` carries them to the fabric as it does for the old
+  body; the cover mask does not change. LOD 0 only at first: a worn garment holds her at LOD 0.
+- Risks: a variant also moves joints (the skeleton is fitted to each body), a morph does not, so
+  large deltas (a much bigger bust) will sit a little off their corrective joints; the Face mesh
+  carries a strip of chest, so a morph that reaches the collarbones (Body fat) needs the same delta
+  on that strip or the seam opens.
+
+**Captures** (`Docs/Research/metahuman/`, 3840 px wide, cells are the tour's 1280x2160 scene captures
+with the level's grade, Silversuit worn, MetaHuman hair): `stage7_sliders_sheet_1.jpg` ... `_4.jpg`
+(one cell per slider, min | default | max, the lean, one camera), `stage7_profiles.jpg` (small |
+default | tall, the lean) and `stage7_walk_profiles.jpg` (the same three in the photo Walk),
+`stage7_tone.jpg` (skin tone 0 | 0.25 | 0.5 | 0.75 | 1, head and shoulders, the camera turned to her
+face each time). Reshoot: `Tools/mh_sliders.sh s7 1 -benchmark -fps=30`, then
+`Tools/mh_slider_sheets.sh s7 lean stage7`. The frames come from a scene capture: lens flares and a
+ghost of the hair hang in some cells, and the light is the lean's back light.
+
+**Traps.**
+- `ps -axo args | grep "MacOS/UnrealEditor "` came back empty twice while a `-game` run was alive (a
+  build then ran under a finishing tour). Wait on `pgrep -x UnrealEditor`.
+- zsh reads `$geo[a]` as an array subscript: write `${geo}[a]` in ffmpeg filter strings.
+- A camera anchored to the driver's mesh origin is not a fixed camera: in the lean the origin moves
+  with Leg length. The tour keeps the first setup's camera for the whole pose.
+- The hip hem's poke number moves 0.00-0.09 cm within one pose from second to second: compare
+  setups on the same fixed-step frame, not across runs.
+- `FTransform` has no shear: scale goes down the chain per axis index. A joint whose axes are
+  turned against its parent takes the parent's terms on the wrong axes, and RigLogic's local scale
+  cannot carry a correction.
+
+**Left open.**
+- The seven morph sliders (recipe above). Until then Bust, Glutes, Abs, Body fat and Thigh gap do
+  nothing on the MetaHuman.
+- Hands 1.15 in LegLift (fingers through the calf); the tall body's hip hem (0.14 cm). An arm pin
+  toward the driver's contact, like the foot pin, would close the first and the lean's 1.3 cm.
+- `upperarm_in` takes Arms and Arm length on the wrong axes (42 degrees off, left alone).
+- Not checked: the Settings sit and the other photo poses at the extremes; LOD 2 and further (the
+  joints inherit there too, the four-joint fix still runs; not looked at); whether the Face's copies
+  of the four fixed joints read the corrected scale (its chest strip showed nothing at Ribcage 0.85 /
+  1.20, face stretch 1.11x); the Body page's own close-up cameras on the MetaHuman.
+- The driver's float at short legs and slide at long legs (both bodies), for the movement branch.
