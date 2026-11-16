@@ -50,6 +50,26 @@ private:
 	 *  lean, Settings sit, each photo motion by name, Start walk, idle, height 145 and 185) with
 	 *  the MetaHuman's skin checked for stretched edges each frame (VisexMHSpikes.h). */
 	void BuildSpikes();
+	/** -visexsliders [-visexcvar=visex.Body.MetaHuman=1] [-visexshots=<name>]: every bone-scale slider
+	 *  at its minimum and maximum, height 145 and 185 and two combined profiles, each in the menu
+	 *  lean, the photo LegLift and the photo Walk: spike and poke lines, the soles' gap, how far the
+	 *  MetaHuman's hands sit from the driver's, the capsule, and a full-body frame of each. Nothing
+	 *  is saved: the profile is set in memory and put back at the end. */
+	void BuildSliders();
+	/** One slider configuration of the sliders tour: defaults, then these values. */
+	struct FBodySetup { FString Name; TArray<TPair<FName, float>> Values; };
+	TArray<FBodySetup> Setups;
+	void ApplySetup(const FBodySetup& Setup);
+	/** The numbers of the setup on screen, then (with -visexshots) its portrait frames. */
+	void SetupReport(const FString& Pose, const FBodySetup& Setup);
+	/** -visexshots=<name>: a 1280x2160 capture of her whole figure from in front (grade on), or of
+	 *  head and shoulders, to Saved/QA/<name>_<What>_{body,head}.png. */
+	void PortraitShot(const FString& What, bool bHead);
+	UPROPERTY(Transient) TObjectPtr<class USceneCaptureComponent2D> PortraitCapture;
+	TMap<FString, TPair<FVector, FVector>> PortraitCameras;   // pose and framing -> from, target
+	bool bSliders = false;
+	/** -visexbody=Name=value+Name=value: Body page values set in memory before any tour (not saved). */
+	void ApplyBodyArg();
 	/** -visexshots=<name>: a 4K frame of the game view to Saved/QA/<name>_<What>.png (no-op without it). */
 	void HiShot(const FString& What);
 	/** -visexclose=<What>:<bone>:<x,y,z>:<fov>[+...]: with that 4K frame, a 4K scene capture framed on a bone. */
