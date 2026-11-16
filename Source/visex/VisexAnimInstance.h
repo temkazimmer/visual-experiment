@@ -185,6 +185,7 @@ private:
 	// each knee's hinge axis in its thigh's frame (the calf's reference Z), zero when unknown: the
 	// bend plane for a leg too straight to show one (FShaper::ReachLeg). Set with PinRefZ
 	FVector LegPole[2] = {FVector::ZeroVector, FVector::ZeroVector};
+	bool bSteady = true;   // visex.Feet.Steady
 	// the jitter tour's frame (FVisexFootDebug): filled only for the mesh it asked for
 	FVisexFootDebug Dbg;
 	const void* DbgMesh = nullptr;

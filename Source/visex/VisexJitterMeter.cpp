@@ -198,10 +198,10 @@ void FVisexJitterMeter::Film(UWorld* World, ACharacter* Her, const FString& Name
 		TArray<USkeletalMeshComponent*> Parts;
 		Her->GetComponents(Parts);
 		for (USkeletalMeshComponent* P : Parts) { P->SetBoundsScale(3.f); }
-		// fixed in the world for the whole clip, so a moving camera hides nothing: front three-quarter,
-		// low, her feet to mid thigh
-		const FVector Feet = (Mesh->GetSocketLocation(TEXT("ball_l")) + Mesh->GetSocketLocation(TEXT("ball_r")) + Mesh->GetSocketLocation(TEXT("foot_l")) + Mesh->GetSocketLocation(TEXT("foot_r"))) * 0.25;
-		const FVector Look = Feet + FVector(0.f, 0.f, 25.f);
+		// fixed in the world for the whole clip, so a moving camera hides nothing, and placed from her
+		// capsule alone, so two runs on one spot get the same camera whatever her legs do: front
+		// three-quarter, low, her feet to mid thigh
+		const FVector Look = Her->GetActorLocation() - FVector(0.f, 0.f, Her->GetSimpleCollisionHalfHeight() - 30.f);
 		const FVector Eye = Look + Her->GetActorForwardVector() * 215.f + Her->GetActorRightVector() * 100.f + FVector(0.f, 0.f, 10.f);
 		Capture->SetActorLocationAndRotation(Eye, (Look - Eye).Rotation());
 		FilmFrames = 0;
