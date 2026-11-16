@@ -1819,3 +1819,49 @@ line and not one `VisexMH:` or `VisexFlex:` line in the game's log; `ApplyFlex` 
   cooked), any outfit but the Silversuit.
 - The walk clip was not watched in motion (above). The propping test is a posture, not a contact: a
   pose that leans her chest back with straight arms hanging free would tense them too.
+
+### 2026-11-16 · Stage 9a · the wardrobe on the MetaHuman body: the checklist only (stopped)
+
+Stopped before the first cut (Tema: "let's skip outfits for now"). No outfit was built, no tool or asset
+changed, no editor was opened. What is here is the checklist, read from `FVisexBodyProfile::Outfits()`
+(`Source/visex/VisexBodyProfile.cpp`), the builders in `Tools/blender_outfit.py` and `Docs/CLOTHES.md`.
+
+| outfit | in the game | what the builder really cuts | type | on the MetaHuman |
+|---|---|---|---|---|
+| Silversuit | wearable | `catsuit_set("Silversuit")`, kit openings | opaque tight | done (stages 3, 4b, 7b, 8) |
+| Catsuit | wearable | `catsuit_set()`: same builder, no kit; adds a collar, zip tape and pull | opaque tight | next, the simplest |
+| Harness | wearable | satin cups, collar, bib, thong; `Binding` tapes laid by rays (`line`, `taut`, `tube(flat=)`), rings; `Jersey` chap stockings | opaque set with straps | next batch |
+| Mirror | wearable | a **sheer** mesh bodysuit and sheer opera gloves; satin collar, bandeau and brief (thong back); boning seams | sheer with opaque pieces | next batch, with the sheer ones |
+| Cocoa | **locked** | satin bra, thong, belt, thigh bands, choker, two garter straps | opaque set with straps | after it is unlocked |
+| Noir | wearable | nylon bodysuit, lace cups, satin cincher, nylon thigh-highs | sheer / lace | not started |
+| Bodystocking | wearable, her default | one piece of sheer nylon, string tanga, chain, bangles | sheer | not started |
+| BodystockingSkirt | wearable | the bodystocking plus `CA_Skirt` | sheer + cloth | not started |
+| Tartan | wearable | tartan panels, straps traced by `wrap`, sheer thigh-highs with lace tops | straps + sheer | not started |
+| KitTartan | wearable | Figma shapes and `sketch.json` strokes | kit strokes | not started |
+| Garter, Fishnet | locked | lace set with stockings; net tights | lace / net | not started |
+| Sheer | built, unlisted | sheer bodysuit, latex bands, gloves | sheer | not started |
+
+**What the next outfits agent should know before cutting.**
+- **Stage 3's "opaque sets (Mirror, Harness, Cocoa)" is wrong for two of the three.** Mirror is a sheer
+  bodysuit: the cover mask clips nothing under `Sheer`, so it belongs with the 1-2 hour sheer outfits and
+  shows the painted-out briefs area through the mesh over hips and seat. Cocoa is a locked row
+  (`SetOutfit` refuses it), so it cannot be worn on either body in the game's normal way, and there is
+  no current-body frame to compare with until its refresh.
+- **`OPAQUE = ("Satin", "Latex", "Trim", "Tartan")`** (`blender_outfit.py`). Harness's chap stockings are
+  `Jersey` and its tapes `Binding`: neither is in the list, so the skin under the opaque jersey would not
+  be clipped. Add `Jersey` (and check it against the old body's build, which reads the same tuple).
+- Harness's straps are not the kit-stroke or `wrap` tooling: they are rays on whatever skin is loaded
+  (`TORSO_BVH`, `LEG_BVH`, `leg_axis`, `Bn["thigh_l"]`, `Bn["foot_l"]`, `ANCHOR`, `CUP`). None of that has
+  run on this body; `CUP` comes from the 9 cm bust stand-in and predates the softened bust.
+- `mh_outfit.py` needs each outfit's old mesh in `OLD_MESH`: Catsuit's is under `/Game/Character/Outfits`,
+  the others under `/Game/Character/Clothes`. Wearing needs no C++: `ApplyOutfit` loads `SKM_<Outfit>_MH`
+  and `MI_Body_<Outfit>` by name, and logs "no cut on the MetaHuman body yet" until they exist.
+- `mh_after_build.sh` and `mh_recut.sh` name the Silversuit alone in their last step: make that a loop
+  over a list when the second outfit lands.
+- `_mh_test_poses()` bends wrists and hips only. Catsuit's collar, Mirror's glove tops and any stocking
+  top sit on joints it does not test (stage 4b's open point).
+
+**Estimates, unchanged from stage 3 except where the table moved an outfit:** Catsuit 20-30 minutes;
+Harness 1-1.5 hours (strap rays, `Jersey`, the thong baring the hips); Mirror, Noir, Bodystocking, Sheer
+1-2 hours each plus one decision on the briefs area under sheer fabric; Tartan and KitTartan half a day
+of tool work once; the skirt half a day; Cocoa, Garter, Fishnet after their refresh on the current body.
