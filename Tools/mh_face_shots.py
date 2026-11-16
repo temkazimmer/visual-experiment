@@ -167,6 +167,10 @@ def preview_shot():
         cap.capture_component2d.set_editor_property("always_persist_rendering_state", True)
     if not tagged(world, unreal.PointLight):
         place_lights()
+    for a in tagged(world, unreal.PointLight):
+        # in the editor world something unseen shadows the two front lights (not found what; the set is
+        # 30 m below): the preview is shot without shadows, so compare its skin tone, not its shading
+        a.point_light_component.set_editor_property("cast_shadows", False)
     actor = None
     try:
         if "SKIN" in globals() or "FACE_TEX" in globals():

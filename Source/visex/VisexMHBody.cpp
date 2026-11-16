@@ -941,9 +941,20 @@ void UVisexMHBodyComponent::ApplyFace()
 	FaceCurves = Want;
 	if (Want.IsEmpty())
 	{
-		// back to what the Blueprint gave the Face (it may be nothing)
-		FaceMesh->SetAnimInstanceClass(FaceOwnClass);
-		bFaceDriven = false;
+		// Zero what was driven first: with no anim class of its own the Face would keep the last
+		// curves (a smile stayed on). If the Blueprint gave the Face a class, that comes back.
+		if (UVisexMHFaceAnimInstance* Driven = Cast<UVisexMHFaceAnimInstance>(FaceMesh->GetAnimInstance()))
+		{
+			for (TPair<FName, float>& Curve : Driven->Curves)
+			{
+				Curve.Value = 0.f;
+			}
+		}
+		if (FaceOwnClass)
+		{
+			FaceMesh->SetAnimInstanceClass(FaceOwnClass);
+			bFaceDriven = false;
+		}
 		UE_LOG(LogTemp, Display, TEXT("VisexMH: face curves off"));
 		return;
 	}
