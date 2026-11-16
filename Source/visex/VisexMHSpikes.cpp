@@ -1,5 +1,6 @@
 #include "VisexMHSpikes.h"
 #include "VisexMHBody.h"
+#include "Animation/MorphTarget.h"
 #include "Components/LODSyncComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
@@ -10,6 +11,59 @@
 #include "Rendering/SkeletalMeshRenderData.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogVisexSpikes, Log, All);
+
+// ComputeSkinnedPositions skins the reference shape only. This adds the morph targets the figure is
+// wearing (the Body page's shape sliders and the jiggle, weights read from Weights: a garment follows
+// its leader's by name), each delta turned by its vertex's own blend of bone matrices, as the GPU does.
+static void AddMorphs(const USkeletalMeshComponent* Mesh, const USkeletalMeshComponent* Weights, const FSkeletalMeshLODRenderData& LOD,
+	const TArray<FMatrix44f>& RefToLocal, TArray<FVector3f>& P)
+{
+	const USkeletalMesh* Asset = Mesh ? Mesh->GetSkeletalMeshAsset() : nullptr;
+	if (!Asset || !Weights)
+	{
+		return;
+	}
+	TArray<FVector3f> Delta;
+	for (const UMorphTarget* Morph : Asset->GetMorphTargets())
+	{
+		const float W = Morph ? Weights->GetMorphTarget(Morph->GetFName()) : 0.f;
+		if (FMath::IsNearlyZero(W))
+		{
+			continue;
+		}
+		Delta.SetNumZeroed(P.Num());
+		for (const FMorphTargetDelta& D : Morph->GetMorphTargetDeltas(0))
+		{
+			if (Delta.IsValidIndex(int32(D.SourceIdx))) { Delta[D.SourceIdx] += D.PositionDelta * W; }
+		}
+	}
+	if (Delta.Num() == 0)
+	{
+		return;
+	}
+	const FSkinWeightVertexBuffer& SW = LOD.SkinWeightVertexBuffer;
+	for (const FSkelMeshRenderSection& Section : LOD.RenderSections)
+	{
+		for (int32 V = int32(Section.BaseVertexIndex); V < int32(Section.BaseVertexIndex + Section.NumVertices) && V < P.Num(); ++V)
+		{
+			if (Delta[V].IsNearlyZero(1e-5f))
+			{
+				continue;
+			}
+			FVector3f Moved = FVector3f::ZeroVector;
+			for (uint32 K = 0; K < SW.GetMaxBoneInfluences(); ++K)
+			{
+				const int32 Bone = int32(SW.GetBoneIndex(V, K));
+				const float W = float(SW.GetBoneWeight(V, K)) / 65535.f;
+				if (W > 0.f && Section.BoneMap.IsValidIndex(Bone) && RefToLocal.IsValidIndex(Section.BoneMap[Bone]))
+				{
+					Moved += RefToLocal[Section.BoneMap[Bone]].TransformVector(Delta[V]) * W;
+				}
+			}
+			P[V] += Moved;
+		}
+	}
+}
 
 bool FVisexMHSpikes::Measure(USkeletalMeshComponent* Mesh, FVisexSpike& Out)
 {
@@ -58,6 +112,8 @@ bool FVisexMHSpikes::Measure(USkeletalMeshComponent* Mesh, FVisexSpike& Out)
 	{
 		return false;
 	}
+	const USkeletalMeshComponent* Leader = Cast<USkeletalMeshComponent>(Mesh->LeaderPoseComponent.Get());
+	AddMorphs(Mesh, Leader ? Leader : Mesh, LOD, RefToLocal, P);
 	int32 GrowVertex = INDEX_NONE, CreaseVertex = INDEX_NONE;
 	for (int32 I = 0; I + 2 < Cache->Index.Num(); I += 3)
 	{
@@ -459,8 +515,10 @@ bool FVisexMHSpikes::MeasurePoke(USkeletalMeshComponent* BodyMesh, USkeletalMesh
 	TArray<FVector3f> PB, PG;
 	BodyMesh->CacheRefToLocalMatrices(RefToLocal);
 	USkinnedMeshComponent::ComputeSkinnedPositions(BodyMesh, PB, RefToLocal, BL, BL.SkinWeightVertexBuffer);
+	if (PB.Num() == int32(BP.GetNumVertices())) { AddMorphs(BodyMesh, BodyMesh, BL, RefToLocal, PB); }
 	GarmentMesh->CacheRefToLocalMatrices(RefToLocal);
 	USkinnedMeshComponent::ComputeSkinnedPositions(GarmentMesh, PG, RefToLocal, GL, GL.SkinWeightVertexBuffer);
+	if (PG.Num() == int32(GP.GetNumVertices())) { AddMorphs(GarmentMesh, BodyMesh, GL, RefToLocal, PG); }
 	if (PB.Num() != int32(BP.GetNumVertices()) || PG.Num() != int32(GP.GetNumVertices()) || C.Vertex.Num() == 0)
 	{
 		return false;

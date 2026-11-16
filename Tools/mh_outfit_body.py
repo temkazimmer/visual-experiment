@@ -47,6 +47,46 @@ print("mh skin: %d vertices welded to %d, split to %d" % (_n0, _n1, len(skin.dat
 MH_BASE_VERTS = _n1      # bmesh keeps the welded vertices first: 0.._n1-1 are the body's own
 
 
+def mh_morph_deltas():
+    """The shape sliders' and the jiggle's morphs (Morphs/mh_morphs.json beside the skin FBX, made by
+    Tools/mh_morph_build.py) on this split skin, world cm; {} if the file is not there. A garment
+    carries them like the old body's shape keys, so it follows every slider and the bounce."""
+    path = os.path.join(os.path.dirname(os.path.abspath(SRC)), "Morphs", "mh_morphs.json")
+    if not os.path.exists(path):
+        print("mh morphs: none (%s): the garment gets no morph targets" % path)
+        return {}
+    import json
+    data = json.load(open(path))
+    flip = np.array([1.0, -1.0, 1.0])                 # UE's frame -> Blender's
+    kd_ = KDTree(nv)                                  # every vertex: some of the body's own are not among the first MH_BASE_VERTS
+    for i in range(nv):
+        kd_.insert(X[i], i)
+    kd_.balance()
+    hits = [kd_.find(p) for p in (np.array(data["base"], float) * flip).tolist()]
+    assert data["vertices"] == MH_BASE_VERTS and max(h[2] for h in hits) < 0.02, "mh_morphs.json was made on another body: run Tools/mh_morphs.py again"
+    bl = np.array([h[1] for h in hits])
+    own = np.zeros(nv, bool)
+    own[bl] = True
+    # a split vertex sits between two of the body's own and moves with them. Read from the edges, not
+    # from MH_PARENTS: bmesh hands the slots of welded-away duplicates to new vertices, so about 1,500
+    # split vertices carry a number under MH_BASE_VERTS and are their own "parent" there
+    e0 = np.concatenate([EDGES[:, 0], EDGES[:, 1]])
+    e1 = np.concatenate([EDGES[:, 1], EDGES[:, 0]])
+    pick = ~own[e0] & own[e1]
+    e0, e1 = e0[pick], e1[pick]
+    cnt = np.maximum(np.bincount(e0, minlength=nv), 1).astype(float)
+    out = {}
+    for name, m in data["morphs"].items():
+        d = np.zeros((nv, 3))
+        d[bl[np.array(m["i"], int)]] = np.array(m["d"], float).reshape(-1, 3) * flip
+        mid = np.zeros((nv, 3))
+        np.add.at(mid, e0, d[e1])
+        out[name] = np.where(own[:, None], d, mid / cnt[:, None])
+    assert int((~own & (np.bincount(e0, minlength=nv) == 0)).sum()) == 0, "split vertices with no body vertex beside them"
+    print("mh morphs: %d on the skin, the garment will carry them: %s" % (len(out), ", ".join(out)))
+    return out
+
+
 def mh_bust():
     """Stands in for the Bust morph's reach: 1 at the apex (the most forward chest skin on each
     side), falling to 0 at 9 cm from it."""

@@ -164,6 +164,10 @@ private:
 	void ApplyFace();
 	/** Hands the Body page's bone-scale sliders (over their defaults) and the Feet value to the follower. */
 	void ApplyShape();
+	/** The Body page's shape sliders (Bust, Bust height, Bust spacing, Glutes, Abs, Body fat, Thigh gap)
+	 *  and the driver's jiggle springs on the MetaHuman body's morph targets (Tools/mh_morphs.py): each
+	 *  weight is the slider less its default, since the body was built at the defaults. */
+	void ApplyMorphs();
 	/** Skin tone from the Body page on the MetaHuman's skin: body, face (every LOD's material) and the
 	 *  bare-skin copies worn under outfits, through the tone parameters of the copied skin materials. */
 	void ApplySkin();

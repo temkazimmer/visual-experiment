@@ -112,6 +112,9 @@ DESIGN = {k: w for k, w in (("BustUp", 0.80), ("BustApart", 1.097), ("GlutesUp",
                                          ("BustBounceL_Up", 0.65), ("BustBounceR_Up", 0.65)) if k in DELTAS}
 for k, w in DESIGN.items():
     X = X + DELTAS[k] * w
+# the MetaHuman body is built at the default sliders and its morphs are relative to that: they take no
+# part in the design above, the garment only carries them (finalize)
+MH_MORPHS = mh_morph_deltas() if MH and "--mh-morphs" not in args else {}
 _dm = bpy.data.meshes.new("design")
 _dm.from_pydata(X.tolist(), [], T.tolist())
 _dm.update()
@@ -1653,6 +1656,9 @@ if "--kit-ref" in args:    # the drawn body's landmarks, for carrying kit shapes
     json.dump(_ref, open(os.path.join(_KIT, "views", "ref_profile.json"), "w"), indent=1)
     print("kit ref", {n: round(z, 1) for n, z in zip(_ref["names"], _ref["z"])}, "half-width", np.round(_ref["hw"], 1).tolist())
     sys.exit(0)
+if MH and "--mh-morphs" in args:    # the shape sliders' morph deltas for this body (Tools/mh_morphs.py), no outfit built
+    exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "mh_morph_build.py")).read())
+    sys.exit(0)
 
 
 # ---- assemble: one mesh, weights, shape keys, garment UVs ------------------------------------------
@@ -1982,7 +1988,7 @@ def finalize(ob):
             if w > 1e-4:
                 vgs[g].add((i,), w, "REPLACE")
 
-    dl = {kname: sum(DL[idx3[:, k]] * w3[:, k, None] for k in range(3)) * ex["m"][:, None] for kname, DL in DELTAS.items()}
+    dl = {kname: sum(DL[idx3[:, k]] * w3[:, k, None] for k in range(3)) * ex["m"][:, None] for kname, DL in (MH_MORPHS if MH else DELTAS).items()}
     if strands is not None:
         dl = {k: _along_strands(v, *strands) for k, v in dl.items()}
     oc = clear_skin(oc, idx3, w3, SEAM_OF[ob.name][:, 0] < NO_SEAM, dl)     # fabric panels only
@@ -1997,6 +2003,16 @@ def finalize(ob):
     if name in CLOTH:                                          # a cloth sim gets no body morphs:
         om.vertices.foreach_set("co", oc.ravel())              # keep the default body baked in
         dl = {}
+    if MH and dl:    # each body morph on the fabric: no edge may tear (a vertex left behind by its neighbours)
+        ge = np.empty(len(om.edges) * 2, int)
+        om.edges.foreach_get("vertices", ge)
+        ge = ge.reshape(-1, 2)
+        l0 = np.linalg.norm(oc[ge[:, 0]] - oc[ge[:, 1]], axis=1)
+        ok = l0 > 0.25
+        worst = {k: max(float((np.linalg.norm((oc + d * w)[ge[:, 0]] - (oc + d * w)[ge[:, 1]], axis=1)[ok] / l0[ok]).max()) for w in (-1.0, 1.0))
+                 for k, d in dl.items()}
+        print("mh morphs on %s: worst edge stretch at weight -1 / +1:" % name, {k: round(v, 2) for k, v in worst.items() if "Bounce" not in k and "Sway" not in k},
+              "jiggle", round(max(v for k, v in worst.items() if "Bounce" in k or "Sway" in k), 2))
     rest = oc - sum(dl[k] * w for k, w in DESIGN.items() if k in dl)    # designed on the default body
     om.vertices.foreach_set("co", rest.ravel())
     ob.shape_key_add(name="Basis", from_mix=False)

@@ -546,6 +546,16 @@ void AVisexQATour::CloseShots(const FString& Shots, const FString& What)
 
 void AVisexQATour::ApplyCvarArg()
 {
+	// -visexoutfit=None (or an outfit's name): worn for this run, in memory only
+	FString Wear;
+	ACharacter* Worn = Her();
+	UVisexBodyComponent* WornBody = Worn ? Worn->FindComponentByClass<UVisexBodyComponent>() : nullptr;
+	if (WornBody && FParse::Value(FCommandLine::Get(), TEXT("visexoutfit="), Wear))
+	{
+		WornBody->Profile.Outfit = Wear == TEXT("None") ? FName(NAME_None) : FName(*Wear);
+		WornBody->Apply();
+		QA_LOG(TEXT("VisexQA: outfit for this run: %s"), *Wear);
+	}
 	FString Setting, More, Var, Value;
 	// several: -visexcvar=a=1+b=Elf (the first is the one the report names)
 	FString First;
@@ -700,7 +710,7 @@ void AVisexQATour::ApplySetup(const FBodySetup& Setup)
 	B->Apply();
 }
 
-void AVisexQATour::PortraitShot(const FString& What, bool bHead)
+void AVisexQATour::PortraitShot(const FString& What, bool bHead, const FString& Frame)
 {
 	FString Shots;
 	ACharacter* C = Her();
@@ -737,8 +747,17 @@ void AVisexQATour::PortraitShot(const FString& What, bool bHead)
 		From = Target + Face.RotateAngleAxis(18.f, FVector::UpVector) * 170.f + FVector(0.f, 0.f, 6.f);
 		PortraitCapture->FOVAngle = 13.f;
 	}
+	// "torso" / "side" / "back" (-visexframe=body+torso+side+back): the middle of her, bust to thigh, from
+	// her front right, in profile from her right, or from behind her right, for the shape sliders.
+	// One camera per pose and framing.
+	if (!bHead && Frame != TEXT("body"))
+	{
+		Target.Z = C->GetMesh()->GetComponentLocation().Z + 108.f;
+		From = Target + Fwd.RotateAngleAxis(Frame == TEXT("side") ? 88.f : Frame == TEXT("back") ? 152.f : 38.f, FVector::UpVector) * 470.f;
+		PortraitCapture->FOVAngle = 10.5f;
+	}
 	// the full figure: one camera per pose, where the pose's first setup (the default body) put it
-	const FString Key = What.Left(What.Find(TEXT("_"))) + TEXT("_body");
+	const FString Key = What.Left(What.Find(TEXT("_"))) + TEXT("_") + Frame;
 	if (bHead)
 	{
 	}
@@ -756,7 +775,7 @@ void AVisexQATour::PortraitShot(const FString& What, bool bHead)
 	{
 		PortraitCapture->CaptureScene();   // a few, so the temporal passes settle
 	}
-	const FString Name = FString::Printf(TEXT("%s_%s_%s.png"), *Shots, *What.Replace(TEXT(" "), TEXT("_")), bHead ? TEXT("head") : TEXT("body"));
+	const FString Name = FString::Printf(TEXT("%s_%s_%s.png"), *Shots, *What.Replace(TEXT(" "), TEXT("_")), bHead ? TEXT("head") : *Frame);
 	UKismetRenderingLibrary::ExportRenderTarget(this, PortraitCapture->TextureTarget, FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("QA")), Name);
 }
 
@@ -772,25 +791,39 @@ void AVisexQATour::BuildSliders()
 	Setups.Reset();
 	const auto V = [](const TCHAR* Name, float Value) { return TPair<FName, float>(FName(Name), Value); };
 	Setups.Add({TEXT("default"), {}});
-	for (const TCHAR* Name : {TEXT("Head"), TEXT("Neck"), TEXT("Shoulders"), TEXT("Chest"), TEXT("Waist"), TEXT("Hips"), TEXT("Legs"),
-		TEXT("Thighs"), TEXT("Calves"), TEXT("ArmLength"), TEXT("Arms"), TEXT("Hands"), TEXT("Feet"), TEXT("Height")})
+	// -visexsetups=Bust+Fat+Hips: only these sliders at both ends (and the default body), for the
+	// shape sliders or a short re-check; "shape" is the seven morph sliders
+	FString Only;
+	TArray<FString> Names = {TEXT("Head"), TEXT("Neck"), TEXT("Shoulders"), TEXT("Chest"), TEXT("Waist"), TEXT("Hips"), TEXT("Legs"),
+		TEXT("Thighs"), TEXT("Calves"), TEXT("ArmLength"), TEXT("Arms"), TEXT("Hands"), TEXT("Feet"), TEXT("Height")};
+	const bool bOnly = FParse::Value(FCommandLine::Get(), TEXT("visexsetups="), Only, false);
+	if (bOnly)
 	{
-		if (const FVisexBodySlider* Row = FVisexBodyProfile::Find(Name))
+		Only.ReplaceInline(TEXT("shape"), TEXT("Bust+BustLift+BustApart+Glutes+Abs+Fat+ThighGap"));
+		Only.ParseIntoArray(Names, TEXT("+"));
+	}
+	for (const FString& Name : Names)
+	{
+		if (const FVisexBodySlider* Row = FVisexBodyProfile::Find(FName(*Name)))
 		{
-			Setups.Add({FString(Name) + TEXT("_min"), {V(Name, Row->Min)}});
-			Setups.Add({FString(Name) + TEXT("_max"), {V(Name, Row->Max)}});
+			Setups.Add({Name + TEXT("_min"), {V(*Name, Row->Min)}});
+			Setups.Add({Name + TEXT("_max"), {V(*Name, Row->Max)}});
 		}
 	}
 	for (const float Tone : {0.f, 0.5f, 0.75f, 1.f})
 	{
+		if (bOnly) { break; }
 		Setups.Add({FString::Printf(TEXT("Skin_%03d"), FMath::RoundToInt(Tone * 100.f)), {V(TEXT("Skin"), Tone)}});
 	}
+	if (!bOnly)
+	{
 	Setups.Add({TEXT("small"), {V(TEXT("Height"), 150.f), V(TEXT("Head"), 1.0f), V(TEXT("Neck"), 0.84f), V(TEXT("Shoulders"), 0.82f), V(TEXT("Chest"), 0.90f),
 		V(TEXT("Waist"), 0.74f), V(TEXT("Hips"), 0.88f), V(TEXT("Legs"), 0.92f), V(TEXT("Thighs"), 0.90f), V(TEXT("Calves"), 0.90f),
 		V(TEXT("ArmLength"), 0.93f), V(TEXT("Arms"), 0.84f), V(TEXT("Hands"), 0.85f), V(TEXT("Feet"), 0.87f)}});
 	Setups.Add({TEXT("tall"), {V(TEXT("Height"), 183.f), V(TEXT("Head"), 1.08f), V(TEXT("Neck"), 1.10f), V(TEXT("Shoulders"), 1.15f), V(TEXT("Chest"), 1.15f),
 		V(TEXT("Waist"), 1.05f), V(TEXT("Hips"), 1.15f), V(TEXT("Legs"), 1.10f), V(TEXT("Thighs"), 1.35f), V(TEXT("Calves"), 1.22f),
 		V(TEXT("ArmLength"), 1.06f), V(TEXT("Arms"), 1.22f), V(TEXT("Hands"), 1.10f), V(TEXT("Feet"), 1.10f)}});
+	}
 	// one pose: each setup is put on, left to settle (her contact passes, the capsule), measured
 	// for a second under its own phase name, then reported and shot
 	const auto Pass = [this, Add](const FString& Pose)
@@ -823,6 +856,14 @@ void AVisexQATour::BuildSliders()
 	Add(0.5f, [Motion] { Motion(TEXT("Walk")); });
 	Add(4.f, [] {});
 	Pass(TEXT("walk"));
+	if (bOnly)
+	{
+		// a subset run also stands her still in the open (the photo Idle), where a shape can be judged:
+		// the lean hides her seat and the walk never shows two setups in the same step
+		Add(0.5f, [Motion] { Motion(TEXT("Idle")); });
+		Add(4.f, [] {});
+		Pass(TEXT("idle"));
+	}
 	Add(0.5f, [this]
 	{
 		// her own profile back, as it was loaded (nothing was saved on the way)
@@ -833,6 +874,64 @@ void AVisexQATour::BuildSliders()
 		QA_LOG(TEXT("VisexQA: done"));
 		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
 	});
+}
+
+void AVisexQATour::BuildClip()
+{
+	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
+	AVisexMenuDirector* D = Director;
+	ApplyCvarArg();
+	Add(4.f, [] {});
+	Add(1.f, [D] { D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
+	Add(5.f, [this]
+	{
+		AVisexPhotoMode* P = Photo();
+		for (int32 I = 0; P && P->IsOpen() && I < 40; ++I)
+		{
+			if (P->GetMotionName(I) == TEXT("Walk")) { P->SetMotion(I); QA_LOG(TEXT("VisexClip: photo motion Walk")); return; }
+		}
+		QA_LOG(TEXT("VisexClip: NO photo motion Walk"));
+	});
+	Add(4.f, [this] { ClipLeft = 150; ClipN = 0; });
+	Add(6.f, [this]
+	{
+		ACharacter* C = Her();
+		if (UVisexBodyComponent* B = C ? C->FindComponentByClass<UVisexBodyComponent>() : nullptr) { B->Load(); B->Apply(); }
+		QA_LOG(TEXT("VisexQA: done"));
+		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
+	});
+}
+
+void AVisexQATour::ClipFrame()
+{
+	FString Shots;
+	ACharacter* C = Her();
+	if (!C || !FParse::Value(FCommandLine::Get(), TEXT("visexshots="), Shots))
+	{
+		ClipLeft = 0;
+		return;
+	}
+	if (!ClipCapture)
+	{
+		ClipCapture = NewObject<USceneCaptureComponent2D>(this, NAME_None, RF_Transient);
+		ClipCapture->TextureTarget = UKismetRenderingLibrary::CreateRenderTarget2D(this, 3840, 2160, RTF_RGBA8_SRGB);
+		ClipCapture->CaptureSource = SCS_FinalColorLDR;
+		ClipCapture->bCaptureEveryFrame = false;
+		ClipCapture->bCaptureOnMovement = false;
+		ClipCapture->bAlwaysPersistRenderingState = true;
+		ClipCapture->FOVAngle = 20.f;
+		ClipCapture->RegisterComponent();
+		// one camera for the whole clip: her torso from the front and a little to her left
+		const FVector Pelvis = C->GetMesh()->GetSocketLocation(TEXT("pelvis"));
+		const FVector Target(Pelvis.X, Pelvis.Y, C->GetMesh()->GetComponentLocation().Z + 122.f);
+		const FVector From = Target + C->GetActorForwardVector().RotateAngleAxis(-32.f, FVector::UpVector) * 215.f + FVector(0.f, 0.f, 4.f);
+		ClipCapture->SetWorldLocationAndRotation(From, (Target - From).Rotation());
+		QA_LOG(TEXT("VisexClip: camera %s at %s"), *From.ToCompactString(), *Target.ToCompactString());
+	}
+	ClipCapture->CaptureScene();
+	UKismetRenderingLibrary::ExportRenderTarget(this, ClipCapture->TextureTarget, FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("QA")),
+		FString::Printf(TEXT("%s_clip_%04d.png"), *Shots, ClipN++));
+	--ClipLeft;
 }
 
 void AVisexQATour::SetupReport(const FString& Pose, const FBodySetup& Setup)
@@ -857,8 +956,14 @@ void AVisexQATour::SetupReport(const FString& Pose, const FBodySetup& Setup)
 		Cap ? Cap->GetUnscaledCapsuleHalfHeight() : 0.f, Cap ? Cap->GetUnscaledCapsuleRadius() : 0.f, C->GetActorLocation().Z,
 		Driver->GetRelativeLocation().Z, Driver->GetRelativeScale3D().Z, *Joints);
 	const FString What = Pose + TEXT("_") + Setup.Name;
-	PortraitShot(What, false);
-	PortraitShot(What, true);
+	FString Frames = TEXT("body+head");
+	FParse::Value(FCommandLine::Get(), TEXT("visexframe="), Frames);
+	TArray<FString> Each;
+	Frames.ParseIntoArray(Each, TEXT("+"));
+	for (const FString& Frame : Each)
+	{
+		PortraitShot(What, Frame == TEXT("head"), Frame);
+	}
 }
 
 void AVisexQATour::Tick(float DeltaSeconds)
@@ -874,8 +979,13 @@ void AVisexQATour::Tick(float DeltaSeconds)
 		Feet.Log = [](const FString& Line) { QA_LOG(TEXT("%s"), *Line); };
 		bSpikes = FParse::Param(FCommandLine::Get(), TEXT("visexspikes"));
 		bSliders = FParse::Param(FCommandLine::Get(), TEXT("visexsliders"));
+		FParse::Param(FCommandLine::Get(), TEXT("visexclip")) ? BuildClip() :
 		bSliders ? BuildSliders() : bSpikes ? BuildSpikes() : bGaps ? BuildGaps() : bFeet ? BuildFeet() : Build();
 		bBuilt = true;
+	}
+	if (ClipLeft > 0)
+	{
+		ClipFrame();
 	}
 	if (bFeet)
 	{

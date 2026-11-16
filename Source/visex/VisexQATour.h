@@ -64,10 +64,17 @@ private:
 	void SetupReport(const FString& Pose, const FBodySetup& Setup);
 	/** -visexshots=<name>: a 1280x2160 capture of her whole figure from in front (grade on), or of
 	 *  head and shoulders, to Saved/QA/<name>_<What>_{body,head}.png. */
-	void PortraitShot(const FString& What, bool bHead);
+	void PortraitShot(const FString& What, bool bHead, const FString& Frame = TEXT("body"));
 	UPROPERTY(Transient) TObjectPtr<class USceneCaptureComponent2D> PortraitCapture;
 	TMap<FString, TPair<FVector, FVector>> PortraitCameras;   // pose and framing -> from, target
 	bool bSliders = false;
+	/** -visexclip [-visexoutfit=None] -visexshots=<name>: she walks in, the photo Walk starts, and 150
+	 *  frames of her torso (4K scene capture, grade on, one fixed camera) go to
+	 *  Saved/QA/<name>_clip_NNNN.png: the jiggle in the walk. Run at a fixed step (-benchmark -fps=30). */
+	void BuildClip();
+	void ClipFrame();
+	UPROPERTY(Transient) TObjectPtr<class USceneCaptureComponent2D> ClipCapture;
+	int32 ClipLeft = 0, ClipN = 0;
 	/** -visexbody=Name=value+Name=value: Body page values set in memory before any tour (not saved). */
 	void ApplyBodyArg();
 	/** -visexshots=<name>: a 4K frame of the game view to Saved/QA/<name>_<What>.png (no-op without it). */

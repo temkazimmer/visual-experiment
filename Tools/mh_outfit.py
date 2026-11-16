@@ -110,7 +110,8 @@ def import_mesh():
     ui.set_editor_property("skeleton", body.get_editor_property("skeleton"))
     ui.set_editor_property("mesh_type_to_import", unreal.FBXImportType.FBXIT_SKELETAL_MESH)
     sk = ui.get_editor_property("skeletal_mesh_import_data")
-    settings = dict(import_morph_targets=False, normal_import_method=unreal.FBXNormalImportMethod.FBXNIM_COMPUTE_NORMALS,
+    # morph targets: the body's shape and jiggle morphs, carried by the fabric (Tools/mh_morphs.py)
+    settings = dict(import_morph_targets=True, normal_import_method=unreal.FBXNormalImportMethod.FBXNIM_COMPUTE_NORMALS,
                     update_skeleton_reference_pose=False, use_t0_as_ref_pose=False, import_uniform_scale=0.01)
     for k, v in settings.items():
         sk.set_editor_property(k, v)

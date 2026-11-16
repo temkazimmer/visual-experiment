@@ -39,6 +39,10 @@ static TAutoConsoleVariable<int32> CVarVisexMHReshape(
 	TEXT("visex.Body.MetaHuman.Reshape"), 1,
 	TEXT("1: the Body page's bone-scale sliders and skin tone reach the MetaHuman body (each over its default). 0: it stays as built, to compare."));
 
+static TAutoConsoleVariable<int32> CVarVisexMHMorphs(
+	TEXT("visex.Body.MetaHuman.Morphs"), 1,
+	TEXT("1: the Body page's shape sliders and the jiggle drive the MetaHuman body's morph targets. 0: the body as built, to compare."));
+
 // "bone:roll,pitch,yaw;bone:..." in each bone's own axes, added on top of the followed pose
 static TAutoConsoleVariable<FString> CVarVisexMHTestPose(
 	TEXT("visex.Body.MetaHuman.TestPose"), TEXT(""),
@@ -610,6 +614,7 @@ void UVisexMHBodyComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 		ApplyHair();   // after ApplyDebug: it may have bound a re-made Body
 		ApplyFace();
 		ApplyShape();
+		ApplyMorphs();
 		ApplySkin();   // after ApplyOutfit: it puts other skin materials in the slots
 	}
 }
@@ -658,6 +663,53 @@ void UVisexMHBodyComponent::ApplyShape()
 		BodyMesh->RegisterOnBoneTransformsFinalizedDelegate(FOnBoneTransformsFinalizedMultiCast::FDelegate::CreateUObject(this, &UVisexMHBodyComponent::FixScales));
 		FixBound = BodyMesh;
 		FixWritten.Reset();
+	}
+}
+
+void UVisexMHBodyComponent::ApplyMorphs()
+{
+	const ACharacter* Her = Cast<ACharacter>(GetOwner());
+	const UVisexBodyComponent* Body = Her ? Her->FindComponentByClass<UVisexBodyComponent>() : nullptr;
+	const USkeletalMeshComponent* Driver = Her ? Her->GetMesh() : nullptr;
+	if (!Body || !Driver || !BodyMesh)
+	{
+		return;
+	}
+	const bool bOn = CVarVisexMHMorphs.GetValueOnGameThread() != 0;
+	const auto Set = [this, bOn](const TCHAR* Name, float Weight) { BodyMesh->SetMorphTarget(Name, bOn ? Weight : 0.f, false); };
+	const auto Built = [](const TCHAR* Name) { const FVisexBodySlider* Row = FVisexBodyProfile::Find(Name); return Row ? Row->Default : 0.f; };
+	const auto Rel = [Body, Built](const TCHAR* Name) { return Body->GetValue(Name) - Built(Name); };
+	// the shape: she was built at the default sliders, so a morph's weight is the slider's distance
+	// from its default (a smaller bust is a negative weight), in the driver's own units
+	Set(TEXT("Bust"), Rel(TEXT("Bust")));
+	Set(TEXT("BustLift"), Rel(TEXT("BustLift")));
+	// spacing scales with how much bust there is, as on the driver (it carves against the full bust)
+	Set(TEXT("BustApart"), Rel(TEXT("BustApart")) * 1.2f * FMath::Min(Body->GetValue(TEXT("Bust")) / 0.7f, 1.2f));
+	Set(TEXT("Glutes"), Rel(TEXT("Glutes")));
+	Set(TEXT("Fat"), Rel(TEXT("Fat")));
+	Set(TEXT("ThighGap"), Rel(TEXT("ThighGap")));
+	float Lines, Pack, Lines0, Pack0;
+	FVisexBodyProfile::AbsWeights(Body->GetValue(TEXT("Abs")), Body->GetValue(TEXT("Fat")), Lines, Pack);
+	FVisexBodyProfile::AbsWeights(Built(TEXT("Abs")), Built(TEXT("Fat")), Lines0, Pack0);
+	Set(TEXT("AbsLines"), Lines - Lines0);
+	Set(TEXT("AbsPack"), Pack - Pack0);
+	// the jiggle: the driver's springs already run (UVisexBodyComponent::TickJiggle writes the weights
+	// on its mesh every frame). Its bust bounce carries the standing bust height too, which is the
+	// BustLift morph here: take that part out and keep the swing.
+	const float Lift = Body->GetValue(TEXT("BustLift")) * Body->BustLiftRange;
+	static const TCHAR* Bounce[4] = {TEXT("BustBounceL"), TEXT("BustBounceR"), TEXT("GluteBounceL"), TEXT("GluteBounceR")};
+	for (int32 I = 0; I < 4; ++I)
+	{
+		const FName Up(*(FString(Bounce[I]) + TEXT("_Up"))), Down(*(FString(Bounce[I]) + TEXT("_Down")));
+		const float Swing = Driver->GetMorphTarget(Up) - Driver->GetMorphTarget(Down) - (I < 2 ? Lift : 0.f);
+		BodyMesh->SetMorphTarget(Up, bOn ? FMath::Max(0.f, Swing) : 0.f, false);
+		BodyMesh->SetMorphTarget(Down, bOn ? FMath::Max(0.f, -Swing) : 0.f, false);
+	}
+	static const TCHAR* Sway[8] = {TEXT("BustSwayL_Out"), TEXT("BustSwayL_In"), TEXT("BustSwayL_Fwd"), TEXT("BustSwayL_Back"),
+		TEXT("BustSwayR_Out"), TEXT("BustSwayR_In"), TEXT("BustSwayR_Fwd"), TEXT("BustSwayR_Back")};
+	for (const TCHAR* Name : Sway)
+	{
+		Set(Name, Driver->GetMorphTarget(Name));
 	}
 }
 
@@ -883,7 +935,10 @@ void UVisexMHBodyComponent::ApplyDebug()
 	// a garment has one LOD and is skinned to the corrective joints, which the body stops evaluating
 	// past LOD 1: while one is worn the figure is held at LOD 0
 	const int32 Debug = CVarVisexMHLOD.GetValueOnGameThread();
-	const int32 LOD = Debug >= 0 ? Debug : Garment ? 0 : -1;
+	// the shape and jiggle morphs are on body LOD 0 only (Tools/mh_morphs.py): while they are live she is held there too
+	const USkeletalMesh* BodyAsset = BodyMesh ? BodyMesh->GetSkeletalMeshAsset() : nullptr;
+	const bool bMorphs = CVarVisexMHMorphs.GetValueOnGameThread() != 0 && BodyAsset && BodyAsset->GetMorphTargets().Num() > 0;
+	const int32 LOD = Debug >= 0 ? Debug : (Garment || bMorphs) ? 0 : -1;
 	if (Figure && LOD != LastLOD)
 	{
 		if (ULODSyncComponent* Sync = Figure->FindComponentByClass<ULODSyncComponent>())
