@@ -966,7 +966,7 @@ sculpting (`translate_face_landmarks`) stays inside the human face model and was
 - **The ears survive the whole way**: the Creator's preview, the cloud auto-rig (joints only, 6-13 s)
   and the assembly. No morph on top. (Fit to the model alone, delta 0, would give a human ear.)
 
-**The wrap** (`Tools/mh_face_fit.py`, Blender, 40 s; `landmarks.json` beside its output):
+**The wrap** (`Tools/mh_face_fit.py`, Blender, about a minute; `landmarks.json` beside its output):
 1. Her head is slid 1.32 cm forward first: the two skeletons put the head joint at different depths
    in the neck, and joint on joint would hang her face behind the MetaHuman's neck.
 2. A landmark warp (145 pairs): nine midline points read off both profiles by the same rule (nose
@@ -1077,5 +1077,5 @@ on a scratch character (`CHAR_NAME='MHC_Try'; STEPS=['create','shape','face']`, 
   more than hers (`stage6_ears.jpg`, middle).
 - The card hairstyles (`visex.Body.MetaHuman.Hair 0`) were fitted to the preset's skull: rerun
   `mh_hair_fit.py` against `mh_head_fit.fbx` if they are used again. The groom was re-bound by the
-  assembly; the ear tip comes through it at the side (`stage6_portrait.png`), as on her own hair.
+  assembly; the ear tip comes through it at the side (`stage6_portrait.png`).
 - Unlimited bone influences (above); `/Game/Character/MH` is still not cooked into the DMG.
