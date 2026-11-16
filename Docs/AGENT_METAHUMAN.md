@@ -932,3 +932,150 @@ page and back), `stage5_hair_pick.jpg` (the two long straight styles on the Crea
 - The Hair tab has no MetaHuman styles: each extra style is another groom in the assembly
   (107 MB of assets for this one) and was cut from this step.
 - Brows and lashes are the preset's; the face step may want others.
+
+### 2026-11-14 · Stage 6 · her face on the MetaHuman (captures `stage6_*`)
+
+**Tema's decision:** "Match her current face": the MetaHuman head takes the proportions and features
+of today's head (`SKM_AndroidSkin`), pointed ears included, on realistic MetaHuman skin. Commits
+f1d149c, dae961c, 31fb25f, 4b1f5ba (tools, C++), a047c10 (assets).
+
+**What makes the face hers** (`stage6_face_ref.jpg`: front, 3/4, profile, hair hidden, one light):
+- Eyes: sealed. Two closed lids shaped like a flat almond (3.0 x 1.0 cm), 2.9 cm apart at the inner
+  corners, almost level (outer corner 0.15 cm higher), in shallow sockets, no brows or lashes.
+- Nose: small and short (3.0 cm wide at the wings, tip 2.1 cm over the joint), a low smooth bridge.
+- Lips: a small closed mouth (4.0 cm), close under the nose, the lower lip the fuller one.
+- Jaw and chin: a V. Widest at the cheekbones (13.4 cm), 9.8 cm at the mouth, a narrow chin that
+  recedes a little in profile; flat cheeks with no hollow.
+- Skull and ears: a tall round cranium (the face is its lower half), a long slim neck, and long
+  blade ears rooted at nose height, tip 9.8 cm over the joint, swept 4 cm back and out to 9.5 cm.
+
+**Her head is drawn at 0.935 x 1.04**, not 0.935: the Head slider's default (1.04) scales the head
+bone. Stage 4a's table left that out, so her real skull is 13.6 cm wide and 21.8 chin to crown
+(the preset's: 14.1 and 20.3). The fit uses her drawn size (`HEAD_SCALE` in `mh_face_fit.py`).
+
+**The path: fit to given vertices, and it keeps everything.** `import_from_template` (and
+`fit_state_to_target_vertices` under it) fits the face model to the target and then stores what the
+model cannot reach as per-vertex deltas at full strength (`FitToTarget` + `UpdateVertexDeltas`, global
+delta 1.00), so the head comes back as given: the round trip of the preset's own head is exact above
+the neck (0.004 cm mean) and the Creator re-blends the neck itself (0.13 cm mean, 0.5 max). Landmark
+sculpting (`translate_face_landmarks`) stays inside the human face model and was not needed.
+- **Input**: four static meshes in the MetaHuman's own topology and UVs (head 24,416 vertices, each
+  eye 802, teeth 4,613), matched to the DNA by UV (`match_vertices_by_u_vs`), alignment NONE: they
+  are taken where they sit on this body, in the assembled mesh's cm frame. No DNA file, no skeletal
+  mesh. Eyes and teeth are passed too, so the model does not guess them.
+- **The ears survive the whole way**: the Creator's preview, the cloud auto-rig (joints only, 6-13 s)
+  and the assembly. No morph on top. (Fit to the model alone, delta 0, would give a human ear.)
+
+**The wrap** (`Tools/mh_face_fit.py`, Blender, 40 s; `landmarks.json` beside its output):
+1. Her head is slid 1.32 cm forward first: the two skeletons put the head joint at different depths
+   in the neck, and joint on joint would hang her face behind the MetaHuman's neck.
+2. A landmark warp (145 pairs): nine midline points read off both profiles by the same rule (nose
+   tip, under the nose, lips, chin by direction: her chin has no point that stands out), nose wings
+   and mouth corners placed by eye on gridded pictures (`--views`), eight outline points per ear.
+3. **Eyes as a whole.** Her lids are shut, so there is no eye to copy. Each MetaHuman eyeball moves
+   under her closed lid (one lid's thickness, 0.12 cm, behind it), 4.6% larger, 0.3 cm nearer the
+   middle; the skin lying on it keeps its distance from the eyeball's centre while the opening's
+   outline goes to her lids' outline (2.82 x 1.03 -> 2.96 x 0.99 cm). The lids still close (blink shot).
+4. Everything else settles on her surface (nearest point that faces the same way, smoothed over the
+   mesh, seven rounds from stiff to loose: 13,400 of 24,000 vertices end on it). Hollows (mouth,
+   nostrils) and their rims only follow. **Ears follow the landmark warp only**: settling a human
+   ear on her blade ear crumpled its folds, so it is a MetaHuman ear stretched to her outline, with
+   a rolled rim and a real concha where hers is a flat blade.
+5. The neck fades to the body's over 8 cm (7 to 15 cm under the joint); creases under the jaw (her
+   mesh has them where its head was joined on) and the step round the eyes are smoothed.
+
+**How close** (`mh_face_fit.py --look <head.fbx> <name>` tapes any head; cm, the head joint is 0):
+
+| | her | preset (Ada) | built MetaHuman |
+|---|---|---|---|
+| chin to crown | 21.8 | 20.3 | 21.8 |
+| skull width / cheekbones / jaw at the mouth | 13.6 / 13.4 / 9.8 | 14.1 / 13.3 / 11.3 | 13.7 / 13.4 / 9.8 |
+| nose tip forward, its height | 11.8, 2.1 | 11.7, 2.3 | 11.8, 2.1 |
+| mouth line height / chin forward | -0.8 / 10.4 | -1.1 / 10.3 | -0.8 / 10.4 |
+| ear: top / behind / out | 9.8 / 4.1 / 9.5 | 6.9 / 1.5 / 8.1 | 9.6 / 4.1 / 9.4 |
+
+Read from `stage6_face_match.jpg` (her over the MetaHuman, same cameras and light): the outline is
+hers from all three sides: cranium, V of the jaw, small nose, mouth height, chin, ears. What is
+not hers is what she never had: open brown eyes under the preset's dark eye shadow, brows and
+lashes, fuller coloured lips, an orbital rim and cheekbone that catch the light (the eye sits
+deeper than her painted-on lid). It reads as a person with her head, not as her mask with skin.
+
+**Skin.** Tone `SKIN_UV = (0.01, 0.40)` (u is how dark, 0 the lightest; v the undertone); stages 1-5
+wore (0.12, 0.35). Chosen on the Creator's preview under the sheet's lights: forehead (R, G, B)
+her 195/167/146, MetaHuman before 182/143/125, now 204/167/150. Her tone is the picker's lightest
+column; it cannot go less pink than that. Face skin stays the preset's (index 16: the cleanest of
+eight looked at), roughness 1.06, and **the preset's makeup is untouched** (eyes "SoftSmokey",
+black, 0.85): her face has none, so taking it off is a one-line change if Tema wants it.
+`show_top_underwear = False`: the chest is Epic's bare skin; `mh_bare_skin.py` now fills only what
+is still grey cloth in the bake (7.7% of the map instead of 19.8%: the briefs).
+
+**`r.GPUSkin.UnlimitedBoneInfluences`: reverted, the line is dropped.** Built once with it on: the
+MetaHuman's own skinning has up to 12 influences (4,502 body vertices over 8; off, they are cut
+to 8), and on it the body and face read better (body creases 4.29x against 5.80x, face grew 0.48
+against 0.75 cm). But the Silversuit, cut from the 8-influence skin, then goes under the skin at the
+hip crease: poke FAIL, 0.12 cm on `pelvis` (sit 0.11, Ledge and LegLift 0.12; the limit is 0.10,
+stage 5 read 0.08). A re-cut from the 12-influence export did not cure it (0.14: the garment import
+probably caps at 8; not chased). The 4K frames of Ledge and LegLift show nothing either way. So
+the final build is on the committed config and every number below is from it. Worth another go
+when outfits are next re-cut: it needs garment and skin on the same weights.
+
+**Checks on the final build** (one clean pass; the Epic sign-in was cached, no prompt came up):
+- **Vertex order** (`mh_vertex_order.py`): body 30,455 vertices, same triangles, moved 0.000 cm: the
+  follower, the Silversuit cut and its mask hold as they are. Face: same counts and triangles,
+  shape changed (4.88 cm at the ear tips), as meant.
+- **Spike + poke tour** (cvar on, Silversuit worn): body pass (stretch 2.74x, creases 5.80x), face
+  pass (1.38x, creases 2.37x on `FACIAL_R_12IPV_NeckA1`, grew 0.75 cm), garment pass (1.72x), poke
+  pass (95 fabric vertices under drawn skin, deepest 0.08 cm on `pelvis`). The face line covers
+  jaw and neck through the walk, the lean, the sit and every photo pose.
+- **Feet** (fixed-step tour): idle drift 0.38 cm, sole gap L 0.23 R -0.11; Start walk drift median
+  1.50, max 2.69. As stage 5.
+- **Neck seam**: none to see under the menu light (`stage6_lean.png` at 4K) or in the close-up at
+  the lean; neck and collarbones run through. Her neck is slimmer than the body's, so in profile
+  the nape steps out a little where the fade ends (`stage6_face_match.jpg`, bottom right).
+- **Eyes** drawn at LOD 0-3 (`stage6_eyes_lods.jpg`); the brows are missing in the LOD 2 shot.
+- **Face rig**: neutral, a blink (both lids close fully on the moved eyeballs) and a smile
+  (`stage6_expressions.jpg`), driven by `visex.Body.MetaHuman.Face "CTRL_expressions_eyeBlinkL=1,
+  CTRL_expressions_eyeBlinkR=1"` (`off` gives the face back). The Blueprint gives the Face no anim
+  class of its own; the rig is joints only (no blendshapes or wrinkle maps were asked of the cloud).
+
+**Captures** (`Docs/Research/metahuman/`, 3840x2160): `stage6_face_ref.jpg` (her head: front, 3/4,
+profile), `stage6_face_match.jpg` and `stage6_ears.jpg` (her over the MetaHuman, hair hidden, same
+head-fixed cameras and lights, black ground, fixed exposure; scene captures, no grade),
+`stage6_expressions.jpg`, `stage6_eyes_lods.jpg`, `stage6_portrait.png` (with hair, Lvl_Dust, the
+idle, a tour close-up with the grade: `-visexclose=idle:head:120,60,0:34g:0,0,-6`), `stage6_lean.png`
+(menu camera, game view). `Tools/mh_face_sheets.sh` reshoots the four sheets (4 minutes, editor on
+Lvl_Studio); `Tools/mh_face_shots.py` is the camera (head bone's frame, `MODE='preview'` for the
+Creator's preview before the cloud steps).
+
+**To change the face**: edit `landmarks.json` or the numbers at the top of `mh_face_fit.py`, run it
+(it writes `SourceArt/Character/MH/Face/face_*.fbx` and gridded pictures of the result), look at it
+on a scratch character (`CHAR_NAME='MHC_Try'; STEPS=['create','shape','face']`, then
+`mh_face_shots.py` with `MODE='preview'`), then the one clean pass.
+
+**Traps.**
+- **`SourceArt/Character/MH/mh_head.fbx` is the preset's head and must stay it**: the fit wraps that
+  mesh and `landmarks.json` is placed on it. The built head is exported as `mh_head_fit.fbx`.
+- Exporting a Creator preview texture (`T_Face_Editable_*`, transient, no source) with an
+  `AssetExportTask` asserts in `UTextureExporterGeneric` and takes the editor down.
+- A scene capture of `SCS_BASE_COLOR` comes out white in this project.
+- In a background editor a light moved by `set_actor_location` is still at its old place for a
+  capture in the same job; setting a property on it as an edit re-registers it.
+- The preview actor spawns at the origin, inside Lvl_Studio's set: lift it clear before shooting.
+- Past LOD 1 the MetaHuman body's `head` socket no longer follows the pose; aim by the driver's.
+- The console cannot set a string variable to empty ("name" alone prints it): give it a word.
+- Brows and lashes show in a capture about half a minute after the body is switched on, not before.
+- zsh does not split `$pair` on spaces in a `for`: use `${pair%%:*}` forms.
+
+**Left open (Tema's calls first).**
+- **Makeup and brows**: the preset's smoky eye shadow and its brows are still on; her own face has
+  neither. Eye colour is the preset's brown.
+- **Head size**: her head is 4% larger than a MetaHuman's on this body (the Head slider's 1.04), and
+  it is kept. `HEAD_SCALE` in `mh_face_fit.py` is the one number if it reads large with real skin.
+- **Lips and lids** are the preset's flesh on her outline: fuller than her mask's. The landmark file
+  can pull them in.
+- **Ear**: a rolled rim and concha, not her flat blade; from behind it stands off the head a little
+  more than hers (`stage6_ears.jpg`, middle).
+- The card hairstyles (`visex.Body.MetaHuman.Hair 0`) were fitted to the preset's skull: rerun
+  `mh_hair_fit.py` against `mh_head_fit.fbx` if they are used again. The groom was re-bound by the
+  assembly; the ear tip comes through it at the side (`stage6_portrait.png`), as on her own hair.
+- Unlimited bone influences (above); `/Game/Character/MH` is still not cooked into the DMG.
