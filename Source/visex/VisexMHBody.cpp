@@ -7,6 +7,8 @@
 #include "Misc/PackageName.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Animation/AnimInstanceProxy.h"
+#include "AnimationRuntime.h"
+#include "VisexAnimInstance.h"
 #include "Components/LODSyncComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/SkinnedMeshComponent.h"
@@ -42,6 +44,18 @@ static TAutoConsoleVariable<int32> CVarVisexMHReshape(
 static TAutoConsoleVariable<int32> CVarVisexMHMorphs(
 	TEXT("visex.Body.MetaHuman.Morphs"), 1,
 	TEXT("1: the Body page's shape sliders and the jiggle drive the MetaHuman body's morph targets. 0: the body as built, to compare."));
+
+static TAutoConsoleVariable<int32> CVarVisexMHFlex(
+	TEXT("visex.Body.MetaHuman.Flex"), 1,
+	TEXT("1: the flex layer tenses the MetaHuman body's muscle bellies by joint angle, load and push-off (the Flex* morph targets). 0: off, to compare."));
+
+static TAutoConsoleVariable<float> CVarVisexMHFlexScale(
+	TEXT("visex.Body.MetaHuman.FlexScale"), 1.f,
+	TEXT("Strength of the flex layer: every flex morph's weight is multiplied by this (1 as built, 0 none, 2 twice the belly height)."));
+
+static TAutoConsoleVariable<FString> CVarVisexMHFlexTest(
+	TEXT("visex.Body.MetaHuman.FlexTest"), TEXT(""),
+	TEXT("Debug: \"1\" holds every flex morph at that weight whatever the pose (the full-flex checks); \"Quad=1,BicepsL=0.5\" holds those; \"log\" prints the drivers once a second; \"off\": the drivers alone."));
 
 // "bone:roll,pitch,yaw;bone:..." in each bone's own axes, added on top of the followed pose
 static TAutoConsoleVariable<FString> CVarVisexMHTestPose(
@@ -615,6 +629,7 @@ void UVisexMHBodyComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 		ApplyFace();
 		ApplyShape();
 		ApplyMorphs();
+		ApplyFlex(DeltaTime);
 		ApplySkin();   // after ApplyOutfit: it puts other skin materials in the slots
 	}
 }
@@ -1277,4 +1292,192 @@ void UVisexMHBodyComponent::ApplyFace()
 		}
 	}
 	UE_LOG(LogTemp, Display, TEXT("VisexMH: face curves = %s (%d set; the Face's own class was %s)"), *Want, Inst->Curves.Num(), *GetNameSafe(FaceOwnClass));
+}
+
+// ---- the flex layer (stage 8) -------------------------------------------------------------------------
+namespace
+{
+	// the muscles of Tools/mh_flex_build.py: a left and a right of each, then the abs
+	enum EVisexFlex { FxBiceps, FxTriceps, FxForearm, FxDeltoid, FxQuad, FxHam, FxCalf, FxGlute, FxOblique, FxLat, FxPairs };
+	const TCHAR* const FlexNames[FxPairs] = {TEXT("Biceps"), TEXT("Triceps"), TEXT("Forearm"), TEXT("Deltoid"), TEXT("Quad"),
+		TEXT("Ham"), TEXT("Calf"), TEXT("Glute"), TEXT("Oblique"), TEXT("Lat")};
+	const int32 FxAbs = FxPairs * 2;
+
+	FString FlexMorph(int32 I)
+	{
+		return I == FxAbs ? FString(TEXT("FlexAbs")) : FString(TEXT("Flex")) + FlexNames[I / 2] + (I % 2 ? TEXT("R") : TEXT("L"));
+	}
+
+	/** 0 up to A, 1 from B, eased between. */
+	float Ramp(float X, float A, float B) { return FMath::SmoothStep(A, B, X); }
+
+	/** Degrees between two directions. */
+	float Between(const FVector& A, const FVector& B)
+	{
+		return FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(float(A.GetSafeNormal() | B.GetSafeNormal()), -1.f, 1.f)));
+	}
+}
+
+void UVisexMHBodyComponent::ApplyFlex(float DeltaTime)
+{
+	const ACharacter* Her = Cast<ACharacter>(GetOwner());
+	const USkeletalMesh* Asset = BodyMesh ? BodyMesh->GetSkeletalMeshAsset() : nullptr;
+	if (!Her || !Asset)
+	{
+		return;
+	}
+	static TArray<FName> Morphs;
+	if (Morphs.Num() == 0)
+	{
+		for (int32 I = 0; I < FlexCount; ++I) { Morphs.Add(FName(*FlexMorph(I))); }
+	}
+	const bool bOn = CVarVisexMHFlex.GetValueOnGameThread() != 0 && CVarVisexMHMorphs.GetValueOnGameThread() != 0;
+	if (!bOn)
+	{
+		// off is off at once: the same frame can be compared with and without
+		for (int32 I = 0; I < FlexCount; ++I)
+		{
+			FlexNow[I] = 0.f;
+			BodyMesh->SetMorphTarget(Morphs[I], 0.f, false);
+		}
+		return;
+	}
+	if (FlexRefMesh.Get() != Asset)
+	{
+		const FReferenceSkeleton& Ref = Asset->GetRefSkeleton();
+		const auto RefAt = [&Ref](const TCHAR* Bone)
+		{
+			const int32 I = Ref.FindBoneIndex(Bone);
+			return I == INDEX_NONE ? FTransform::Identity : FAnimationRuntime::GetComponentSpaceTransformRefPose(Ref, I);
+		};
+		FlexRefQ[0] = RefAt(TEXT("pelvis")).GetRotation();
+		FlexRefQ[1] = RefAt(TEXT("spine_05")).GetRotation();
+		FlexRefQ[2] = RefAt(TEXT("head")).GetRotation();
+		FlexRefAnkle[0] = Between(RefAt(TEXT("foot_l")).GetLocation() - RefAt(TEXT("calf_l")).GetLocation(), RefAt(TEXT("ball_l")).GetLocation() - RefAt(TEXT("foot_l")).GetLocation());
+		FlexRefAnkle[1] = Between(RefAt(TEXT("foot_r")).GetLocation() - RefAt(TEXT("calf_r")).GetLocation(), RefAt(TEXT("ball_r")).GetLocation() - RefAt(TEXT("foot_r")).GetLocation());
+		FlexRefMesh = Asset;
+	}
+	// the body's own last pose, in component space: X is her left, Y her front, Z up
+	const auto At = [this](const FString& Bone) { return BodyMesh->GetSocketTransform(FName(*Bone), RTS_Component); };
+	const auto Pos = [&At](const FString& Bone) { return At(Bone).GetLocation(); };
+	const FVector Up = FVector::UpVector, Front(0.f, 1.f, 0.f);
+	const FQuat PelvisD = At(TEXT("pelvis")).GetRotation() * FlexRefQ[0].Inverse();
+	const FQuat ChestD = At(TEXT("spine_05")).GetRotation() * FlexRefQ[1].Inverse();
+	// the chest against the pelvis, in the reference axes
+	const FQuat Trunk = PelvisD.Inverse() * ChestD;
+	const float Twist = FMath::RadiansToDegrees(Trunk.GetTwistAngle(Up));          // + : her chest turned to her right
+	const FVector Lean = Trunk.RotateVector(Up);
+	const float BendFront = FMath::RadiansToDegrees(FMath::Atan2(Lean.Y, Lean.Z));   // + : bent forward
+	const float BendLeft = FMath::RadiansToDegrees(FMath::Atan2(Lean.X, Lean.Z));    // + : bent to her left
+	const FVector PelvisUp = PelvisD.RotateVector(Up), PelvisFront = PelvisD.RotateVector(Front), ChestUp = ChestD.RotateVector(Up);
+	const FVector Pelvis = Pos(TEXT("pelvis"));
+
+	float Elbow[2], Wrist[2], Raise[2], Prop[2], HandBack[2], Knee[2], HipBack[2], Plantar[2], Down[2], Load[2], Push[2];
+	const FVector Velocity = BodyMesh->GetComponentTransform().InverseTransformVectorNoScale(Her->GetVelocity());
+	const float Speed = float(Velocity.Size2D());
+	// how far her chest leans back from upright, degrees (she rests her weight on what is behind her)
+	const float BackTilt = FMath::RadiansToDegrees(FMath::Atan2(float(-ChestUp.Y), float(ChestUp.Z)));
+	FVector Ankle[2], Ball[2];
+	float LegLength = 0.f;
+	for (int32 S = 0; S < 2; ++S)
+	{
+		const FString E = S ? TEXT("_r") : TEXT("_l");
+		const FVector Shoulder = Pos(TEXT("upperarm") + E), El = Pos(TEXT("lowerarm") + E), Hand = Pos(TEXT("hand") + E), Knuckle = Pos(TEXT("middle_01") + E);
+		Elbow[S] = Between(El - Shoulder, Hand - El);
+		Wrist[S] = Between(Hand - El, Knuckle - Hand);
+		Raise[S] = Between(El - Shoulder, -ChestUp);
+		// an arm she props herself on: the hand bent back on something, or her chest leaning back onto
+		// her arms (the menu lean: the chest tilts 10-12 degrees back, hands on the stone beside her, the
+		// wrists only 20-30 degrees bent); the arm not folded, the hand below the shoulder, and she is
+		// not walking. The lean is a rest, not a push-up: 0.85.
+		HandBack[S] = float(-((Hand - Shoulder) | ChestD.RotateVector(Front)));
+		Prop[S] = FMath::Max(Ramp(Wrist[S], 30.f, 55.f), 0.85f * Ramp(BackTilt, 4.f, 10.f))
+			* (1.f - Ramp(Elbow[S], 60.f, 100.f)) * Ramp(float(Shoulder.Z - Hand.Z), 10.f, 25.f) * (1.f - Ramp(Speed, 15.f, 45.f));
+		const FVector Hip = Pos(TEXT("thigh") + E), Kn = Pos(TEXT("calf") + E);
+		Ankle[S] = Pos(TEXT("foot") + E);
+		Ball[S] = Pos(TEXT("ball") + E);
+		Knee[S] = Between(Kn - Hip, Ankle[S] - Kn);
+		const FVector Thigh = (Kn - Hip).GetSafeNormal();
+		HipBack[S] = FMath::Max(0.f, -FMath::RadiansToDegrees(FMath::Atan2(float(Thigh | PelvisFront), float(-(Thigh | PelvisUp)))));
+		Plantar[S] = FlexRefAnkle[S] - Between(Ankle[S] - Kn, Ball[S] - Ankle[S]);
+		LegLength += 0.5f * float(FVector::Dist(Hip, Kn) + FVector::Dist(Kn, Ankle[S]));
+	}
+	// which leg carries her: the driver's plant state and where the pelvis stands over the feet. A foot
+	// is down when the driver says it is planted or its ball is as low as the other's; the weight goes
+	// to the foot the pelvis is over; a sitting or lying body puts none on its legs.
+	const UVisexAnimInstance* Anim = Cast<UVisexAnimInstance>(Her->GetMesh() ? Her->GetMesh()->GetAnimInstance() : nullptr);
+	const float Floor = float(FMath::Min(Ball[0].Z, Ball[1].Z));
+	Down[0] = FMath::Max(1.f - Ramp(float(Ball[0].Z) - Floor, 2.f, 6.f), Anim ? Anim->PlantedL : 0.f);
+	Down[1] = FMath::Max(1.f - Ramp(float(Ball[1].Z) - Floor, 2.f, 6.f), Anim ? Anim->PlantedR : 0.f);
+	const FVector2D FootL(Ankle[0]), Across = FVector2D(Ankle[1]) - FootL;
+	const float Apart = float(Across.Size());
+	const float Along = Apart > 1.f ? float(((FVector2D(Pelvis) - FootL) | Across) / (Apart * Apart)) : 0.5f;   // 0 over her left foot, 1 over her right
+	const float OverRight = FMath::Lerp(0.5f, Ramp(Along, 0.2f, 0.8f), Ramp(Apart, 6.f, 16.f));
+	const float Raw[2] = {(1.f - OverRight) * Down[0], OverRight * Down[1]};
+	const float Standing = Ramp((float(Pelvis.Z) - Floor) / FMath::Max(LegLength, 1.f), 0.72f, 0.95f);
+	const FVector Heading = Velocity.GetSafeNormal2D();
+	for (int32 S = 0; S < 2; ++S)
+	{
+		Load[S] = Raw[0] + Raw[1] > 0.05f ? Raw[S] / (Raw[0] + Raw[1]) * Standing : 0.f;
+		// the walk's push-off: the foot behind her, still down, while she moves
+		Push[S] = Ramp(Speed, 30.f, 110.f) * Ramp(float((Pelvis - Ankle[S]) | Heading), 4.f, 22.f) * Down[S];
+	}
+
+	float Want[FlexCount] = {};
+	for (int32 S = 0; S < 2; ++S)
+	{
+		const float Tense = Ramp(Load[S], 0.3f, 0.8f);
+		const auto Set = [&Want, S](int32 Muscle, float Value) { Want[Muscle * 2 + S] = FMath::Clamp(Value, 0.f, 1.f); };
+		Set(FxBiceps, Ramp(Elbow[S], 40.f, 125.f));
+		Set(FxTriceps, Prop[S]);
+		Set(FxForearm, FMath::Max3(0.55f * Ramp(Elbow[S], 50.f, 125.f), 0.8f * Prop[S], 0.6f * Ramp(Wrist[S], 30.f, 65.f)));
+		Set(FxDeltoid, FMath::Max(0.9f * Ramp(Raise[S], 45.f, 110.f), 0.7f * Prop[S]));
+		Set(FxLat, FMath::Max(0.8f * Prop[S], 0.7f * Ramp(Raise[S], 115.f, 165.f)));
+		Set(FxQuad, Tense * (0.75f + 0.25f * Ramp(Knee[S], 15.f, 60.f)));
+		Set(FxHam, FMath::Max(0.8f * Ramp(Knee[S], 45.f, 120.f), 0.35f * Ramp(HipBack[S], 5.f, 30.f)) + 0.35f * Push[S]);
+		Set(FxCalf, FMath::Max(Ramp(Plantar[S], 8.f, 35.f), 0.6f * Tense) + 0.4f * Push[S]);
+		Set(FxGlute, FMath::Max(0.8f * Ramp(HipBack[S], 6.f, 30.f), 0.6f * Tense) + 0.3f * Push[S]);
+		// the oblique on the side she bends to, and the one across from the way she turns
+		Set(FxOblique, 0.8f * Ramp(S ? -Twist : Twist, 8.f, 35.f) + 0.7f * Ramp(S ? -BendLeft : BendLeft, 6.f, 25.f));
+	}
+	Want[FxAbs] = FMath::Clamp(0.85f * Ramp(BendFront, 8.f, 35.f) + 0.5f * Ramp(FMath::Abs(Twist), 10.f, 40.f), 0.f, 1.f);
+
+	// visex.Body.MetaHuman.FlexTest: "1" every morph at that weight, "Quad=1,BicepsL=0.5" those, "log" the drivers
+	const FString Test = CVarVisexMHFlexTest.GetValueOnGameThread();
+	bool bLog = false;
+	TArray<FString> Tokens;
+	Test.ParseIntoArray(Tokens, TEXT(","));
+	for (const FString& Token : Tokens)
+	{
+		FString Name, Value;
+		if (Token == TEXT("log")) { bLog = true; }
+		else if (Token.Split(TEXT("="), &Name, &Value))
+		{
+			for (int32 I = 0; I < FlexCount; ++I)
+			{
+				if (FlexMorph(I).Mid(4).StartsWith(Name)) { Want[I] = FCString::Atof(*Value); }
+			}
+		}
+		else if (Token.IsNumeric())
+		{
+			for (float& W : Want) { W = FCString::Atof(*Token); }
+		}
+	}
+	const float Scale = FMath::Max(0.f, CVarVisexMHFlexScale.GetValueOnGameThread());
+	for (int32 I = 0; I < FlexCount; ++I)
+	{
+		// tensing is quicker than letting go
+		FlexNow[I] = FMath::FInterpTo(FlexNow[I], Want[I], DeltaTime, Want[I] > FlexNow[I] ? 7.f : 4.f);
+		BodyMesh->SetMorphTarget(Morphs[I], FlexNow[I] * Scale, false);
+	}
+	FlexLogClock += DeltaTime;
+	if (bLog && FlexLogClock >= 1.f)
+	{
+		FlexLogClock = 0.f;
+		FString Line;
+		for (int32 I = 0; I < FlexCount; ++I) { Line += FString::Printf(TEXT(" %s %.2f"), *FlexMorph(I).Mid(4), FlexNow[I]); }
+		UE_LOG(LogVisexMH, Display, TEXT("VisexFlex: elbow %.0f %.0f wrist %.0f %.0f raise %.0f %.0f hand back %.0f %.0f tilt %.0f prop %.2f %.2f | knee %.0f %.0f hip back %.0f %.0f plantar %.0f %.0f down %.2f %.2f load %.2f %.2f push %.2f %.2f standing %.2f speed %.0f | twist %.0f bend front %.0f left %.0f |%s"),
+			Elbow[0], Elbow[1], Wrist[0], Wrist[1], Raise[0], Raise[1], HandBack[0], HandBack[1], BackTilt, Prop[0], Prop[1], Knee[0], Knee[1], HipBack[0], HipBack[1], Plantar[0], Plantar[1],
+			Down[0], Down[1], Load[0], Load[1], Push[0], Push[1], Standing, Speed, Twist, BendFront, BendLeft, *Line);
+	}
 }

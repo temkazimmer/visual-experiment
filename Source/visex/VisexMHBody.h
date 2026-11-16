@@ -168,6 +168,20 @@ private:
 	 *  and the driver's jiggle springs on the MetaHuman body's morph targets (Tools/mh_morphs.py): each
 	 *  weight is the slider less its default, since the body was built at the defaults. */
 	void ApplyMorphs();
+	/** The flex layer (stage 8): muscle bellies tensed by joint angle, by the weight a leg or a propping
+	 *  arm carries and by the walk's push-off, on the Flex* morph targets of Tools/mh_flex_build.py.
+	 *  Read from the MetaHuman body's own last pose and the driver's foot plant state; it moves no bone
+	 *  and touches no foot. visex.Body.MetaHuman.Flex 0 switches it off, FlexScale is its strength. */
+	void ApplyFlex(float DeltaTime);
+	enum { FlexCount = 21 };
+	/** Each flex morph's weight as it is now (eased, so nothing pops). */
+	float FlexNow[FlexCount] = {};
+	float FlexLogClock = 0.f;
+	/** The reference pose the angles are read against: pelvis, chest (spine_05) and head rotations in
+	 *  component space, and each ankle's angle between shin and foot, degrees. */
+	FQuat FlexRefQ[3] = {FQuat::Identity, FQuat::Identity, FQuat::Identity};
+	float FlexRefAnkle[2] = {0.f, 0.f};
+	TWeakObjectPtr<const class USkeletalMesh> FlexRefMesh;
 	/** Skin tone from the Body page on the MetaHuman's skin: body, face (every LOD's material) and the
 	 *  bare-skin copies worn under outfits, through the tone parameters of the copied skin materials. */
 	void ApplySkin();

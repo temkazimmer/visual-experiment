@@ -30,6 +30,7 @@
 #include "UnrealEngine.h"
 #include "VisexMHBody.h"
 #include "Components/SceneCaptureComponent2D.h"
+#include "Components/SpotLightComponent.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Kismet/KismetRenderingLibrary.h"
 #include "GameFramework/PlayerController.h"
@@ -898,6 +899,66 @@ void AVisexQATour::BuildSliders()
 	});
 }
 
+void AVisexQATour::BuildFlex()
+{
+	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
+	AVisexMenuDirector* D = Director;
+	ApplyCvarArg();
+	const auto Set = [](const TCHAR* Var, const FString& Value)
+	{
+		if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(Var)) { V->Set(*Value, ECVF_SetByConsole); }
+	};
+	// one pose: the flex layer off, shot; on, left to rise, shot again from the same camera
+	const auto Pair = [this, Add, Set](const FString& Name)
+	{
+		const auto Shoot = [this](const FString& What)
+		{
+			FString Shots;
+			if (FParse::Value(FCommandLine::Get(), TEXT("visexshots="), Shots)) { CloseShots(Shots, What); }
+		};
+		// her clips are held while the pair is shot (the photo Idle shifts her weight within a second):
+		// the driver's pose stands still, the flex layer still eases in on real time
+		const auto Hold = [this](float Rate) { if (ACharacter* C = Her()) { C->GetMesh()->GlobalAnimRateScale = Rate; } };
+		Add(1.5f, [Set, Hold] { Hold(0.f); Set(TEXT("visex.Body.MetaHuman.Flex"), TEXT("0")); });
+		Add(0.6f, [Shoot, Name, Set] { Shoot(TEXT("flex0_") + Name); Set(TEXT("visex.Body.MetaHuman.Flex"), TEXT("1")); });
+		Add(1.6f, [Shoot, Name, Hold] { Shoot(TEXT("flex1_") + Name); Hold(1.f); });
+	};
+	const auto Motion = [this](const TCHAR* Name)
+	{
+		AVisexPhotoMode* P = Photo();
+		for (int32 I = 0; P && P->IsOpen() && I < 40; ++I)
+		{
+			if (P->GetMotionName(I) == Name) { P->SetMotion(I); QA_LOG(TEXT("VisexFlex: photo motion %s"), Name); return; }
+		}
+		QA_LOG(TEXT("VisexFlex: NO photo motion %s"), Name);
+	};
+	// the clock holds through her walk in
+	Add(4.f, [] {});
+	Pair(TEXT("lean"));
+	Add(1.f, [D] { D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
+	Add(5.f, [Motion] { Motion(TEXT("Idle")); });
+	Add(4.f, [] {});
+	Pair(TEXT("idle"));
+	// -visexflexposes=name=<TestPose>|name=<TestPose>: standing poses made of extra bone rotations
+	FString All;
+	TArray<FString> Poses;
+	FParse::Value(FCommandLine::Get(), TEXT("visexflexposes="), All, false);
+	All.ParseIntoArray(Poses, TEXT("|"));
+	for (const FString& One : Poses)
+	{
+		FString Name, Pose;
+		if (!One.Split(TEXT("="), &Name, &Pose)) { continue; }
+		Add(0.3f, [Set, Name, Pose] { Set(TEXT("visex.Body.MetaHuman.TestPose"), Pose); QA_LOG(TEXT("VisexFlex: pose %s = %s"), *Name, *Pose); });
+		Pair(Name);
+	}
+	Add(0.3f, [this, Set]
+	{
+		Set(TEXT("visex.Body.MetaHuman.TestPose"), TEXT("off"));
+		QA_LOG(TEXT("VisexQA: done"));
+		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
+	});
+}
+
 void AVisexQATour::BuildClip()
 {
 	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
@@ -914,8 +975,15 @@ void AVisexQATour::BuildClip()
 		}
 		QA_LOG(TEXT("VisexClip: NO photo motion Walk"));
 	});
-	Add(4.f, [this] { ClipLeft = 150; ClipN = 0; });
-	Add(6.f, [this]
+	// -visexclipcam=...,<frames>: the fifth number is the clip's length in frames
+	FString Cam;
+	TArray<FString> CamParts;
+	if (FParse::Value(FCommandLine::Get(), TEXT("visexclipcam="), Cam, false) && Cam.ParseIntoArray(CamParts, TEXT(",")) >= 5)
+	{
+		ClipFrames = FMath::Clamp(FCString::Atoi(*CamParts[4]), 1, 900);
+	}
+	Add(4.f, [this] { ClipLeft = ClipFrames; ClipN = 0; });
+	Add(ClipFrames / 30.f + 1.f, [this]
 	{
 		ACharacter* C = Her();
 		if (UVisexBodyComponent* B = C ? C->FindComponentByClass<UVisexBodyComponent>() : nullptr) { B->Load(); B->Apply(); }
@@ -947,11 +1015,46 @@ void AVisexQATour::ClipFrame()
 		// the seat read against the dunes. The direction and the height are kept for the whole clip
 		ClipOffset = C->GetActorForwardVector().RotateAngleAxis(72.f, FVector::UpVector) * 250.f + FVector(0.f, 0.f, 4.f);
 		ClipZ = C->GetMesh()->GetComponentLocation().Z + 106.f - C->GetActorLocation().Z;
+		const auto Numbers = [](const TCHAR* Key, TArray<float>& Out)
+		{
+			FString Text;
+			TArray<FString> Parts;
+			if (!FParse::Value(FCommandLine::Get(), Key, Text, false)) { return false; }
+			Text.ParseIntoArray(Parts, TEXT(","));
+			for (const FString& Part : Parts) { Out.Add(FCString::Atof(*Part)); }
+			return Out.Num() >= 4;
+		};
+		TArray<float> Cam, Light;
+		if (Numbers(TEXT("visexclipcam="), Cam))
+		{
+			ClipOffset = C->GetActorForwardVector().RotateAngleAxis(Cam[0], FVector::UpVector) * Cam[1];
+			ClipZ = C->GetMesh()->GetComponentLocation().Z + Cam[2] - C->GetActorLocation().Z;
+			ClipCapture->FOVAngle = Cam[3];
+		}
+		if (Numbers(TEXT("visexcliplight="), Light))
+		{
+			ClipLight = NewObject<USpotLightComponent>(this, NAME_None, RF_Transient);
+			ClipLight->SetMobility(EComponentMobility::Movable);
+			ClipLight->SetIntensityUnits(ELightUnits::Candelas);
+			ClipLight->SetIntensity(Light[3]);
+			ClipLight->SetLightColor(FLinearColor(1.f, 0.86f, 0.68f));   // the dust plaza's low sun, not a studio lamp
+			ClipLight->SetAttenuationRadius(1200.f);
+			ClipLight->SetInnerConeAngle(18.f);
+			ClipLight->SetOuterConeAngle(30.f);
+			ClipLight->SetCastShadows(false);
+			ClipLight->RegisterComponent();
+			ClipLightOffset = C->GetActorForwardVector().RotateAngleAxis(Light[0], FVector::UpVector) * Light[1]
+				+ FVector(0.f, 0.f, C->GetMesh()->GetComponentLocation().Z + Light[2] - C->GetActorLocation().Z - ClipZ);
+		}
 	}
 	// the camera travels with her capsule, up and down the dunes too, so what moves in the picture is
 	// her own body (the photo Walk itself lifts and drops her torso about 9 cm a step)
 	const FVector Target = C->GetActorLocation() + FVector(0.f, 0.f, ClipZ);
 	ClipCapture->SetWorldLocationAndRotation(Target + ClipOffset, (-ClipOffset).Rotation());
+	if (ClipLight)
+	{
+		ClipLight->SetWorldLocationAndRotation(Target + ClipLightOffset, (-ClipLightOffset).Rotation());
+	}
 	ClipCapture->CaptureScene();
 	UKismetRenderingLibrary::ExportRenderTarget(this, ClipCapture->TextureTarget, FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("QA")),
 		FString::Printf(TEXT("%s_clip_%04d.png"), *Shots, ClipN++));
@@ -1004,6 +1107,7 @@ void AVisexQATour::Tick(float DeltaSeconds)
 		bSpikes = FParse::Param(FCommandLine::Get(), TEXT("visexspikes"));
 		bSliders = FParse::Param(FCommandLine::Get(), TEXT("visexsliders"));
 		FParse::Param(FCommandLine::Get(), TEXT("visexclip")) ? BuildClip() :
+		FParse::Param(FCommandLine::Get(), TEXT("visexflex")) ? BuildFlex() :
 		bSliders ? BuildSliders() : bSpikes ? BuildSpikes() : bGaps ? BuildGaps() : bFeet ? BuildFeet() : Build();
 		bBuilt = true;
 	}

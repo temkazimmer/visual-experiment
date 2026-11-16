@@ -32,9 +32,9 @@ what we learned, so **write findings down in the log at the bottom as you go**.
   lines (body, face, and with an outfit on: garment, poke) must read `pass`, and look at any pose whose crease count jumps. `visex.MH.Spikes` checks the
   pose on screen. Any re-assembly, new body shape or new pose set: run it again.
 - **After every assembly run `Tools/mh_after_build.sh`** (with `shape` if the body's vertices moved): the
-  assembly rewrites the body mesh without morph targets, so the shape sliders and the jiggle stop
-  working on it until they are put back, and the outfits and bare-skin maps are per vertex and per bake
-  (see the stage 7b log).
+  assembly rewrites the body mesh without morph targets and with the bust as the Creator solves it, so
+  her softened bust, the shape sliders, the jiggle and the flex layer are gone until they are put back,
+  and the outfits and bare-skin maps are per vertex and per bake (see the stage 7b and stage 8 logs).
 - The project must keep `r.GPUSkin.Support16BitBoneIndex=True` (Config/DefaultEngine.ini). Assembling a
   MetaHuman without it silently drops skin weights (see the stage 2 log).
 
@@ -55,8 +55,8 @@ what we learned, so **write findings down in the log at the bottom as you go**.
    log); morph sliders rebuilt
    from MetaHuman body variants (same topology, so a variant minus the base is a morph).
 6. Remaining outfits, then hair refit to the new head.
-7. Muscle flex layer (morphs by joint angle and load), tension wrinkles, face expressions
-   for photo mode.
+7. Muscle flex layer (morphs by joint angle and load: done, see the stage 8 log), tension wrinkles
+   (a recipe only, same log), face expressions for photo mode.
 
 ## Known before starting
 
@@ -1567,3 +1567,255 @@ standing ones do not move at all.
   to end; the hips-and-thighs TARGETS change that was asked about (no new TARGETS arrived, so they are
   as in stage 3).
 - Brows at face LOD 2 (step 1 above).
+
+### 2026-11-16 · Stage 8 · her default bust softened; the flex layer (captures `stage8_*`)
+
+Two steps, in this order because outfits and every delta are cut on the base. Commits c62d29f (the flex
+builder, work in progress), 70a1021 (the bust), then the flex layer, the captures and this log.
+
+**Step A: her default bust** (Tema, on `stage7b_shape_sheet_3.jpg`: "Yes, soften it"; hips, thighs and
+everything else "Keep as is"). At the default it read as two high round balls starting at the
+collarbone. Now a teardrop: the tip 2.9 cm lower and 0.5 cm less forward (17.9 cm forward, 124.1 up ->
+17.4, 121.2), a longer upper slope, fuller below. Still a full bust: a shape fix, not a size cut.
+`stage8_bust_before_after.jpg` (bare skin and Silversuit, front three-quarter and profile, old | new, the
+reference pose, one camera and light).
+
+**Route: a correction baked into the base, not new TARGETS.** The Creator's controls were tried first, on
+throwaway variants (`mh_morphs.py STEP='variants'` with other VARIANTS; her build was not touched):
+Shoulder to Apex +6 and +9 cm, with Chest -2 / -3, Underbust +1.5, Front Interscye Length +1.5. They do
+lower the bust, but only 1.2-1.6 cm, with *more* projection (+0.8 cm) and a steeper upper chest; and the
+same solve moves the rest of her: legs and hips 0.4 cm on average and 1.0 at most, the arms 1.0 (the
+shoulder joints go 1 cm out), the back up to 1.7, the head 0.6 up (Shoulder to Apex +6; +9 is half as
+much again). "Everything else stays" rules that out, and a re-solve would also have needed a new face fit.
+So `Tools/mh_base_fix.py` makes the shape from the bust morphs stage 7b already has (the same Creator
+variants, inside the bust's footprint, faded at the neck opening):
+
+    fix = -1.0 x BustLift + (-0.28 - 0.15 x above-the-tip) x Bust        (852 vertices, 1.87 cm at most)
+
+BustLift is the Creator's Shoulder to Apex direction, Bust its Chest direction; the last term takes a
+little more off the upper pole. Chosen from four candidates rendered in Blender beside the base (profile,
+three-quarter, front), then looked at in the game. `Tools/mh_morphs.py STEP='apply'` writes it into body
+LOD 0's own vertices before the morphs go on (Geometry Script: positions set, normals recomputed where
+the skin moved, `copy_mesh_to_skeletal_mesh` with `use_original_vertex_order`). Tried on a copy of the mesh
+first: 30,455 vertices and 60,816 triangles in the same order, skin weights identical on every third
+vertex (10,152 compared, up to 16 influences, worst difference 0.00000), `DNAAsset` user data and the
+post-process AnimBP still there, 4 LODs, one section, 32,334 render vertices as before. The skin itself:
+no edge stretched past 1.36x, two short edges in the fold under the bust at 0.49x.
+- `mh_morphs.json` now holds `built` (as assembled), `base` (built + fix: what the mesh holds, and what the
+  outfit cut and the flex builder match the skin FBX to) and `fix`. `STEP='unfix'` takes it off again.
+- **Not done: body LOD 1-3 still have the old bust.** She is held at LOD 0 whenever the morphs are live or
+  a garment is worn, so it does not show in the game; with `visex.Body.MetaHuman.Morphs 0` and no outfit
+  it would pop at a distance. Carrying the delta to the other LODs by nearest vertex is the fix.
+- Untried third route: `conform_body` (the Creator fitted to given body vertices, like the face). It would
+  make the shape native at every LOD, at the price of a fixed body and an unknown fit at the neck.
+
+**The sliders round the new default.** Both ends of Bust, Bust height and Bust spacing again, lean / LegLift
+/ walk / reference pose, Silversuit (`stage8_bust_sliders.jpg`):
+- **Bust height resized to 0.30 of its reach.** Unchanged (and at 0.67) its minimum, now 4 cm under the old
+  default, put the lower pole over the keyhole's hem: poke FAIL, 0.17-0.20 cm on `spine_04` in all three
+  poses. At 0.40 still 0.12 in LegLift. At 0.30 the slider ends 2.9 cm under the old default, where its old
+  minimum was (0.9 cm down and 0.3 up from the new one): 0.07 cm. Tema's call if he wants more range; it
+  needs that hem lowered where it meets the fold under the bust.
+- **Bust resized to 0.65**, so 0 is the small bust it was and not that less the correction again (which
+  dented the inner breast). Bust spacing untouched: at -1 the breasts still just meet.
+- Every end passes: body stretch 2.14x, garment 1.36x, hem poke 0.07 cm at most (LegLift, Bust 0 and Bust
+  height -1); the default body reads 0 fabric vertices under drawn skin in all four poses.
+
+**Checked after the bake.** Vertex order (`mh_vertex_order.py`): body count and triangles the same, 788
+vertices moved, 1.873 cm at most (the bust, as meant); face 0.000 cm, order kept.
+`r.GPUSkin.Support16BitBoneIndex=True` in the committed config and 1 in the editor. Standard spike and
+poke tour (`-visexqa -visexspikes`, cvar on, Silversuit, the flex drivers live): body pass, stretch 2.83x,
+creases 6.49x, grew 2.19 cm; face pass 1.38x; garment pass 2.08x; **poke pass**, 95 fabric vertices under
+drawn skin, deepest 0.08 cm on `pelvis` (stage 7b: 2.67x, 5.39x, 2.00 cm; 1.38x; 1.85x; 95, 0.08).
+
+**`Tools/mh_after_build.sh shape` ran end to end** for the first time (about 4 minutes, editor open). Nothing
+in it failed; its order had to change, because the correction comes before the skin export and the flex
+deltas after it: bare-skin maps; the body back as built (`unfix`), its skin FBX, base and ten Creator
+variants (the eight of stage 7b plus `musc0` / `musc1`), `mh_morph_build.py`, `mh_base_fix.py`; correction
+and morphs on the mesh; skin export again (the corrected base); `mh_flex_build.py` and the morphs again;
+the Silversuit. The remade deltas equal the committed ones (base variant 0.000 cm from the body). The
+bare-skin textures came back byte-different with the same PNGs and were not committed.
+`Tools/mh_recut.sh` is the short loop after a change to `mh_morphs.json` alone (morphs, suit: 3 minutes).
+
+**Step 1: the flex layer.** With the cvar on, 21 muscle bellies tense with what she does, on skin and under
+the Silversuit. `visex.Body.MetaHuman.Flex 0` switches it off (at once, so one frame can be compared),
+`visex.Body.MetaHuman.FlexScale` is its strength (1), `visex.Body.MetaHuman.FlexTest` holds weights for
+checks ("1": every morph; "Quad=1,BicepsL=0.5"; "log": the drivers once a second). With
+`visex.Body.MetaHuman 0` none of it runs: `ApplyFlex` is called only while the MetaHuman is shown.
+
+**The morphs** (`Tools/mh_flex_build.py`, Blender, 10 s; in `mh_morphs.json` beside the shape morphs, so
+`mh_morphs.py apply`, the Silversuit cut and the spike check take them as they are). The Creator's
+Muscularity axis (the body solved at -1.0 and +0.5 with the girths let go: `musc0`, `musc1`) says where a
+real body puts muscle; per limb each cross section's own shift is taken out (the solve moves joints too),
+the rest is read along the skin's normal, and a soft window per muscle (along the bone, round it, gated
+by skin weight so an arm's window cannot reach the ribs) cuts one belly out. Half of each shape is that,
+half a plain bump of the window, sized to a peak height. The variant alone is nearly an even
+thickening (upper arm 1.0-1.3 cm front and back, 0.6 at the sides), so the windows do the shaping.
+
+| morph (left and right) | where | peak at weight 1 | on the fabric at +-1 |
+|---|---|---|---|
+| `FlexBiceps` | front of the upper arm, 20-86% down it | 0.85 cm | 1.26x |
+| `FlexTriceps` | back of the upper arm | 0.80 | 1.22x |
+| `FlexForearm` | under the elbow, outside and front; nothing in the last third | 0.45 | 1.19x |
+| `FlexDeltoid` | the shoulder's cap | 0.65 | 1.15x |
+| `FlexQuad` | front of the thigh, with the teardrop over the inside of the knee | 0.80 | 1.12x |
+| `FlexHam` | back of the thigh | 0.55 | 1.07x |
+| `FlexCalf` | the gastrocnemius; the Achilles and ankle stay | 0.65 | 1.12x |
+| `FlexGlute` | round the cheek's apex, off the cleft, with a little lift | 0.70 | 1.10x |
+| `FlexOblique` | between ribs and hip bone | 0.35 | 1.07x |
+| `FlexLat` | under the armpit, on the back's side | 0.50 | 1.17x |
+| `FlexAbs` (one) | the sliders' own lines and pack (0.6 and 1.0), stopped under the bust | 0.40 | 1.18x |
+
+**Dropped: the neck cords.** The Body mesh ends at the top of the chest (its neck opening is 131-142 cm up);
+the sternocleidomastoid is on the Face mesh, which carries no morphs, and a delta there would sit on the
+seam the brief forbids. It needs a morph on the Face mesh's neck (same Geometry Script call, 33,845
+vertices, 8 LODs) and its own seam check. Read back from the file: no flex delta comes nearer than 3.8 cm
+to the neck opening, and no hand or foot vertex moves (0.000 cm; wrists and ankles are faded out).
+
+**The drivers** (`UVisexMHBodyComponent::ApplyFlex`, `Source/visex/VisexMHBody.cpp`, every frame after
+`ApplyMorphs`). Read from the MetaHuman body's own last pose in component space (so a TestPose flexes
+too) and from the driver's foot plant state; it moves no bone and does not touch the foot pipeline. Each
+weight eases toward its target (7 a second up, 4 down), so nothing pops. Angles in degrees:
+
+| muscle | by angle | by load or speed |
+|---|---|---|
+| biceps | elbow bend 40 -> 125 | |
+| triceps | | the propping arm (below) |
+| forearm | 0.55 x elbow bend 50 -> 125; 0.6 x wrist bend 30 -> 65 | 0.8 x prop |
+| deltoid | 0.9 x upper arm raised from the chest's down 45 -> 110 | 0.7 x prop |
+| lat | 0.7 x arm raised 115 -> 165 | 0.8 x prop |
+| quad | | the leg's tension x (0.75 + 0.25 x knee bend 15 -> 60) |
+| hamstring | 0.8 x knee bend 45 -> 120; 0.35 x hip extension 5 -> 30 | + 0.35 x push-off |
+| calf | plantarflexion past the reference ankle 8 -> 35 (tiptoe) | 0.6 x tension, + 0.4 x push-off |
+| glute | 0.8 x hip extension 6 -> 30 | 0.6 x tension, + 0.3 x push-off |
+| oblique | 0.8 x chest turned away from that side 8 -> 35; 0.7 x bent to that side 6 -> 25 | |
+| abs | 0.85 x bent forward 8 -> 35; 0.5 x chest turned 10 -> 40 | |
+
+- **A leg's tension** is its share of her weight, 0.3 -> 0.8. The share: a foot is down when the driver's
+  plant pass says so (`UVisexAnimInstance::PlantedL/R`, read only) or its ball is as low as the other's;
+  the weight goes to the foot the pelvis stands over (its place along the line between the ankles, 0.2 ->
+  0.8); a pelvis under 0.72 of the leg's length over the feet (sitting, lying) puts none on the legs.
+  Standing evenly gives both legs 0.5, a tension of 0.26. In the photo Idle the split wanders 1.00 / 0.00
+  to 0.51 / 0.49 from second to second (she shifts her weight), which is why the ramp is that wide.
+- **The propping arm**: the hand bent back 30 -> 55, or the chest leaning back 4 -> 10 (x 0.85), times an
+  arm not folded (elbow under 60 -> 100), a hand 10 -> 25 cm below its shoulder, and not walking. The menu
+  lean measures chest 10-12 back, elbows 35-50, wrists 20-29, hands 0-7 cm behind the shoulders: so it
+  is the lean of the chest that tells it, not the wrist. Both arms tense at 0.85 there.
+- **Push-off**: speed 30 -> 110 cm/s, times the foot 4 -> 22 cm behind the pelvis along her heading, while
+  it is down.
+
+**Not doubling the correctives.** RigLogic's `upperarm_bicep` / `upperarm_tricep` and knee joints fill the
+joint; the flex morphs are windows on the bellies between joints (the biceps window is 0 within a fifth
+of the arm's length of either joint). In the bent-arm and bent-knee pairs the elbow and knee look the
+same off and on; what changes is the upper arm's and the thigh's fullness.
+
+**Checks at full flex** (`FlexTest=1`: all 21 morphs at 1 whatever the pose; Silversuit; fixed 30 fps step;
+limits stretch 3x, growth 3 cm, fabric 0.10 cm under drawn skin):
+- The standard tour, every pose she has (arrival, lean, Settings sit, the eleven photo motions with their
+  bent arms and lifted legs, Start walk, idle, height 145 / 185): **body pass**, stretch 2.84x (Ledge; 2.83
+  with the drivers), creases 6.49x, grew 2.20 cm; face pass 1.38x; **garment pass** 2.12x; **poke pass**, 97
+  fabric vertices under drawn skin, deepest 0.08 cm on `pelvis`. No pose line fails. Full flex adds 0.01x
+  and 0.01 cm to the worst body numbers and 2 hem vertices: it does not load the folds that lead them.
+- Full flex with the shape sliders it overlaps at both ends (Glutes, Abs, Thigh gap; lean / LegLift / walk,
+  `Tools/mh_sliders.sh sf8 "1+visex.Body.MetaHuman.FlexTest=1" -benchmark -fps=30 -visexsetups=Glutes+Abs+ThighGap`):
+  all 21 lines pass. Worst: body stretch 2.18x and growth 1.47 cm (LegLift, Glutes 1), creases 4.38x
+  (LegLift, Thigh gap 1), garment 1.60x (walk, Glutes 1), hem poke 0.04 cm. One "settle" stretch between
+  two setups read 0.10 cm on `pelvis` while the Glutes slider was jumping; no measured second did.
+- On the fabric each flex morph stretches an edge 1.26x at most (the build's own check, weight +-1).
+- The same build line reads Bust 5.19x and BustLift 2.09x at +-1 on the new base: that is past the
+  sliders' reach (Bust runs -0.52 .. +0.13 of its morph now), and in the game their ends pass (above).
+
+**Seen** (`stage8_flex_onoff_bare.jpg`, `stage8_flex_onoff_suit.jpg`: six poses, off | on in each cell, the
+clips held while a pair is shot; 4K scene captures with the grade, cropped to their middle; looked at
+at full size):
+
+| group | what drives it there | verdict |
+|---|---|---|
+| quad | the leg that carries her (lean, photo Idle) | reads: the thigh fills and the teardrop over the knee stands out, the free leg stays soft. The clearest of all at game distance |
+| calf | tiptoe; the carrying leg | reads: a belly high on the shin, on skin and as a wider highlight on the suit |
+| biceps, forearm | elbow bent 95 | reads in profile: the upper arm's front fills. From in front it is slight |
+| abs, obliques | chest turned 34 degrees | reads on skin (the middle line and the flank's edge); under the suit only the highlight's edge moves |
+| triceps, deltoid | the menu lean's arms | weak: the upper arm is a little fuller behind. Seen in the pair, not something the menu camera shows |
+| hamstring, glute, lat | knee bend, hip extension, load; an arm overhead or propping | on the mesh and in the checks; not looked at in a pair of their own |
+| neck cords | | dropped (above) |
+
+Nothing reads as lumps at these sizes. **Chrome**: no flex morph adds facets; the suit's knee highlight
+breaks into four or five small patches in the lean, the same with flex off and on (the knee's own
+geometry under mirror fabric, not this stage's). FlexScale 1 is what is shot; it was sized up once
+(biceps 0.55 -> 0.85, triceps 0.40 -> 0.80, quad 0.65 -> 0.80) after the first pairs were too faint.
+
+**The walk** (`stage8_flex_walk.mp4`: 3840x2160, 30 fps, 10 s, the photo Walk on bare legs, flex on, a camera
+62 degrees round from her front, 310 cm away, level with her knees, travelling with her capsule; a warm
+200 candela spot travels with her from 140 degrees round, so it rakes across the thigh and calf.
+`stage8_flex_walk_onoff.mp4` is the same frames with flex off | on, each half the middle of the picture;
+both from `Tools/mh_flex_clip.sh`, fixed 30 fps step, so the two runs walk the same steps). In stills
+taken from both the stance leg's quad and the teardrop over the knee are fuller with flex on and the
+swing leg is not; the difference per frame is small, the size of the idle pair's. **Not watched in
+motion**: whether the firing reads at speed, and whether the load's hand-over from leg to leg is smooth
+at every step, is judged from frames only.
+
+**Step 2: skin creases, not started; the recipe.** What the body material exposes: the body draws with
+`M_skin_unified_baked` (`MI_Body_Baked_VT`), the same material as the face. It has the rig's wrinkle
+inputs (three animated normal maps `Normal Animated wm1..3` with their delta maps, three colour maps, and
+83 scalars), but every one of those scalars is a *head* mask (`head_wm1_normal_head_wm1_blink_L`,
+`..._neckStretch_L` ...), and on the body's instance `Use Animated Maps` is off and the wm textures are
+flat placeholders (`T_Flat_N`). So the body has no wrinkle maps and no mask to drive one: it needs new
+textures, which is past the two hours allowed. To build it:
+1. Textures, in the body's UV layout (tile 1, u 1..2; `mh_bare_skin.py` already reads and writes it):
+   one tangent-space normal map of fold lines (inner elbow, back of the knee, the waist's flank; the wrist
+   if wanted) and one mask map with a channel per region. Bake them in Blender from the skin FBX: for
+   each joint, the crease line is where the skin's two sides meet in a bent test pose
+   (`_mh_test_poses()` in `mh_outfit_body.py` already bends wrists and hips; add elbow and knee), drawn
+   as two or three parallel grooves a few millimetres wide, fading out along the line.
+2. Material: `M_Body_Under` is already our copy of the skin material (stage 3) and `ApplySkin` already puts
+   dynamic instances on every skin slot. Add to the copy: the crease normal blended over the baked normal
+   (BlendAngleCorrectedNormals), its strength the mask channel times a scalar per region
+   (`CreaseElbowL` ...). `MaterialEditingLibrary` can add and wire those nodes from a script. The bare body
+   draws with the assembled original, so it has to wear the copy too (unmasked) for creases to show
+   without an outfit.
+3. Drivers: the angles `ApplyFlex` already has (elbow bend 60 -> 130, knee bend 60 -> 130, chest turn and side
+   bend for the waist), set on the dynamic instances beside the tone.
+4. Shoot off | on with `Tools/mh_flex.sh` (an elbow, a knee, the twist), and check the neck seam: the head
+   uses the same material and must not get the body's maps.
+
+**Cvar off.** A sliders tour with `visex.Body.MetaHuman=0` runs through with "no MetaHuman body" on every
+line and not one `VisexMH:` or `VisexFlex:` line in the game's log; `ApplyFlex` sits behind the same
+`bShown` as every other MetaHuman step. One short run and a reading of the code, not a frame comparison.
+
+**Traps.**
+- **The plugin's "missing project settings" toast was accepted again** (5 minutes into the first editor
+  session; by whom is not known): `r.GPUSkin.UnlimitedBoneInfluences=True` was written into
+  `Config/DefaultEngine.ini`, the dirty packages were **saved** (two scratch meshes of the base-write test
+  and `Lvl_Studio`, dirty from the variants' preview actors) and the editor restarted itself with its
+  old arguments. Undone: scratch files deleted, the level checked out again. For the rest of the stage
+  the line stayed in the working tree so the toast had nothing to ask, and every editor and `-game` run
+  got `-ini:Engine:[/Script/Engine.RendererSettings]:r.GPUSkin.UnlimitedBoneInfluences=False` (stage 5's
+  way; the editor read 0). The line is **reverted and not committed**, so the next editor launch will show
+  the toast again: pass the override, or expect a restart that saves whatever is dirty.
+- A base check on every 97th vertex cannot tell the built body from the corrected one (none of the
+  sampled vertices is on the bust): `mh_morphs.py` compares every vertex.
+- A hash over the weights' list order changes when a mesh is written back although no weight did: sort
+  each vertex's influences before comparing.
+- zsh: `"$S:suit:..."` applies the `:s` modifier to `$S` and eats the text. `"${S}:suit"`.
+- The photo Idle shifts her weight within a second: two shots 2 s apart are two poses. The flex tour
+  holds her clips (`GlobalAnimRateScale 0`) while a pair is shot; the flex layer still eases on real time.
+- In the menu lean her wrists are bent only 20-29 degrees and her hands are 0-7 cm behind the
+  shoulders: neither tells a propping arm. The chest's 10-12 degrees of lean back does.
+- A light added to Lvl_Dust for a capture: 6000 candela burns her white, 200 is a raking key.
+- The clip tour and the flex tour leave their old frames in `Saved/QA`: a frame count includes them.
+- This session's shell check refused `rm -f Tools/.bridge/in/*` (a glob removal). The inbox was empty;
+  name the files to delete.
+
+**Left open.**
+- **Tema's calls**: the new default bust itself (`FIX_*` in `mh_base_fix.py`: one run of `mh_base_fix.py`,
+  `mh_recut.sh` and the bust tour per try); the Bust height slider's short reach; FlexScale (1) and
+  whether the lean's arms should read from the menu camera at all.
+- Body LOD 1-3 carry the old bust (above). Neck cords (a Face-mesh morph). Skin creases (the recipe).
+- Flex is on body LOD 0 only, like every morph; cost not measured.
+- Not looked at in a pair of their own: hamstring, glute, lat, the deltoid with a raised arm. Not
+  checked: flex with bone-scale sliders at their ends (a thicker or longer limb scales the belly with
+  it, by skinning; no number), the Settings sit and the photo poses with the *drivers* on beyond the
+  standard tour's pass, live dragging of a slider, a packaged build (`/Game/Character/MH` is still not
+  cooked), any outfit but the Silversuit.
+- The walk clip was not watched in motion (above). The propping test is a posture, not a contact: a
+  pose that leans her chest back with straight arms hanging free would tense them too.

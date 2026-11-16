@@ -73,6 +73,18 @@ private:
 	 *  Saved/QA/<name>_clip_NNNN.png: the jiggle in the walk. Run at a fixed step (-benchmark -fps=30). */
 	void BuildClip();
 	void ClipFrame();
+	/** -visexclipcam=<angle>,<distance>,<height>,<fov>[,<frames>]: the clip's camera, as degrees round her
+	 *  from her front (to her right), cm from her, cm over her feet and its field of view; then how many
+	 *  frames. -visexcliplight=<angle>,<distance>,<height>,<candela>: a spot that travels with her, for a
+	 *  raking light (the flex clip: legs close, the light from behind the camera's side). */
+	UPROPERTY(Transient) TObjectPtr<class USpotLightComponent> ClipLight;
+	FVector ClipLightOffset = FVector::ZeroVector;
+	int32 ClipFrames = 150;
+	/** -visexflex -visexshots=<name> -visexclose=<pose>:...: the flex layer off and on in the same pose
+	 *  from the same camera: the menu lean, the photo Idle, then every pose of -visexflexposes
+	 *  ("name=<TestPose>|name=<TestPose>", see visex.Body.MetaHuman.TestPose). Close shots go to
+	 *  Saved/QA/<name>_flex0_<pose>_close*.png and ..._flex1_... */
+	void BuildFlex();
 	UPROPERTY(Transient) TObjectPtr<class USceneCaptureComponent2D> ClipCapture;
 	int32 ClipLeft = 0, ClipN = 0;
 	FVector ClipOffset = FVector::ZeroVector;
