@@ -364,6 +364,44 @@ namespace
 			RotateCS(Hand, FQuat::Slerp(FQuat::Identity, KeepRotation * Now.Inverse(), Weight));
 		}
 
+		/** Two-bone reach for a leg. Reach takes the bend plane from the incoming knee. A knee the
+		 *  clip locks straight has none (the leg could not bend at all, then popped the moment it
+		 *  unlocked), and a nearly straight one has it only as noise (a 2 cm knee move in the graph
+		 *  became 10 once the leg had to bend for a lowered pelvis). Here the plane comes from the
+		 *  thigh's own frame while the knee is straighter than about 4 degrees (Pole: the knee's
+		 *  hinge axis in thigh space, FVisexAnimProxy::LegPole), from the incoming knee past about
+		 *  12, and from a blend between, so it never jumps. */
+		void ReachLeg(FCompactPoseBoneIndex Thigh, FCompactPoseBoneIndex Calf, FCompactPoseBoneIndex Foot, const FVector& Want, const FQuat& KeepRotation, const FVector& Pole)
+		{
+			const FVector A = Component(Thigh).GetLocation(), B = Component(Calf).GetLocation(), C = Component(Foot).GetLocation();
+			const float La = float((B - A).Size()), Lb = float((C - B).Size());
+			const FVector T = La > 1.f ? (B - A) / La : FVector::ZeroVector, K = Lb > 1.f ? (C - B) / Lb : FVector::ZeroVector;
+			FVector N = Component(Thigh).GetRotation().RotateVector(Pole);
+			N = (N - (N | T) * T).GetSafeNormal();   // square to the thigh
+			if (Pole.IsNearlyZero() || N.IsNearlyZero() || N.ContainsNaN() || La <= 1.f || Lb <= 1.f || Want.ContainsNaN())
+			{
+				Reach(Thigh, Calf, Foot, Want, KeepRotation, 1.f);   // no hinge axis to go by
+				return;
+			}
+			const FVector Cross = T ^ K;
+			const float Sin = float(Cross.Size());
+			if (Sin > 1e-4f)
+			{
+				// the incoming knee's own plane counts once it is bent enough to have one, and only while
+				// it bends the way a knee does (within 60 degrees of the hinge)
+				const float Own = FMath::SmoothStep(0.07f, 0.21f, Sin) * FMath::SmoothStep(0.f, 0.5f, float(Cross | N) / Sin);
+				N = FMath::Lerp(N, Cross / Sin, Own).GetSafeNormal();
+			}
+			const float Dist = FMath::Clamp(float((Want - A).Size()), FMath::Abs(La - Lb) + 0.1f, La + Lb - 0.1f);
+			const float Flex = UE_PI - FMath::Acos(FMath::Clamp((La * La + Lb * Lb - Dist * Dist) / (2.f * La * Lb), -1.f, 1.f));
+			const FVector NewK = T * FMath::Cos(Flex) + (N ^ T) * FMath::Sin(Flex);   // the shin, bent by Flex about N
+			RotateCS(Calf, FQuat::FindBetweenNormals(K, NewK.GetSafeNormal()));
+			const FVector C2 = Component(Foot).GetLocation();
+			RotateCS(Thigh, FQuat::FindBetweenNormals((C2 - A).GetSafeNormal(), (Want - A).GetSafeNormal()));
+			const FQuat Now = Component(Foot).GetRotation();
+			RotateCS(Foot, KeepRotation * Now.Inverse());
+		}
+
 		void Offset(const TCHAR* Name, float K)
 		{
 			const FCompactPoseBoneIndex Index = Find(Name);
@@ -1194,7 +1232,7 @@ void FVisexAnimProxy::Plant(FCompactPose& Pose)
 	{
 		if (Leg[F][0].IsValid() && Leg[F][1].IsValid() && Leg[F][2].IsValid() && (FMath::Abs(PlantFix[F]) > 0.01f || PelvisFix > 0.01f))
 		{
-			S.Reach(Leg[F][0], Leg[F][1], Leg[F][2], Target[F], Keep[F], 1.f);
+			S.ReachLeg(Leg[F][0], Leg[F][1], Leg[F][2], Target[F], Keep[F], LegPole[F]);
 		}
 		if (CVarPlantLog.GetValueOnAnyThread() != 0 && (GFrameCounter % 30) == 0 && Leg[F][2].IsValid())
 		{
@@ -1309,6 +1347,17 @@ void FVisexAnimProxy::PinFrom(const FCompactPose& Pose)
 		auto RefZ = [&Bones](FCompactPoseBoneIndex I) { FTransform T = Bones.GetRefPoseTransform(I); for (FCompactPoseBoneIndex P = Bones.GetParentBoneIndex(I); P.IsValid(); P = Bones.GetParentBoneIndex(P)) { T = T * Bones.GetRefPoseTransform(P); } return float(T.GetLocation().Z); };
 		PinRefZ[0] = RefZ(Foot[0]);
 		PinRefZ[1] = RefZ(Ball[0]);
+		// each knee's hinge axis in its thigh's frame: the calf turns about its own Z to flex, on both
+		// legs (measured on this skeleton, see JointLimits), so the axis is the calf's reference Z.
+		// It is the bend plane ReachLeg uses while the knee is too straight to show one. (Her
+		// reference pose bends the knee only 1.1 degrees: too little to take the plane from.)
+		static const TCHAR* Calves[2] = {TEXT("calf_l"), TEXT("calf_r")};
+		for (int32 F = 0; F < 2; ++F)
+		{
+			const FCompactPoseBoneIndex Calf = S.Find(Calves[F]);
+			const FVector Axis = Calf.IsValid() ? Bones.GetRefPoseTransform(Calf).GetRotation().GetAxisZ() : FVector::ZeroVector;
+			LegPole[F] = Axis.ContainsNaN() ? FVector::ZeroVector : Axis;
+		}
 	}
 	const FTransform& X = EvalX;
 	const float Still = CVarPinStill.GetValueOnAnyThread(), Moving = FMath::Max(CVarPinMoving.GetValueOnAnyThread(), Still + 1.f);
@@ -1463,7 +1512,7 @@ void FVisexAnimProxy::Pin(FCompactPose& Pose)
 			const float Len = float((Knee - Hip).Size() + (Post.GetLocation() - Knee).Size());
 			const float RW = Len > 1.f ? float((Want - Hip).Size()) / Len : 0.f, RP = Len > 1.f ? float((Post.GetLocation() - Hip).Size()) / Len : 0.f;
 			if (RW > RP + 0.002f) { Stat[2] = FMath::Max(Stat[2], RW); }
-			S.Reach(Leg[F][0], Leg[F][1], Leg[F][2], Want, WantRot, 1.f);
+			S.ReachLeg(Leg[F][0], Leg[F][1], Leg[F][2], Want, WantRot, LegPole[F]);
 		}
 		if (bDbg)
 		{

@@ -7,6 +7,7 @@
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimSequence.h"
 #include "BoneControllers/AnimNode_FootPlacement.h"
+#include "BoneControllers/AnimNode_LegIK.h"
 #include "Misc/PackageName.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Components/CapsuleComponent.h"
@@ -420,6 +421,7 @@ static TAutoConsoleVariable<float> CVarFootPelvisMax(TEXT("visex.Feet.PelvisMax"
 static TAutoConsoleVariable<float> CVarFootPelvisStiff(TEXT("visex.Feet.PelvisStiff"), 150.f, TEXT("Foot Placement: pelvis spring stiffness (150 ~ interp speed 12)"));
 static TAutoConsoleVariable<float> CVarFootStiff(TEXT("visex.Feet.FootStiff"), 450.f, TEXT("Foot Placement: foot unplant/floor spring stiffness (450 ~ interp speed 21)"));
 static TAutoConsoleVariable<int32> CVarFootLock(TEXT("visex.Feet.Lock"), 1, TEXT("Foot Placement lock: 0 unlocked, 1 pivot around the ball, 2 pivot around the ankle"));
+static TAutoConsoleVariable<int32> CVarFootHinge(TEXT("visex.Feet.Hinge"), 3, TEXT("Leg IK: the thigh axis the knee hinges on (1 X, 2 Y, 3 Z), which keeps a bend direction for a knee the clip locks straight; 0 none, as the node shipped"));
 static TAutoConsoleVariable<int32> CVarFootOff(TEXT("visex.Feet.Off"), 0, TEXT("Hold the foot IK (Copy Bone, Foot Placement, Leg IK) off: the clips' own feet, for checks"));
 static TAutoConsoleVariable<int32> CVarFootMenuOff(TEXT("visex.Feet.MenuOff"), 1, TEXT("Fade the foot IK out during the menu's lean and sit clips, which plant their own feet"));
 
@@ -427,7 +429,7 @@ static float FootTuneStamp()
 {
 	return CVarFootSpeed.GetValueOnGameThread() + 3.f * CVarFootUnalign.GetValueOnGameThread() + 7.f * CVarFootDist.GetValueOnGameThread()
 		+ 11.f * CVarFootPelvisMax.GetValueOnGameThread() + 13.f * CVarFootPelvisStiff.GetValueOnGameThread()
-		+ 17.f * CVarFootStiff.GetValueOnGameThread() + 19.f * CVarFootLock.GetValueOnGameThread();
+		+ 17.f * CVarFootStiff.GetValueOnGameThread() + 19.f * CVarFootLock.GetValueOnGameThread() + 23.f * CVarFootHinge.GetValueOnGameThread();
 }
 
 static void TuneFootPlacement(FAnimNode_FootPlacement& FP)
@@ -451,6 +453,17 @@ static void TuneFootPlacement(FAnimNode_FootPlacement& FP)
 	FP.TraceSettings.ComplexTraceChannel = Trace;
 	FP.TraceSettings.SimpleTraceChannel = Trace;
 	FP.TraceSettings.SweepRadius = 2.f;
+}
+
+static void TuneLegIK(FAnimNode_LegIK& IK)
+{
+	// The idle locks the standing knee dead straight for seconds. Leg IK takes its bend direction
+	// from the incoming knee, so there it had none: it put the knee on the hip-ankle line
+	// (shortening thigh and calf, by a fifth on a 25 degree slope) and snapped it out the frame the
+	// clip unlocked, up to 15 cm. With a hinge axis the node keeps the last bend direction it saw
+	// and carries it with the thigh while the leg is straight.
+	const EAxis::Type Axis = static_cast<EAxis::Type>(FMath::Clamp(CVarFootHinge.GetValueOnGameThread(), 0, 3));
+	for (FAnimLegIKDefinition& Leg : IK.LegsDefinition) { Leg.HingeRotationAxis = Axis; }
 }
 
 static bool PlaysMenuClip(const UAnimInstance* Anim);
@@ -494,6 +507,11 @@ void UVisexPoseWheelComponent::UpdateFootIK(float DeltaTime)
 		if (Type == TEXT("AnimNode_FootPlacement") && bTune && (TunedAnim.Get() != Anim || TunedStamp != FootTuneStamp()))
 		{
 			TuneFootPlacement(*static_cast<FAnimNode_FootPlacement*>(Data));
+			bRetuned = true;
+		}
+		if (Type == TEXT("AnimNode_LegIK") && bTune && (TunedAnim.Get() != Anim || TunedStamp != FootTuneStamp()))
+		{
+			TuneLegIK(*static_cast<FAnimNode_LegIK*>(Data));
 			bRetuned = true;
 		}
 		if (Type == TEXT("AnimNode_FootPlacement") || Type == TEXT("AnimNode_LegIK") || Type == TEXT("AnimNode_CopyBone")
