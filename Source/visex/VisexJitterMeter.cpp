@@ -150,7 +150,7 @@ void FVisexJitterMeter::End()
 		{
 			Head += FString::Printf(TEXT(",%s_%s_x,%s_%s_y,%s_%s_z"), P, L, P, L, P, L);
 		}
-		for (const TCHAR* P : {TEXT("ground"), TEXT("soleunder"), TEXT("gap"), TEXT("plantw"), TEXT("plantask"), TEXT("plantfix"), TEXT("pinw"), TEXT("heelw"), TEXT("ballw"), TEXT("heelspeed"), TEXT("ballspeed"), TEXT("pinhold"), TEXT("pinheld"), TEXT("ext")})
+		for (const TCHAR* P : {TEXT("ground"), TEXT("soleunder"), TEXT("gap"), TEXT("plantw"), TEXT("plantask"), TEXT("plantfix"), TEXT("pinw"), TEXT("heelw"), TEXT("ballw"), TEXT("heelspeed"), TEXT("ballspeed"), TEXT("pinhold"), TEXT("pinheld"), TEXT("ext"), TEXT("lenoff")})
 		{
 			Head += FString::Printf(TEXT(",%s_%s"), P, L);
 		}
@@ -165,8 +165,8 @@ void FVisexJitterMeter::End()
 		{
 			for (const FVector* P : {&L.Hip, &L.Knee, &L.Foot, &L.Ball, &L.HipGraph, &L.FootGraph, &L.FootLayers, &L.FootPin, &L.PinWant, &L.PlantWant, &L.TraceAt, &L.Normal}) { Row += TEXT(",") + V(*P); }
 			for (const FVector& K : L.KneeAt) { Row += TEXT(",") + V(K); }
-			Row += FString::Printf(TEXT(",%d,%.4f,%.4f,%.3f,%.4f,%.4f,%.3f,%.3f,%.3f,%.2f,%.2f,%.4f,%.2f,%.5f"), L.bGround ? 1 : 0, L.SoleUnder, L.Gap, L.PlantW, L.PlantAsk, L.PlantFix,
-				L.PinW, L.HeelW, L.BallW, L.HeelSpeed, L.BallSpeed, L.PinHold, L.PinHeld, L.Extension);
+			Row += FString::Printf(TEXT(",%d,%.4f,%.4f,%.3f,%.4f,%.4f,%.3f,%.3f,%.3f,%.2f,%.2f,%.4f,%.2f,%.5f,%.4f"), L.bGround ? 1 : 0, L.SoleUnder, L.Gap, L.PlantW, L.PlantAsk, L.PlantFix,
+				L.PinW, L.HeelW, L.BallW, L.HeelSpeed, L.BallSpeed, L.PinHold, L.PinHeld, L.Extension, L.LengthOff);
 		}
 		Csv.Add(Row);
 	}

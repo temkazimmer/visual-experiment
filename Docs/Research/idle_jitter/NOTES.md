@@ -55,3 +55,48 @@ The feet, hips and pelvis are steady (under a millimetre on the flat). The knee 
 and calf shorten by up to a quarter for seconds at a time. `before.mp4` is 20 s of the 25 degree
 cross slope (seconds 11 to 31 of the spot, fixed 60 Hz, 4K, a camera fixed in the world): her
 right knee snaps at 2.0, 6.5, 7.2, 7.4, 9.2 and 10.1 s into the clip.
+
+## The cause
+
+**The idle locks the standing knee dead straight, and every two-bone leg solve after it took its
+bend direction from the incoming knee, which a locked knee does not have.**
+
+Evidence, from the per-frame log:
+
+- With the graph's foot IK off (`visex.Feet.Off 1`), the clip's own knee sits exactly on the
+  hip-ankle line (0.000 cm off it) for 13 to 30 % of the idle loop, in stretches of up to 5 s,
+  always the leg that carries her. Its motion is smooth (worst frame 1.5 mm): the clip is fine.
+- The knee is already wrong as the graph hands the pose over, before any C++ layer
+  (`analyse.py --knees`: on the 25 degree slope the graph's knee jumps 135 mm; catwalk, alive,
+  toes, reshape, contact, limits and the steady head add nothing). In those same stretches the
+  graph's thigh shrinks from 42.8 to 33.5 cm and the calf from 39.0 to 28.5 cm, with the knee on
+  the hip-ankle line. That is `FAnimNode_LegIK`'s two-bone solve with a zero bend direction: the
+  knee goes on the line, at the law-of-cosines distance. The frame the clip unlocks the knee, the
+  solve gets a direction and the knee snaps out to where a bent leg has it. The node had
+  `HingeRotationAxis = None`, the setting that gives it a direction to fall back on.
+- On the flat the leg hardly bends, so the graph's snap is 1 to 1.5 cm. The pin and the plant
+  pass then reach again (the plant drops the pelvis 2.5 to 3.5 cm on a step tread, so the leg
+  must bend) with the bend plane of that noisy knee: 15 mm in the graph became 25 after the pin
+  and 54 after the plant. Their `Reach` also could not bend a straight leg at all.
+
+So it shows on uneven ground because there the uphill leg has to bend a lot, and a missing or
+flipped bend direction then moves the knee by 13 to 15 cm instead of 1.
+
+A second, smaller cause, for the feet: the plant pass traced the ground under the lowest sole
+vertex. As the foot rocks, that vertex hops between heel and toe (7 to 9 cm apart); on a slope the
+ground height it read jumped by 1 to 2 cm, the plant fix chased it (feet 2.5 to 3.5 mm in a frame)
+and the pin's heel/ball "planted" state flipped with it (up to 24 flips per loop).
+
+Ruled out:
+
+- **The pin flipping at its speed or bleed thresholds.** `pinw` never flipped on any spot. The
+  heel/ball flips that did happen came with the ground height jumps above, not with speed
+  (heel and ball speeds stayed under 12 cm/s against the 20 cm/s threshold).
+- **The pelvis hunting between the feet.** The pelvis and the plant's pelvis drop are the
+  steadiest tracks there are: worst frame 0.24 to 0.47 mm on every spot.
+- **The pin and Foot Placement correcting each other.** The graph's foot, the foot after the pin
+  and the final foot stay within a millimetre of smooth wherever the knee is not popping; the foot
+  jumps that remained all trace to the ground height above.
+- **Full extension by itself.** The leg is near full extension (0.999) on every spot, flat ones
+  included, and that does make the solve touchy (0.1 mm of ankle distance is 5 mm of knee), but
+  the pops are the missing bend direction: they happen exactly at the clip's lock and unlock.

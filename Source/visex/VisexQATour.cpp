@@ -865,8 +865,10 @@ void AVisexQATour::JitterScan()
 namespace
 {
 	// The limits, from the flat spot (see Docs/Research/idle_jitter/NOTES.md): the worst frame any
-	// leg track sits off its neighbours' line (mm), and the plant/pin flips per weight shift
-	float GJitterLimitMm = 1.0f;
+	// leg track sits off its neighbours' line (mm), and the plant/pin flips per weight shift. A
+	// sound flat run reads 1.3 to 3.7 mm (feet and pelvis under 1.6); the locked-knee bug read 55
+	// on the flat and up to 230 on a slope
+	float GJitterLimitMm = 5.0f;
 	float GJitterLimitFlips = 2.f;
 	float GJitterLimitSquash = 1.f;   // percent a thigh or calf may change length (the reshape layer breathes a little)
 	// name:x:y:z:yaw, in Lvl_Dust; z is a hint, her capsule is swept onto the ground there

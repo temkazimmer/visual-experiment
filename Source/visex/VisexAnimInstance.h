@@ -34,6 +34,7 @@ struct FVisexFootDebug
 		float SoleUnder = 0.f, Gap = 0.f, PlantW = 0.f, PlantAsk = 0.f, PlantFix = 0.f;
 		float PinW = 0.f, HeelW = 0.f, BallW = 0.f, HeelSpeed = 0.f, BallSpeed = 0.f, PinHold = 0.f, PinHeld = 0.f;
 		float Extension = 0.f;   // hip to ankle over thigh + calf
+		float LengthOff = 0.f;   // cm the graph's thigh or calf was off its reference length
 		// the knee after each step of the frame: the graph, catwalk, alive, toes, reshape, contact,
 		// limits, steady head, pin, plant
 		static constexpr int32 Stages = 10;
@@ -66,6 +67,7 @@ private:
 	/** Last of all: planted soles onto the visible sand (visex.Plant). */
 	void Plant(FCompactPose& Pose);
 	void PlantGround(UAnimInstance* Instance);   // game thread: the traces
+	void LegLengths(FCompactPose& Pose);          // the graph's legs back to their bone lengths
 	void PinFrom(const FCompactPose& Pose);       // the graph's feet, before the layers
 	void Pin(FCompactPose& Pose);                 // planted feet back under the layers' moves
 
@@ -129,6 +131,11 @@ private:
 	float PlantMoving = 0.f;          // 0 standing, 1 walking (by speed)
 	bool bGround[2] = {false, false};
 	float GroundZ[2] = {0.f, 0.f};
+	// the ground under each foot as a plane (component space): the trace's hit and the slope there
+	FVector GroundP[2] = {FVector::ZeroVector, FVector::ZeroVector};
+	FVector2D GroundSlope[2] = {FVector2D::ZeroVector, FVector2D::ZeroVector};
+	FVector SoleOff[2] = {FVector::ZeroVector, FVector::ZeroVector};   // each foot's sole point from its foot bone, last frame
+	float GroundUnder(int32 F, const FVector& P) const;
 	FVector SoleAt[2] = {FVector::ZeroVector, FVector::ZeroVector}; // each foot's lowest sole point last frame
 	float PlantFix[2] = {0.f, 0.f};   // cm each ankle moves up, eased
 	float PelvisFix = 0.f;            // cm the pelvis drops so a leg can reach, eased

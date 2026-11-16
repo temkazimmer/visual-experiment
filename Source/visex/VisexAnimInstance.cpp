@@ -180,6 +180,7 @@ bool FVisexAnimProxy::Evaluate_WithRoot(FPoseContext& Output, FAnimNode_Base* In
 	EvaluateAnimationNode_WithRoot(Output, InRootNode);
 	if (InRootNode == GetRootNode())
 	{
+		LegLengths(Output.Pose);
 		PinFrom(Output.Pose);
 		if (bDbg) { DebugKnees(Output.Pose, 0); }
 		Catwalk(Output.Pose);
@@ -1136,7 +1137,6 @@ void FVisexAnimProxy::PlantGround(UAnimInstance* Instance)
 	const ACharacter* Her = Cast<ACharacter>(Instance->TryGetPawnOwner());
 	bGround[0] = bGround[1] = false;
 	if (PlantTarget < 0.005f || !Mesh || !Mesh->GetWorld()) { return; }
-	MeasureSole(Mesh);
 	if (CVarPlantLog.GetValueOnGameThread() != 0 && (GFrameCounter % 30) == 1)
 	{
 		UE_LOG(LogTemp, Log, TEXT("Plant mesh: frame %llu foot_l Z %.2f foot_r Z %.2f, %s"), GFrameCounter, Mesh->GetSocketTransform(TEXT("foot_l"), RTS_Component).GetLocation().Z,
@@ -1145,22 +1145,38 @@ void FVisexAnimProxy::PlantGround(UAnimInstance* Instance)
 	const UCharacterMovementComponent* Move = Her ? Her->GetCharacterMovement() : nullptr;
 	PlantMoving = Her ? FMath::SmoothStep(10.f, 60.f, float(Her->GetVelocity().Size2D())) : 0.f;
 	if (Move && Move->IsFalling()) { PlantTarget = 0.f; return; }
-	// straight down at each foot's lowest sole point (last frame), onto the visible sand only
+	// The ground under each foot as a plane: one trace straight down under the middle of the foot
+	// (heel to ball, last frame), onto the visible sand only. It used to be traced under the lowest
+	// sole vertex, which hops between heel and toe as the foot rocks: on a slope the ground height
+	// then jumped by centimetres, and with it the plant fix and the pin's planted state.
 	const FTransform X = Mesh->GetComponentTransform();
 	FCollisionQueryParams Q(TEXT("VisexPlant"), true, Mesh->GetOwner());
-	static const FName Bones[2] = {TEXT("foot_l"), TEXT("foot_r")};
+	static const FName Heels[2] = {TEXT("foot_l"), TEXT("foot_r")}, Balls[2] = {TEXT("ball_l"), TEXT("ball_r")};
 	for (int32 F = 0; F < 2; ++F)
 	{
-		const FVector At = SoleAt[F].IsZero() ? Mesh->GetSocketLocation(Bones[F]) : X.TransformPosition(SoleAt[F]);
+		const FVector At = (Mesh->GetSocketLocation(Heels[F]) + Mesh->GetSocketLocation(Balls[F])) * 0.5 - FVector(0.f, 0.f, 8.f);
 		FHitResult Hit;
-		if (Mesh->GetWorld()->LineTraceSingleByChannel(Hit, At + FVector(0.f, 0.f, 40.f), At - FVector(0.f, 0.f, 80.f), VisexFootTraceChannel, Q))
+		if (!At.ContainsNaN() && Mesh->GetWorld()->LineTraceSingleByChannel(Hit, At + FVector(0.f, 0.f, 40.f), At - FVector(0.f, 0.f, 80.f), VisexFootTraceChannel, Q))
 		{
 			bGround[F] = true;
-			GroundZ[F] = float(X.InverseTransformPosition(Hit.ImpactPoint).Z);
+			GroundP[F] = X.InverseTransformPosition(Hit.ImpactPoint);
+			// the slope as a gradient (cm of height per cm), no steeper than 50 degrees: a trace that
+			// catches a riser or a rock face is not ground to lie a sole along
+			const FVector N = X.InverseTransformVectorNoScale(Hit.ImpactNormal);
+			GroundSlope[F] = N.Z > 0.05 ? FVector2D(-N.X / N.Z, -N.Y / N.Z).GetClampedToMaxSize(1.2) : FVector2D::ZeroVector;
+			if (GroundSlope[F].ContainsNaN()) { GroundSlope[F] = FVector2D::ZeroVector; }
+			GroundZ[F] = float(GroundP[F].Z);
 			GroundAt[F] = Hit.ImpactPoint;
 			GroundN[F] = Hit.ImpactNormal;
 		}
 	}
+	MeasureSole(Mesh);
+}
+
+/** The ground plane's height (component space) under a point of foot F. */
+float FVisexAnimProxy::GroundUnder(int32 F, const FVector& P) const
+{
+	return float(GroundP[F].Z + GroundSlope[F].X * (P.X - GroundP[F].X) + GroundSlope[F].Y * (P.Y - GroundP[F].Y));
 }
 
 void FVisexAnimProxy::Plant(FCompactPose& Pose)
@@ -1188,9 +1204,9 @@ void FVisexAnimProxy::Plant(FCompactPose& Pose)
 			if (CVarPlantLog.GetValueOnAnyThread() != 0 && (GFrameCounter % 30) == 0) { UE_LOG(LogTemp, Log, TEXT("Plant %d: skipped, sole %d ground %d"), F, bSole[F], bGround[F]); }
 			continue;
 		}
-		const FVector Low = S.Component(Leg[F][2]).GetLocation() + FVector(0.f, 0.f, SoleUnder[F]);
+		const FVector Low = S.Component(Leg[F][2]).GetLocation() + SoleOff[F];
 		// planted: standing, any foot within reach of the sand; walking, only a foot that is down
-		const float Gap = float(Low.Z) - GroundZ[F] - CVarPlantClear.GetValueOnAnyThread();   // the sole rests just on the sand
+		const float Gap = float(Low.Z) - GroundUnder(F, Low) - CVarPlantClear.GetValueOnAnyThread();   // the sole rests just on the sand
 		const float Stand = 1.f - FMath::SmoothStep(6.f, 12.f, Gap), Walk = 1.f - FMath::SmoothStep(1.f, 4.f, Gap);
 		const float W = (Gap < 0.f ? 1.f : FMath::Lerp(Stand, Walk, PlantMoving)) * PlantTarget * (1.f - Hold);
 		Want[F] = -Gap * W;
@@ -1261,13 +1277,30 @@ void FVisexAnimProxy::MeasureSole(const USkeletalMeshComponent* Mesh)
 	{
 		const FVector H = Mesh->GetSocketTransform(Heels[F], RTS_Component).GetLocation(), B = Mesh->GetSocketTransform(Balls[F], RTS_Component).GetLocation();
 		const FVector Mid = (H + B) * 0.5f;
-		FVector Low(0.f, 0.f, 1e9);
+		// the sole point: as low as the lowest vertex, and where the lowest vertices are (each counts
+		// by how close it is to the lowest, within a couple of millimetres). One clear lowest vertex gives
+		// that vertex, as before; a level sole, where the lowest vertex used to hop from heel to toe
+		// between frames, gives the middle of what is down, and it moves over smoothly as the foot rocks
+		float Lowest = 1e9f;
+		for (const FVector3f& V3 : P)
+		{
+			if (V3.Z < Lowest && V3.Z < H.Z && FVector::Dist2D(FVector(V3), Mid) < Near) { Lowest = V3.Z; }
+		}
+		FVector Sum = FVector::ZeroVector;
+		double Weights = 0.0;
 		for (const FVector3f& V3 : P)
 		{
 			const FVector V(V3);
-			if (V.Z < Low.Z && V.Z < H.Z && FVector::Dist2D(V, Mid) < Near) { Low = V; }
+			if (V.Z >= H.Z || V.Z > Lowest + 2.f || FVector::Dist2D(V, Mid) >= Near) { continue; }
+			const double W = FMath::Exp(-(V.Z - Lowest) / 0.15);
+			Sum += V * W;
+			Weights += W;
 		}
-		if (Low.Z < 1e8) { bSole[F] = true; SoleUnder[F] = float(Low.Z - H.Z); SoleAt[F] = Low; }
+		if (Lowest < 1e8f && Weights > 0.0)
+		{
+			const FVector Low(Sum.X / Weights, Sum.Y / Weights, Lowest);
+			if (!Low.ContainsNaN()) { bSole[F] = true; SoleUnder[F] = float(Low.Z - H.Z); SoleOff[F] = Low - H; SoleAt[F] = Low; }
+		}
 	}
 }
 
@@ -1330,6 +1363,33 @@ void FVisexAnimProxy::PinReset()
 			PinAnchor[F][I] = PinGraphStart[F][I] = PinOutStart[F][I] = FVector::ZeroVector;
 			bPinDown[F][I] = false;
 		}
+	}
+}
+
+/**
+ * The graph's Leg IK can hand over a thigh and calf of the wrong length: while the clip's knee is
+ * straight it places the knee along a remembered bend direction that is not square to the leg
+ * (3.7 % off on a 25 degree slope), and with no direction remembered yet it puts the knee on the
+ * hip-ankle line. Bones don't change length: the reference lengths go back and the leg reaches
+ * for the same ankle. A leg whose lengths are right is left alone.
+ */
+void FVisexAnimProxy::LegLengths(FCompactPose& Pose)
+{
+	FShaper S{Pose, Pose.GetBoneContainer()};
+	static const TCHAR* Names[2][3] = {{TEXT("thigh_l"), TEXT("calf_l"), TEXT("foot_l")}, {TEXT("thigh_r"), TEXT("calf_r"), TEXT("foot_r")}};
+	for (int32 F = 0; F < 2; ++F)
+	{
+		const FCompactPoseBoneIndex Thigh = S.Find(Names[F][0]), Calf = S.Find(Names[F][1]), Foot = S.Find(Names[F][2]);
+		if (!Thigh.IsValid() || !Calf.IsValid() || !Foot.IsValid() || LegPole[F].IsNearlyZero()) { continue; }
+		const FVector RefCalf = S.Bones.GetRefPoseTransform(Calf).GetTranslation(), RefFoot = S.Bones.GetRefPoseTransform(Foot).GetTranslation();
+		const FVector NowCalf = Pose[Calf].GetTranslation(), NowFoot = Pose[Foot].GetTranslation();
+		if (NowCalf.ContainsNaN() || NowFoot.ContainsNaN() || RefCalf.Size() < 1.f || RefFoot.Size() < 1.f) { continue; }
+		if (bDbg) { Dbg.Leg[F].LengthOff = float(FMath::Max(FMath::Abs(NowCalf.Size() - RefCalf.Size()), FMath::Abs(NowFoot.Size() - RefFoot.Size()))); }
+		if (FMath::Abs(NowCalf.Size() - RefCalf.Size()) < 0.005 && FMath::Abs(NowFoot.Size() - RefFoot.Size()) < 0.005) { continue; }
+		const FTransform Ankle = S.Component(Foot);
+		Pose[Calf].SetTranslation(RefCalf);
+		Pose[Foot].SetTranslation(RefFoot);
+		S.ReachLeg(Thigh, Calf, Foot, Ankle.GetLocation(), Ankle.GetRotation(), LegPole[F]);
 	}
 }
 
@@ -1447,7 +1507,7 @@ void FVisexAnimProxy::Pin(FCompactPose& Pose)
 		float W[2];
 		for (int32 I = 0; I < 2; ++I)
 		{
-			const float Height = bGround[F] ? Z[I] - PinRefZ[I] - GroundZ[F] : 0.f;
+			const float Height = bGround[F] ? Z[I] - PinRefZ[I] - GroundUnder(F, I == 0 ? PinGraph[F].GetLocation() : PinBall[F]) : 0.f;
 			// the graph's soles float ~1.5 cm before the plant pass, so "down" is within a few cm
 			W[I] = (1.f - FMath::SmoothStep(3.f, 6.f, Height)) * (1.f - FMath::SmoothStep(Still, Moving, PinSpeed[F][I]));
 			if (PinW[F] <= 0.f) { W[I] = 0.f; }   // a cut
