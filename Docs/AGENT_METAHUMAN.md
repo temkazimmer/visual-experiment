@@ -1865,3 +1865,260 @@ changed, no editor was opened. What is here is the checklist, read from `FVisexB
 Harness 1-1.5 hours (strap rays, `Jersey`, the thong baring the hips); Mirror, Noir, Bodystocking, Sheer
 1-2 hours each plus one decision on the briefs area under sheer fabric; Tartan and KitTartan half a day
 of tool work once; the skirt half a day; Cocoa, Garter, Fishnet after their refresh on the current body.
+
+### 2026-11-17 · Ship 1 · the MetaHuman body becomes her body (one outfit)
+
+**Tema's decision:** "Ship it, one outfit". The MetaHuman body is her body in the game, in the Silversuit
+only; the rest of the wardrobe waits for a re-cut. This entry is the in-editor part: main merged in, the
+new body made the default, the game walked through, and what a cook needs. Nothing was packaged, nothing
+was re-assembled, no asset and no level was saved. Commits 77ace2d (merge), edcbb09 (jitter meter),
+92cf117 (the default), 704f1f7 (sole fallback, tour), 318f5c4 (cook config), 20cc4d5 (main's QA log merged),
+then this log and its sheets.
+
+**Step 1: main merged in** (6ec7ce3, 25 commits: the foot pin, the plant's ground plane, the idle knee fix,
+the pin and jitter tours). No `.uasset` / `.umap` changed on main since the merge base 8992d06 (its 20
+files are source, docs, clips and the intro film), so nothing binary could be lost. Conflicts, both
+intents kept:
+- `VisexQATour.cpp/.h`: git paired this branch's tours with main's by position; the file was put together
+  by function instead (this branch's HiShot ... SetupReport, main's BuildLayers, PinPhase, BuildPin and the
+  jitter functions) and `Tick` merged by hand: one dispatch line with every tour, both meters ticking.
+- `VisexFootMeter.h`: this branch's `RefMesh` with main's initialised `LastH` / `LastB`.
+- `VisexPhotoMode.h`: both sides had added `GetMotionName`; merged clean, did not compile; one copy kept.
+
+**The follower under main's pin and plant code** (all `-game`, cvar on unless said, Silversuit worn):
+
+Gaps tour, fixed 60 fps step (`-visexqa -visexgaps -visexcvar=visex.Body.MetaHuman=N -benchmark -fps=60`), cm:
+
+| | old body (cvar 0) | MetaHuman | stage 7, before the merge |
+|---|---|---|---|
+| arrival walk: drift median / max | 0.86 / 6.52 | 0.85 / 5.88 | 2.80 / 6.21 |
+| menu lean: drift | 0.30 | 0.31 | 0.32 |
+| menu lean: sole vertex gap L / R | 0.19 / 0.18 | 0.34 / 0.28 | 0.33 / 0.26 |
+| Start walk: drift median / max | 0.52 / 1.71 | 0.52 / 1.67 | 1.50 / 2.69 (old body 2.17) |
+| Start walk: sole gap median | 1.02 | 0.81 | 0.58 |
+| proud idle: drift | 0.17 | 0.19 | 0.38 |
+| proud idle: sole vertex gap L / R | 0.35 / 0.36 | 0.41 / 0.36 | 0.23 / -0.11 |
+
+The MetaHuman's soles stay within 0.2 cm of the driver's in every cell, and it takes main's gain with it:
+walk drift a third of what it was. The idle's sole gap is main's (the plant rests a sole point now, not the
+lowest vertex: 0.35 on the old body too). The Start walk's sole gap median is over the 0.5 cm rule on both
+bodies (the dune's slope under a walking foot); it is main's number, not the follow's.
+
+Spike and poke tour (`-visexqa -visexspikes`, every pose): **body pass** (stretch 2.66x, creases 6.44x, grew
+2.02 cm), **face pass** 1.38x, **garment pass** 2.07x, **poke pass** (103 fabric vertices under drawn skin,
+deepest 0.09 cm on `pelvis`; stage 8 read 95 and 0.08, the limit is 0.10). No pose line fails.
+
+Jitter tour (`-visexqa -visexjitter`, six spots, 40 s each). The meter read the driver's anim proxy only, so
+it said nothing about the legs on screen: it now also tracks the MetaHuman body's own foot, ball, knee and
+pelvis bones on the same frames (`FVisexJitterMeter::MHFrames`, a second table row per spot, and the tour
+fails on them too). Worst frame off the line, mm, driver / MetaHuman:
+
+| spot | knee, fixed 60 Hz | foot, fixed 60 Hz | pelvis | knee, real time (32-42 fps) |
+|---|---|---|---|---|
+| start (3 deg) | 2.12 / 2.46 | 1.73 / 1.82 | 0.46 | 3.05 / 2.49 |
+| flat tread | 2.98 / 2.09 | 1.72 / 1.80 | 0.46 | 3.18 / 2.44 |
+| dune 13 deg across | 1.41 / 1.44 | 1.64 / 1.72 | 0.44 | 3.13 / 2.27 |
+| dune 25 deg across | 1.80 / 1.35 | 1.48 / 1.55 | 0.43 | 2.55 / 1.52 |
+| dune 25 deg, facing up | 2.49 / 1.63 | 1.17 / 1.24 | 0.41 | 3.08 / 2.38 |
+| step edge | 1.24 / 1.22 | 1.61 / 1.68 | 0.40 | 3.81 / **5.02** |
+
+With the cvar at 0 the driver's row of the fixed-step table comes out the same to the digit (2.12, 2.98,
+1.41, 1.80, 2.49, 1.24 on the knees): the follower does not touch the driver. At a fixed step: **PASS** on all six, the MetaHuman within 0.4 mm of the driver on every track, no thigh or
+calf changing length (0.0 %), 4 to 6 plant/pin flips. These are the numbers of `Docs/Research/idle_jitter/
+NOTES.md` (1.0 to 2.6 mm knees, taken at 68-71 fps). The real-time run was taken while another session's
+game ran (32-42 fps; a smooth move reads more at a lower rate, as the notes say): the driver passes
+everywhere, and the MetaHuman's knee on the step edge read 5.02 mm against the 5.00 limit, so that run's
+verdict was FAIL by 0.02 mm. One run; not repeated on an idle machine.
+
+**Step 2: the new body is the default** (C++ only; `Source/visex/VisexMHBody.*`, `VisexBodyProfile.*`,
+`VisexBodyComponent.cpp`, `VisexBodyEditor.*`, `VisexBodyWidget.cpp`, the QA tour).
+- **`visex.Body.MetaHuman` defaults to 1.** `0` in the console (or `-dpcvars=visex.Body.MetaHuman=0`) is the
+  old body with the whole wardrobe and the Hair tab, untouched. If the MetaHuman cannot be loaded or
+  spawned, the game stays on the old body and the wardrobe and Hair tab go back with it
+  (`UVisexMHBodyComponent::On()`).
+- **She starts in the Silversuit and cannot be undressed.** `UVisexMHBodyComponent::Wears(Outfit)` is true
+  for an outfit with a cut on this body (`/Game/Character/MH/Outfits/SKM_<Outfit>_MH`), false for every
+  other row and for "Nothing" (bare, the baked briefs show). Two places use it: the body component turns
+  the profile's outfit into what she can wear before it is applied (`Worn()`: it, or the Silversuit), so a
+  save that names Bodystocking or nothing wears the Silversuit; and the wardrobe treats a row she cannot
+  wear as a locked row (`FVisexBodyProfile::OutfitLocked`, the one predicate behind the row's LOCKED label,
+  the try-on, CROSS and `SetOutfit`). Hiding rows would have meant new row bookkeeping in the widget; the
+  locked row was already there, with its "under construction" window. An outfit cut later unlocks itself.
+  **This writes to the save:** once anything is applied on the Body page or in the wardrobe, the saved
+  outfit is the Silversuit, whatever it was (with the cvar at 0 any outfit can be put back on).
+  `visex.Body.MetaHuman.AnyOutfit 1` lifts all of it for checks; the tours' `-visexoutfit=` sets it.
+- **The Hair tab is left out** while the MetaHuman wears its groom (`visex.Body.MetaHuman.Hair 1`): the tab
+  bar reads BODY, FACE, and L1/R1 cycle those two. With `Hair 0` (our cards on this head) it is back.
+- **`-visexqa -visexship`** is the walk-through below as a tour, with the spike and poke check running
+  through all of it; `-visexship=2` is the relaunch.
+- The follower's sole fallback (no CPU vertices) was 2.15 cm under the ball joint, the Creator preview's
+  number; the assembled body measures 1.15. A cooked build keeps skeletal mesh buffers by default
+  (`r.FreeSkeletalMeshBuffers 0`), so the measured path is the one that runs; the constant is right now.
+
+**The walk-through** (`-game`, 1440x1080 window, MetaHuman by default; the standard QA tour, the pin tour and
+`-visexship` twice; frames in `Saved/QA/NN_ship_*.png` and the QA tour's own, looked at as contact sheets):
+
+| | | what was seen or read |
+|---|---|---|
+| Launch | ok | the launch cover releases, she walks in and sinks into the lean. The intro film is skipped under `-visexqa` (not played here); it shows legs and feet in the Silversuit only, so it does not show a different body |
+| Menu, the lean | ok | at 9500 -900 152 on the ground, feet in frame at 16:9 and 4:3 (heel y 0.75, ball 0.77-0.78: 0627's 0.76-0.78), soles 0.34 / 0.28 cm over the sand, back on the spot after Body, Wardrobe, Settings and Photo |
+| Idle beats | ok | all three play (`PlayIdleBeat`). The toe beat turns her left big toe 25.6 degrees against the foot on the driver and 25.6 on the MetaHuman: the follower carries the toe bones (it reads the same in every phase, walk included: 34.5 / 32.4 on both) |
+| Start: camera move, walk-off | ok | lands on the third-person camera at 4:3 and 16:9 ("fills the window"), she is at 9387 -1321 at `play` and 9236 -1884 at `walked` (0627: 9387 -1322, 9236 -1885); Start walk drift median 0.52 cm |
+| Walking, turns, stopping | ok | pin tour, table below: third-person walk, jog, run, stop, reversals, zigzag, a spin, two jumps; the MetaHuman's feet repeat the driver's |
+| Body page, sliders dragged | ok, one flaw | Height, Hips, Leg length, Bust, Glutes, Feet, Skin tone and Head each dragged through its whole range by the editor's own `Adjust`, a step every 50 ms: she reshapes live at every step, body, face, garment and poke pass in every drag (worst body stretch 1.71x, creases 3.16x at Hips; at most one fabric vertex under drawn skin, 0.04 cm). **Flaw:** her skin and face sit in shadow on this page; the old pale skin read brighter in the same light (`body_tab_body`, `body_tab_face`, both bodies side by side) |
+| Saved values | ok | Leg length +6 steps and Skin tone +8 applied (APPLY writes `VisexBody.sav`): the relaunch reads Legs 1.0166, Skin 0.45 and shows them |
+| Hair tab | ok | not there: tabs read BODY, FACE; R1 from FACE goes to BODY (logged tab 1, then 0) |
+| Wardrobe | ok | Silversuit WORN, the eleven other rows LOCKED. Moving onto each row changes nothing (profile outfit Silversuit, garment `SKM_Silversuit_MH` on all twelve); CROSS on "Nothing" and on Sheer bodystocking opens the "under construction" window. She cannot be undressed |
+| Photo mode, each pose | ok, one flaw | 11 motions, on the ground or held as on 0627 (motions 5, 6, 7, 9 in mode 0), "moved 0.0 cm" in the opening walk, every pose passes the spike tour. **Flaw:** in the floor poses the groom spreads on the sand as one mass and crosses her arm (no hair collision, stage 5) |
+| Filters | ok | Settings, Visuals: Fog, Style, 80s anime, Film grain, Motion blur each stepped over the Settings sit and over the photo Walk; the anime filter draws her and the groom |
+| Settings sit | ok | she climbs onto the drum and back; body stretch 2.40x, creases 4.31x, poke 0.06 cm |
+| Quit, relaunch | ok | Quit through the menu's own item ends the run cleanly; the fog set to Light is Light at the next launch, with the body values above |
+| With the cvar at 0 | ok | the same QA tour: no MetaHuman spawned, every outfit worn in turn, three tabs, same positions (9500 -900 152; 9387 -1320; 9236 -1885) |
+
+Pin tour (`-visexqa -visexpin -visexpinmodes=gate -benchmark -fps=60`), the feet meter's drift median per
+phase, cm, MetaHuman / old body on the same binary:
+
+| | drift median | | drift median |
+|---|---|---|---|
+| lean | 0.47 / 0.57 | third-person walk | 2.05 / 1.98 |
+| Body page walk out / back | 0.66 / 0.64, 1.28 / 1.29 | jog | 1.64 / 1.60 |
+| Body page standing | 1.29 / 1.23 | run | 0.80 / 0.74 |
+| photo walk | 1.13 / 1.10 | stop | 0.14 / 0.12 |
+| photo Ledge / LegLift / FeetUp | 1.20 / 1.54, 1.42 / 1.42, 1.69 / 1.67 | reversals / zigzag | 0.77 / 0.72, 0.29 / 0.28 |
+| Start walk | 0.52 / 0.52 | jump / run-jump | 0.93 / 0.94, 0.25 / 0.22 |
+
+The pin's own numbers (largest hold, one-frame change, frames clamped at 6 cm) are the driver's and are the
+same in both runs but two (lean hold 0.45 / 0.44, sit-down 2.72 / 2.73 cm): stand-up 6.00 cm with 29 frames
+clamped, Ledge 3.93 and 0, Crown 0 clamped, FeetUp 0.21, run 2.06, the lean 0.45. Those are the numbers
+`Docs/Research/idle_jitter/NOTES.md` logs for main with the fix on. The turns on the Body page and the
+third-person spin read 8 to 19 cm of "drift" on both bodies: a foot turning on the spot, as on main.
+Against `Docs/QA.md`: the QA tour's resting positions are 0627's and 0637's to the centimetre (table
+above and the walk-through). 0637's pin numbers are Shipping at the real frame rate (`-benchmark` does
+nothing there), so they are not like for like with these fixed-step Development runs; its Start walk-off
+drift 0.57-0.61 cm and run 0.43-0.58 sit beside 0.52 and 0.80 here. 0637 also logs that Shipping fails the
+jitter tour's 5 mm limit on main itself (knee 5.3 to 12 mm at 35-63 fps), so a packaged build of this
+branch will fail that tour too, for the driver's reasons. The real-time 5.02 above is the MetaHuman's knee
+where the driver's read 3.81 on the same frames: at a low frame rate the follower's own leg solve can add
+about a millimetre on a near-straight leg; at a fixed 60 Hz the two agree.
+
+**Frame time** (QA tour's first three stops, 1440x1080, Epic, Development `-game`, no other game running, one
+run each): MetaHuman 19.0 / 20.4 / 19.2 ms at menu / play / walked (GPU 17.8 / 19.0 / 18.1); old body 17.0 /
+17.6 / 16.5 (GPU 16.6 / 16.5 / 15.7). About 2 to 3 ms more, GPU bound on both. A run taken while another
+session's game was up read 36 ms at the same stops: compare runs only on a quiet machine. Not measured in
+Shipping or at 4K (stage 5 has the groom alone at 4K: 3-4 ms of 80).
+
+**Step 3: what a packaged build needs.** A cook-only run (`UnrealEditor-Cmd visex.uproject -run=Cook
+-TargetPlatform=Mac -map=/Game/VisEx/Lvl_Dust -unversioned -unattended`, the cook step of `Tools/make_dmg.sh`
+without build, stage or pak; 67 s on a warm DDC) was run twice.
+- **The first cook failed: `Failure - 4 error(s)`**, all one asset: `Built/MHC_Her/Grooms/Hair_S_Coil_Binding`,
+  the preset's old coil groom that stage 5 left behind ("Binding asset cannot be created/rebuilt - the groom
+  binding has no valid skel./geom cache target"). `/Game/Character` is cooked whole, so the cooker loads it
+  although nothing uses it. That would have failed `make_dmg.sh`.
+- **Fixed in `Config/DefaultGame.ini`** with three never-cook entries (an entry may name one package: the
+  cooker matches the path itself or a parent): that binding; `/Game/Character/MH/MHC_Her` (the Creator
+  asset: cooked, it is 10 KB itself but pulls 989 MB of the plugin's optional wardrobe,
+  `/MetaHumanCharacter/Optional`, into the build); `/Game/Character/MH/FaceFit` (the face fit's template
+  meshes). **Second cook: `Success - 0 error(s), 0 warning(s)`**, 1223 packages (1413 before), 7.5 GB of
+  loose cooked files (8.4 before; main's cook was not measured here, so no before/after for the body
+  alone). The MetaHuman's share: 1.5 GB under `Character/MH` (Face 767 MB, Body 245, Common 254, Outfits 131,
+  Grooms 128) and 11 MB of plugin content cooked by reference.
+- **Cooked and present:** `BP_MHC_Her`, body and face meshes, `PHYS_MHC_Her`, the three grooms and peach fuzz
+  with their bindings (`Hair_L_StraightBangs`: 42 MB of bulk data), `Common` (skeletons, post-process AnimBPs,
+  materials, control rigs), everything in `Outfits`. The spawn is by path from C++
+  (`FigureClassPath`, `SKM_<Outfit>_MH`, `MI_Body_<Outfit>`, `MI_Head_Bare`), and the always-cook rule on
+  `/Game/Character` is what brings them in: no soft reference is needed, and none was added.
+- **Plugins.** `visex.uproject` as committed is enough; nothing was changed. `MetaHumanCharacter` is enabled
+  for every target and is what switches on, for the game too, what the assembled assets load: **RigLogic**
+  (`RigLogicModule`: the DNA user data on both meshes and the post-process AnimBPs), **HairStrands**
+  (`HairStrandsCore`: grooms and bindings), **MetaHumanSDK** (`MetaHumanSDKRuntime`: the Blueprint's
+  `MetaHumanComponentUE`), **LiveLink** (the Blueprint and `ABP_MH_LiveLink` hold LiveLink types), **IKRig /
+  FullBodyIK** (`PBIK`) and **ControlRigSpline** (the head and body control rigs in `Common`), ControlRig,
+  RigVM, Dataflow and Niagara (the groom's springs). The installed engine ships precompiled Mac Shipping
+  libraries for the ones looked at (RigLogic, HairStrands, LiveLink, FullBodyIK, IKRig, ControlRig,
+  ControlRigSpline, MetaHumanSDK and the plugin's own three runtime modules); the game target itself was
+  not compiled here. Editor only, and marked so in
+  the plugin (`TargetAllowList: Editor`) or by platform: MetaHuman (Animator; Win64 / Linux), MetaHumanCoreTech,
+  MetaHumanCalibrationDiagnostics, TextureGraph, GeometryScripting (the morph tools), AppleARKit. With the
+  Creator asset out of the cook nothing cooked needs `/Script/MetaHumanCharacter`; the plugin could be made
+  editor-only later, but then RigLogic, HairStrands, LiveLink and FullBodyIK must be listed by hand. Not done.
+- **`r.GPUSkin.Support16BitBoneIndex=True`** and `SkeletalMesh.UseExperimentalChunking=1` are in
+  `Config/DefaultEngine.ini` under `[/Script/Engine.RendererSettings]`: the cook reads them (the cooked body
+  keeps one section of 285 bones) and the packaged game gets the same file. `r.GPUSkin.UnlimitedBoneInfluences`
+  is not in the file, as decided in stage 6. The toast did not come up in this session's `-game` and cook runs
+  (no editor window was opened at all).
+- **The groom in a cooked Mac build:** the project targets `SF_METAL_SM6` only, and the engine marks that
+  platform `bSupportsHairStrandGeometry = true`, the same shader platform the `-game` runs draw strands on;
+  `r.SkinCache.CompileShaders=True` is set (strands need the skin cache). The cooked groom carries its strand
+  data. So it should draw as strands; its card and helmet LODs are cooked too. **Not seen in a packaged run.**
+- **CPU vertex data in Shipping.** The spike and poke check, the feet meter and the follower's sole measure
+  read vertex buffers on the CPU. Cooked builds keep them unless `r.FreeSkeletalMeshBuffers` is 1; it is not
+  set, so the default (keep) holds. If a tour line reads "NOT MEASURED" in Shipping, that is the place to look.
+- **By-path loads use `FPackageName::DoesPackageExist`** (the outfit cut, the bare head material, the wardrobe's
+  lock). It answers from the package store in a cooked build as well as from disk (engine source read, not
+  run). If it ever said no in a packaged game she would be the MetaHuman with no garment, in the baked
+  briefs: the Shipping check should look for the suit first.
+- **Tours in Shipping:** `-visexqa`, `-visexspikes`, `-visexship` and `-visexship=2` write to
+  `Saved/QA/report.txt` in any configuration. `-visexship` applies a body change and a fog change: back up
+  and restore `VisexBody.sav` and `GameUserSettings.ini` round it, as for the QA tour.
+- **Main already builds with this project file.** `visex.uproject` in main's working tree carries the same
+  four MetaHuman plugin entries, uncommitted, and 0637 was built and linked in Shipping with them
+  (`Docs/QA.md`). So the game target links with `MetaHumanCharacter` on. Merging this branch into main will
+  meet that uncommitted change (and `Config/DefaultEditor.ini`'s): same content in the project file, but git
+  will refuse the merge until main's copy is committed, stashed or checked out.
+- **Size.** Expect the DMG to grow by roughly the MetaHuman's cooked 1.5 GB before compression (0637: 1.6 GB
+  in all). Not packed here. Still cooked and not needed: the rest of the old coil groom (`Hair_S_Coil*`
+  without its binding, 12 assets, about 50 MB cooked, 101 MB in the repo). Deleting them is the clean fix
+  and was not done: assets are Tema's or main's to delete.
+
+**Captures** (`Docs/Research/metahuman/`, contact sheets of the tours' 1440x1080 game frames, not 4K review
+captures): `ship1_menu_body_wardrobe.jpg` (menu, BODY and FACE tabs, the wardrobe and its "under construction"
+window), `ship1_photo_1.jpg` / `_2.jpg` (the 11 photo motions), `ship1_filters.jpg` (Visuals rows over the
+Settings sit and the photo Walk; the anime filter is the second cell), `ship1_new_over_old.jpg` (Body page
+and a photo pose, MetaHuman above, old body below).
+
+**Traps.**
+- **Do not SIGTERM a `-game` run.** One was killed mid-tour; the next launch found the shared DDC server's
+  lock without its owner ("Found locked valid lock file ... zenserver"), shut it down and then sat at frame 0
+  for two minutes until it was killed too. The launch after that started a fresh server and ran. Let a tour
+  quit by itself, or give it a step that quits.
+- A tour's `Shot()` is taken at the end of the frame: a shot and the change that undoes it in the same step
+  photographs the undone state. The revert goes in the next step.
+- The frame-time lines of a tour mean nothing while another session's game is up: the same stop read 19 ms
+  alone and 36 ms beside one.
+- The scratchpad directory is shared with other agents of the session: name files so they cannot collide.
+- A merge that git calls clean can still not compile (the same one-line accessor added on both sides).
+- `-dpcvars=name=value` sets a cvar before the first frame in a `-game` run (the QA and pin tours take no
+  `-visexcvar`); the jitter tour has its own `-visexcvars=`.
+
+**Still wrong, none of it stops a build.**
+- The Body page lights her for the old pale skin: on the MetaHuman the face and skin read dark.
+- The groom collides with nothing: a centimetre into the suit at the shoulders (stage 5), and a spread mass
+  on the sand in the floor poses.
+- The wardrobe is eleven locked rows and one outfit. That is the decision; it reads as a locked wardrobe.
+- Applying anything on the Body page or in the wardrobe saves the Silversuit as her outfit over whatever a
+  save held.
+- About 2 to 3 ms more per frame than the old body at 1440x1080.
+- From earlier stages and unchanged: hands 1.1 to 1.7 cm off the driver's contacts in the lean; the tall
+  body's hip hem in LegLift (0.14 cm); body LOD 1 to 3 carry the old bust (she is held at LOD 0); brows at
+  face LOD 2; no neck cords; Bust spacing and Bust height at a short reach.
+- Main's own: idle drift over 1 cm per loop, the knee blip that fails the jitter tour in Shipping, float at
+  short legs and slide at long legs.
+
+**Should block shipping:** nothing found in the editor part. The one thing that would have, the cook error,
+is fixed. What decides it now is the packaged run (below).
+
+**Not verified.**
+- **Anything packaged or in Shipping.** No build, stage or pak; the game target was not compiled here (main
+  links with the same project file). Not seen in a packaged run: the MetaHuman spawning from cooked content,
+  the suit on her, strands, the Body page, the spike tour's lines (CPU vertex data), frame time.
+- Nothing was watched in motion: stills, contact sheets and meters only. The intro film was not played.
+- The editor itself was never opened this session (every check was a `-game` run or the cook commandlet), so
+  the plugin's "missing project settings" toast was not met; a later editor launch will show it again.
+- Frame time: one run per body, Development, 1440x1080. The jitter tour at the real frame rate: one run, on a
+  shared machine.
+- The Body page's sliders at their ends in the Settings sit and the other photo poses (stage 7's open point);
+  sliders not in the drag list (Neck, Shoulders, Ribcage, Waist, Thighs, Calves, Arms, Hands, Bust height,
+  Bust spacing, Abs, Body fat, Thigh gap) were not dragged live here: stage 7 and 7b toured their ends.
+- `visex.Body.MetaHuman` switched in the console in the middle of a run with the wardrobe open (the body
+  component turns the outfit when it next applies; the MetaHuman side wears the Silversuit at once).
+- A real controller or keyboard: the tours call the same functions the keys call, not the keys.
