@@ -99,6 +99,9 @@ struct FVisexBodyProfile
 	/** The wardrobe, in menu order; the first entry is "none". */
 	static VISEX_API const TArray<FVisexOutfit>& Outfits();
 	static VISEX_API int32 OutfitIndex(FName Name);
+	/** A row she cannot wear now: a locked costume, or (while she is the MetaHuman body) one
+	 *  with no cut on that body yet, "Nothing" included. The wardrobe shows it as LOCKED. */
+	static VISEX_API bool OutfitLocked(int32 Index);
 };
 
 UCLASS()

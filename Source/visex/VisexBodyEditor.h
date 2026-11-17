@@ -83,6 +83,8 @@ public:
 	/** 0 the Body page, 1 the Wardrobe. */
 	UFUNCTION(BlueprintCallable, Category = "Body") void OpenPage(int32 InPage);
 	UFUNCTION(BlueprintPure, Category = "Body") int32 GetPage() const { return Page; }
+	/** The Body page's tab: 0 BODY, 1 FACE, 2 HAIR (left out while the MetaHuman wears its groom). */
+	UFUNCTION(BlueprintPure, Category = "Body") int32 GetTab() const { return Tab; }
 	UFUNCTION(BlueprintCallable, Category = "Body") void Close();
 	UFUNCTION(BlueprintPure, Category = "Body") bool IsOpen() const { return bOpen; }
 

@@ -1,6 +1,7 @@
 #include "VisexBodyEditor.h"
 
 #include "VisexBodyComponent.h"
+#include "VisexMHBody.h"
 #include "VisexBodyWidget.h"
 #include "CineCameraComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -277,7 +278,7 @@ void AVisexBodyEditor::Select(int32 Delta)
 	}
 	// wardrobe: moving onto a costume tries it on (a locked one stays as it is)
 	const TArray<FVisexOutfit>& Outfits = FVisexBodyProfile::Outfits();
-	if (Page == 1 && Selected < Outfits.Num() && !Outfits[Selected].bLocked)
+	if (Page == 1 && Selected < Outfits.Num() && !FVisexBodyProfile::OutfitLocked(Selected))
 	{
 		if (UVisexBodyComponent* Body = BodyOf())
 		{
@@ -294,7 +295,9 @@ void AVisexBodyEditor::SwitchTab(int32 Delta)
 	{
 		return;
 	}
-	const int32 Tabs = UVisexBodyWidget::BodyTabs;
+	// the Hair tab is left out while it does nothing (the MetaHuman wears its own groom)
+	const int32 Tabs = UVisexMHBodyComponent::HairTab() ? UVisexBodyWidget::BodyTabs : UVisexBodyWidget::BodyTabs - 1;
+	Tab = FMath::Min(Tab, Tabs - 1);
 	TabRow[Tab] = Selected;
 	Tab = ((Tab + Delta) % Tabs + Tabs) % Tabs;
 	Selected = TabRow[Tab];
@@ -343,7 +346,7 @@ void AVisexBodyEditor::ApplyTab()
 	if (Page == 1)
 	{
 		const TArray<FVisexOutfit>& Outfits = FVisexBodyProfile::Outfits();
-		if (Outfits.IsValidIndex(Selected) && Outfits[Selected].bLocked)
+		if (Outfits.IsValidIndex(Selected) && FVisexBodyProfile::OutfitLocked(Selected))
 		{
 			bUnderConstruction = true;   // not in the wardrobe yet
 			Refresh();

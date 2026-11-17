@@ -125,6 +125,20 @@ public:
 	/** Adds the component to Owner once (game worlds only). */
 	static void Ensure(AActor* Owner);
 
+	/** visex.Body.MetaHuman is on and the body could be shown: she is the MetaHuman. */
+	static bool On();
+
+	/** Can she wear this outfit (None = nothing) on the body she has? On today's body: anything.
+	 *  On the MetaHuman: only an outfit with a cut on it (SKM_<Outfit>_MH), never nothing: bare, she
+	 *  shows the baked briefs. visex.Body.MetaHuman.AnyOutfit 1 lifts that for checks. */
+	static bool Wears(FName Outfit);
+
+	/** What she wears on the body she has when the profile says Outfit: it, or the Silversuit. */
+	static FName Worn(FName Outfit);
+
+	/** Does the Hair tab do anything? Not while the MetaHuman wears its own groom. */
+	static bool HairTab();
+
 	/** The MetaHuman body mesh while it is the one on screen, else null. */
 	static USkeletalMeshComponent* ShownBody(const ACharacter* Her);
 

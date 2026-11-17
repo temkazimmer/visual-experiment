@@ -105,6 +105,23 @@ private:
 	void ApplyCvarArg();
 	bool bSpikes = false;
 	FVisexMHSpikes Spikes;
+	/** -visexship: the walk-through for the body that ships. The lean and its three idle beats (do
+	 *  the toes move on the body on screen), the Body page with sliders dragged step by step through
+	 *  the editor's own Adjust and one change applied (saved), the FACE tab and what follows it, every
+	 *  wardrobe row, the Settings sit and each Visuals row, photo mode with each Visuals row, Start
+	 *  and a walk, then Quit from the menu's own item. The spike and poke check runs all through.
+	 *  -visexship=2: the relaunch: what the save and the settings came back as, then Quit. */
+	void BuildShip();
+	void SpikeTotals();
+	/** How far each big toe turned against its foot since the phase began, on the driver and on the
+	 *  MetaHuman body (degrees; the same turn reads the same on both whatever their bone axes). */
+	void ToePhase(const FString& Name);
+	void ToeTick();
+	bool bShip = false, bToeRef = false;
+	bool ToeHave[2][2] = {{false, false}, {false, false}};
+	FString ToeName;
+	FQuat ToeRef[2][2];
+	float ToeMax[2][2] = {{0.f, 0.f}, {0.f, 0.f}};
 	void BuildPin();   // -visexpin: the pin under the sit, third-person play, photo poses and the Body turn, pin 2 / gated / 0
 	void PinPhase(const FString& Name);
 	/** -visexjitter: she stands in the idle on uneven spots of the level (and a flat one) through

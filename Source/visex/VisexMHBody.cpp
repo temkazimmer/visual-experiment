@@ -22,8 +22,15 @@
 DEFINE_LOG_CATEGORY_STATIC(LogVisexMH, Log, All);
 
 static TAutoConsoleVariable<int32> CVarVisexMHBody(
-	TEXT("visex.Body.MetaHuman"), 0,
-	TEXT("1: draw her as the assembled MetaHuman (body, face, grooms) following today's character's pose. 0: today's body, untouched."));
+	TEXT("visex.Body.MetaHuman"), 1,
+	TEXT("1 (default since Ship 1): she is the assembled MetaHuman (body, face, grooms) following the driver's pose, in the Silversuit. 0: the old body, untouched, with the whole wardrobe."));
+
+static TAutoConsoleVariable<int32> CVarVisexMHAnyOutfit(
+	TEXT("visex.Body.MetaHuman.AnyOutfit"), 0,
+	TEXT("Checks only. 1: the MetaHuman wears whatever the profile says, nothing included (an outfit with no cut on it shows as nothing). 0: only outfits cut on it, else the Silversuit."));
+
+// the MetaHuman could not be loaded or spawned: the game is on the old body until the cvar is cycled
+static bool GVisexMHFailed = false;
 
 static TAutoConsoleVariable<int32> CVarVisexMHCorrectives(
 	TEXT("visex.Body.MetaHuman.Correctives"), 1,
@@ -593,6 +600,40 @@ USkeletalMeshComponent* UVisexMHBodyComponent::FeetMesh(const ACharacter* Her)
 	return Shown ? Shown : (Her ? Her->GetMesh() : nullptr);
 }
 
+bool UVisexMHBodyComponent::On()
+{
+	return CVarVisexMHBody.GetValueOnGameThread() != 0 && !GVisexMHFailed;
+}
+
+bool UVisexMHBodyComponent::Wears(FName Outfit)
+{
+	if (!On() || CVarVisexMHAnyOutfit.GetValueOnGameThread() != 0)
+	{
+		return true;
+	}
+	if (Outfit.IsNone() || Outfit == TEXT("None"))
+	{
+		return false;
+	}
+	// a cut exists: asked once per outfit (the wardrobe asks every frame)
+	static TMap<FName, bool> Cut;
+	if (const bool* Known = Cut.Find(Outfit))
+	{
+		return *Known;
+	}
+	return Cut.Add(Outfit, FPackageName::DoesPackageExist(TEXT("/Game/Character/MH/Outfits/SKM_") + Outfit.ToString() + TEXT("_MH")));
+}
+
+FName UVisexMHBodyComponent::Worn(FName Outfit)
+{
+	return Wears(Outfit) ? Outfit : FName(TEXT("Silversuit"));
+}
+
+bool UVisexMHBodyComponent::HairTab()
+{
+	return !On() || CVarVisexMHHair.GetValueOnGameThread() == 0;
+}
+
 bool UVisexMHBodyComponent::SoleHeights(const ACharacter* Her, float& OutHeel, float& OutBall)
 {
 	const USkeletalMeshComponent* Shown = ShownBody(Her);
@@ -614,6 +655,7 @@ void UVisexMHBodyComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 	if (!bWant)
 	{
 		bFailed = false;
+		GVisexMHFailed = false;
 	}
 	if (bWant != bShown && !bFailed)
 	{
@@ -824,6 +866,7 @@ void UVisexMHBodyComponent::Show()
 	if (!Figure)
 	{
 		bFailed = true;
+		GVisexMHFailed = true;   // the wardrobe and the Hair tab go back to the old body's
 		UE_LOG(LogVisexMH, Warning, TEXT("VisexMH: cannot show the MetaHuman body (%s)"), Class ? TEXT("spawn failed") : FigureClassPath);
 		return;
 	}
@@ -1006,7 +1049,8 @@ void UVisexMHBodyComponent::ApplyOutfit()
 {
 	const ACharacter* Her = Cast<ACharacter>(GetOwner());
 	const UVisexBodyComponent* Body = Her ? Her->FindComponentByClass<UVisexBodyComponent>() : nullptr;
-	const FName Want = Body ? Body->Profile.Outfit : FName(NAME_None);
+	// never bare and never an outfit without a cut here: the Silversuit instead (Ship 1)
+	const FName Want = Worn(Body ? Body->Profile.Outfit : FName(NAME_None));
 	if (!IsValid(BodyMesh) || !Figure)
 	{
 		return;

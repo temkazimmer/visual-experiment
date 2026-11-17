@@ -309,7 +309,7 @@ void AVisexQATour::Build()
 	// each outfit on her, seen from the menu camera
 	for (const FVisexOutfit& O : FVisexBodyProfile::Outfits())
 	{
-		if (O.bLocked) { continue; }   // not wearable: the wardrobe stop below shows them
+		if (FVisexBodyProfile::OutfitLocked(int32(&O - FVisexBodyProfile::Outfits().GetData()))) { continue; }   // not wearable: the wardrobe stop below shows them
 		const FName Name = O.Name;
 		Add(0.5f, [this, Name]
 		{
@@ -633,6 +633,8 @@ void AVisexQATour::ApplyCvarArg()
 	UVisexBodyComponent* WornBody = Worn ? Worn->FindComponentByClass<UVisexBodyComponent>() : nullptr;
 	if (WornBody && FParse::Value(FCommandLine::Get(), TEXT("visexoutfit="), Wear))
 	{
+		// a check may undress the MetaHuman body or try an outfit with no cut on it; the game may not
+		if (IConsoleVariable* Any = IConsoleManager::Get().FindConsoleVariable(TEXT("visex.Body.MetaHuman.AnyOutfit"))) { Any->Set(1, ECVF_SetByConsole); }
 		WornBody->Profile.Outfit = Wear == TEXT("None") ? FName(NAME_None) : FName(*Wear);
 		WornBody->Apply();
 		QA_LOG(TEXT("VisexQA: outfit for this run: %s"), *Wear);
@@ -699,6 +701,21 @@ void AVisexQATour::BuildGaps()
 	});
 }
 
+void AVisexQATour::SpikeTotals()
+{
+	static const TCHAR* Names[FVisexMHSpikes::Count] = {TEXT("body"), TEXT("face"), TEXT("garment")};
+	for (int32 I = 0; I < FVisexMHSpikes::Count; ++I)
+	{
+		const FVisexSpike& S = Spikes.Total[I];
+		QA_LOG(TEXT("VisexSpikes: TOTAL %s: %s, stretch %.2fx on %s (%d over %.0fx), creases %.2fx on %s (%d over), grew %.2f cm at most on %s"), Names[I],
+			!S.bValid ? TEXT("NOT MEASURED") : S.Fails() ? TEXT("FAIL") : TEXT("pass"), S.Ratio, *S.Bone.ToString(), S.Over, FVisexMHSpikes::Limit,
+			S.Crease, *S.CreaseBone.ToString(), S.CreaseOver, S.Grow, *S.GrowBone.ToString());
+	}
+	const FVisexPoke& K = Spikes.TotalPoke;
+	QA_LOG(TEXT("VisexSpikes: TOTAL poke: %s, where skin is drawn %d fabric vertices under it at most, deepest %.2f cm on %s; under clipped skin %d, deepest %.2f cm on %s"),
+		!K.bValid ? TEXT("NOT MEASURED") : K.Fails() ? TEXT("FAIL") : TEXT("pass"), K.EdgeUnder, K.EdgeDepth, *K.EdgeBone.ToString(), K.Under, K.Depth, *K.Bone.ToString());
+}
+
 void AVisexQATour::BuildSpikes()
 {
 	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
@@ -742,17 +759,7 @@ void AVisexQATour::BuildSpikes()
 	{
 		Height(166.f);
 		Phase(TEXT("done"));
-		static const TCHAR* Names[FVisexMHSpikes::Count] = {TEXT("body"), TEXT("face"), TEXT("garment")};
-		for (int32 I = 0; I < FVisexMHSpikes::Count; ++I)
-		{
-			const FVisexSpike& S = Spikes.Total[I];
-			QA_LOG(TEXT("VisexSpikes: TOTAL %s: %s, stretch %.2fx on %s (%d over %.0fx), creases %.2fx on %s (%d over), grew %.2f cm at most on %s"), Names[I],
-				!S.bValid ? TEXT("NOT MEASURED") : S.Fails() ? TEXT("FAIL") : TEXT("pass"), S.Ratio, *S.Bone.ToString(), S.Over, FVisexMHSpikes::Limit,
-				S.Crease, *S.CreaseBone.ToString(), S.CreaseOver, S.Grow, *S.GrowBone.ToString());
-		}
-		const FVisexPoke& K = Spikes.TotalPoke;
-		QA_LOG(TEXT("VisexSpikes: TOTAL poke: %s, where skin is drawn %d fabric vertices under it at most, deepest %.2f cm on %s; under clipped skin %d, deepest %.2f cm on %s"),
-			!K.bValid ? TEXT("NOT MEASURED") : K.Fails() ? TEXT("FAIL") : TEXT("pass"), K.EdgeUnder, K.EdgeDepth, *K.EdgeBone.ToString(), K.Under, K.Depth, *K.Bone.ToString());
+		SpikeTotals();
 		QA_LOG(TEXT("VisexQA: done"));
 		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
 	});
@@ -1321,10 +1328,13 @@ void AVisexQATour::Tick(float DeltaSeconds)
 		Feet.Log = [](const FString& Line) { QA_LOG(TEXT("%s"), *Line); };
 		bSpikes = FParse::Param(FCommandLine::Get(), TEXT("visexspikes"));
 		bSliders = FParse::Param(FCommandLine::Get(), TEXT("visexsliders"));
+		FString ShipPass;
+		bShip = FParse::Param(FCommandLine::Get(), TEXT("visexship")) || FParse::Value(FCommandLine::Get(), TEXT("visexship="), ShipPass);
+		bSpikes |= bShip;
 		Jitter.Log = [](const FString& Line) { QA_LOG(TEXT("%s"), *Line); };
 		FParse::Param(FCommandLine::Get(), TEXT("visexclip")) ? BuildClip() :
 		FParse::Param(FCommandLine::Get(), TEXT("visexflex")) ? BuildFlex() :
-		bSliders ? BuildSliders() : bSpikes ? BuildSpikes() : bJitter ? BuildJitter() : bPin ? BuildPin() :
+		bShip ? BuildShip() : bSliders ? BuildSliders() : bSpikes ? BuildSpikes() : bJitter ? BuildJitter() : bPin ? BuildPin() :
 		bGaps ? BuildGaps() : bLayers ? BuildLayers() : bFeet ? BuildFeet() : Build();
 		bBuilt = true;
 	}
@@ -1352,6 +1362,7 @@ void AVisexQATour::Tick(float DeltaSeconds)
 			Feet.Shoot(GetWorld(), Her(), TEXT("arrival"), ArrivalShots++);
 		}
 	}
+	if (bShip) { ToeTick(); }
 	if (bSpikes || bSliders)
 	{
 		Spikes.Tick(Her());
@@ -1596,6 +1607,14 @@ void AVisexQATour::BuildJitter()
 			bFail |= bBad;
 			QA_LOG(TEXT("VisexJitter: TABLE %s | %.0f | %d | %.2f (%s) | %.3f | %.1f | %.2f / %.2f / %.2f | %d | %.1f | %s"), *R.Spot, R.Fps, R.Shifts, R.Max, *R.WorstTrack, R.Rms, R.Flips,
 				R.FootMax, R.KneeMax, R.PelvisMax, R.PlantFlips, R.Squash, bBad ? TEXT("JITTER") : TEXT("ok"));
+			if (R.MHKneeMax >= 0.f)
+			{
+				// the body on screen follows the driver: its own bones must read as steady
+				const bool bMHBad = FMath::Max3(R.MHFootMax, R.MHKneeMax, R.MHPelvisMax) > GJitterLimitMm || R.MHSquash > GJitterLimitSquash;
+				bFail |= bMHBad;
+				QA_LOG(TEXT("VisexJitter: TABLE %s MetaHuman | foot / knee / pelvis worst mm %.2f / %.2f / %.2f | bone length change %.1f | %s"), *R.Spot,
+					R.MHFootMax, R.MHKneeMax, R.MHPelvisMax, R.MHSquash, bMHBad ? TEXT("JITTER") : TEXT("ok"));
+			}
 		}
 		QA_LOG(TEXT("VisexJitter: %s (limit %.2f mm off-line in any frame, %.0f plant/pin flips per weight shift); %d frames filmed"), bFail ? TEXT("FAIL") : TEXT("PASS"), GJitterLimitMm, GJitterLimitFlips, Jitter.FilmFrames);
 		QA_LOG(TEXT("VisexQA: done"));
@@ -1604,4 +1623,154 @@ void AVisexQATour::BuildJitter()
 		if (bFail) { if (GLog) { GLog->Flush(); } _exit(3); }
 		else { UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false); }
 	});
+}
+
+void AVisexQATour::ToePhase(const FString& Name)
+{
+	if (bToeRef)
+	{
+		QA_LOG(TEXT("VisexShip: toes, %s: big toe turned against the foot by at most, driver L %.1f R %.1f deg, MetaHuman L %.1f R %.1f deg"),
+			*ToeName, ToeMax[0][0], ToeMax[0][1], ToeMax[1][0], ToeMax[1][1]);
+	}
+	ToeName = Name;
+	bToeRef = false;
+	for (int32 B = 0; B < 2; ++B) { for (int32 S = 0; S < 2; ++S) { ToeMax[B][S] = 0.f; ToeHave[B][S] = false; } }
+}
+
+void AVisexQATour::ToeTick()
+{
+	const ACharacter* C = Her();
+	USkeletalMeshComponent* Meshes[2] = {C ? C->GetMesh() : nullptr, UVisexMHBodyComponent::ShownBody(C)};
+	static const FName Foot[2] = {TEXT("foot_l"), TEXT("foot_r")}, Toe[2] = {TEXT("bigtoe_01_l"), TEXT("bigtoe_01_r")};
+	if (!Meshes[0]) { return; }
+	for (int32 B = 0; B < 2; ++B)
+	{
+		for (int32 S = 0; S < 2; ++S)
+		{
+			if (!Meshes[B] || Meshes[B]->GetBoneIndex(Toe[S]) == INDEX_NONE) { continue; }
+			const FQuat Rel = Meshes[B]->GetBoneQuaternion(Foot[S]).Inverse() * Meshes[B]->GetBoneQuaternion(Toe[S]);
+			if (!ToeHave[B][S]) { ToeRef[B][S] = Rel; ToeHave[B][S] = true; continue; }
+			FQuat Turn = ToeRef[B][S].Inverse() * Rel;
+			Turn.Normalize();
+			ToeMax[B][S] = FMath::Max(ToeMax[B][S], FMath::RadiansToDegrees(2.f * FMath::Acos(FMath::Min(1.f, FMath::Abs(float(Turn.W))))));
+		}
+	}
+	bToeRef = true;
+}
+
+void AVisexQATour::BuildShip()
+{
+	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
+	AVisexMenuDirector* D = Director;
+	ApplyCvarArg();
+	FString Pass;
+	FParse::Value(FCommandLine::Get(), TEXT("visexship="), Pass);
+	Spikes.Log = [](const FString& Line) { QA_LOG(TEXT("%s"), *Line); };
+	auto Phase = [this](const FString& Name) { Spikes.SetPhase(Name); ToePhase(Name); };
+	auto Editor = [this]() -> AVisexBodyEditor* { for (TActorIterator<AVisexBodyEditor> It(GetWorld()); It; ++It) { return *It; } return nullptr; };
+	// what she is and wears, the values the first pass applies, and the settings as the pages show them
+	auto State = [this](const FString& Where)
+	{
+		const ACharacter* C = Her();
+		const UVisexBodyComponent* B = C ? C->FindComponentByClass<UVisexBodyComponent>() : nullptr;
+		const USkeletalMeshComponent* G = UVisexMHBodyComponent::ShownGarment(C);
+		auto Join = [](const TArray<FText>& Rows) { FString Out; for (const FText& T : Rows) { Out += T.ToString() + TEXT(" | "); } return Out; };
+		QA_LOG(TEXT("VisexShip: %s: MetaHuman body %s, profile outfit %s, garment %s; Legs %.4f Skin %.4f Bust %.3f Height %.1f; settings %s visuals %s"), *Where,
+			UVisexMHBodyComponent::ShownBody(C) ? TEXT("shown") : TEXT("NOT SHOWN"), B ? *B->Profile.Outfit.ToString() : TEXT("?"),
+			G && G->GetSkeletalMeshAsset() ? *G->GetSkeletalMeshAsset()->GetName() : TEXT("NONE"),
+			B ? B->GetValue(TEXT("Legs")) : 0.f, B ? B->GetValue(TEXT("Skin")) : 0.f, B ? B->GetValue(TEXT("Bust")) : 0.f, B ? B->GetValue(TEXT("Height")) : 0.f,
+			*Join(FVisexSettings::Values()), *Join(FVisexSettings::VisualValues()));
+	};
+	auto Quit = [this, D] { QA_LOG(TEXT("VisexQA: done")); D->OnItemChosen(AVisexMenuDirector::ItemQuit); };
+	Phase(TEXT("arrival"));
+	if (Pass == TEXT("2"))
+	{
+		Add(7.f, [this, State] { State(TEXT("relaunch")); Shot(TEXT("ship_relaunch")); });
+		Add(1.f, [this, Phase, Quit] { Phase(TEXT("done")); SpikeTotals(); Quit(); });
+		return;
+	}
+	Add(7.f, [this, Phase, State] { Phase(TEXT("lean")); State(TEXT("lean")); Shot(TEXT("ship_lean")); });
+	static const TCHAR* Beats[3] = {TEXT("beat glance"), TEXT("beat shift"), TEXT("beat toes")};
+	for (int32 I = 0; I < 3; ++I)
+	{
+		Add(I == 0 ? 3.f : 6.f, [Phase, D, I] { Phase(Beats[I]); D->PlayIdleBeat(I); });
+		Add(2.5f, [this, I] { Shot(FString::Printf(TEXT("ship_beat_%d"), I)); });
+	}
+	// the Body page: each slider dragged the way the stick does it (the editor's Adjust, a step every 50 ms)
+	Add(6.f, [Phase, D] { Phase(TEXT("body page opens")); D->OpenBody(); });
+	Add(4.f, [this, Editor] { AVisexBodyEditor* E = Editor(); QA_LOG(TEXT("VisexShip: body page %s"), E && E->IsOpen() ? TEXT("open") : TEXT("DID NOT OPEN")); Shot(TEXT("ship_body")); });
+	auto Row = [](const TCHAR* Name)
+	{
+		const TArray<int32>& Rows = FVisexBodyProfile::SliderRows(0);
+		return Rows.IndexOfByPredicate([Name](int32 I) { return FVisexBodyProfile::Sliders()[I].Name == Name; });
+	};
+	auto Drag = [this, Add, Editor](const FString& Name, int32 Count, int32 Dir)
+	{
+		for (int32 K = 0; K < Count; ++K) { Add(0.05f, [Editor, Dir] { if (AVisexBodyEditor* E = Editor()) { E->Adjust(float(Dir)); } }); }
+		Add(0.4f, [this, Name, Dir] { Shot(FString::Printf(TEXT("ship_drag_%s_%s"), *Name, Dir > 0 ? TEXT("up") : TEXT("down"))); });
+	};
+	for (const TCHAR* Name : {TEXT("Height"), TEXT("Hips"), TEXT("Legs"), TEXT("Bust"), TEXT("Glutes"), TEXT("Feet"), TEXT("Skin")})
+	{
+		Add(0.3f, [Phase, Editor, Row, Name] { Phase(FString::Printf(TEXT("drag %s"), Name)); if (AVisexBodyEditor* E = Editor()) { E->SelectRow(Row(Name)); } });
+		Add(1.f, [] {});
+		Drag(Name, 40, 1);    // to the slider's maximum
+		Drag(Name, 40, -1);   // and down to its minimum
+		Add(0.1f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->ResetSelected(); } });
+	}
+	// one change kept: longer legs and a darker skin, applied (this writes VisexBody.sav)
+	Add(0.3f, [Phase, Editor, Row] { Phase(TEXT("apply")); if (AVisexBodyEditor* E = Editor()) { E->SelectRow(Row(TEXT("Legs"))); E->Adjust(6.f); E->SelectRow(Row(TEXT("Skin"))); E->Adjust(8.f); E->ApplyTab(); } });
+	Add(1.f, [this, State] { State(TEXT("applied")); Shot(TEXT("ship_applied")); });
+	// FACE, then the tab after it: BODY again while the Hair tab is left out
+	Add(0.3f, [Phase, Editor] { Phase(TEXT("drag Head")); if (AVisexBodyEditor* E = Editor()) { E->SwitchTab(1); E->SelectRow(0); QA_LOG(TEXT("VisexShip: tab after one switch: %d"), E->GetTab()); } });
+	Add(1.f, [] {});
+	Drag(TEXT("Head"), 40, 1);
+	Drag(TEXT("Head"), 40, -1);
+	Add(0.1f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->ResetSelected(); E->SwitchTab(1); QA_LOG(TEXT("VisexShip: tab after two switches: %d (0 = BODY: no Hair tab; 2 = HAIR)"), E->GetTab()); } });
+	Add(1.f, [this] { Shot(TEXT("ship_tabs")); });
+	Add(0.2f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
+	// the wardrobe: onto every row, CROSS on "Nothing" and on the first costume that is not hers
+	Add(5.f, [Phase, D] { Phase(TEXT("wardrobe")); D->OpenWardrobe(); });
+	Add(4.f, [this] { Shot(TEXT("ship_wardrobe")); });
+	for (int32 I = 0; I < FVisexBodyProfile::Outfits().Num(); ++I)
+	{
+		Add(0.2f, [Editor, I] { if (AVisexBodyEditor* E = Editor()) { E->SelectRow(I); if (I < 2) { E->ApplyTab(); } } });
+		Add(0.9f, [this, State, Editor, I]
+		{
+			State(FString::Printf(TEXT("wardrobe row %s (%s)"), *FVisexBodyProfile::Outfits()[I].Name.ToString(), FVisexBodyProfile::OutfitLocked(I) ? TEXT("locked") : TEXT("wearable")));
+			if (I < 2) { Shot(FString::Printf(TEXT("ship_wardrobe_row%d"), I)); }
+		});
+		if (I < 2) { Add(0.2f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Close(); } }); }   // closes the window
+	}
+	Add(0.3f, [this] { Shot(TEXT("ship_wardrobe_end")); });
+	Add(0.2f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
+	// Settings: she climbs onto the drum; each Visuals row stepped once and back (the filters)
+	auto Visuals = [this, Add](const TCHAR* Where)
+	{
+		for (int32 R = 0; R + 1 < FVisexSettings::NumVisualRows(); ++R)
+		{
+			Add(0.3f, [this, R] { FVisexSettings::AdjustVisual(GetWorld(), R, 1); });
+			Add(1.5f, [this, R, Where] { Shot(FString::Printf(TEXT("ship_%s_visual%d"), Where, R)); });
+			Add(0.2f, [this, R] { FVisexSettings::AdjustVisual(GetWorld(), R, -1); });   // a step later: the shot is taken at the frame's end
+		}
+	};
+	Add(5.f, [Phase, D] { Phase(TEXT("settings sit down")); D->OpenSettings(); });
+	Add(9.f, [this, Phase, D] { Phase(TEXT("settings sit")); Shot(TEXT("ship_settings")); D->SettingsTab(1); });
+	Visuals(TEXT("sit"));
+	// one setting left changed and saved, for the relaunch to find: the fog a step lighter (a step
+	// denser would sit at the end of its range, and the photo pass below steps every row up and back)
+	Add(0.3f, [D] { D->SettingsStep(-1); });
+	Add(1.f, [this, Phase, State, D] { State(TEXT("settings changed")); Phase(TEXT("settings stand up")); D->CloseSettings(); });
+	// photo mode: the motions are the spike tour's; here each Visuals row over the photo Idle and a pose
+	Add(9.f, [Phase, D] { Phase(TEXT("photo")); D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
+	Add(6.f, [this] { Shot(TEXT("ship_photo")); });
+	Visuals(TEXT("photo"));
+	Add(0.3f, [this, Phase] { Phase(TEXT("photo pose")); if (AVisexPhotoMode* P = Photo()) { P->SetMotion(5); } });
+	Add(4.f, [this] { Shot(TEXT("ship_photo_pose")); if (AVisexPhotoMode* P = Photo()) { P->Close(); } });
+	// Start: the camera move, her walk-off, the idle, then driven forward
+	Add(6.f, [Phase, D] { Phase(TEXT("start")); D->OnItemChosen(AVisexMenuDirector::ItemStart); });
+	Add(4.f, [this] { Shot(TEXT("ship_start")); });
+	Add(10.f, [this, Phase, State] { Phase(TEXT("idle after start")); State(TEXT("play")); Shot(TEXT("ship_idle")); });
+	Add(3.f, [this, Phase] { Phase(TEXT("walk")); WalkFor = 3.f; });
+	Add(3.5f, [this, Phase] { Phase(TEXT("stopped")); Shot(TEXT("ship_walked")); });
+	Add(2.f, [this, Phase, State, Quit] { State(TEXT("end")); Phase(TEXT("done")); SpikeTotals(); Quit(); });
 }
