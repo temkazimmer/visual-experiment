@@ -155,9 +155,10 @@ time), from the flat spot: sound flat runs read 1.3 to 3.8 mm (4.4 uneven), the 
 it, mean over the 40 s): 0.02 to 0.50 cm. It was 0.19 on every spot before, because the plant
 pass rested exactly that vertex; on a slope the sole point now sits a little off it.
 
-**Foot drift** over the 40 s loop, ball of the foot: 1.0 to 1.9 cm on every spot, flat included.
-On the flat it is the same as before (L 1.03 -> 1.10, R 1.45 -> 1.46). On the slopes it was
-0.6 to 0.9 before and is 1.4 to 1.9 now, the flat's level. That is over the 1 cm rule, on main
+**Foot drift** over the 40 s loop, ball of the foot: 0.8 to 1.9 cm across the spots, flat included.
+On the flat it is the same as before (L 1.03 -> 1.10, R 1.45 -> 1.46). Across the two dune
+slopes it was 0.6 to 0.9 before and is 1.4 to 1.9 now, the flat's level; the step edge 0.9 to
+1.0 before, 1.1 to 1.6 now. That is over the 1 cm rule, on main
 too: it is one small re-settle per weight shift (all of it happens inside a second) that the pin
 lets through, not a slide, and not something this change set out to touch. Facing up the 25
 degree slope the heel reads 6.9 cm (6.8 before) because the heel lifts; the ball 0.8 to 0.9.
