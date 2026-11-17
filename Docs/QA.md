@@ -7,6 +7,71 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-17 13:55 · VIS-EX-0706 Shipping (bc14aec, branch `metahuman-body`, not main) · PASS: the first packaged build with the MetaHuman body; she spawns from cooked content, skeleton whole, jitter tour passes at 60 fps; hair in the sand in two floor poses
+
+Built and toured in the `visex-metahuman` worktree by the MetaHuman session, for Tema's merge decision. Three DMGs this session: **0703** (21acab5) toured in full,
+**0705** (eda16f1, 0703 plus a hair-simulation switch) withdrawn, **0706** (bc14aec, the switch reverted: 0703's game code, a newer tour) is the one to ship. Details in
+`Docs/AGENT_METAHUMAN.md`, "Ship 2".
+
+- **Build:** the first try (0702) did not compile: one editor-only call in `VisexMHSpikes.cpp` (`GetMorphTargetDeltas`), fixed in 21acab5. 0706: cook `Success - 0 error(s), 0 warning(s)`,
+  1243 packages (1223 cooked, 20 skipped by platform; 0637: 946), `BuildCookRun time: 76 s`. DMG md5 `1118867a…`, 2.35 GB (2,348,227,693 bytes; 0637: 1.74 GB). Not copied to `-stable`.
+- **Tour:** from the read-only mounted DMG, 1440×1080 windowed. 0706: one run, `VisexQA: done`, exit 0 (271 s), no `.ips`. 0703: two runs, both `VisexQA: done`, exit 0 (272 s, 272 s).
+  On ground at every report step (42; only photo motions 5/6/7/9 in mode 0, as 0637), `body page open`, `wardrobe open`, 11 motions, photo `moved 0.0 cm`, `layout save PASS`,
+  menu feet IN FRAME at 16:9 and 4:3 (y 0.76–0.78, as 0637). Back on the lean spot (9500 −900 152) after Body, Wardrobe and Photo; `play` 9387 −1321, `walked` 9236 −1884…−1886,
+  photo spot 9483 −949: 0637's positions to the centimetre. All runs on Tema's save.
+- **She is the MetaHuman, from cooked content:** `MetaHuman body shown, … garment SKM_Silversuit_MH` in every state line of the ship tour and the side tour; body, face, grooms
+  and the Silversuit on screen in every shot. Tabs BODY, FACE (no Hair tab); wardrobe: Silversuit WORN, eleven rows LOCKED.
+- **Skeleton: whole** (`sheets/0703_run1_all_{a,b}.jpg`, `0703_run1_vs_run2.jpg`, `0705_run1_all.jpg`; 0706's 50 shots looked at the same way). None of 0622's symptoms in the 50 shots of any QA
+  run, the ship tour's 44 or the side tour's 17: no inverted body, no leg in the air, and the two 0703 runs show the same poses. Thigh and calf length change 0.0 % on all six jitter spots.
+- **Ship tour** (`-visexqa -visexship`, then `-visexship=2`; 0703): Height, Hips, Legs, Bust, Glutes, Feet, Skin and Head dragged through their range live, body, face, garment and poke
+  pass in every drag, the skin goes pale to dark and back (`sheets/0703_ship_tour.jpg`). Legs +6 steps, Skin +8 and fog Light applied, Quit from the menu; the relaunch reads
+  Legs 1.0166, Skin 0.45, fog Light. The Character page is lit (the fix of ec1dd18: it was near black on this body).
+- **Spike and poke tour** (`-visexspikes`, 0706): body pass (stretch 2.77×, creases 5.69×), face pass (1.27×), garment pass (1.81×), poke pass (74 fabric vertices under drawn skin at
+  most, deepest 0.09 cm on `pelvis`, limit 0.10). 0703 read the same. The check reads CPU vertex data and morph deltas: both are there in a cooked build.
+- **Face and hair** (side tour, 4K game-view frames, `sheets/0706_portrait_blink_body_feetup.jpg`, `0703_side_tour_4k.jpg`): brown eyes with lashes and brows; both lids close when the
+  tour sets the blink curves (nothing blinks her by itself: her eyes stay open in the game). The groom draws as strands. Its physics runs: the same tour with
+  `-visexcvar=r.HairStrands.Simulation=0` gives a different picture (`sheets/0703_hair_sim_on_over_off.jpg`).
+  - **Known flaw, ships:** the groom collides with nothing. In FeetUp it hangs through her forearms into the sand, in LegLift it spreads on the sand under her head.
+  - **0705, withdrawn:** it stopped the hair simulation with her head near the ground. In the QA tour's order (Crown straight into FeetUp) the hair froze flung back with bare scalp
+    showing (`sheets/0703_vs_0705_flung_hair.jpg`). Reverted in bc14aec.
+- **Old body:** not reachable by a player in Shipping (no console; `-dpcvars=visex.Body.MetaHuman=0` is ignored). The tour's switch works:
+  `-visexqa -visexside -visexcvar=visex.Body.MetaHuman=0` shows the old body, its card hair and its Silversuit in the same build.
+- **Idle jitter** (`-visexqa -visexjitter`, 0703, 1920×1080, 40 s per spot): **PASS, exit 0**, the first Shipping run of this tour to pass. Worst knee frame off the line, mm:
+
+  | spot | fps | driver | the MetaHuman's own leg | 0637, light load, 59–63 fps |
+  |---|---|---|---|---|
+  | start (3 deg) | 63 | 2.28 | 2.50 | 4.6 |
+  | flat tread | 62 | 1.62 | 1.64 | 3.7 |
+  | dune 13 deg across | 62 | 3.46 | 2.28 | 3.1 |
+  | dune 25 deg across | 59 | 3.92 | 2.48 | **5.3** |
+  | dune 25 deg, facing up | 60 | 4.43 | 3.47 | 2.7 |
+  | step edge | 60 | 4.97 | 2.92 | **5.9** |
+
+  Foot 0.9–1.3 mm, pelvis 0.3–0.8, 2–6 plant/pin flips, bone length change 0.0 %. One run, at 59–63 fps throughout; the step edge is 0.03 mm under the 5.00 limit, so main's knee blip
+  is not gone, and at the 35–52 fps of 0637's main runs it will read over again.
+- **Pin tour** (`-visexqa -visexpin -visexpinmodes=gate`, 0703, one run, 54.3 fps; 0637's pair: 33.9 and 35.0). Pin hold max within about 1 cm of 0637 in every phase (stand-up 4.47,
+  Ledge 4.30, Crown 6.00 with 3 frames clamped against 2, LegLift 3.10 against 4.18 / 3.38). Foot drift, median per phase, cm (0637 pair → 0703): Start walk-off 0.61, 0.57 → 0.78;
+  third-person walk 1.61, 0.62 → 1.85; jog 0.59, 0.84 → **1.54**; run 0.43, 0.58 → 0.86; Body walk-out 1.99, 1.69 → 1.54; photo walk 0.87, 1.64 → 1.24; stop 0.12, 0.12 → 0.13;
+  Body sliders 2.09, 2.12 → 0.09. The jog and the run read higher than both of 0637's runs; one run, not repeated. Turning on the spot reads 11–23 cm in both builds.
+- **Perf** (ms per frame, 1440×1080, load average 3–5; 0637 was run again the same hour from main's DMG, one run):
+
+  | stop | 0706 | 0703, run 1 / run 2 | 0637, the same hour | 0637 as logged |
+  |---|---|---|---|---|
+  | menu | 16.9 | 16.4 / 17.1 | 17.3 | 29.1 / 16.8 |
+  | Start walk-off (`play`) | 17.9 | 18.0 / 18.2 | 19.2 | 26.1 / 19.0 |
+  | `walked` | 16.7 | 16.8 / 17.1 | 17.5 | 23.0 / 17.8 |
+  | quality 4 | 32.1 | 31.0 / 32.5 | 31.9 | 40.1 / 37.1 |
+  | Settings sit | 37.4 | 37.9 / 37.7 | 38.5 | 34.9 / 45.3 |
+  | photo Idle / Walk / FeetUp | 35.0, 34.6, 36.7 | 35.3, 35.0, 37.0 / 35.1, 34.8, 36.7 | 37.7, 38.4, 40.1 | 34.4–37.1 / 41.0–41.7 |
+
+  Level with 0637 or a millisecond under at every stop, GPU bound on both. Memory: peak resident 4.83 GB over the QA tour (`ps`, sampled every 10 s; 0705 read 4.84); 0637 not sampled.
+- **Not checked:** anything in motion on video (no screen recording: stills, sheets, frame strips and meters only). The intro film (the tours skip it), music, real key presses.
+  The ship tour, the pin tour, the jitter tour and a second QA run on 0706 itself (they are 0703's: the same game code). The other eleven outfits (locked on this body). Frame time at 4K.
+- **Saves:** backed up `VisexBody.sav` (`7ac129aa…`) and `GameUserSettings.ini` (`06e783cf…`). Restored after each of the 18 packaged runs (the ship tour and its relaunch as one), both md5s match. No `Game.ini` before or after.
+  main's `Build/VIS-EX-0637.dmg` mounted read-only for one run and ejected. Shots in `Saved/QA_0703ship_<run>/` (`ship`, `ship2`, `dp0`, `side_new`, `side_old`, `side_nosim`,
+  `run1`, `run2`, `pin`, `spikes`, `jitter`, `ref0637run`), `QA_0705ship_<run>/` and `QA_0706ship_<run>/` (`side_new`, `spikes`, `run1`); sheets in `Tools/.bridge/shots/qa0706/sheets/`
+  of the `visex-metahuman` worktree.
+
 ## 2026-11-17 11:08 · VIS-EX-0637 Shipping (6ec7ce3) · PASS on the Shipping check: skeleton whole, idle knee snap 59–149 mm → 3–12 mm; but the jitter tour's own 5 mm limit still fails on the slopes
 
 - **Cook:** `Success - 0 error(s), 0 warning(s)`, 946 packages (926 cooked, 20 skipped by platform), Shipping binary rebuilt from HEAD (`BuildCookRun time: 80.96 s`).

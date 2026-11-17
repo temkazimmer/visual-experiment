@@ -2122,3 +2122,221 @@ is fixed. What decides it now is the packaged run (below).
 - `visex.Body.MetaHuman` switched in the console in the middle of a run with the wardrobe open (the body
   component turns the outfit when it next applies; the MetaHuman side wears the Silversuit at once).
 - A real controller or keyboard: the tours call the same functions the keys call, not the keys.
+
+### 2026-11-17 · Ship 2 · the page lights, the first Shipping build, the old | new sheets
+
+Closing the character work: the two flaws from Ship 1's walk-through, the first packaged build of this
+branch (`Build/VIS-EX-0706.dmg`, Shipping, built from bc14aec), and the same-camera old | new sheets Tema
+approves the merge from. Commits ec1dd18 (the lights), 7f2cb26 (the side tour), 21acab5 (the Shipping
+compile fix), 0af327e and bc14aec (a hair switch, in and out again), eda16f1 (the tour's portrait camera),
+then the sheets and this log. Nothing was re-assembled, no asset
+and no level was saved, `Config/DefaultEngine.ini` is untouched. The QA entry is in `Docs/QA.md` (0706).
+
+**The dark skin on the Character page: fixed (ec1dd18).** Cause as guessed in the brief. On the Character
+page, in the wardrobe and in photo mode the director dims the sun and the sky (`StudioSunScale`,
+`StudioSkyScale`) and lights her with two spawned lights, a spot and a rim, that are on lighting channel 1
+only, so the stone and sand keep the scene's light. The menu and the Settings sit use a third, the menu
+key, the same way. `AVisexMenuDirector::JoinChannel1` put her on channel 1 by walking the pawn's own
+components. The MetaHuman body is not one of them: it is the Blueprint actor attached to her mesh (body,
+face, grooms, the garment shell made on it), and `UVisexMHBodyComponent::Bind` copied the driver's channels
+to it once, at spawn, before any page had opened and so before the pawn was on channel 1. The page lights
+never reached it: she stood under a dimmed sun with nothing else, which is the near-black skin and face.
+The old body's meshes are the pawn's own components, so they were lit. Fix: the join walks the pawn's
+attached actors too (`GetAttachedActors`, recursive), every tick as before, so a garment or a groom made
+later joins as well. Nothing in the level, the Blueprint or the lights changed. Checked with a same-camera
+pair, both bodies (`ship2_side_body.jpg`, `ship2_side_face.jpg`, `ship2_side_wardrobe.jpg`,
+`ship2_side_menu.jpg`, `ship2_side_settings.jpg`, the photo sheets): the suit carries the same highlights
+in the same places on both, the skin and face are lit, and the packaged build shows the same
+(`Saved/QA_0703ship_ship/05_ship_body.png` and the drags).
+
+**The groom on the sand in the floor poses: not fixed. Tried twice, taken out again, logged.** It took far
+more than the half hour.
+- What it is: the groom's strands are simulated (Niagara springs) and collide with nothing. With her head
+  on the ground they fall through her forearms and spread in the sand. The same poses shot in the packaged
+  build with `r.HairStrands.Simulation 0` from the start show the hair in its combed shape on her head,
+  clean, and the standing frames unchanged: so the spread is the simulation, and a hair that is not
+  simulated in the floor poses is the look to aim for (`QA_0703ship_side_nosim` against `side_new`).
+- First try, dropped: turning the groom's gravity to her head's own down through the component's
+  `SimulationSettings` override. The frames did not change. The override is only taken when the groom's
+  resources are built (`SetEnableSimulation` releases and rebuilds them, and with the override on every
+  solver value has to be restated, which would change how the hair hangs standing).
+- Second try, committed and reverted (0af327e, bc14aec): with her head under 50 cm over the ground (23 cm
+  in FeetUp and LegLift, 77 sitting in Mermaid, 141 to 145 standing) reset the simulation to the combed
+  shape (the component's `ResetSimulation`, called by name) and four frames later set
+  `r.HairStrands.Simulation 0`; back to 1 over 62 cm. In the side tour and in a film of Idle to FeetUp it
+  gave the clean combed hair, in Development and in the packaged build 0705. **The packaged QA tour then
+  showed the failure:** going from Crown (standing) straight into FeetUp, the reset and the stop land while
+  her head is still moving fast, and the hair freezes flung back with bare scalp showing on the side of
+  her head; LegLift froze mid-swing (`QA_0705ship_run1/27_photo_05.png`, `30_photo_08.png`). That is worse
+  than hair in the sand, so it is out.
+- What a fix needs: the switch only gives the combed shape on a still head. Gate it on her head having
+  settled (low and slow for a few frames), accept the pop from fallen to combed at that moment, and watch
+  it in motion through every pose-to-pose change before it ships. Or give the groom something to land on:
+  her body's physics asset on the groom component (`AddCollisionComponent` / `SetPhysicsAsset`; the solver
+  never collides with the world) and a ground body under her head, which also changes how the hair sits on
+  the shoulders standing. Or a shorter style in the floor poses.
+- As it ships: in FeetUp the hair hangs through her forearms into the sand, in LegLift it is a dark mass
+  on the sand under her head (`ship2_side_photo_FeetUp.jpg`, `ship2_side_photo_LegLift.jpg`; the old card
+  hair is a mass there too).
+
+**The Shipping builds.** `Tools/make_dmg.sh` in this worktree; the DMG number is this branch's commit count.
+- **0702 (7f2cb26) did not compile.** One error in the game target, which this branch had never built:
+  `VisexMHSpikes.cpp` read morph deltas with `UMorphTarget::GetMorphTargetDeltas`, which exists in editor
+  builds only (a cooked build keeps the deltas compressed). Replaced by `GetDeltaIteratorForLOD`, the same
+  deltas in both (21acab5). Nothing else in the game target failed, and it links with the MetaHuman
+  plugins on, as main's 0637 did.
+- **0703 (21acab5): built and toured in full.** Cook `Success - 0 error(s), 0 warning(s)`, 1223 packages
+  cooked and 20 skipped by platform (the count of Ship 1's cook-only run), `BuildCookRun time: 75 s` on a
+  warm DDC. 2.35 GB.
+- **0705 (eda16f1): withdrawn.** 0703 plus the hair switch; its QA tour is where the flung hair showed.
+- **0706 (bc14aec): the build to ship.** The hair switch reverted, so its game code is 0703's; what
+  differs is the tour (the portrait camera, two more passes). Same cook result (1223 packages, 0 errors,
+  0 warnings). `Build/VIS-EX-0706.dmg`, 2.35 GB (0637 is 1.74 GB: +0.61 GB); size and md5 are in the QA
+  entry. Not committed, not copied to `-stable`. Toured again with the QA tour, the side tour and the
+  spike tour; the ship tour, the pin tour, the jitter tour and the second QA run are 0703's.
+
+Every run below is the packaged app from the read-only mounted DMG, Tema's save and settings backed up
+first and restored after each run (md5 `7ac129aa...`, `06e783cf...` every time).
+
+| Shipping check | | what was seen or read |
+|---|---|---|
+| She is the MetaHuman, from cooked content | ok | every state line of the ship tour and the side tour: `MetaHuman body shown, ... garment SKM_Silversuit_MH`; the body, face, grooms and suit are on screen in all shots |
+| The Silversuit, no skin showing through | ok | poke pass in every tour: at most 74 fabric vertices under drawn skin, deepest 0.09 cm on `pelvis` (the Development number; limit 0.10). The check reads CPU vertex data and the morphs: both are there in a cooked build |
+| Corrective rig | ok | body pass (stretch 2.77x, creases 5.67x, grew 2.11 cm: Development read 2.66x / 6.44x / 2.02), no candy-wrapper at the bent elbow and knee of Bookend and the Settings sit in the 4K frames (`QA_0703ship_side_new/pk_06_photo_Bookend.png`, `pk_05_settings.png`, under `~/Library/Application Support/Epic/visex/Saved/`) |
+| The groom as strands, its physics | ok | strands in the 4K portrait and the head turnaround (single hairs across the cheek, the fringe, brows and lashes). Physics: the same tour with `-visexcvar=r.HairStrands.Simulation=0` gives a different picture (FeetUp and LegLift: the combed shape instead of the spread), so the simulation runs in Shipping. No video was taken |
+| The face | ok | brown eyes with lashes and brows, not blank, and both lids closed when the tour sets the blink curves (`QA_0706ship_side_new/pk_07_portrait.png`, `pk_07_portrait_blink.png`, front on, 4K). Nothing blinks her by itself, in any build (stage 6): in the game her eyes stay open |
+| Body page sliders and skin tone | ok | Height, Hips, Legs, Bust, Glutes, Feet, Skin and Head dragged through their range live: body, face, garment and poke pass in every drag; the skin goes from pale to dark and back in the shots |
+| Saved values load | ok | Legs +6 steps and Skin +8 applied, fog set to Light, Quit from the menu; the relaunch reads Legs 1.0166, Skin 0.45, fog Light and shows them |
+| No Hair tab, the wardrobe | ok | tabs BODY, FACE (two switches come back to BODY); Silversuit WORN, eleven rows LOCKED, the "under construction" window on a locked row |
+| The old body as a fallback | not for a player | Shipping has no console, and `-dpcvars=visex.Body.MetaHuman=0` is ignored there (she stays the MetaHuman). The tour's own switch works: `-visexqa -visexside -visexcvar=visex.Body.MetaHuman=0` gives the old body with its card hair and its Silversuit in the same build (`QA_0703ship_side_old`). The automatic fallback (the MetaHuman failing to load) was not provoked |
+| Her skeleton whole (0622) | ok | 50 shots of each QA run, the ship tour's 44 and the side tour's 17 looked at as sheets: no inverted body, no leg in the air, the two QA runs show the same poses; thigh and calf length change 0.0 % in all six jitter spots |
+
+**Numbers against 0637** (Shipping, 1440x1080 windowed, Tema's Epic settings; ms per frame, the QA tour's
+average since its previous stop). 0637 was run again the same hour from main's DMG, because its logged
+runs were taken on a busier machine:
+
+| stop | 0703, run 1 / run 2 | 0637, the same hour | 0637 as logged (run 1 / run 2) |
+|---|---|---|---|
+| menu, the lean | 16.4 / 17.1 | 17.3 | 29.1 / 16.8 |
+| Start walk-off (`play`) | 18.0 / 18.2 | 19.2 | 26.1 / 19.0 |
+| after the walk (`walked`) | 16.8 / 17.1 | 17.5 | 23.0 / 17.8 |
+| quality 4 | 31.0 / 32.5 | 31.9 | 40.1 / 37.1 |
+| Settings sit | 37.9 / 37.7 | 38.5 | 34.9 / 45.3 |
+| photo Idle / Walk / FeetUp | 35.3, 35.0, 37.0 / 35.1, 34.8, 36.7 | 37.7, 38.4, 40.1 | 34.4 to 37.1 / 41.0 to 41.7 |
+
+No cost that these runs can show: the MetaHuman build is level with 0637 or a millisecond under at every
+stop, GPU bound on both (game thread 1.6 to 2.8 ms against 1.4 to 2.7). The 2 to 3 ms that Ship 1 measured
+in a Development `-game` run does not show in Shipping at this resolution. One run of 0637, two of 0703,
+load average 3 to 5; not measured at 4K. 0706's own run reads 16.9 / 17.9 / 16.7 / 32.1 / 37.4 and 35.0, 34.6,
+36.7 at the same stops. DMG 2.35 GB against 1.74. Memory: peak resident 4.83 GB over the QA tour (0637 not
+sampled).
+
+Pin tour (`-visexpin -visexpinmodes=gate`, 0703, one run, 54.3 fps; 0637's two runs were at 33.9 and 35.0):
+hold max within about 1 cm of 0637 in every phase (stand-up 4.47 against 4.47 / 4.46, Ledge 4.30 against
+4.26 / 4.47, Crown 6.00 with 3 frames clamped against 2, LegLift 3.10 against 4.18 / 3.38), the one-frame
+change smaller everywhere (0.4 to 0.8 cm against 0.7 to 1.9: the higher frame rate). Foot drift, median per
+phase, cm, 0703 against 0637's pair: Start walk-off 0.78 (0.61, 0.57), third-person walk 1.85 (1.61, 0.62),
+jog 1.54 (0.59, 0.84), run 0.86 (0.43, 0.58), Body walk-out 1.54 (1.99, 1.69), photo walk 1.24 (0.87, 1.64),
+stop 0.13 (0.12, 0.12), Body sliders 0.09 (2.09, 2.12). The jog reads higher than both of 0637's runs; one
+run, not repeated. Turning on the spot reads 11 to 23 cm in both builds, as before.
+
+Jitter tour (`-visexjitter`, 0703, 1920x1080, 59 to 63 fps, 40 s a spot): **PASS**, exit 0. Worst knee frame
+off the line, mm, driver / the MetaHuman's own leg: start 2.28 / 2.50, flat 1.62 / 1.64, dune 13 deg 3.46 /
+2.28, dune 25 deg across 3.92 / 2.48, facing up 4.43 / 3.47, step edge 4.97 / 2.92 (limit 5.00). Foot 0.9 to
+1.3, pelvis 0.3 to 0.8, 2 to 6 plant/pin flips, bone length change 0.0 %. 0637 failed this tour at 35 to 52
+fps and read 5.3 and 5.9 on two spots at 59 to 63; this run was at the higher rate throughout and the step
+edge is 0.03 mm under the limit, so it is a pass by a hair, on one run: main's knee blip is not gone.
+
+Spike and poke tour (`-visexspikes`, every pose): body pass (stretch 2.77x, creases 5.67x, grew 2.11 cm),
+face pass (1.27x), garment pass (1.83x), poke pass (74 fabric vertices under drawn skin at most, deepest
+0.09 cm on `pelvis`). Development read 2.66x, 1.38x, 2.07x and 103 / 0.09. 0706 reads the same (2.77x, 5.69x;
+1.27x; 1.81x; 74 and 0.09).
+
+**The old | new sheets** (`Docs/Research/metahuman/`). Shot in Development `-game` runs through the game
+view (`HighResShot 3840x2160`), one run per body with the same tour, cameras and a fixed 60 Hz step
+(`-visexqa -visexside -visexshots=<run> -benchmark -fps=60 -dpcvars=visex.Body.MetaHuman=0|1`), both in the
+Silversuit, the Character page lit by the fix. `Tools/mh_ship2_sheets.sh` lays them out:
+each sheet is two 4K frames side by side, old on the left.
+- `ship2_overview.jpg`: all of them on one sheet.
+- `ship2_side_menu.jpg` (the lean on the column), `ship2_side_start_end.jpg` (the end of Start, the
+  third-person camera), `ship2_side_walk_behind.jpg` (the walk-off, 4 s after Start),
+  `ship2_side_walk_front.jpg` (walked on along her heading, a tour camera at the front three-quarter).
+- `ship2_side_body.jpg`, `ship2_side_face.jpg`, `ship2_side_wardrobe.jpg`, `ship2_side_settings.jpg`.
+- `ship2_side_photo_Bookend.jpg`, `ship2_side_photo_Mermaid.jpg` (floor), `ship2_side_photo_LegLift.jpg`,
+  `ship2_side_photo_FeetUp.jpg` (floor).
+- `ship2_side_portrait.jpg`, `ship2_side_portrait_blink.jpg` (the face rig closing the lids),
+  `ship2_side_hand_r.jpg`, `ship2_side_hand_l.jpg`, `ship2_side_feet.jpg` (photo Idle, the free camera).
+- `ship2_side_walk.mp4`: 14 s, 30 fps, 2880x1080, old | new: the Start camera move, her walk-off and the
+  idle she settles into. Game-window frames (1440x1080 each), every second frame of the fixed step.
+
+**Old against new, from the sheets, looked at one by one.**
+- **Better.** Hands: knuckles, tendons and separate fingers where the old hand is a soft mitten
+  (`hand_r`, `hand_l`). Feet: toes, the ankle bone and the arch (`feet`, `walk_front`). The face: a face,
+  with eyes, lashes, brows and lips that take the light, and lids that close; the old one is a blank mask
+  behind the hair (`portrait`, `face`). Skin: it has colour and depth where the old skin is flat porcelain
+  (hip cut-outs in `Bookend`, the hands). Joints: the bent elbow and knee keep their volume in Bookend and
+  the Settings sit. Hair up close: strands and a fringe instead of a lacquered shell (`portrait`).
+- **Equal.** Pose, timing and place in every frame (the follower repeats the driver: same silhouette in
+  the menu lean, the walk and the idle, the clip runs in step). The suit's chrome and its highlights. The
+  light on every page, after the fix. Frame time in Shipping. Soles on the sand.
+- **Worse, or a change he should see.** The hair is shorter and lighter: it ends at the shoulder blades
+  where the old hair fell to the waist, so from behind and in the walk she has lost the long black shape
+  (`walk_behind`, `start_end`, `Bookend`). The suit's edges on the new body are rougher at the wrists,
+  ankles and under the bust (a ragged dark rim in `walk_front`, `feet`), and the bust opening is a
+  different cut (an open neckline, not the keyhole). The skin reads rosier and a shade darker than the old
+  pale skin, most on the Character page. In FeetUp the hair hangs through her forearms into the sand and
+  in LegLift it spreads on the sand under her head (`photo_FeetUp`, `photo_LegLift`; the old card hair is
+  a mass there too, but shorter). Standing, the hair still sits into the suit at the shoulders. From earlier stages and unchanged: hands 1.1 to 1.7 cm off the driver's contacts in the lean,
+  no neck cords, brows gone at face LOD 2.
+
+**Traps.**
+- **The game target is not the editor target.** An editor-only engine call (`WITH_EDITOR`) compiles for
+  weeks in `visexEditor` and stops the first packaged build. `Build.sh visex Mac Shipping` takes 10 s when
+  nothing else changed: run it before `make_dmg.sh` after any new engine API.
+- **`-dpcvars=` does nothing in Shipping.** It set `visex.Body.MetaHuman` in every Development `-game` run
+  and is ignored by the packaged build. A tour's own `-visexcvar=name=value` works in both.
+- **A groom's simulation override is not live.** `SimulationSettings` on the component is taken when the
+  groom's resources are built; flipping `bOverrideSettings` later changes nothing on screen.
+  `r.HairStrands.Simulation` is live, but switched off it leaves the strands where they are, and a
+  `ResetSimulation` just before it only helps on a still head: on a moving one the hair freezes flung.
+- **A fix seen in one flow is not seen.** The hair switch looked right in the side tour (Mermaid to
+  LegLift to FeetUp) and in its own film (Idle to FeetUp) and was wrong in the QA tour's order (Crown to
+  FeetUp). Tour every way into a pose, and look at the packaged QA sheet before calling it.
+- **Which way a head faces.** On the driver's skeleton the face looks down the head bone's -Y. A camera
+  placed off the actor's forward shoots her ear, because the idle turns her head.
+- The `-game` window comes up at the saved resolution (1440x1080 here) whatever `-ResX` says; `HighResShot
+  3840x2160` still gives a 16:9 frame, and `FScreenshotRequest` frames are the window's.
+- Foreground waits are cut off after three minutes in this harness: start a long run in the background and
+  wait on a line of its output.
+
+**Still wrong, none of it stops the build.**
+- The groom collides with nothing: a centimetre into the suit at the shoulders standing, through her
+  forearms and into the sand in FeetUp and LegLift.
+- She never blinks (no face animation plays; the rig is there and works).
+- The wardrobe is eleven locked rows; applying anything saves the Silversuit as her outfit (Ship 1).
+- A player cannot get the old body back in the packaged build.
+- The jitter tour passes by 0.03 mm on the step edge at 60 fps; at lower frame rates main's knee blip will
+  read over the limit again (0637).
+- From earlier stages: the hip hem on the tall body in LegLift, body LOD 1 to 3 with the old bust, brows
+  at face LOD 2, no neck cords, the hands' contacts in the lean.
+
+**Should block the merge into main:** nothing found. Two things to do at the merge itself, both from Ship 1:
+main's working tree holds uncommitted `visex.uproject` and `Config/DefaultEditor.ini` changes (the same
+plugin entries this branch commits), so git will refuse the merge until they are committed, stashed or
+checked out; and the DMG grows by 0.6 GB.
+
+**Not verified.**
+- Anything in motion by eye. The clip and the films were looked at as strips of frames; nobody watched her
+  walk, the hair settle when its simulation stops and starts, or the idle beats. No screen recording.
+- The intro film in the packaged build (the tours skip it), music, a real controller or keyboard.
+- 0706 itself was toured with the QA tour, the side tour and the spike tour only. The ship tour (sliders,
+  saved values, wardrobe, Quit and relaunch), the pin tour, the jitter tour and the second QA run are
+  0703's: the same game code, a different tour.
+- Frame time at 4K or on a quiet machine (load average 3 to 5 all session), memory against 0637 (one
+  number for this branch, none for 0637), the pin and jitter tours a second time.
+- The automatic fallback to the old body when the MetaHuman cannot load; the old body's whole wardrobe in
+  the packaged build (only its Silversuit was looked at, through the tour's switch).
+- The editor was never opened this session (builds, `-game` runs and packaged runs only), so the
+  MetaHuman "missing project settings" toast was not met. `Config/DefaultEngine.ini` is unchanged.
+- The Body page sliders not in the drag list (Neck, Shoulders, Ribcage, Waist, Thighs, Calves, Arms, Hands,
+  Bust height, Bust spacing, Abs, Body fat, Thigh gap) in Shipping.
