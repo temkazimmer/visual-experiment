@@ -32,9 +32,11 @@ static void AddMorphs(const USkeletalMeshComponent* Mesh, const USkeletalMeshCom
 			continue;
 		}
 		Delta.SetNumZeroed(P.Num());
-		for (const FMorphTargetDelta& D : Morph->GetMorphTargetDeltas(0))
+		// the iterator, not GetMorphTargetDeltas: that one exists in editor builds only (a cooked build keeps
+		// the deltas compressed), and the game target did not compile with it
+		for (FMorphTargetDeltaIterator It = Morph->GetDeltaIteratorForLOD(0); !It.AtEnd(); ++It)
 		{
-			if (Delta.IsValidIndex(int32(D.SourceIdx))) { Delta[D.SourceIdx] += D.PositionDelta * W; }
+			if (Delta.IsValidIndex(int32(It->SourceIdx))) { Delta[It->SourceIdx] += It->PositionDelta * W; }
 		}
 	}
 	if (Delta.Num() == 0)
