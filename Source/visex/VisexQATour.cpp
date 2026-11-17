@@ -1815,7 +1815,28 @@ void AVisexQATour::BuildSide()
 		Add(15.f, Quit);
 		return;
 	}
+	auto Pose = [this](const TCHAR* Name)
+	{
+		AVisexPhotoMode* P = Photo();
+		for (int32 I = 0; P && P->IsOpen() && I < 60; ++I)
+		{
+			if (P->GetMotionName(I) == Name) { P->SetMotion(I); return; }
+		}
+		QA_LOG(TEXT("VisexSide: NO photo motion %s"), Name);
+	};
+	if (Pass == TEXT("hair"))
+	{
+		// down into a floor pose and up again, filmed: what the hair does as its simulation goes off and on
+		Add(7.f, [D] { D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
+		Add(6.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetHudVisible(false); } SideFilmLeft = 12 * 60; SideFilmN = 0; });
+		Add(1.f, [Pose] { Pose(TEXT("FeetUp")); });
+		Add(6.f, [Pose] { Pose(TEXT("Idle")); });
+		Add(6.f, Quit);
+		return;
+	}
+	const bool bCloseOnly = Pass == TEXT("close");   // only the portrait, the blink, hands and feet
 	// a shot and the change after it are never in one step: the frame is taken at the frame's end
+	if (!bCloseOnly) {
 	Add(7.f, [this, State] { State(TEXT("menu")); HiShot(TEXT("01_menu")); });
 	Add(1.f, [D] { D->OpenBody(); });
 	Add(5.f, [this] { HiShot(TEXT("02_body")); });
@@ -1828,19 +1849,12 @@ void AVisexQATour::BuildSide()
 	Add(5.f, [D] { D->OpenSettings(); });
 	Add(9.f, [this] { HiShot(TEXT("05_settings")); });
 	Add(0.6f, [D] { D->CloseSettings(); });
-	Add(9.f, [D] { D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
+	}
+	Add(bCloseOnly ? 7.f : 9.f, [D] { D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
 	Add(6.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetHudVisible(false); } });
-	auto Pose = [this](const TCHAR* Name)
-	{
-		AVisexPhotoMode* P = Photo();
-		for (int32 I = 0; P && P->IsOpen() && I < 60; ++I)
-		{
-			if (P->GetMotionName(I) == Name) { P->SetMotion(I); return; }
-		}
-		QA_LOG(TEXT("VisexSide: NO photo motion %s"), Name);
-	};
 	for (const TCHAR* Name : {TEXT("Bookend"), TEXT("Mermaid"), TEXT("LegLift"), TEXT("FeetUp")})
 	{
+		if (bCloseOnly) { break; }
 		Add(0.6f, [Pose, Name] { Pose(Name); });
 		Add(5.f, [this, Name]
 		{
@@ -1853,7 +1867,7 @@ void AVisexQATour::BuildSide()
 	// <bone>, the camera's place from it (forward, right, up of her, cm), the lens
 	struct FClose { const TCHAR* Name; FName Bone; FVector From; FVector Lift; float Focal; };
 	static const FClose Closes[] = {
-		{TEXT("07_portrait"), TEXT("head"), FVector(112.f, 46.f, 4.f), FVector(4.f, 0.f, 0.f), 85.f},
+		{TEXT("07_portrait"), TEXT("head"), FVector(112.f, 46.f, 6.f), FVector(8.f, 0.f, 2.f), 85.f},
 		{TEXT("08_hand_r"), TEXT("hand_r"), FVector(95.f, 50.f, 10.f), FVector(0.f, 0.f, -8.f), 85.f},
 		{TEXT("09_hand_l"), TEXT("hand_l"), FVector(95.f, -50.f, 10.f), FVector(0.f, 0.f, -8.f), 85.f},
 		{TEXT("10_feet"), TEXT("foot_r"), FVector(150.f, 45.f, 38.f), FVector(6.f, -10.f, -4.f), 70.f},
@@ -1866,7 +1880,12 @@ void AVisexQATour::BuildSide()
 			AVisexPhotoMode* P = Photo();
 			ACharacter* C = Her();
 			if (!P || !P->IsOpen() || !C || !C->GetMesh()) { return; }
-			const auto Frame = [C](const FVector& V) { return C->GetActorForwardVector() * V.X + C->GetActorRightVector() * V.Y + FVector(0.f, 0.f, V.Z); };
+			// the portrait is framed off where her face points (the idle turns her head; on this skeleton the
+			// face looks down the head bone's -Y), the hands and feet off her body
+			FVector Fwd = C->GetActorForwardVector();
+			if (Close.Bone == TEXT("head")) { Fwd = -C->GetMesh()->GetSocketTransform(Close.Bone).GetUnitAxis(EAxis::Y).GetSafeNormal2D(); }
+			const FVector Side = FVector::CrossProduct(FVector::UpVector, Fwd);
+			const auto Frame = [Fwd, Side](const FVector& V) { return Fwd * V.X + Side * V.Y + FVector(0.f, 0.f, V.Z); };
 			const FVector At = C->GetMesh()->GetSocketLocation(Close.Bone) + Frame(Close.Lift);
 			const FVector Loc = C->GetMesh()->GetSocketLocation(Close.Bone) + Frame(Close.From);
 			P->SetFreeView(Loc, (At - Loc).Rotation(), 0.f, Close.Focal);
@@ -1882,6 +1901,7 @@ void AVisexQATour::BuildSide()
 		}
 	}
 	Add(0.6f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetHudVisible(true); P->Close(); } });
+	if (bCloseOnly) { Add(3.f, Quit); return; }
 	// Start: she walks off under the camera move (from behind), stands at its end, then is walked on
 	// along her own heading and shot from the front three-quarter by a camera of the tour's
 	Add(6.f, [D] { D->OnItemChosen(AVisexMenuDirector::ItemStart); });

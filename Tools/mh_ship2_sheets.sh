@@ -20,16 +20,16 @@ O="${1:-s2old}"; N="${2:-s2new}"
 typeset -A LABEL
 LABEL=(01_menu "The menu, her lean on the column" 02_body "Character page, body view" 03_face "Character page, face view"
   04_wardrobe "Wardrobe" 05_settings "Settings, the sit on the drum" 06_photo_Bookend "Photo mode, Bookend"
-  06_photo_Mermaid "Photo mode, Mermaid (floor pose)" 06_photo_LegLift "Photo mode, LegLift" 06_photo_FeetUp "Photo mode, FeetUp (floor pose)"
-  07_portrait "Close portrait (photo Idle)" 07_portrait_blink "The face rig: lids closed by its blink curves (the old face has no rig)" 08_hand_r "Right hand (photo Idle)" 09_hand_l "Left hand (photo Idle)" 10_feet "Feet (photo Idle)"
-  11_walk_behind "Start: the walk-off, from behind" 12_start_end "The end of Start: she has arrived, the third-person camera"
+  06_photo_Mermaid "Photo, Mermaid (floor pose)" 06_photo_LegLift "Photo mode, LegLift" 06_photo_FeetUp "Photo, FeetUp (floor pose)"
+  07_portrait "Close portrait (photo Idle)" 07_portrait_blink "The face rig: a blink (the old face has none)" 08_hand_r "Right hand (photo Idle)" 09_hand_l "Left hand (photo Idle)" 10_feet "Feet (photo Idle)"
+  11_walk_behind "Start: the walk-off, from behind" 12_start_end "The end of Start: arrived"
   13_walk_front "Walking, front three-quarter")
 : > "$T/all.txt"
 for s in 01_menu 02_body 03_face 04_wardrobe 05_settings 06_photo_Bookend 06_photo_Mermaid 06_photo_LegLift 06_photo_FeetUp \
          07_portrait 07_portrait_blink 08_hand_r 09_hand_l 10_feet 11_walk_behind 12_start_end 13_walk_front; do
   [[ -f "$Q/${O}_$s.png" && -f "$Q/${N}_$s.png" ]] || { echo "missing $s"; continue; }
-  printf '%s · old body | MetaHuman body\t\t%s\t%s\n' "${LABEL[$s]}" "$Q/${O}_$s.png" "$Q/${N}_$s.png" > "$T/one.txt"
-  cat "$T/one.txt" >> "$T/all.txt"
-  swift Tools/sheet.swift "$D/ship2_side_${s#*_}.jpg" 7680 1 "Ship 2 · ${LABEL[$s]} · old body | MetaHuman body · same camera, light and step, 4K game view" "$T/one.txt"
+  printf 'old body\t\t%s\nMetaHuman body\t\t%s\n' "$Q/${O}_$s.png" "$Q/${N}_$s.png" > "$T/one.txt"
+  printf '%s\t\t%s\t%s\n' "${LABEL[$s]}" "$Q/${O}_$s.png" "$Q/${N}_$s.png" >> "$T/all.txt"
+  swift Tools/sheet.swift "$D/ship2_side_${s#*_}.jpg" 7680 2 "Ship 2 · ${LABEL[$s]} · old body | MetaHuman body · same camera, light and step, 4K game view" "$T/one.txt"
 done
 swift Tools/sheet.swift "$D/ship2_overview.jpg" 3840 2 "Ship 2 · old body | MetaHuman body, both in the Silversuit · same camera, light and step" "$T/all.txt"

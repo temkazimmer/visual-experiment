@@ -117,7 +117,9 @@ private:
 	 *  cameras whatever body is on (run once with visex.Body.MetaHuman 1, once with 0, at a fixed step):
 	 *  the menu lean, the Character page's body and face views, the wardrobe, the Settings sit, photo
 	 *  poses, a portrait, hands and feet, the end of Start and a walk from behind and from the front.
-	 *  -visexside=film: Start only, every second game frame to Saved/QA/<name>_film/ (walk-off and idle). */
+	 *  -visexside=film: Start only, every second game frame to Saved/QA/<name>_film/ (walk-off and idle).
+	 *  -visexside=close: only the portrait, the blink, hands and feet.
+	 *  -visexside=hair: the same film of photo Idle, FeetUp and Idle again (the hair going down and up). */
 	void BuildSide();
 	UPROPERTY(Transient) TObjectPtr<class ACameraActor> SideCam;
 	int32 SideFilmLeft = 0, SideFilmN = 0;
