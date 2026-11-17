@@ -933,6 +933,8 @@ void AVisexQATour::BuildJitter()
 	FParse::Value(FCommandLine::Get(), TEXT("visexjitterfilmfrom="), FilmFrom);
 	FilmSecs = 20.f;
 	FParse::Value(FCommandLine::Get(), TEXT("visexjitterfilmsecs="), FilmSecs);
+	// an uneven frame time reads a little more for the same motion (flat spot: 4.4 mm against 1.9 to 3.8)
+	if (bHitch) { GJitterLimitMm = 8.f; }
 	FParse::Value(FCommandLine::Get(), TEXT("visexjitterlimit="), GJitterLimitMm);
 	float Secs = 40.f, Settle = 4.f;
 	FParse::Value(FCommandLine::Get(), TEXT("visexjittersecs="), Secs);

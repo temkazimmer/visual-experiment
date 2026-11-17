@@ -54,7 +54,9 @@ The feet, hips and pelvis are steady (under a millimetre on the flat). The knee 
 5 to 14 cm in a single frame, several times per idle loop, and on a slope the uphill leg's thigh
 and calf shorten by up to a quarter for seconds at a time. `before.mp4` is 20 s of the 25 degree
 cross slope (seconds 11 to 31 of the spot, fixed 60 Hz, 4K, a camera fixed in the world): her
-right knee snaps at 2.0, 6.5, 7.2, 7.4, 9.2 and 10.1 s into the clip.
+right knee snaps at 2.0, 6.5, 7.2, 7.4, 9.2 and 10.1 s into the clip. (Re-shot on the fixed build
+with the fix switched off, so it shares its camera with `after.mp4`; that run read the same
+135.84 mm and 26.7 % as main did.)
 
 ## The cause
 
@@ -124,70 +126,100 @@ for comparing.
    a point and a slope. The sole point is as low as the lowest vertex and sits where the lowest
    vertices are (weights falling off over 1.5 mm), so it glides from heel to toe as the foot rocks.
    The pin reads each heel and ball over the plane under it. On flat ground this is what it did
-   before.
+   before. Where nothing is under the middle of the foot (a foot raised past a ledge's edge, feet
+   in the air) it falls back to the old trace under the sole's lowest point.
 
 Every new member is initialised, `ReachLeg` falls back to `Reach` on a missing axis or a NaN, and
 `LegLengths` skips a leg with a NaN or a missing bone.
 
-## After (02639c1), one run at the real frame rate (63 to 67 fps): PASS
 
-Worst frame off the line, mm (before in brackets, from the table above):
+## After (c1d03b5): PASS on all six spots, both frame-time modes
 
-| spot | knee | foot | pelvis | bone length change | plant/pin flips | sole vertex gap L / R, cm |
-|---|---|---|---|---|---|---|
-| start (3 deg) | 1.80 (70.6) | 1.31 (0.70) | 0.41 (0.24) | 0.0 % | 2 (8) | 0.29 / 0.30 |
-| flat tread | 3.78 (54.8) | 0.95 (0.72) | 0.41 (0.28) | 0.0 % | 4 (2) | 0.19 / 0.19 |
-| dune 13 deg across | 1.26 (101.2) | 0.91 (1.62) | 0.40 (0.33) | 0.0 % | 4 (24) | 0.25 / 0.49 |
-| dune 25 deg across | 2.12 (137.9) | 0.95 (3.46) | 0.40 (0.47) | 0.0 % (26.7) | 6 (16) | 0.50 / 0.01 |
-| dune 25 deg, facing up | 2.02 (121.1) | 0.87 (2.91) | 0.39 (0.25) | 0.0 % | 6 (4) | 0.24 / 0.31 |
-| step edge | 0.79 (144.4) | 1.31 (1.68) | 0.37 (0.24) | 0.0 % | 6 (12) | 0.19 / 0.21 |
+Worst frame off the line, mm, before -> after. Real frame rate: before 92 to 103 fps, after 68 to
+71 (the same Mac, a day apart; a smooth move reads more at the lower rate, so the small numbers
+are not like for like). Uneven frame time: before 84 fps, after 50 to 70.
 
-The before runs were at 92 to 103 fps and these at 63 to 67 (the same machine, later in the
-day), so the small numbers are not like for like: a smooth move reads about twice as much at the
-lower rate. The slopes are now at the flat spot's level. The sole gap is the feet meter's
-(lowest skinned vertex over the ground under it, mean over the spot; gaps from the run before
-this one, same code); it was 0.19 everywhere before, by construction. Foot drift over the 40 s
-loop is 1.0 to 1.6 cm for heel and ball on every spot, flat included, before and after (the
-idle's slow creep, which the pin lets go past 2 cm); facing up the 25 degree slope the heel
-reads 6.6 cm (6.8 before) because it lifts, the ball 0.7 to 0.9.
+| spot | knee, real | knee, uneven | foot, real | foot, uneven | pelvis, real | bone length change | state flips | sole vertex gap L / R, cm |
+|---|---|---|---|---|---|---|---|---|
+| start (3 deg) | 70.6 -> 2.6 | 108.3 -> 3.3 | 0.70 -> 0.88 | 2.04 -> 1.23 | 0.24 -> 0.35 | 0.0 % | 8 -> 4 | 0.29 / 0.30 |
+| flat tread | 54.8 -> 1.9 | 75.6 -> 4.4 | 0.72 -> 1.03 | 1.11 -> 0.91 | 0.28 -> 0.33 | 0.0 % | 2 -> 4 | 0.19 / 0.19 |
+| dune 13 deg across | 101.2 -> 1.0 | 133.5 -> 2.8 | 1.62 -> 0.81 | 1.71 -> 1.85 | 0.33 -> 0.36 | 0.0 % | 24 -> 4 | 0.25 / 0.49 |
+| dune 25 deg across | 137.9 -> 2.2 | 184.0 -> 4.7 | 3.46 -> 1.36 | 5.60 -> 1.84 | 0.47 -> 0.35 | 26.7 -> 0.0 % | 16 -> 6 | 0.50 / 0.02 |
+| dune 25 deg, facing up | 121.1 -> 1.6 | 163.7 -> 2.1 | 2.91 -> 0.89 | 3.26 -> 1.57 | 0.25 -> 0.40 | 0.0 % | 4 -> 6 | 0.24 / 0.31 |
+| step edge | 144.4 -> 1.0 | 230.6 -> 3.5 | 1.68 -> 1.02 | 2.29 -> 1.27 | 0.24 -> 0.38 | 0.0 % | 12 -> 6 | 0.19 / 0.21 |
 
-The tour's limit is 5 mm, from the flat spot: sound flat runs read 1.3 to 3.8 mm, the bug 55.
+The slopes now read what the flat spot reads. The tour's limit is 5 mm (8 with the uneven frame
+time), from the flat spot: sound flat runs read 1.3 to 3.8 mm (4.4 uneven), the bug 55 (76).
 
-## State when the work was paused (2026-11-16, evening): unfinished
+**Sole gap** (the feet meter's own measure: the lowest skinned sole vertex over the ground under
+it, mean over the 40 s): 0.02 to 0.50 cm. It was 0.19 on every spot before, because the plant
+pass rested exactly that vertex; on a slope the sole point now sits a little off it.
 
-Done and committed: the test, the cause, the fix, one passing run at the real frame rate.
+**Foot drift** over the 40 s loop, ball of the foot: 1.0 to 1.9 cm on every spot, flat included.
+On the flat it is the same as before (L 1.03 -> 1.10, R 1.45 -> 1.46). On the slopes it was
+0.6 to 0.9 before and is 1.4 to 1.9 now, the flat's level. That is over the 1 cm rule, on main
+too: it is one small re-settle per weight shift (all of it happens inside a second) that the pin
+lets through, not a slide, and not something this change set out to touch. Facing up the 25
+degree slope the heel reads 6.9 cm (6.8 before) because the heel lifts; the ball 0.8 to 0.9.
 
-Not done:
+`after.mp4`: the same spot, window and camera as `before.mp4` (knee 1.41 mm in that run).
+`before_after.mp4`: both, before on the left.
 
-- **The run with the uneven frame time after the fix** was stopped half way. Before: 76 to 231 mm.
-- **`after.mp4` and `before_after.mp4` are not made.** `before.mp4` exists. The last commit moves
-  the film camera to be placed from her capsule, so the two clips get exactly the same camera;
-  `before.mp4` was shot with the older placement (from her feet) and should be re-shot with
-  `-visexcvars=visex.Feet.Steady=0,visex.Feet.Hinge=0`. Both: `-visexjitter
-  -visexjitterspots=dune25x:9225:-1567:100:0 -visexjitterfilm=dune25x -visexjitterfilmfrom=11
-  -visexjitterfilmsecs=20 -benchmark -fps=60`, then ffmpeg the JPEGs in `Saved/QA/jitterfilm`.
-- **`visex.Feet.Steady` (the switch that turns the fix off) compiles but has not been run**, in
-  either position. With it on the code path is the one measured above.
-- **The pin tour and the QA tour have not been re-run**, so "nothing else moved" (walk, turns,
-  Start walk-off, stand-ups, the menu lean, photo poses) is not shown. Plan: each tour with the
-  switch off and on (`-visexpin -visexpinmodes=gate -benchmark -fps=60`, then plain `-visexqa`)
-  and compare the reports and shots. The fix touches every leg the pin or plant pass reaches for,
-  and the plant's ground reading on slopes and steps, so the walk on the dunes and the steps is
-  where to look first.
-- **Shipping is not built or run.** Every new member has an initialiser and the new reaches
-  guard NaN, but that is by reading, not by test.
+## Regression runs
+
+Both tours were run twice on one binary, with the fix off (`-dpcvars=visex.Feet.Steady=0,
+visex.Feet.Hinge=0`) and on. Development, `-game`, on this Mac. Not Shipping.
+
+**Pin tour** (`-visexpin -visexpinmodes=gate -benchmark -fps=60`: lean, the Settings sit and
+stand-up, the Body page walk, turns and sliders, photo walk, run and five poses, Start, then
+walk, jog, run, stop, reversals, zigzag, a spin and two jumps). The two runs take the same steps
+at the same times. Per phase, off / on: the pin's largest hold and one-frame change are equal
+or within 0.2 cm everywhere except the run (hold 1.09 / 2.06 cm, drift median 1.66 / 0.74) and
+the lean (hold 1.14 / 0.45); frames clamped at the 6 cm limit are equal (stand-up 29 / 29) or
+fewer (Crown 1 / 0). Drift medians: menu and third-person walks 0.5 to 2.1 / 0.5 to 2.0 cm.
+Two things to know:
+
+- The tour found a real regression, now fixed (c1d03b5): the Ledge pose's raised foot was held
+  by the pin (6.00 cm, 26 frames clamped, against 3.93 and 0) because nothing was under the
+  middle of that foot. With the fallback: 3.93 / 3.93 and 0 / 0; FeetUp 0.27 / 0.21.
+- Three stances read longer with the fix on (Body walk-out R, stand-up R, the run-jump): the
+  feet meter splits a stance when a foot sweeps over 40 cm/s for a frame, and with the fix it
+  no longer does in those places, so two stances count as one and their drift adds up (Body
+  walk-out: 2.54 and 1.23 cm became one of 5.07). The foot is not sliding further.
+- Standing still on the Body page the sole vertex gap went from 0.08 / 0.19 to 0.29 / 0.33 cm.
+
+**QA tour** (`-visexqa`, all 57 report steps): every step "on ground" in both runs; her position
+equal or within 1 cm at every step (lean 9500 -900 152, play 9387 -1321, walked 9236 -1884);
+menu feet in frame at 16:9 and 4:3, within 0.01 of the frame; body page, wardrobe, photo "moved"
+and layout save lines identical. These are 0627's numbers (`Docs/QA.md`: 9500 -900 152, 9387
+-1322, 9236 -1885, feet at y 0.76 to 0.78). Twelve shot pairs were compared by eye (play, walked,
+the Settings sit, Body tab, photo Idle, Crown, FeetUp, Ledge, LegLift, Mermaid, Peace, the
+turnaround): the same poses; only dust and light differ.
+
+## Not verified
+
+- **Shipping.** Nothing was cooked or packaged. Every new member has an initialiser (the debug
+  frame, the leg pole, the ground point, slope and sole offset, the switch), `ReachLeg` falls
+  back to `Reach` on a missing axis or a NaN, `LegLengths` skips a leg with a NaN or a missing
+  bone and does nothing until the pole is set on the first frame, and the ground trace skips a
+  NaN. That is by reading the code, not by running a Shipping build.
+- The walk on the steps and dunes was only covered as far as the two tours go (the Start
+  walk-off down the dune, the third-person drive on the sand). No walk across the step edges.
+- The pin tour was run once per setting, so differences of a few millimetres between the two
+  runs are not separated from run-to-run variation.
 - The pose kit's Python predictor of the game-side layers (Tools, c031ab8) does not know
-  `ReachLeg` or the plane; baked poses were not re-checked.
+  `ReachLeg` or the ground plane; baked poses were not re-baked or re-checked beyond the shots.
+- Outfits, body reshapes and other body meshes: only the default body and outfit were run.
 
-Still wrong:
+## Still wrong
 
 - A knee blip of 2 to 4 mm a few times per loop, flat ground included. It is Leg IK switching
   between the knee's own bend direction and the remembered one as the clip's leg crosses 8
   degrees off the hip-ankle line (`KneeBendDot < 0.99` in `SolveTwoBoneIK`); the two differ by a
   few degrees. If it shows: ease the knee's swivel about the hip-ankle line in `LegLengths`
   (a short spring on the angle between the incoming plane and the hinge plane).
-- The idle clip itself locks the knee at exactly 0 (`MM_Idle`, baked by `Tools/char_idle_proud.py`).
-  Other baked clips may do the same; the fix does not depend on it, but a clip with a degree or
-  two of bend would not need the remembered direction at all.
-- Astride the step edge the trace under the middle of the foot can still flip between the two
-  treads if the foot creeps across the edge. It did not in these runs.
+- The idle clip itself locks the knee at exactly 0 (`MM_Idle`, baked by
+  `Tools/char_idle_proud.py`). Other baked clips may do the same; the fix does not depend on it.
+- Astride the step edge the trace under the middle of the foot can flip between the two treads
+  if the foot creeps across the edge. It did not in these runs.
+- Idle foot drift is over the 1 cm rule on every spot, as above.
