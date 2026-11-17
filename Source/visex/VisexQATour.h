@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "VisexFootMeter.h"
+#include "VisexJitterMeter.h"
 #include "VisexQATour.generated.h"
 
 /**
@@ -51,6 +52,19 @@ private:
 	void BuildGaps();
 	void BuildPin();   // -visexpin: the pin under the sit, third-person play, photo poses and the Body turn, pin 2 / gated / 0
 	void PinPhase(const FString& Name);
+	/** -visexjitter: she stands in the idle on uneven spots of the level (and a flat one) through
+	 *  its weight shifts; her legs' jitter per spot as a table, exit code 3 above the limit.
+	 *  Options: -visexjitterspots=name:x:y:z:yaw;...  -visexjittersecs=40  -visexjitterhitch (an
+	 *  uneven frame time)  -visexjitterfilm=<spot> -visexjitterfilmfrom=<s> -visexjitterfilmsecs=<s>
+	 *  (4K frames of her legs)  -visexjitterscan (lists the ground around her instead)
+	 *  -visexcvars=name=value,name=value */
+	void BuildJitter();
+	void JitterScan();
+	bool JitterPlace(const FVector& At, float Yaw);
+	FVisexJitterMeter Jitter;
+	bool bJitter = false, bHitch = false, bFilming = false;
+	FString FilmSpot, FilmName;
+	float FilmFrom = 0.f, FilmSecs = 0.f, JitterSpotClock = 0.f;
 	bool bFeet = false;
 	bool bFilm = false;          // -visexfilm: every frame to Saved/QA/film
 	int32 FeetFrames = 0;
