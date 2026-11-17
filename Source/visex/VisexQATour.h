@@ -33,6 +33,7 @@ private:
 	float Clock = 0.f;
 	bool bCoverLogged = false;
 	float WalkFor = 0.f;
+	float WalkYaw = 1e9f;   // below 1e8: WalkFor drives her along this yaw, not the camera's (a tour camera in front of her)
 	// -visexpin's third-person drive: camera-relative stick (x forward, y right) and a turn on the spot (deg/s)
 	FVector2D Drive = FVector2D::ZeroVector;
 	float Spin = 0.f;
@@ -112,6 +113,14 @@ private:
 	 *  and a walk, then Quit from the menu's own item. The spike and poke check runs all through.
 	 *  -visexship=2: the relaunch: what the save and the settings came back as, then Quit. */
 	void BuildShip();
+	/** -visexside -visexshots=<name>: the old | new sheet's frames, 4K of the game view, the same steps and
+	 *  cameras whatever body is on (run once with visex.Body.MetaHuman 1, once with 0, at a fixed step):
+	 *  the menu lean, the Character page's body and face views, the wardrobe, the Settings sit, photo
+	 *  poses, a portrait, hands and feet, the end of Start and a walk from behind and from the front.
+	 *  -visexside=film: Start only, every second game frame to Saved/QA/<name>_film/ (walk-off and idle). */
+	void BuildSide();
+	UPROPERTY(Transient) TObjectPtr<class ACameraActor> SideCam;
+	int32 SideFilmLeft = 0, SideFilmN = 0;
 	void SpikeTotals();
 	/** How far each big toe turned against its foot since the phase began, on the driver and on the
 	 *  MetaHuman body (degrees; the same turn reads the same on both whatever their bone axes). */

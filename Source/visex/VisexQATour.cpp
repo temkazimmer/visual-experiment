@@ -38,6 +38,8 @@
 #include "Engine/TextureRenderTarget2D.h"
 #include "Kismet/KismetRenderingLibrary.h"
 #include "GameFramework/PlayerController.h"
+#include "Camera/CameraActor.h"
+#include "Camera/CameraComponent.h"
 #include <unistd.h>
 #include "Animation/AnimClassInterface.h"
 #include "BoneControllers/AnimNode_LegIK.h"
@@ -1334,6 +1336,7 @@ void AVisexQATour::Tick(float DeltaSeconds)
 		Jitter.Log = [](const FString& Line) { QA_LOG(TEXT("%s"), *Line); };
 		FParse::Param(FCommandLine::Get(), TEXT("visexclip")) ? BuildClip() :
 		FParse::Param(FCommandLine::Get(), TEXT("visexflex")) ? BuildFlex() :
+		FParse::Param(FCommandLine::Get(), TEXT("visexside")) || FCString::Strifind(FCommandLine::Get(), TEXT("-visexside=")) ? BuildSide() :
 		bShip ? BuildShip() : bSliders ? BuildSliders() : bSpikes ? BuildSpikes() : bJitter ? BuildJitter() : bPin ? BuildPin() :
 		bGaps ? BuildGaps() : bLayers ? BuildLayers() : bFeet ? BuildFeet() : Build();
 		bBuilt = true;
@@ -1341,6 +1344,15 @@ void AVisexQATour::Tick(float DeltaSeconds)
 	if (ClipLeft > 0)
 	{
 		ClipFrame();
+	}
+	if (SideFilmLeft > 0)
+	{
+		FString Shots;
+		FParse::Value(FCommandLine::Get(), TEXT("visexshots="), Shots);
+		if ((SideFilmLeft-- & 1) == 0)
+		{
+			FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / FString::Printf(TEXT("QA/%s_film/f%05d.png"), *Shots, SideFilmN++), false, false);
+		}
 	}
 	if (bFeet)
 	{
@@ -1391,7 +1403,7 @@ void AVisexQATour::Tick(float DeltaSeconds)
 		WalkFor -= DeltaSeconds;
 		if (ACharacter* C = Her())
 		{
-			const FRotator Yaw(0.f, UGameplayStatics::GetPlayerCameraManager(this, 0)->GetCameraRotation().Yaw, 0.f);
+			const FRotator Yaw(0.f, WalkYaw < 1e8f ? WalkYaw : UGameplayStatics::GetPlayerCameraManager(this, 0)->GetCameraRotation().Yaw, 0.f);
 			C->AddMovementInput(Yaw.Vector(), 1.f);
 		}
 	}
@@ -1773,4 +1785,123 @@ void AVisexQATour::BuildShip()
 	Add(3.f, [this, Phase] { Phase(TEXT("walk")); WalkFor = 3.f; });
 	Add(3.5f, [this, Phase] { Phase(TEXT("stopped")); Shot(TEXT("ship_walked")); });
 	Add(2.f, [this, Phase, State, Quit] { State(TEXT("end")); Phase(TEXT("done")); SpikeTotals(); Quit(); });
+}
+
+void AVisexQATour::BuildSide()
+{
+	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
+	AVisexMenuDirector* D = Director;
+	ApplyCvarArg();
+	FString Pass;
+	FParse::Value(FCommandLine::Get(), TEXT("visexside="), Pass);
+	auto Editor = [this]() -> AVisexBodyEditor* { for (TActorIterator<AVisexBodyEditor> It(GetWorld()); It; ++It) { return *It; } return nullptr; };
+	auto Quit = [this]
+	{
+		QA_LOG(TEXT("VisexQA: done"));
+		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
+	};
+	auto State = [this](const TCHAR* Where)
+	{
+		const ACharacter* C = Her();
+		const USkeletalMeshComponent* G = UVisexMHBodyComponent::ShownGarment(C);
+		QA_LOG(TEXT("VisexSide: %s: MetaHuman body %s, garment %s, at %s"), Where, UVisexMHBodyComponent::ShownBody(C) ? TEXT("shown") : TEXT("not shown"),
+			G && G->GetSkeletalMeshAsset() ? *G->GetSkeletalMeshAsset()->GetName() : TEXT("none"), C ? *C->GetActorLocation().ToCompactString() : TEXT("?"));
+	};
+	if (Pass == TEXT("film"))
+	{
+		// the walk-off and the idle it ends in, the third-person camera: 14 s, every second frame of a 60 Hz step
+		Add(7.f, [D, State] { State(TEXT("film")); D->OnItemChosen(AVisexMenuDirector::ItemStart); });
+		Add(1.f, [this] { SideFilmLeft = 14 * 60; SideFilmN = 0; });
+		Add(15.f, Quit);
+		return;
+	}
+	// a shot and the change after it are never in one step: the frame is taken at the frame's end
+	Add(7.f, [this, State] { State(TEXT("menu")); HiShot(TEXT("01_menu")); });
+	Add(1.f, [D] { D->OpenBody(); });
+	Add(5.f, [this] { HiShot(TEXT("02_body")); });
+	Add(0.6f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->SwitchTab(1); } });
+	Add(3.f, [this] { HiShot(TEXT("03_face")); });
+	Add(0.6f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
+	Add(5.f, [D] { D->OpenWardrobe(); });
+	Add(5.f, [this] { HiShot(TEXT("04_wardrobe")); });
+	Add(0.6f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
+	Add(5.f, [D] { D->OpenSettings(); });
+	Add(9.f, [this] { HiShot(TEXT("05_settings")); });
+	Add(0.6f, [D] { D->CloseSettings(); });
+	Add(9.f, [D] { D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
+	Add(6.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetHudVisible(false); } });
+	auto Pose = [this](const TCHAR* Name)
+	{
+		AVisexPhotoMode* P = Photo();
+		for (int32 I = 0; P && P->IsOpen() && I < 60; ++I)
+		{
+			if (P->GetMotionName(I) == Name) { P->SetMotion(I); return; }
+		}
+		QA_LOG(TEXT("VisexSide: NO photo motion %s"), Name);
+	};
+	for (const TCHAR* Name : {TEXT("Bookend"), TEXT("Mermaid"), TEXT("LegLift"), TEXT("FeetUp")})
+	{
+		Add(0.6f, [Pose, Name] { Pose(Name); });
+		Add(5.f, [this, Name]
+		{
+			const ACharacter* C = Her();
+			if (C && C->GetMesh()) { QA_LOG(TEXT("VisexSide: %s: her head %.0f cm over the ground"), Name, C->GetMesh()->GetSocketLocation(TEXT("head")).Z - C->GetActorLocation().Z + C->GetCapsuleComponent()->GetScaledCapsuleHalfHeight()); }
+			HiShot(FString::Printf(TEXT("06_photo_%s"), Name));
+		});
+	}
+	// close on the photo Idle, the free camera placed off the driver's bones (the same camera on both bodies):
+	// <bone>, the camera's place from it (forward, right, up of her, cm), the lens
+	struct FClose { const TCHAR* Name; FName Bone; FVector From; FVector Lift; float Focal; };
+	static const FClose Closes[] = {
+		{TEXT("07_portrait"), TEXT("head"), FVector(112.f, 46.f, 4.f), FVector(4.f, 0.f, 0.f), 85.f},
+		{TEXT("08_hand_r"), TEXT("hand_r"), FVector(95.f, 50.f, 10.f), FVector(0.f, 0.f, -8.f), 85.f},
+		{TEXT("09_hand_l"), TEXT("hand_l"), FVector(95.f, -50.f, 10.f), FVector(0.f, 0.f, -8.f), 85.f},
+		{TEXT("10_feet"), TEXT("foot_r"), FVector(150.f, 45.f, 38.f), FVector(6.f, -10.f, -4.f), 70.f},
+	};
+	Add(0.6f, [Pose] { Pose(TEXT("Idle")); });
+	for (const FClose& Close : Closes)
+	{
+		Add(3.f, [this, Close]
+		{
+			AVisexPhotoMode* P = Photo();
+			ACharacter* C = Her();
+			if (!P || !P->IsOpen() || !C || !C->GetMesh()) { return; }
+			const auto Frame = [C](const FVector& V) { return C->GetActorForwardVector() * V.X + C->GetActorRightVector() * V.Y + FVector(0.f, 0.f, V.Z); };
+			const FVector At = C->GetMesh()->GetSocketLocation(Close.Bone) + Frame(Close.Lift);
+			const FVector Loc = C->GetMesh()->GetSocketLocation(Close.Bone) + Frame(Close.From);
+			P->SetFreeView(Loc, (At - Loc).Rotation(), 0.f, Close.Focal);
+		});
+		Add(2.f, [this, Close] { HiShot(Close.Name); });
+		if (Close.Bone == TEXT("head"))
+		{
+			// the face rig: both lids closed through its own curves (nothing blinks her by itself), then given back
+			auto Face = [](const TCHAR* Value) { if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(TEXT("visex.Body.MetaHuman.Face"))) { V->Set(Value, ECVF_SetByConsole); } };
+			Add(0.6f, [Face] { Face(TEXT("CTRL_expressions_eyeBlinkL=1,CTRL_expressions_eyeBlinkR=1")); });
+			Add(1.5f, [this] { HiShot(TEXT("07_portrait_blink")); });
+			Add(0.6f, [Face] { Face(TEXT("off")); });
+		}
+	}
+	Add(0.6f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetHudVisible(true); P->Close(); } });
+	// Start: she walks off under the camera move (from behind), stands at its end, then is walked on
+	// along her own heading and shot from the front three-quarter by a camera of the tour's
+	Add(6.f, [D] { D->OnItemChosen(AVisexMenuDirector::ItemStart); });
+	Add(4.f, [this, State] { State(TEXT("walk-off")); HiShot(TEXT("11_walk_behind")); });
+	Add(10.f, [this, State] { State(TEXT("end of Start")); HiShot(TEXT("12_start_end")); });
+	Add(1.f, [this] { if (const ACharacter* C = Her()) { WalkYaw = C->GetActorRotation().Yaw; WalkFor = 4.f; } });
+	Add(2.f, [this]
+	{
+		ACharacter* C = Her();
+		APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+		if (!C || !PC) { return; }
+		if (!SideCam) { SideCam = GetWorld()->SpawnActor<ACameraActor>(); }
+		const FVector At = C->GetActorLocation() + C->GetActorForwardVector() * 30.f + FVector(0.f, 0.f, -14.f);   // where she is a few frames on
+		const FVector Loc = At + C->GetActorForwardVector().RotateAngleAxis(35.f, FVector::UpVector) * 480.f + FVector(0.f, 0.f, -20.f);
+		SideCam->SetActorLocationAndRotation(Loc, (At - Loc).Rotation());
+		SideCam->GetCameraComponent()->SetFieldOfView(40.f);
+		SideCam->GetCameraComponent()->SetConstraintAspectRatio(false);
+		PC->SetViewTarget(SideCam);
+	});
+	Add(0.15f, [this] { HiShot(TEXT("13_walk_front")); });
+	Add(0.6f, [this] { if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0)) { PC->SetViewTarget(Her()); } WalkYaw = 1e9f; });
+	Add(2.f, Quit);
 }
