@@ -1,4 +1,5 @@
 #include "VisexJitterMeter.h"
+#include "VisexMHBody.h"
 #include "visex.h"
 #include "Components/SceneCaptureComponent2D.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -46,6 +47,8 @@ void FVisexJitterMeter::Begin(ACharacter* Her, const FString& InSpot)
 	if (bOpen) { End(); }
 	Spot = InSpot;
 	Frames.Reset();
+	MHFrames.Reset();
+	Who = Her;
 	bOpen = Her && Her->GetMesh();
 	if (!bOpen) { return; }
 	Right = Her->GetActorRightVector();
@@ -59,6 +62,15 @@ void FVisexJitterMeter::Tick()
 	if (!bOpen || !VisexFootDebugRead(D) || D.Serial == LastSerial) { return; }
 	LastSerial = D.Serial;
 	Frames.Add(D);
+	// the body that is drawn: the follower's bones as the game thread has them, once per driver frame
+	if (const USkeletalMeshComponent* MH = UVisexMHBodyComponent::ShownBody(Who.Get()))
+	{
+		static const FName Bones[9] = {TEXT("foot_l"), TEXT("foot_r"), TEXT("ball_l"), TEXT("ball_r"), TEXT("calf_l"), TEXT("calf_r"), TEXT("thigh_l"), TEXT("thigh_r"), TEXT("pelvis")};
+		FMHFrame F;
+		F.Dt = D.Dt;
+		for (int32 B = 0; B < 9; ++B) { F.P[B] = MH->GetBoneLocation(Bones[B]); }
+		MHFrames.Add(F);
+	}
 }
 
 void FVisexJitterMeter::End()
@@ -135,6 +147,36 @@ void FVisexJitterMeter::End()
 	}
 	Log(FString::Printf(TEXT("VisexJitter: %s: %d frames in %.1f s (%.0f fps), %d weight shifts (pelvis %.1f cm side to side), %d plant/pin flips, straightest leg %.3f, ground height jump %.2f cm, thigh or calf length change %.1f%%"),
 		*Spot, R.Frames, R.Seconds, R.Fps, R.Shifts, Hi - Lo, R.PlantFlips, R.ExtensionMax, R.TraceJump, R.Squash));
+	if (MHFrames.Num() >= 30)
+	{
+		// the same off-line measure on the MetaHuman body's bones (cm here, mm in the result)
+		auto Track = [this](int32 B)
+		{
+			float Max = 0.f;
+			for (int32 I = 1; I + 1 < MHFrames.Num(); ++I)
+			{
+				const float D0 = MHFrames[I].Dt, D1 = MHFrames[I + 1].Dt;
+				if (D0 <= 1e-5f || D1 <= 1e-5f) { continue; }
+				Max = FMath::Max(Max, float((MHFrames[I].P[B] - FMath::Lerp(MHFrames[I - 1].P[B], MHFrames[I + 1].P[B], D0 / (D0 + D1))).Size()));
+			}
+			return Max * 10.f;
+		};
+		R.MHFootMax = FMath::Max(FMath::Max(Track(0), Track(1)), FMath::Max(Track(2), Track(3)));
+		R.MHKneeMax = FMath::Max(Track(4), Track(5));
+		R.MHPelvisMax = Track(8);
+		for (int32 L = 0; L < 2; ++L)
+		{
+			float Short[2] = {1e9f, 1e9f}, Long[2] = {0.f, 0.f};
+			for (const FMHFrame& F : MHFrames)
+			{
+				const float Len[2] = {float(FVector::Dist(F.P[6 + L], F.P[4 + L])), float(FVector::Dist(F.P[4 + L], F.P[L]))};
+				for (int32 B = 0; B < 2; ++B) { Short[B] = FMath::Min(Short[B], Len[B]); Long[B] = FMath::Max(Long[B], Len[B]); }
+			}
+			for (int32 B = 0; B < 2; ++B) { if (Long[B] > 1.f) { R.MHSquash = FMath::Max(R.MHSquash, 100.f * (Long[B] - Short[B]) / Long[B]); } }
+		}
+		Log(FString::Printf(TEXT("VisexJitter: %s MetaHuman body (%d frames): worst off-line foot %.2f mm, knee %.2f mm, pelvis %.2f mm, thigh or calf length change %.1f%%"),
+			*Spot, MHFrames.Num(), R.MHFootMax, R.MHKneeMax, R.MHPelvisMax, R.MHSquash));
+	}
 	Done.Add(R);
 	// every frame, for the notes and for finding the cause off line
 	auto V = [](const FVector& P) { return FString::Printf(TEXT("%.4f,%.4f,%.4f"), P.X, P.Y, P.Z); };
