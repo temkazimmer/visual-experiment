@@ -1160,14 +1160,25 @@ void FVisexAnimProxy::PlantGround(UAnimInstance* Instance)
 		const FVector At = bSteady ? (Mesh->GetSocketLocation(Heels[F]) + Mesh->GetSocketLocation(Balls[F])) * 0.5 - FVector(0.f, 0.f, 8.f)
 			: SoleAt[F].IsZero() ? Mesh->GetSocketLocation(Heels[F]) : X.TransformPosition(SoleAt[F]);
 		FHitResult Hit;
-		if (!At.ContainsNaN() && Mesh->GetWorld()->LineTraceSingleByChannel(Hit, At + FVector(0.f, 0.f, 40.f), At - FVector(0.f, 0.f, 80.f), VisexFootTraceChannel, Q))
+		bool bHit = !At.ContainsNaN() && Mesh->GetWorld()->LineTraceSingleByChannel(Hit, At + FVector(0.f, 0.f, 40.f), At - FVector(0.f, 0.f, 80.f), VisexFootTraceChannel, Q);
+		bool bLevel = !bSteady;
+		if (!bHit && bSteady && !SoleAt[F].IsZero() && !SoleAt[F].ContainsNaN())
+		{
+			// Nothing under the middle of the foot (a foot raised past the ledge's edge, feet in the
+			// air): the old trace, under the sole's lowest point, taken as level ground. Without it
+			// such a foot read as "no ground, so planted" and the pin held it (Ledge: 6 cm, clamped)
+			const FVector Old = X.TransformPosition(SoleAt[F]);
+			bHit = Mesh->GetWorld()->LineTraceSingleByChannel(Hit, Old + FVector(0.f, 0.f, 40.f), Old - FVector(0.f, 0.f, 80.f), VisexFootTraceChannel, Q);
+			bLevel = true;
+		}
+		if (bHit)
 		{
 			bGround[F] = true;
 			GroundP[F] = X.InverseTransformPosition(Hit.ImpactPoint);
 			// the slope as a gradient (cm of height per cm), no steeper than 50 degrees: a trace that
 			// catches a riser or a rock face is not ground to lie a sole along
 			const FVector N = X.InverseTransformVectorNoScale(Hit.ImpactNormal);
-			GroundSlope[F] = bSteady && N.Z > 0.05 ? FVector2D(-N.X / N.Z, -N.Y / N.Z).GetClampedToMaxSize(1.2) : FVector2D::ZeroVector;
+			GroundSlope[F] = !bLevel && N.Z > 0.05 ? FVector2D(-N.X / N.Z, -N.Y / N.Z).GetClampedToMaxSize(1.2) : FVector2D::ZeroVector;
 			if (GroundSlope[F].ContainsNaN()) { GroundSlope[F] = FVector2D::ZeroVector; }
 			GroundZ[F] = float(GroundP[F].Z);
 			GroundAt[F] = Hit.ImpactPoint;
