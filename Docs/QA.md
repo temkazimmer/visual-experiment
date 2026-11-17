@@ -7,6 +7,65 @@ They're only comparable when the machine is idle.
 
 Shipping writes no UE log. Since 2e6efc4 the tour also writes `Saved/QA/report.txt`, which works in every config.
 
+## 2026-11-17 11:08 · VIS-EX-0637 Shipping (6ec7ce3) · PASS on the Shipping check: skeleton whole, idle knee snap 59–149 mm → 3–12 mm; but the jitter tour's own 5 mm limit still fails on the slopes
+
+- **Cook:** `Success - 0 error(s), 0 warning(s)`, 946 packages (926 cooked, 20 skipped by platform), Shipping binary rebuilt from HEAD (`BuildCookRun time: 80.96 s`).
+  DMG md5 `95480fb8…` (1.6 GB). Not copied to `-stable`. Built with the uncommitted MetaHuman plugin entries in `visex.uproject` and `Config/DefaultEditor.ini` present
+  (not QA's, left as they were): their content is rejected as NeverCook, as in 0612.
+- **Tour:** two runs from the read-only mounted DMG, 1440×1080 windowed. Both `VisexQA: done`, exit 0 (304 s, 295 s), no `.ips`.
+  On ground at every report step (only photo motions 5/6/7/9 in mode 0, as 0627), `body page open`, `wardrobe open`, 11 motions, photo `moved 0.0 cm`, `layout save PASS`,
+  menu feet IN FRAME at 16:9 and 4:3 (y 0.76–0.78, as 0627). Back on the lean spot (9500 −900 152) after Body, Wardrobe and Photo.
+  Every resting position equals 0627's or is within 1 cm (photo spot 9483 −950, was 9484 −949). Run 1: Tema's save (Elf hair). Run 2: the 0612 copy with Short hair (`Hair: SKM_HairShort` all run).
+- **Skeleton: whole** (`sheets/run1_all_{a,b}.jpg`, `run2_all_{a,b}.jpg`, `pose_0627_vs_0637_run1.jpg`: rows 0627 / 0637). None of 0622's symptoms in any of the 59 shots of either run:
+  no inverted body, no leg in the air, and the two runs show the same poses (0622's differed). Menu lean, play, walked, the Settings sit, outfits, Body tabs, Wardrobe, all 11 photo motions
+  and the turnarounds match 0627 shot for shot. In the jitter runs with the fix on (three full, three short): no NaN in any per-frame column, thigh 43.40–43.41 cm and
+  calf 39.56–39.57 cm in every frame. No NaN in the pin runs' foot tracks either.
+- **Idle jitter** (`-visexqa -visexjitter` exists in Shipping; 40 s per spot; knee worst frame off the line, mm). Three runs with the fix, one with it switched off on the same binary
+  (`-visexcvars=visex.Feet.Steady=0,visex.Feet.Hinge=0`; Shipping takes the tour's own switch):
+
+  | spot | fix off, 36–56 fps | 1920×1080, 35–52 fps | `-visexjitterhitch`, 38–54 fps | light load, 59–63 fps | Development (NOTES.md), 68–71 fps |
+  |---|---|---|---|---|---|
+  | start (3 deg) | 77.2 | 3.0 | 3.3 | 4.6 | 2.6 |
+  | flat tread | 59.4 | 3.3 | 3.9 | 3.7 | 1.9 |
+  | dune 13 deg across | 119.6 | **7.3** | 7.0 | 3.1 | 1.0 |
+  | dune 25 deg across | 148.8 | **12.0** | 3.1 | **5.3** | 2.2 |
+  | dune 25 deg, facing up | 127.5 | **8.8** | 5.5 | 2.7 | 1.6 |
+  | step edge | 134.9 | **5.5** | **9.9** | **5.9** | 1.0 |
+  | bone length change | 1.0–28.2 % | 0.0 % | 0.0 % | 0.0 % | 0.0 % |
+
+  - The fix works in Shipping: the 6–15 cm knee snap and the shrinking thigh are gone on all six spots (`sheets/idle_legs_dune25x_dune13x_stepedge.jpg`, 4K frames of her legs:
+    uphill knee bent, soles on the sand). Foot 0.8–2.8 mm (off: 1.4–9.1), pelvis 0.4–1.7 mm, plant/pin flips 2–6 (off: up to 22).
+  - **It does not reach the "few mm" of the Development run.** The tour exits 3 (its own FAIL) in all three runs: over 5 mm on four spots at the real frame rate, over the hitch limit of 8 on the
+    step edge, over 5 on two spots even at 60 fps. Shipping reads about twice Development at a like frame rate, and more at the 35–52 fps the build really runs at with Tema's Epic settings.
+  - What the over-limit frames are (per-frame CSVs): the knee sits still (0.1–2 mm a frame), then moves 10–17 mm in one frame and carries on at 5–8: a kick as the leg unlocks, about 1 cm,
+    0 to 2 times per 40 s loop on a spot (nine times on the step edge with the uneven frame time), always the left knee on the slopes. The graph's knee is smooth in those frames (0.03–0.3 mm), so it enters in the C++ layers after the graph. On the 13 degree
+    slope one event is a 5-frame ±7 mm shiver. The spot it lands on changes from run to run (dune 25: 12.0, 3.1, 5.3). Probably the blip NOTES.md lists under "Still wrong", bigger at this frame rate.
+    Not judged by eye in motion (no video, see below): a 1 cm kick should read as a slightly snappy knee, not a glitch, but that is Tema's call.
+- **Start walk-off: moves and lands.** At `play` (4 s after Start) she is at 9387 −1322 on `A_PhotoSeq_Walk` (rm mode 1), at `walked` 9236 −1885: 0627's numbers, both runs.
+  In the four jitter runs the walk-off leaves her at 9375 −1367 yaw −105, within 2 cm each time, fix on or off.
+- **Pin tour** (`-visexqa -visexpin -visexpinmodes=gate`: lean, Settings sit and stand-up, Body walk, turns and sliders, photo walk, run and five poses, Start, walk, jog, run, stop, reversals,
+  zigzag, spin, two jumps). Run twice on 0637 and twice on `VIS-EX-0627.dmg` the same hour, so the numbers are Shipping against Shipping. `-benchmark -fps=60` has no effect in Shipping (real frame rate).
+  - Pin hold max and clamped frames: within about 1 cm of 0627 in every phase (Crown 6.00 cm with 2 frames clamped in all four runs; Ledge 4.3–4.5 in all four).
+    The stand-up holds less (5.07, 5.14 → 4.47, 4.46 cm), the photo walk too (2.07, 1.29 → 0.93, 0.94); the jog and run a little more (0.74–1.38 → 1.29–1.97), LegLift too (3.11, 2.95 → 4.18, 3.38).
+  - **Foot drift**, median per phase, cm (0627 pair → 0637 pair): Start walk-off 0.78, 0.55 → 0.61, 0.57; third-person walk 1.49, 1.17 → 1.61, 0.62; jog 0.50, 1.08 → 0.59, 0.84;
+    run 0.99, 0.95 → 0.43, 0.58; Body walk-out 1.94, 2.25 → 1.99, 1.69; photo walk 0.75, 1.29 → 0.87, 1.64. No walk slides more than in 0627.
+    Higher in both 0637 runs: the Body sliders (0.82, 0.83 → 2.09, 2.12, two steps) and the Settings sit-down (0.62, 1.26 → 2.53, 2.26, with the same max of 2.4–2.7: NOTES.md's merged stances).
+    Turning on the spot (Body turn, spin) reads 5–20 cm in both builds: the meter counts the turn itself.
+  - **Sole gap**, cm: Start walk-off median 0.07, 0.02 → 0.19, 0.19; standing on the Body page 0.75, 1.13 → 0.19, 0.23 (mean lower sole 2.2, 3.7 → 0.3, 0.5), during the sliders 6.87, −0.05 → 0.20, 0.20:
+    closer to the sand than 0627. Third-person walk −1.31, −1.41 → −1.72, −1.90 and jog 0.05, 0.07 → −0.39, −0.41: the sole reads 3–5 mm deeper in the sand than in 0627.
+  - **Idle on the six spots** (jitter runs): drift 1.5–2.0 cm per 40 s loop (fix off: 1.5–1.7), over the 1 cm rule as NOTES.md says and as before the fix; facing up the 25 degree slope 6.5 (off: 5.9, the heel lifts).
+    Mean lower-sole gap 0.02–0.30 cm; −0.26 to −0.45 facing up the slope and −0.21 to −0.25 on the step edge.
+  - Shots (`sheets/pin_sit_turn_mermaid_landing.jpg`, 4K): the Settings sit, the Body page, Mermaid and the jump read as in 0627's stills. `pin/fp_arrival.jpg`: soles on the sand in the walk-in.
+- **Perf:** menu 29.1 / 16.8 ms (0627: 18.6 / 16.2; run 1 was the first launch after mounting, cover held 1.27 s), quality 4 40.1 / 37.1 ms (0627: 32.2 / 38.4). No change in the tour.
+  The pin tour averaged 33.9 and 35.0 fps on 0637 against 42.6 and 36.7 on 0627; not separated from run-to-run variation (0627's own pair is 6 fps apart). Load average 2–6 (10 once);
+  a visex-metahuman editor started during the last 0627 pin run.
+- **Not checked:** anything in motion on video. The Mac's screen was locked for the whole session, so `screencapture` returned black: no recording of the film, the hand-off, the arrival,
+  the menu moves, the Settings stand-up or the idle on the slopes. Those are judged from stills, the report and the meters only. Also not checked: music; outfits and body reshapes on the slopes
+  (default body, Silversuit); a walk across the step edges; real-speed key presses.
+- **Saves:** backed up `VisexBody.sav` (`7ac129aa…`) and `GameUserSettings.ini` (`06e783cf…`). Restored after each of the 13 runs, both md5s match. No `Game.ini` before or after.
+  `Build/VIS-EX-0627-stable.dmg` untouched (`daf95421…`). Shots in `Saved/QA_0637ship_<run>/` and `Tools/.bridge/shots/qa0637/<run>/` (`run1`, `run2`, `pin`, `pin_b`, `pin0627`, `pin0627_b`,
+  `jitter`, `jitter_hitch`, `jitter_fast`, `jitter_fixoff`, `film_*`), sheets in `sheets/`.
+
 ## 2026-11-14 14:20 · VIS-EX-0627 Shipping (f130e81) · PASS: the pin-fix cures 0622's broken skeleton, she walks out at Start, film mirrored with a clean hand-off
 
 - **Cook:** `Success - 0 error(s), 0 warning(s)`, 926 packages ordered, Shipping binary rebuilt from HEAD. DMG md5 `daf95421…` (1.6 GB). Not copied to `-stable`.
