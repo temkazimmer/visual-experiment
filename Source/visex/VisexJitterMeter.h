@@ -32,6 +32,8 @@ struct FVisexJitterMeter
 		int32 PlantFlips = 0, Shifts = 0, Frames = 0;
 		float ExtensionMax = 0.f, TraceJump = 0.f;   // straightest leg; largest one-frame change of a ground height (cm)
 		float Squash = 0.f;   // how much a thigh or calf changed length over the spot, percent (bones don't)
+		// the MetaHuman body on screen (visex.Body.MetaHuman): its own bones, same measure; -1 when it is not shown
+		float MHFootMax = -1.f, MHKneeMax = -1.f, MHPelvisMax = -1.f, MHSquash = 0.f;
 	};
 
 	void Begin(ACharacter* Her, const FString& Spot);
@@ -51,6 +53,10 @@ private:
 	uint64 LastSerial = 0;
 	FVector Right = FVector::RightVector;
 	TArray<FVisexFootDebug> Frames;
+	/** The MetaHuman body's legs on the same frames: foot, ball, knee (calf), thigh per side, then pelvis. */
+	struct FMHFrame { float Dt = 0.f; FVector P[9]; };
+	TArray<FMHFrame> MHFrames;
+	TWeakObjectPtr<ACharacter> Who;
 	TArray<FResult> Done;
 	TWeakObjectPtr<ASceneCapture2D> Capture;
 };

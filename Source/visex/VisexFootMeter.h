@@ -50,6 +50,7 @@ private:
 	TArray<FColor> Strip;
 	TWeakObjectPtr<ASceneCapture2D> Capture;
 	TWeakObjectPtr<ACharacter> LastHer;
+	TWeakObjectPtr<class USkeletalMeshComponent> RefMesh;   // the mesh the sole reference was taken from
 	FVector LastH[2] = {FVector::ZeroVector, FVector::ZeroVector}, LastB[2] = {FVector::ZeroVector, FVector::ZeroVector};   // last frame's heel and ball: a foot sweeping along is in the air
 	bool bHaveLast = false;
 	/** Where her mesh origin and capsule sit against the surfaces under her (the base float). */

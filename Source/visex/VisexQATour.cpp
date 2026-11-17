@@ -32,7 +32,14 @@
 #include "VisexMenuLayout.h"
 #include "Engine/GameViewportClient.h"
 #include "UnrealEngine.h"
+#include "VisexMHBody.h"
+#include "Components/SceneCaptureComponent2D.h"
+#include "Components/SpotLightComponent.h"
+#include "Engine/TextureRenderTarget2D.h"
+#include "Kismet/KismetRenderingLibrary.h"
 #include "GameFramework/PlayerController.h"
+#include "Camera/CameraActor.h"
+#include "Camera/CameraComponent.h"
 #include <unistd.h>
 #include "Animation/AnimClassInterface.h"
 #include "BoneControllers/AnimNode_LegIK.h"
@@ -304,7 +311,7 @@ void AVisexQATour::Build()
 	// each outfit on her, seen from the menu camera
 	for (const FVisexOutfit& O : FVisexBodyProfile::Outfits())
 	{
-		if (O.bLocked) { continue; }   // not wearable: the wardrobe stop below shows them
+		if (FVisexBodyProfile::OutfitLocked(int32(&O - FVisexBodyProfile::Outfits().GetData()))) { continue; }   // not wearable: the wardrobe stop below shows them
 		const FName Name = O.Name;
 		Add(0.5f, [this, Name]
 		{
@@ -451,6 +458,7 @@ void AVisexQATour::BuildFeet()
 	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
 	AVisexMenuDirector* D = Director;
 	auto Editor = [this]() -> AVisexBodyEditor* { for (TActorIterator<AVisexBodyEditor> It(GetWorld()); It; ++It) { return *It; } return nullptr; };
+	ApplyCvarArg();   // -visexcvar=name=value, as in the gaps tour (the film with the MetaHuman body on)
 	// one move: the phase starts with Run, four frames of her feet 0.6 s apart, then it settles
 	auto Move = [this, &Add](const FString& Name, float Settle, TFunction<void()> Run, float First = 0.6f, float Gap = 0.6f)
 	{
@@ -545,12 +553,110 @@ void AVisexQATour::BuildLayers()
 	});
 }
 
-void AVisexQATour::BuildGaps()
+
+void AVisexQATour::HiShot(const FString& What)
 {
-	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
-	AVisexMenuDirector* D = Director;
-	FString Setting, Var, Value;
-	if (FParse::Value(FCommandLine::Get(), TEXT("visexcvar="), Setting) && Setting.Split(TEXT("="), &Var, &Value))
+	FString Shots;
+	UGameViewportClient* View = GetWorld() ? GetWorld()->GetGameViewport() : nullptr;
+	if (FParse::Value(FCommandLine::Get(), TEXT("visexshots="), Shots) && View)
+	{
+		const FString File = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("QA") / FString::Printf(TEXT("%s_%s.png"), *Shots, *What.Replace(TEXT(" "), TEXT("_"))));
+		View->ConsoleCommand(FString::Printf(TEXT("HighResShot 3840x2160 filename=\"%s\""), *File));
+		QA_LOG(TEXT("VisexQA: 4K shot %s"), *File);
+		CloseShots(Shots, What);
+	}
+}
+
+void AVisexQATour::CloseShots(const FString& Shots, const FString& What)
+{
+	// -visexclose=<What>:<bone>:<x,y,z>:<fov>[u][:<tx,ty,tz>][+...]: with the 4K frame of <What> (its name
+	// or its ending, "Crown" for photo_03_Crown), a 4K scene capture looking at a bone of the body on
+	// screen from x forward, y to her right, z up of it (cm), the target moved by t. No post grade,
+	// unless the field of view carries a "g" (17g).
+	FString All;
+	ACharacter* C = Her();
+	if (!FParse::Value(FCommandLine::Get(), TEXT("visexclose="), All, false) || !C)
+	{
+		return;
+	}
+	TArray<FString> Specs;
+	All.ParseIntoArray(Specs, TEXT("+"));
+	int32 N = 0;
+	for (const FString& Spec : Specs)
+	{
+		TArray<FString> F;
+		Spec.ParseIntoArray(F, TEXT(":"));
+		const auto Vec = [](const FString& Text)
+		{
+			TArray<FString> P;
+			Text.ParseIntoArray(P, TEXT(","));
+			return P.Num() == 3 ? FVector(FCString::Atof(*P[0]), FCString::Atof(*P[1]), FCString::Atof(*P[2])) : FVector::ZeroVector;
+		};
+		if (F.Num() < 4 || !What.EndsWith(F[0]))
+		{
+			continue;
+		}
+		const USkeletalMeshComponent* Shown = UVisexMHBodyComponent::ShownBody(C);
+		const USkeletalMeshComponent* Mesh = Shown ? Shown : C->GetMesh();
+		const auto Frame = [C](const FVector& V) { return C->GetActorForwardVector() * V.X + C->GetActorRightVector() * V.Y + FVector(0, 0, V.Z); };
+		const FVector Target = Mesh->GetSocketLocation(FName(*F[1])) + Frame(F.Num() > 4 ? Vec(F[4]) : FVector::ZeroVector);
+		const FVector From = Mesh->GetSocketLocation(FName(*F[1])) + Frame(Vec(F[2]));
+		if (!CloseCapture)
+		{
+			CloseCapture = NewObject<USceneCaptureComponent2D>(this, NAME_None, RF_Transient);
+			CloseCapture->TextureTarget = UKismetRenderingLibrary::CreateRenderTarget2D(this, 3840, 2160, RTF_RGBA8_SRGB);
+			CloseCapture->CaptureSource = SCS_FinalToneCurveHDR;
+			CloseCapture->bCaptureEveryFrame = false;
+			CloseCapture->bCaptureOnMovement = false;
+			CloseCapture->bAlwaysPersistRenderingState = true;
+			CloseCapture->RegisterComponent();
+		}
+		CloseCapture->FOVAngle = FCString::Atof(*F[3]);
+		// "17g": with the level's grade (the final LDR colour); without, the tone curve only
+		CloseCapture->CaptureSource = F[3].Contains(TEXT("g")) ? SCS_FinalColorLDR : SCS_FinalToneCurveHDR;
+		// "25u": unlit, base colours only (skin against hair reads in any light)
+		CloseCapture->ShowFlags.SetLighting(!F[3].EndsWith(TEXT("u")));
+		CloseCapture->SetWorldLocationAndRotation(From, (Target - From).Rotation());
+		for (int32 I = 0; I < 4; ++I)
+		{
+			CloseCapture->CaptureScene();   // a few, so the temporal passes settle
+		}
+		const FString Name = FString::Printf(TEXT("%s_%s_close%d_%s.png"), *Shots, *What.Replace(TEXT(" "), TEXT("_")), N++, *F[1]);
+		UKismetRenderingLibrary::ExportRenderTarget(this, CloseCapture->TextureTarget, FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("QA")), Name);
+		QA_LOG(TEXT("VisexQA: close shot %s from %s at %s"), *Name, *From.ToCompactString(), *Target.ToCompactString());
+	}
+}
+
+void AVisexQATour::ApplyCvarArg()
+{
+	// -visexoutfit=None (or an outfit's name): worn for this run, in memory only
+	FString Wear;
+	ACharacter* Worn = Her();
+	UVisexBodyComponent* WornBody = Worn ? Worn->FindComponentByClass<UVisexBodyComponent>() : nullptr;
+	if (WornBody && FParse::Value(FCommandLine::Get(), TEXT("visexoutfit="), Wear))
+	{
+		// a check may undress the MetaHuman body or try an outfit with no cut on it; the game may not
+		if (IConsoleVariable* Any = IConsoleManager::Get().FindConsoleVariable(TEXT("visex.Body.MetaHuman.AnyOutfit"))) { Any->Set(1, ECVF_SetByConsole); }
+		WornBody->Profile.Outfit = Wear == TEXT("None") ? FName(NAME_None) : FName(*Wear);
+		WornBody->Apply();
+		QA_LOG(TEXT("VisexQA: outfit for this run: %s"), *Wear);
+	}
+	FString Setting, More, Var, Value;
+	// several: -visexcvar=a=1+b=Elf (the first is the one the report names)
+	FString First;
+	if (FParse::Value(FCommandLine::Get(), TEXT("visexcvar="), Setting) && Setting.Split(TEXT("+"), &First, &More))
+	{
+		Setting = First;
+		TArray<FString> Rest;
+		More.ParseIntoArray(Rest, TEXT("+"));
+		for (const FString& One : Rest)
+		{
+			IConsoleVariable* V = One.Split(TEXT("="), &Var, &Value) ? IConsoleManager::Get().FindConsoleVariable(*Var) : nullptr;
+			if (V) { V->Set(*Value, ECVF_SetByConsole); }
+			QA_LOG(TEXT("VisexGaps: also setting %s, reads %s"), *One, V ? *V->GetString() : TEXT("NO SUCH CVAR"));
+		}
+	}
+	if (!Setting.IsEmpty() && Setting.Split(TEXT("="), &Var, &Value))
 	{
 		IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(*Var);
 		if (V) { V->Set(*Value, ECVF_SetByConsole); }
@@ -565,21 +671,515 @@ void AVisexQATour::BuildGaps()
 	{
 		QA_LOG(TEXT("VisexGaps: setting default"));
 	}
+	ApplyBodyArg();
+}
+
+void AVisexQATour::BuildGaps()
+{
+	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
+	AVisexMenuDirector* D = Director;
+	ApplyCvarArg();
+	// -visexshots=<name>: 4K frames of the game view on the way (lean, three of the walk, idle),
+	// for a same-camera pair with a cvar off and on. Each costs a hitch, so only when asked.
+	auto Hi = [this](const TCHAR* What) { HiShot(What); };
 	// the clock holds through her walk in: six seconds into the lean, two seconds measured
 	Add(6.f, [this] { Feet.SetPhase(TEXT("lean")); });
 	// Settings: she climbs onto the drum and perches; eight seconds to settle, three measured
-	Add(2.f, [this, D] { Feet.SetPhase(TEXT("sitdown")); D->OpenSettings(); });
+	Add(2.f, [this, D, Hi] { Hi(TEXT("lean")); Feet.SetPhase(TEXT("sitdown")); D->OpenSettings(); });
 	Add(8.f, [this] { Feet.SetPhase(TEXT("sit")); });
 	Add(3.f, [this, D] { Feet.SetPhase(TEXT("standup")); D->CloseSettings(); });
 	Add(8.f, [this, D] { Feet.SetPhase(TEXT("start")); D->OnItemChosen(AVisexMenuDirector::ItemStart); });
 	// Start: she stands up, walks off and stops on the open sand
-	Add(14.f, [this] { Feet.SetPhase(TEXT("idle")); });
-	Add(2.f, [this]
+	Add(3.f, [Hi] { Hi(TEXT("walk1")); });
+	Add(1.f, [Hi] { Hi(TEXT("walk2")); });
+	Add(1.f, [Hi] { Hi(TEXT("walk3")); });
+	Add(9.f, [this] { Feet.SetPhase(TEXT("idle")); });
+	Add(2.f, [this, Hi]
 	{
+		Hi(TEXT("idle"));
 		Feet.SetPhase(TEXT("done"));
 		QA_LOG(TEXT("VisexQA: done"));
 		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
 	});
+}
+
+void AVisexQATour::SpikeTotals()
+{
+	static const TCHAR* Names[FVisexMHSpikes::Count] = {TEXT("body"), TEXT("face"), TEXT("garment")};
+	for (int32 I = 0; I < FVisexMHSpikes::Count; ++I)
+	{
+		const FVisexSpike& S = Spikes.Total[I];
+		QA_LOG(TEXT("VisexSpikes: TOTAL %s: %s, stretch %.2fx on %s (%d over %.0fx), creases %.2fx on %s (%d over), grew %.2f cm at most on %s"), Names[I],
+			!S.bValid ? TEXT("NOT MEASURED") : S.Fails() ? TEXT("FAIL") : TEXT("pass"), S.Ratio, *S.Bone.ToString(), S.Over, FVisexMHSpikes::Limit,
+			S.Crease, *S.CreaseBone.ToString(), S.CreaseOver, S.Grow, *S.GrowBone.ToString());
+	}
+	const FVisexPoke& K = Spikes.TotalPoke;
+	QA_LOG(TEXT("VisexSpikes: TOTAL poke: %s, where skin is drawn %d fabric vertices under it at most, deepest %.2f cm on %s; under clipped skin %d, deepest %.2f cm on %s"),
+		!K.bValid ? TEXT("NOT MEASURED") : K.Fails() ? TEXT("FAIL") : TEXT("pass"), K.EdgeUnder, K.EdgeDepth, *K.EdgeBone.ToString(), K.Under, K.Depth, *K.Bone.ToString());
+}
+
+void AVisexQATour::BuildSpikes()
+{
+	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
+	AVisexMenuDirector* D = Director;
+	ApplyCvarArg();
+	Spikes.Log = [](const FString& Line) { QA_LOG(TEXT("%s"), *Line); };
+	auto Phase = [this](const FString& Name) { Spikes.SetPhase(Name); };
+	auto Height = [this](float Cm)
+	{
+		ACharacter* C = Her();
+		if (UVisexBodyComponent* B = C ? C->FindComponentByClass<UVisexBodyComponent>() : nullptr) { B->SetValue(TEXT("Height"), Cm); }
+	};
+	Phase(TEXT("arrival walk"));
+	// the clock holds through her walk in; then every screen she has a pose on
+	Add(4.f, [Phase] { Phase(TEXT("menu lean")); });
+	Add(3.f, [Phase, D] { Phase(TEXT("settings sit down")); D->OpenSettings(); });
+	Add(8.f, [Phase] { Phase(TEXT("settings sit")); });
+	Add(3.f, [this, Phase, D] { HiShot(TEXT("settings_sit")); Phase(TEXT("settings stand up")); D->CloseSettings(); });
+	Add(8.f, [Phase, D] { Phase(TEXT("photo enter")); D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
+	Add(4.f, [] {});
+	for (int32 I = 0; I < 40; ++I)
+	{
+		Add(0.5f, [this, Phase, I]
+		{
+			AVisexPhotoMode* P = Photo();
+			if (!P || !P->IsOpen()) { Next = AfterPoses; return; }
+			P->SetMotion(I);
+			if (P->GetMotion() != I) { Next = AfterPoses; return; }   // past the last motion
+			Phase(FString::Printf(TEXT("photo %02d %s"), I, *P->GetMotionName(I)));
+		});
+		// -visexshots=<name>: a 4K frame of each settled pose, to look at what the numbers say
+		Add(4.5f, [this, I] { if (AVisexPhotoMode* P = Photo()) { HiShot(FString::Printf(TEXT("photo_%02d_%s"), I, *P->GetMotionName(I))); } });
+	}
+	AfterPoses = Steps.Num();
+	Add(0.5f, [this, Phase] { Phase(TEXT("photo close")); if (AVisexPhotoMode* P = Photo()) { P->Close(); } });
+	Add(4.f, [Phase, D] { Phase(TEXT("start walk")); D->OnItemChosen(AVisexMenuDirector::ItemStart); });
+	Add(14.f, [Phase] { Phase(TEXT("proud idle")); });
+	Add(3.f, [Phase, Height] { Phase(TEXT("height 145")); Height(145.f); });
+	Add(3.f, [Phase, Height] { Phase(TEXT("height 185")); Height(185.f); });
+	Add(3.f, [this, Phase, Height]
+	{
+		Height(166.f);
+		Phase(TEXT("done"));
+		SpikeTotals();
+		QA_LOG(TEXT("VisexQA: done"));
+		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
+	});
+}
+
+void AVisexQATour::ApplyBodyArg()
+{
+	FString All;
+	ACharacter* C = Her();
+	UVisexBodyComponent* B = C ? C->FindComponentByClass<UVisexBodyComponent>() : nullptr;
+	if (!B || !FParse::Value(FCommandLine::Get(), TEXT("visexbody="), All, false))
+	{
+		return;
+	}
+	TArray<FString> Parts;
+	All.ParseIntoArray(Parts, TEXT("+"));
+	for (const FString& One : Parts)
+	{
+		FString Name, Value;
+		if (One.Split(TEXT("="), &Name, &Value)) { B->Profile.Set(FName(*Name), FCString::Atof(*Value)); }
+	}
+	B->Apply();   // in memory only: nothing here saves the profile
+	QA_LOG(TEXT("VisexQA: body values for this run: %s"), *All);
+}
+
+void AVisexQATour::ApplySetup(const FBodySetup& Setup)
+{
+	ACharacter* C = Her();
+	UVisexBodyComponent* B = C ? C->FindComponentByClass<UVisexBodyComponent>() : nullptr;
+	if (!B)
+	{
+		return;
+	}
+	for (const FVisexBodySlider& Row : FVisexBodyProfile::Sliders()) { B->Profile.Set(Row.Name, Row.Default); }
+	for (const TPair<FName, float>& V : Setup.Values) { B->Profile.Set(V.Key, V.Value); }
+	B->Apply();
+}
+
+void AVisexQATour::PortraitShot(const FString& What, bool bHead, const FString& Frame)
+{
+	FString Shots;
+	ACharacter* C = Her();
+	if (!C || !FParse::Value(FCommandLine::Get(), TEXT("visexshots="), Shots))
+	{
+		return;
+	}
+	const USkeletalMeshComponent* Shown = UVisexMHBodyComponent::ShownBody(C);
+	const USkeletalMeshComponent* Mesh = Shown ? Shown : C->GetMesh();
+	if (!PortraitCapture)
+	{
+		PortraitCapture = NewObject<USceneCaptureComponent2D>(this, NAME_None, RF_Transient);
+		PortraitCapture->TextureTarget = UKismetRenderingLibrary::CreateRenderTarget2D(this, 1280, 2160, RTF_RGBA8_SRGB);
+		PortraitCapture->CaptureSource = SCS_FinalColorLDR;   // with the level's grade
+		PortraitCapture->bCaptureEveryFrame = false;
+		PortraitCapture->bCaptureOnMovement = false;
+		PortraitCapture->bAlwaysPersistRenderingState = true;
+		PortraitCapture->RegisterComponent();
+	}
+	// the same camera for every setup: in front of her, anchored to the floor under her (the driver's
+	// mesh origin) and the pelvis' place over it, never to a bone a slider moves
+	const FVector Fwd = C->GetActorForwardVector();
+	const FVector Pelvis = C->GetMesh()->GetSocketLocation(TEXT("pelvis"));
+	FVector Target(Pelvis.X, Pelvis.Y, C->GetMesh()->GetComponentLocation().Z + 92.f);
+	float Distance = 470.f;
+	PortraitCapture->FOVAngle = 15.f;
+	FVector From = Target + Fwd * Distance;
+	if (bHead)
+	{
+		// head and shoulders, from where her face points (the head bone's Y), a little to one side:
+		// she looks about in the lean, and a camera on the actor's forward meets the back of her hair
+		Target = Mesh->GetSocketLocation(TEXT("head")) + FVector(0.f, 0.f, -4.f);
+		const FVector Face = C->GetMesh()->GetSocketQuaternion(TEXT("head")).GetAxisY().GetSafeNormal2D();
+		From = Target + Face.RotateAngleAxis(18.f, FVector::UpVector) * 170.f + FVector(0.f, 0.f, 6.f);
+		PortraitCapture->FOVAngle = 13.f;
+	}
+	// "torso" / "side" / "back" (-visexframe=body+torso+side+back): the middle of her, bust to thigh, from
+	// her front right, in profile from her right, or from behind her right, for the shape sliders.
+	// One camera per pose and framing.
+	if (!bHead && Frame != TEXT("body"))
+	{
+		Target.Z = C->GetMesh()->GetComponentLocation().Z + 108.f;
+		From = Target + Fwd.RotateAngleAxis(Frame == TEXT("side") ? 88.f : Frame == TEXT("back") ? 152.f : 38.f, FVector::UpVector) * 470.f;
+		PortraitCapture->FOVAngle = 10.5f;
+	}
+	// the full figure: one camera per pose, where the pose's first setup (the default body) put it
+	const FString Key = What.Left(What.Find(TEXT("_"))) + TEXT("_") + Frame;
+	if (bHead)
+	{
+	}
+	else if (const TPair<FVector, FVector>* Kept = PortraitCameras.Find(Key))
+	{
+		From = Kept->Key;
+		Target = Kept->Value;
+	}
+	else
+	{
+		PortraitCameras.Add(Key, TPair<FVector, FVector>(From, Target));
+	}
+	PortraitCapture->SetWorldLocationAndRotation(From, (Target - From).Rotation());
+	for (int32 I = 0; I < 4; ++I)
+	{
+		PortraitCapture->CaptureScene();   // a few, so the temporal passes settle
+	}
+	const FString Name = FString::Printf(TEXT("%s_%s_%s.png"), *Shots, *What.Replace(TEXT(" "), TEXT("_")), bHead ? TEXT("head") : *Frame);
+	UKismetRenderingLibrary::ExportRenderTarget(this, PortraitCapture->TextureTarget, FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("QA")), Name);
+}
+
+void AVisexQATour::BuildSliders()
+{
+	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
+	AVisexMenuDirector* D = Director;
+	ApplyCvarArg();
+	Spikes.Log = [](const FString& Line) { QA_LOG(TEXT("%s"), *Line); };
+	Feet.Log = [](const FString& Line) { QA_LOG(TEXT("%s"), *Line); };
+	// every bone-scale slider alone at both ends, the height's ends, the skin tone's steps, and
+	// two bodies with many sliders pushed together
+	Setups.Reset();
+	const auto V = [](const TCHAR* Name, float Value) { return TPair<FName, float>(FName(Name), Value); };
+	Setups.Add({TEXT("default"), {}});
+	// -visexsetups=Bust+Fat+Hips: only these sliders at both ends (and the default body), for the
+	// shape sliders or a short re-check; "shape" is the seven morph sliders
+	FString Only;
+	TArray<FString> Names = {TEXT("Head"), TEXT("Neck"), TEXT("Shoulders"), TEXT("Chest"), TEXT("Waist"), TEXT("Hips"), TEXT("Legs"),
+		TEXT("Thighs"), TEXT("Calves"), TEXT("ArmLength"), TEXT("Arms"), TEXT("Hands"), TEXT("Feet"), TEXT("Height")};
+	const bool bOnly = FParse::Value(FCommandLine::Get(), TEXT("visexsetups="), Only, false);
+	if (bOnly)
+	{
+		Only.ReplaceInline(TEXT("shape"), TEXT("Bust+BustLift+BustApart+Glutes+Abs+Fat+ThighGap"));
+		Only.ParseIntoArray(Names, TEXT("+"));
+	}
+	for (const FString& Name : Names)
+	{
+		if (const FVisexBodySlider* Row = FVisexBodyProfile::Find(FName(*Name)))
+		{
+			Setups.Add({Name + TEXT("_min"), {V(*Name, Row->Min)}});
+			Setups.Add({Name + TEXT("_max"), {V(*Name, Row->Max)}});
+		}
+	}
+	for (const float Tone : {0.f, 0.5f, 0.75f, 1.f})
+	{
+		if (bOnly) { break; }
+		Setups.Add({FString::Printf(TEXT("Skin_%03d"), FMath::RoundToInt(Tone * 100.f)), {V(TEXT("Skin"), Tone)}});
+	}
+	if (!bOnly)
+	{
+	Setups.Add({TEXT("small"), {V(TEXT("Height"), 150.f), V(TEXT("Head"), 1.0f), V(TEXT("Neck"), 0.84f), V(TEXT("Shoulders"), 0.82f), V(TEXT("Chest"), 0.90f),
+		V(TEXT("Waist"), 0.74f), V(TEXT("Hips"), 0.88f), V(TEXT("Legs"), 0.92f), V(TEXT("Thighs"), 0.90f), V(TEXT("Calves"), 0.90f),
+		V(TEXT("ArmLength"), 0.93f), V(TEXT("Arms"), 0.84f), V(TEXT("Hands"), 0.85f), V(TEXT("Feet"), 0.87f)}});
+	Setups.Add({TEXT("tall"), {V(TEXT("Height"), 183.f), V(TEXT("Head"), 1.08f), V(TEXT("Neck"), 1.10f), V(TEXT("Shoulders"), 1.15f), V(TEXT("Chest"), 1.15f),
+		V(TEXT("Waist"), 1.05f), V(TEXT("Hips"), 1.15f), V(TEXT("Legs"), 1.10f), V(TEXT("Thighs"), 1.35f), V(TEXT("Calves"), 1.22f),
+		V(TEXT("ArmLength"), 1.06f), V(TEXT("Arms"), 1.22f), V(TEXT("Hands"), 1.10f), V(TEXT("Feet"), 1.10f)}});
+	}
+	// one pose: each setup is put on, left to settle (her contact passes, the capsule), measured
+	// for a second under its own phase name, then reported and shot
+	const auto Pass = [this, Add](const FString& Pose)
+	{
+		for (int32 I = 0; I < Setups.Num(); ++I)
+		{
+			Add(0.3f, [this, I] { Spikes.SetPhase(TEXT("settle")); Feet.SetPhase(TEXT("settle")); ApplySetup(Setups[I]); });
+			Add(1.6f, [this, I, Pose] { const FString Name = Pose + TEXT(" ") + Setups[I].Name; Spikes.SetPhase(Name); Feet.SetPhase(Name); });
+			Add(1.0f, [this, I, Pose] { SetupReport(Pose, Setups[I]); });
+		}
+		Add(0.3f, [this] { Spikes.SetPhase(TEXT("settle")); Feet.SetPhase(TEXT("settle")); ApplySetup(Setups[0]); });
+	};
+	const auto Motion = [this](const TCHAR* Name)
+	{
+		AVisexPhotoMode* P = Photo();
+		for (int32 I = 0; P && P->IsOpen() && I < 40; ++I)
+		{
+			if (P->GetMotionName(I) == Name) { P->SetMotion(I); QA_LOG(TEXT("VisexSliders: photo motion %s"), Name); return; }
+		}
+		QA_LOG(TEXT("VisexSliders: NO photo motion %s"), Name);
+	};
+	Spikes.SetPhase(TEXT("arrival walk"));
+	// the clock holds through her walk in
+	Add(4.f, [] {});
+	// -visexposes=lean+stand: only these passes (default: all three, and "stand" too on a subset run)
+	FString Poses = bOnly ? TEXT("lean+leglift+walk+stand") : TEXT("lean+leglift+walk");
+	FParse::Value(FCommandLine::Get(), TEXT("visexposes="), Poses, false);
+	const auto Want = [Poses](const TCHAR* Name) { return (TEXT("+") + Poses + TEXT("+")).Contains(FString(TEXT("+")) + Name + TEXT("+")); };
+	if (Want(TEXT("lean")))
+	{
+		Pass(TEXT("lean"));
+	}
+	Add(1.f, [D] { D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
+	if (Want(TEXT("leglift")))
+	{
+		Add(5.f, [Motion] { Motion(TEXT("LegLift")); });
+		Add(5.f, [] {});
+		Pass(TEXT("leglift"));
+	}
+	if (Want(TEXT("walk")))
+	{
+		Add(Want(TEXT("leglift")) ? 0.5f : 5.f, [Motion] { Motion(TEXT("Walk")); });
+		Add(4.f, [] {});
+		Pass(TEXT("walk"));
+	}
+	if (Want(TEXT("stand")))
+	{
+		// standing still in the open, in the MetaHuman's reference pose (visex.Body.MetaHuman.TestPose
+		// "ref"): the one pose where two setups can be laid side by side. The lean hides her seat, the
+		// walk never shows two setups in the same step, and the photo Idle shifts her about.
+		Add(Want(TEXT("leglift")) || Want(TEXT("walk")) ? 0.5f : 5.f, [Motion]
+		{
+			Motion(TEXT("Idle"));
+			if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(TEXT("visex.Body.MetaHuman.TestPose"))) { V->Set(TEXT("ref"), ECVF_SetByConsole); }
+		});
+		Add(4.f, [] {});
+		Pass(TEXT("stand"));
+		Add(0.3f, []
+		{
+			if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(TEXT("visex.Body.MetaHuman.TestPose"))) { V->Set(TEXT("off"), ECVF_SetByConsole); }
+		});
+	}
+	Add(0.5f, [this]
+	{
+		// her own profile back, as it was loaded (nothing was saved on the way)
+		ACharacter* C = Her();
+		if (UVisexBodyComponent* B = C ? C->FindComponentByClass<UVisexBodyComponent>() : nullptr) { B->Load(); B->Apply(); }
+		Spikes.SetPhase(TEXT("done"));
+		Feet.SetPhase(TEXT("done"));
+		QA_LOG(TEXT("VisexQA: done"));
+		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
+	});
+}
+
+void AVisexQATour::BuildFlex()
+{
+	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
+	AVisexMenuDirector* D = Director;
+	ApplyCvarArg();
+	const auto Set = [](const TCHAR* Var, const FString& Value)
+	{
+		if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(Var)) { V->Set(*Value, ECVF_SetByConsole); }
+	};
+	// one pose: the flex layer off, shot; on, left to rise, shot again from the same camera
+	const auto Pair = [this, Add, Set](const FString& Name)
+	{
+		const auto Shoot = [this](const FString& What)
+		{
+			FString Shots;
+			if (FParse::Value(FCommandLine::Get(), TEXT("visexshots="), Shots)) { CloseShots(Shots, What); }
+		};
+		// her clips are held while the pair is shot (the photo Idle shifts her weight within a second):
+		// the driver's pose stands still, the flex layer still eases in on real time
+		const auto Hold = [this](float Rate) { if (ACharacter* C = Her()) { C->GetMesh()->GlobalAnimRateScale = Rate; } };
+		Add(1.5f, [Set, Hold] { Hold(0.f); Set(TEXT("visex.Body.MetaHuman.Flex"), TEXT("0")); });
+		Add(0.6f, [Shoot, Name, Set] { Shoot(TEXT("flex0_") + Name); Set(TEXT("visex.Body.MetaHuman.Flex"), TEXT("1")); });
+		Add(1.6f, [Shoot, Name, Hold] { Shoot(TEXT("flex1_") + Name); Hold(1.f); });
+	};
+	const auto Motion = [this](const TCHAR* Name)
+	{
+		AVisexPhotoMode* P = Photo();
+		for (int32 I = 0; P && P->IsOpen() && I < 40; ++I)
+		{
+			if (P->GetMotionName(I) == Name) { P->SetMotion(I); QA_LOG(TEXT("VisexFlex: photo motion %s"), Name); return; }
+		}
+		QA_LOG(TEXT("VisexFlex: NO photo motion %s"), Name);
+	};
+	// the clock holds through her walk in
+	Add(4.f, [] {});
+	Pair(TEXT("lean"));
+	Add(1.f, [D] { D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
+	Add(5.f, [Motion] { Motion(TEXT("Idle")); });
+	Add(4.f, [] {});
+	Pair(TEXT("idle"));
+	// -visexflexposes=name=<TestPose>|name=<TestPose>: standing poses made of extra bone rotations
+	FString All;
+	TArray<FString> Poses;
+	FParse::Value(FCommandLine::Get(), TEXT("visexflexposes="), All, false);
+	All.ParseIntoArray(Poses, TEXT("|"));
+	for (const FString& One : Poses)
+	{
+		FString Name, Pose;
+		if (!One.Split(TEXT("="), &Name, &Pose)) { continue; }
+		Add(0.3f, [Set, Name, Pose] { Set(TEXT("visex.Body.MetaHuman.TestPose"), Pose); QA_LOG(TEXT("VisexFlex: pose %s = %s"), *Name, *Pose); });
+		Pair(Name);
+	}
+	Add(0.3f, [this, Set]
+	{
+		Set(TEXT("visex.Body.MetaHuman.TestPose"), TEXT("off"));
+		QA_LOG(TEXT("VisexQA: done"));
+		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
+	});
+}
+
+void AVisexQATour::BuildClip()
+{
+	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
+	AVisexMenuDirector* D = Director;
+	ApplyCvarArg();
+	Add(4.f, [] {});
+	Add(1.f, [D] { D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
+	Add(5.f, [this]
+	{
+		AVisexPhotoMode* P = Photo();
+		for (int32 I = 0; P && P->IsOpen() && I < 40; ++I)
+		{
+			if (P->GetMotionName(I) == TEXT("Walk")) { P->SetMotion(I); QA_LOG(TEXT("VisexClip: photo motion Walk")); return; }
+		}
+		QA_LOG(TEXT("VisexClip: NO photo motion Walk"));
+	});
+	// -visexclipcam=...,<frames>: the fifth number is the clip's length in frames
+	FString Cam;
+	TArray<FString> CamParts;
+	if (FParse::Value(FCommandLine::Get(), TEXT("visexclipcam="), Cam, false) && Cam.ParseIntoArray(CamParts, TEXT(",")) >= 5)
+	{
+		ClipFrames = FMath::Clamp(FCString::Atoi(*CamParts[4]), 1, 900);
+	}
+	Add(4.f, [this] { ClipLeft = ClipFrames; ClipN = 0; });
+	Add(ClipFrames / 30.f + 1.f, [this]
+	{
+		ACharacter* C = Her();
+		if (UVisexBodyComponent* B = C ? C->FindComponentByClass<UVisexBodyComponent>() : nullptr) { B->Load(); B->Apply(); }
+		QA_LOG(TEXT("VisexQA: done"));
+		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
+	});
+}
+
+void AVisexQATour::ClipFrame()
+{
+	FString Shots;
+	ACharacter* C = Her();
+	if (!C || !FParse::Value(FCommandLine::Get(), TEXT("visexshots="), Shots))
+	{
+		ClipLeft = 0;
+		return;
+	}
+	if (!ClipCapture)
+	{
+		ClipCapture = NewObject<USceneCaptureComponent2D>(this, NAME_None, RF_Transient);
+		ClipCapture->TextureTarget = UKismetRenderingLibrary::CreateRenderTarget2D(this, 3840, 2160, RTF_RGBA8_SRGB);
+		ClipCapture->CaptureSource = SCS_FinalColorLDR;
+		ClipCapture->bCaptureEveryFrame = false;
+		ClipCapture->bCaptureOnMovement = false;
+		ClipCapture->bAlwaysPersistRenderingState = true;
+		ClipCapture->FOVAngle = 28.f;   // across; 16 degrees up and down: 70 cm of her at this distance, bust to seat
+		ClipCapture->RegisterComponent();
+		// her torso almost in profile, from her right (the side the photo spot's light rims): the bust and
+		// the seat read against the dunes. The direction and the height are kept for the whole clip
+		ClipOffset = C->GetActorForwardVector().RotateAngleAxis(72.f, FVector::UpVector) * 250.f + FVector(0.f, 0.f, 4.f);
+		ClipZ = C->GetMesh()->GetComponentLocation().Z + 106.f - C->GetActorLocation().Z;
+		const auto Numbers = [](const TCHAR* Key, TArray<float>& Out)
+		{
+			FString Text;
+			TArray<FString> Parts;
+			if (!FParse::Value(FCommandLine::Get(), Key, Text, false)) { return false; }
+			Text.ParseIntoArray(Parts, TEXT(","));
+			for (const FString& Part : Parts) { Out.Add(FCString::Atof(*Part)); }
+			return Out.Num() >= 4;
+		};
+		TArray<float> Cam, Light;
+		if (Numbers(TEXT("visexclipcam="), Cam))
+		{
+			ClipOffset = C->GetActorForwardVector().RotateAngleAxis(Cam[0], FVector::UpVector) * Cam[1];
+			ClipZ = C->GetMesh()->GetComponentLocation().Z + Cam[2] - C->GetActorLocation().Z;
+			ClipCapture->FOVAngle = Cam[3];
+		}
+		if (Numbers(TEXT("visexcliplight="), Light))
+		{
+			ClipLight = NewObject<USpotLightComponent>(this, NAME_None, RF_Transient);
+			ClipLight->SetMobility(EComponentMobility::Movable);
+			ClipLight->SetIntensityUnits(ELightUnits::Candelas);
+			ClipLight->SetIntensity(Light[3]);
+			ClipLight->SetLightColor(FLinearColor(1.f, 0.86f, 0.68f));   // the dust plaza's low sun, not a studio lamp
+			ClipLight->SetAttenuationRadius(1200.f);
+			ClipLight->SetInnerConeAngle(18.f);
+			ClipLight->SetOuterConeAngle(30.f);
+			ClipLight->SetCastShadows(false);
+			ClipLight->RegisterComponent();
+			ClipLightOffset = C->GetActorForwardVector().RotateAngleAxis(Light[0], FVector::UpVector) * Light[1]
+				+ FVector(0.f, 0.f, C->GetMesh()->GetComponentLocation().Z + Light[2] - C->GetActorLocation().Z - ClipZ);
+		}
+	}
+	// the camera travels with her capsule, up and down the dunes too, so what moves in the picture is
+	// her own body (the photo Walk itself lifts and drops her torso about 9 cm a step)
+	const FVector Target = C->GetActorLocation() + FVector(0.f, 0.f, ClipZ);
+	ClipCapture->SetWorldLocationAndRotation(Target + ClipOffset, (-ClipOffset).Rotation());
+	if (ClipLight)
+	{
+		ClipLight->SetWorldLocationAndRotation(Target + ClipLightOffset, (-ClipLightOffset).Rotation());
+	}
+	ClipCapture->CaptureScene();
+	UKismetRenderingLibrary::ExportRenderTarget(this, ClipCapture->TextureTarget, FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("QA")),
+		FString::Printf(TEXT("%s_clip_%04d.png"), *Shots, ClipN++));
+	--ClipLeft;
+}
+
+void AVisexQATour::SetupReport(const FString& Pose, const FBodySetup& Setup)
+{
+	ACharacter* C = Her();
+	if (!C)
+	{
+		return;
+	}
+	const USkeletalMeshComponent* Driver = C->GetMesh();
+	const USkeletalMeshComponent* Shown = UVisexMHBodyComponent::ShownBody(C);
+	const UCapsuleComponent* Cap = C->GetCapsuleComponent();
+	FString Joints = TEXT("no MetaHuman body");
+	if (Shown)
+	{
+		// how far the MetaHuman's joints sit from the driver's (the driver holds the contacts)
+		const auto Off = [Shown, Driver](const TCHAR* Bone) { return float(FVector::Dist(Shown->GetSocketLocation(Bone), Driver->GetSocketLocation(Bone))); };
+		Joints = FString::Printf(TEXT("MetaHuman joint from the driver's, cm: hand L %.2f R %.2f, foot L %.2f R %.2f, head %.2f, pelvis %.2f"),
+			Off(TEXT("hand_l")), Off(TEXT("hand_r")), Off(TEXT("foot_l")), Off(TEXT("foot_r")), Off(TEXT("head")), Off(TEXT("pelvis")));
+	}
+	QA_LOG(TEXT("VisexSliders: %s | %s | capsule half %.2f radius %.2f, actor Z %.2f, mesh rel Z %.2f, mesh scale %.4f | %s"), *Pose, *Setup.Name,
+		Cap ? Cap->GetUnscaledCapsuleHalfHeight() : 0.f, Cap ? Cap->GetUnscaledCapsuleRadius() : 0.f, C->GetActorLocation().Z,
+		Driver->GetRelativeLocation().Z, Driver->GetRelativeScale3D().Z, *Joints);
+	const FString What = Pose + TEXT("_") + Setup.Name;
+	FString Frames = TEXT("body+head");
+	FParse::Value(FCommandLine::Get(), TEXT("visexframe="), Frames);
+	TArray<FString> Each;
+	Frames.ParseIntoArray(Each, TEXT("+"));
+	for (const FString& Frame : Each)
+	{
+		PortraitShot(What, Frame == TEXT("head"), Frame);
+	}
 }
 
 static FString GPinPhase = TEXT("held");
@@ -728,9 +1328,31 @@ void AVisexQATour::Tick(float DeltaSeconds)
 		bFeet = bGaps || bFilm || bLayers || bPin || bJitter || FParse::Param(FCommandLine::Get(), TEXT("visexfeet"));
 		FeetClock = 2e5f;   // until she first moves
 		Feet.Log = [](const FString& Line) { QA_LOG(TEXT("%s"), *Line); };
+		bSpikes = FParse::Param(FCommandLine::Get(), TEXT("visexspikes"));
+		bSliders = FParse::Param(FCommandLine::Get(), TEXT("visexsliders"));
+		FString ShipPass;
+		bShip = FParse::Param(FCommandLine::Get(), TEXT("visexship")) || FParse::Value(FCommandLine::Get(), TEXT("visexship="), ShipPass);
+		bSpikes |= bShip;
 		Jitter.Log = [](const FString& Line) { QA_LOG(TEXT("%s"), *Line); };
-		bJitter ? BuildJitter() : bPin ? BuildPin() : bGaps ? BuildGaps() : bLayers ? BuildLayers() : bFeet ? BuildFeet() : Build();
+		FParse::Param(FCommandLine::Get(), TEXT("visexclip")) ? BuildClip() :
+		FParse::Param(FCommandLine::Get(), TEXT("visexflex")) ? BuildFlex() :
+		FParse::Param(FCommandLine::Get(), TEXT("visexside")) || FCString::Strifind(FCommandLine::Get(), TEXT("-visexside=")) ? BuildSide() :
+		bShip ? BuildShip() : bSliders ? BuildSliders() : bSpikes ? BuildSpikes() : bJitter ? BuildJitter() : bPin ? BuildPin() :
+		bGaps ? BuildGaps() : bLayers ? BuildLayers() : bFeet ? BuildFeet() : Build();
 		bBuilt = true;
+	}
+	if (ClipLeft > 0)
+	{
+		ClipFrame();
+	}
+	if (SideFilmLeft > 0)
+	{
+		FString Shots;
+		FParse::Value(FCommandLine::Get(), TEXT("visexshots="), Shots);
+		if ((SideFilmLeft-- & 1) == 0)
+		{
+			FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / FString::Printf(TEXT("QA/%s_film/f%05d.png"), *Shots, SideFilmN++), false, false);
+		}
 	}
 	if (bFeet)
 	{
@@ -752,6 +1374,15 @@ void AVisexQATour::Tick(float DeltaSeconds)
 			Feet.Shoot(GetWorld(), Her(), TEXT("arrival"), ArrivalShots++);
 		}
 	}
+	if (bShip) { ToeTick(); }
+	if (bSpikes || bSliders)
+	{
+		Spikes.Tick(Her());
+	}
+	if (bSliders && !bFeet)
+	{
+		Feet.Tick(Her(), DeltaSeconds);
+	}
 	if (bJitter)
 	{
 		Jitter.Tick();
@@ -772,7 +1403,7 @@ void AVisexQATour::Tick(float DeltaSeconds)
 		WalkFor -= DeltaSeconds;
 		if (ACharacter* C = Her())
 		{
-			const FRotator Yaw(0.f, UGameplayStatics::GetPlayerCameraManager(this, 0)->GetCameraRotation().Yaw, 0.f);
+			const FRotator Yaw(0.f, WalkYaw < 1e8f ? WalkYaw : UGameplayStatics::GetPlayerCameraManager(this, 0)->GetCameraRotation().Yaw, 0.f);
 			C->AddMovementInput(Yaw.Vector(), 1.f);
 		}
 	}
@@ -988,6 +1619,14 @@ void AVisexQATour::BuildJitter()
 			bFail |= bBad;
 			QA_LOG(TEXT("VisexJitter: TABLE %s | %.0f | %d | %.2f (%s) | %.3f | %.1f | %.2f / %.2f / %.2f | %d | %.1f | %s"), *R.Spot, R.Fps, R.Shifts, R.Max, *R.WorstTrack, R.Rms, R.Flips,
 				R.FootMax, R.KneeMax, R.PelvisMax, R.PlantFlips, R.Squash, bBad ? TEXT("JITTER") : TEXT("ok"));
+			if (R.MHKneeMax >= 0.f)
+			{
+				// the body on screen follows the driver: its own bones must read as steady
+				const bool bMHBad = FMath::Max3(R.MHFootMax, R.MHKneeMax, R.MHPelvisMax) > GJitterLimitMm || R.MHSquash > GJitterLimitSquash;
+				bFail |= bMHBad;
+				QA_LOG(TEXT("VisexJitter: TABLE %s MetaHuman | foot / knee / pelvis worst mm %.2f / %.2f / %.2f | bone length change %.1f | %s"), *R.Spot,
+					R.MHFootMax, R.MHKneeMax, R.MHPelvisMax, R.MHSquash, bMHBad ? TEXT("JITTER") : TEXT("ok"));
+			}
 		}
 		QA_LOG(TEXT("VisexJitter: %s (limit %.2f mm off-line in any frame, %.0f plant/pin flips per weight shift); %d frames filmed"), bFail ? TEXT("FAIL") : TEXT("PASS"), GJitterLimitMm, GJitterLimitFlips, Jitter.FilmFrames);
 		QA_LOG(TEXT("VisexQA: done"));
@@ -996,4 +1635,293 @@ void AVisexQATour::BuildJitter()
 		if (bFail) { if (GLog) { GLog->Flush(); } _exit(3); }
 		else { UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false); }
 	});
+}
+
+void AVisexQATour::ToePhase(const FString& Name)
+{
+	if (bToeRef)
+	{
+		QA_LOG(TEXT("VisexShip: toes, %s: big toe turned against the foot by at most, driver L %.1f R %.1f deg, MetaHuman L %.1f R %.1f deg"),
+			*ToeName, ToeMax[0][0], ToeMax[0][1], ToeMax[1][0], ToeMax[1][1]);
+	}
+	ToeName = Name;
+	bToeRef = false;
+	for (int32 B = 0; B < 2; ++B) { for (int32 S = 0; S < 2; ++S) { ToeMax[B][S] = 0.f; ToeHave[B][S] = false; } }
+}
+
+void AVisexQATour::ToeTick()
+{
+	const ACharacter* C = Her();
+	USkeletalMeshComponent* Meshes[2] = {C ? C->GetMesh() : nullptr, UVisexMHBodyComponent::ShownBody(C)};
+	static const FName Foot[2] = {TEXT("foot_l"), TEXT("foot_r")}, Toe[2] = {TEXT("bigtoe_01_l"), TEXT("bigtoe_01_r")};
+	if (!Meshes[0]) { return; }
+	for (int32 B = 0; B < 2; ++B)
+	{
+		for (int32 S = 0; S < 2; ++S)
+		{
+			if (!Meshes[B] || Meshes[B]->GetBoneIndex(Toe[S]) == INDEX_NONE) { continue; }
+			const FQuat Rel = Meshes[B]->GetBoneQuaternion(Foot[S]).Inverse() * Meshes[B]->GetBoneQuaternion(Toe[S]);
+			if (!ToeHave[B][S]) { ToeRef[B][S] = Rel; ToeHave[B][S] = true; continue; }
+			FQuat Turn = ToeRef[B][S].Inverse() * Rel;
+			Turn.Normalize();
+			ToeMax[B][S] = FMath::Max(ToeMax[B][S], FMath::RadiansToDegrees(2.f * FMath::Acos(FMath::Min(1.f, FMath::Abs(float(Turn.W))))));
+		}
+	}
+	bToeRef = true;
+}
+
+void AVisexQATour::BuildShip()
+{
+	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
+	AVisexMenuDirector* D = Director;
+	ApplyCvarArg();
+	FString Pass;
+	FParse::Value(FCommandLine::Get(), TEXT("visexship="), Pass);
+	Spikes.Log = [](const FString& Line) { QA_LOG(TEXT("%s"), *Line); };
+	auto Phase = [this](const FString& Name) { Spikes.SetPhase(Name); ToePhase(Name); };
+	auto Editor = [this]() -> AVisexBodyEditor* { for (TActorIterator<AVisexBodyEditor> It(GetWorld()); It; ++It) { return *It; } return nullptr; };
+	// what she is and wears, the values the first pass applies, and the settings as the pages show them
+	auto State = [this](const FString& Where)
+	{
+		const ACharacter* C = Her();
+		const UVisexBodyComponent* B = C ? C->FindComponentByClass<UVisexBodyComponent>() : nullptr;
+		const USkeletalMeshComponent* G = UVisexMHBodyComponent::ShownGarment(C);
+		auto Join = [](const TArray<FText>& Rows) { FString Out; for (const FText& T : Rows) { Out += T.ToString() + TEXT(" | "); } return Out; };
+		QA_LOG(TEXT("VisexShip: %s: MetaHuman body %s, profile outfit %s, garment %s; Legs %.4f Skin %.4f Bust %.3f Height %.1f; settings %s visuals %s"), *Where,
+			UVisexMHBodyComponent::ShownBody(C) ? TEXT("shown") : TEXT("NOT SHOWN"), B ? *B->Profile.Outfit.ToString() : TEXT("?"),
+			G && G->GetSkeletalMeshAsset() ? *G->GetSkeletalMeshAsset()->GetName() : TEXT("NONE"),
+			B ? B->GetValue(TEXT("Legs")) : 0.f, B ? B->GetValue(TEXT("Skin")) : 0.f, B ? B->GetValue(TEXT("Bust")) : 0.f, B ? B->GetValue(TEXT("Height")) : 0.f,
+			*Join(FVisexSettings::Values()), *Join(FVisexSettings::VisualValues()));
+	};
+	auto Quit = [this, D] { QA_LOG(TEXT("VisexQA: done")); D->OnItemChosen(AVisexMenuDirector::ItemQuit); };
+	Phase(TEXT("arrival"));
+	if (Pass == TEXT("2"))
+	{
+		Add(7.f, [this, State] { State(TEXT("relaunch")); Shot(TEXT("ship_relaunch")); });
+		Add(1.f, [this, Phase, Quit] { Phase(TEXT("done")); SpikeTotals(); Quit(); });
+		return;
+	}
+	Add(7.f, [this, Phase, State] { Phase(TEXT("lean")); State(TEXT("lean")); Shot(TEXT("ship_lean")); });
+	static const TCHAR* Beats[3] = {TEXT("beat glance"), TEXT("beat shift"), TEXT("beat toes")};
+	for (int32 I = 0; I < 3; ++I)
+	{
+		Add(I == 0 ? 3.f : 6.f, [Phase, D, I] { Phase(Beats[I]); D->PlayIdleBeat(I); });
+		Add(2.5f, [this, I] { Shot(FString::Printf(TEXT("ship_beat_%d"), I)); });
+	}
+	// the Body page: each slider dragged the way the stick does it (the editor's Adjust, a step every 50 ms)
+	Add(6.f, [Phase, D] { Phase(TEXT("body page opens")); D->OpenBody(); });
+	Add(4.f, [this, Editor] { AVisexBodyEditor* E = Editor(); QA_LOG(TEXT("VisexShip: body page %s"), E && E->IsOpen() ? TEXT("open") : TEXT("DID NOT OPEN")); Shot(TEXT("ship_body")); });
+	auto Row = [](const TCHAR* Name)
+	{
+		const TArray<int32>& Rows = FVisexBodyProfile::SliderRows(0);
+		return Rows.IndexOfByPredicate([Name](int32 I) { return FVisexBodyProfile::Sliders()[I].Name == Name; });
+	};
+	auto Drag = [this, Add, Editor](const FString& Name, int32 Count, int32 Dir)
+	{
+		for (int32 K = 0; K < Count; ++K) { Add(0.05f, [Editor, Dir] { if (AVisexBodyEditor* E = Editor()) { E->Adjust(float(Dir)); } }); }
+		Add(0.4f, [this, Name, Dir] { Shot(FString::Printf(TEXT("ship_drag_%s_%s"), *Name, Dir > 0 ? TEXT("up") : TEXT("down"))); });
+	};
+	for (const TCHAR* Name : {TEXT("Height"), TEXT("Hips"), TEXT("Legs"), TEXT("Bust"), TEXT("Glutes"), TEXT("Feet"), TEXT("Skin")})
+	{
+		Add(0.3f, [Phase, Editor, Row, Name] { Phase(FString::Printf(TEXT("drag %s"), Name)); if (AVisexBodyEditor* E = Editor()) { E->SelectRow(Row(Name)); } });
+		Add(1.f, [] {});
+		Drag(Name, 40, 1);    // to the slider's maximum
+		Drag(Name, 40, -1);   // and down to its minimum
+		Add(0.1f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->ResetSelected(); } });
+	}
+	// one change kept: longer legs and a darker skin, applied (this writes VisexBody.sav)
+	Add(0.3f, [Phase, Editor, Row] { Phase(TEXT("apply")); if (AVisexBodyEditor* E = Editor()) { E->SelectRow(Row(TEXT("Legs"))); E->Adjust(6.f); E->SelectRow(Row(TEXT("Skin"))); E->Adjust(8.f); E->ApplyTab(); } });
+	Add(1.f, [this, State] { State(TEXT("applied")); Shot(TEXT("ship_applied")); });
+	// FACE, then the tab after it: BODY again while the Hair tab is left out
+	Add(0.3f, [Phase, Editor] { Phase(TEXT("drag Head")); if (AVisexBodyEditor* E = Editor()) { E->SwitchTab(1); E->SelectRow(0); QA_LOG(TEXT("VisexShip: tab after one switch: %d"), E->GetTab()); } });
+	Add(1.f, [] {});
+	Drag(TEXT("Head"), 40, 1);
+	Drag(TEXT("Head"), 40, -1);
+	Add(0.1f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->ResetSelected(); E->SwitchTab(1); QA_LOG(TEXT("VisexShip: tab after two switches: %d (0 = BODY: no Hair tab; 2 = HAIR)"), E->GetTab()); } });
+	Add(1.f, [this] { Shot(TEXT("ship_tabs")); });
+	Add(0.2f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
+	// the wardrobe: onto every row, CROSS on "Nothing" and on the first costume that is not hers
+	Add(5.f, [Phase, D] { Phase(TEXT("wardrobe")); D->OpenWardrobe(); });
+	Add(4.f, [this] { Shot(TEXT("ship_wardrobe")); });
+	for (int32 I = 0; I < FVisexBodyProfile::Outfits().Num(); ++I)
+	{
+		Add(0.2f, [Editor, I] { if (AVisexBodyEditor* E = Editor()) { E->SelectRow(I); if (I < 2) { E->ApplyTab(); } } });
+		Add(0.9f, [this, State, Editor, I]
+		{
+			State(FString::Printf(TEXT("wardrobe row %s (%s)"), *FVisexBodyProfile::Outfits()[I].Name.ToString(), FVisexBodyProfile::OutfitLocked(I) ? TEXT("locked") : TEXT("wearable")));
+			if (I < 2) { Shot(FString::Printf(TEXT("ship_wardrobe_row%d"), I)); }
+		});
+		if (I < 2) { Add(0.2f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Close(); } }); }   // closes the window
+	}
+	Add(0.3f, [this] { Shot(TEXT("ship_wardrobe_end")); });
+	Add(0.2f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
+	// Settings: she climbs onto the drum; each Visuals row stepped once and back (the filters)
+	auto Visuals = [this, Add](const TCHAR* Where)
+	{
+		for (int32 R = 0; R + 1 < FVisexSettings::NumVisualRows(); ++R)
+		{
+			Add(0.3f, [this, R] { FVisexSettings::AdjustVisual(GetWorld(), R, 1); });
+			Add(1.5f, [this, R, Where] { Shot(FString::Printf(TEXT("ship_%s_visual%d"), Where, R)); });
+			Add(0.2f, [this, R] { FVisexSettings::AdjustVisual(GetWorld(), R, -1); });   // a step later: the shot is taken at the frame's end
+		}
+	};
+	Add(5.f, [Phase, D] { Phase(TEXT("settings sit down")); D->OpenSettings(); });
+	Add(9.f, [this, Phase, D] { Phase(TEXT("settings sit")); Shot(TEXT("ship_settings")); D->SettingsTab(1); });
+	Visuals(TEXT("sit"));
+	// one setting left changed and saved, for the relaunch to find: the fog a step lighter (a step
+	// denser would sit at the end of its range, and the photo pass below steps every row up and back)
+	Add(0.3f, [D] { D->SettingsStep(-1); });
+	Add(1.f, [this, Phase, State, D] { State(TEXT("settings changed")); Phase(TEXT("settings stand up")); D->CloseSettings(); });
+	// photo mode: the motions are the spike tour's; here each Visuals row over the photo Idle and a pose
+	Add(9.f, [Phase, D] { Phase(TEXT("photo")); D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
+	Add(6.f, [this] { Shot(TEXT("ship_photo")); });
+	Visuals(TEXT("photo"));
+	Add(0.3f, [this, Phase] { Phase(TEXT("photo pose")); if (AVisexPhotoMode* P = Photo()) { P->SetMotion(5); } });
+	Add(4.f, [this] { Shot(TEXT("ship_photo_pose")); if (AVisexPhotoMode* P = Photo()) { P->Close(); } });
+	// Start: the camera move, her walk-off, the idle, then driven forward
+	Add(6.f, [Phase, D] { Phase(TEXT("start")); D->OnItemChosen(AVisexMenuDirector::ItemStart); });
+	Add(4.f, [this] { Shot(TEXT("ship_start")); });
+	Add(10.f, [this, Phase, State] { Phase(TEXT("idle after start")); State(TEXT("play")); Shot(TEXT("ship_idle")); });
+	Add(3.f, [this, Phase] { Phase(TEXT("walk")); WalkFor = 3.f; });
+	Add(3.5f, [this, Phase] { Phase(TEXT("stopped")); Shot(TEXT("ship_walked")); });
+	Add(2.f, [this, Phase, State, Quit] { State(TEXT("end")); Phase(TEXT("done")); SpikeTotals(); Quit(); });
+}
+
+void AVisexQATour::BuildSide()
+{
+	auto Add = [this](float Wait, TFunction<void()> Run) { Steps.Add({Wait, MoveTemp(Run)}); };
+	AVisexMenuDirector* D = Director;
+	ApplyCvarArg();
+	FString Pass;
+	FParse::Value(FCommandLine::Get(), TEXT("visexside="), Pass);
+	auto Editor = [this]() -> AVisexBodyEditor* { for (TActorIterator<AVisexBodyEditor> It(GetWorld()); It; ++It) { return *It; } return nullptr; };
+	auto Quit = [this]
+	{
+		QA_LOG(TEXT("VisexQA: done"));
+		UKismetSystemLibrary::QuitGame(this, UGameplayStatics::GetPlayerController(this, 0), EQuitPreference::Quit, false);
+	};
+	auto State = [this](const TCHAR* Where)
+	{
+		const ACharacter* C = Her();
+		const USkeletalMeshComponent* G = UVisexMHBodyComponent::ShownGarment(C);
+		QA_LOG(TEXT("VisexSide: %s: MetaHuman body %s, garment %s, at %s"), Where, UVisexMHBodyComponent::ShownBody(C) ? TEXT("shown") : TEXT("not shown"),
+			G && G->GetSkeletalMeshAsset() ? *G->GetSkeletalMeshAsset()->GetName() : TEXT("none"), C ? *C->GetActorLocation().ToCompactString() : TEXT("?"));
+	};
+	if (Pass == TEXT("film"))
+	{
+		// the walk-off and the idle it ends in, the third-person camera: 14 s, every second frame of a 60 Hz step
+		Add(7.f, [D, State] { State(TEXT("film")); D->OnItemChosen(AVisexMenuDirector::ItemStart); });
+		Add(1.f, [this] { SideFilmLeft = 14 * 60; SideFilmN = 0; });
+		Add(15.f, Quit);
+		return;
+	}
+	auto Pose = [this](const TCHAR* Name)
+	{
+		AVisexPhotoMode* P = Photo();
+		for (int32 I = 0; P && P->IsOpen() && I < 60; ++I)
+		{
+			if (P->GetMotionName(I) == Name) { P->SetMotion(I); return; }
+		}
+		QA_LOG(TEXT("VisexSide: NO photo motion %s"), Name);
+	};
+	if (Pass == TEXT("hair"))
+	{
+		// down into a floor pose and up again, filmed: what the hair does as its simulation goes off and on
+		Add(7.f, [D] { D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
+		Add(6.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetHudVisible(false); } SideFilmLeft = 12 * 60; SideFilmN = 0; });
+		Add(1.f, [Pose] { Pose(TEXT("FeetUp")); });
+		Add(6.f, [Pose] { Pose(TEXT("Idle")); });
+		Add(6.f, Quit);
+		return;
+	}
+	const bool bCloseOnly = Pass == TEXT("close");   // only the portrait, the blink, hands and feet
+	// a shot and the change after it are never in one step: the frame is taken at the frame's end
+	if (!bCloseOnly) {
+	Add(7.f, [this, State] { State(TEXT("menu")); HiShot(TEXT("01_menu")); });
+	Add(1.f, [D] { D->OpenBody(); });
+	Add(5.f, [this] { HiShot(TEXT("02_body")); });
+	Add(0.6f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->SwitchTab(1); } });
+	Add(3.f, [this] { HiShot(TEXT("03_face")); });
+	Add(0.6f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
+	Add(5.f, [D] { D->OpenWardrobe(); });
+	Add(5.f, [this] { HiShot(TEXT("04_wardrobe")); });
+	Add(0.6f, [Editor] { if (AVisexBodyEditor* E = Editor()) { E->Close(); } });
+	Add(5.f, [D] { D->OpenSettings(); });
+	Add(9.f, [this] { HiShot(TEXT("05_settings")); });
+	Add(0.6f, [D] { D->CloseSettings(); });
+	}
+	Add(bCloseOnly ? 7.f : 9.f, [D] { D->OnItemChosen(AVisexMenuDirector::ItemPhoto); });
+	Add(6.f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetHudVisible(false); } });
+	for (const TCHAR* Name : {TEXT("Bookend"), TEXT("Mermaid"), TEXT("LegLift"), TEXT("FeetUp")})
+	{
+		if (bCloseOnly) { break; }
+		Add(0.6f, [Pose, Name] { Pose(Name); });
+		Add(5.f, [this, Name]
+		{
+			const ACharacter* C = Her();
+			if (C && C->GetMesh()) { QA_LOG(TEXT("VisexSide: %s: her head %.0f cm over the ground"), Name, C->GetMesh()->GetSocketLocation(TEXT("head")).Z - C->GetActorLocation().Z + C->GetCapsuleComponent()->GetScaledCapsuleHalfHeight()); }
+			HiShot(FString::Printf(TEXT("06_photo_%s"), Name));
+		});
+	}
+	// close on the photo Idle, the free camera placed off the driver's bones (the same camera on both bodies):
+	// <bone>, the camera's place from it (forward, right, up of her, cm), the lens
+	struct FClose { const TCHAR* Name; FName Bone; FVector From; FVector Lift; float Focal; };
+	static const FClose Closes[] = {
+		{TEXT("07_portrait"), TEXT("head"), FVector(112.f, 46.f, 6.f), FVector(8.f, 0.f, 2.f), 85.f},
+		{TEXT("08_hand_r"), TEXT("hand_r"), FVector(95.f, 50.f, 10.f), FVector(0.f, 0.f, -8.f), 85.f},
+		{TEXT("09_hand_l"), TEXT("hand_l"), FVector(95.f, -50.f, 10.f), FVector(0.f, 0.f, -8.f), 85.f},
+		{TEXT("10_feet"), TEXT("foot_r"), FVector(150.f, 45.f, 38.f), FVector(6.f, -10.f, -4.f), 70.f},
+	};
+	Add(0.6f, [Pose] { Pose(TEXT("Idle")); });
+	for (const FClose& Close : Closes)
+	{
+		Add(3.f, [this, Close]
+		{
+			AVisexPhotoMode* P = Photo();
+			ACharacter* C = Her();
+			if (!P || !P->IsOpen() || !C || !C->GetMesh()) { return; }
+			// the portrait is framed off where her face points (the idle turns her head; on this skeleton the
+			// face looks down the head bone's -Y), the hands and feet off her body
+			FVector Fwd = C->GetActorForwardVector();
+			if (Close.Bone == TEXT("head")) { Fwd = -C->GetMesh()->GetSocketTransform(Close.Bone).GetUnitAxis(EAxis::Y).GetSafeNormal2D(); }
+			const FVector Side = FVector::CrossProduct(FVector::UpVector, Fwd);
+			const auto Frame = [Fwd, Side](const FVector& V) { return Fwd * V.X + Side * V.Y + FVector(0.f, 0.f, V.Z); };
+			const FVector At = C->GetMesh()->GetSocketLocation(Close.Bone) + Frame(Close.Lift);
+			const FVector Loc = C->GetMesh()->GetSocketLocation(Close.Bone) + Frame(Close.From);
+			P->SetFreeView(Loc, (At - Loc).Rotation(), 0.f, Close.Focal);
+		});
+		Add(2.f, [this, Close] { HiShot(Close.Name); });
+		if (Close.Bone == TEXT("head"))
+		{
+			// the face rig: both lids closed through its own curves (nothing blinks her by itself), then given back
+			auto Face = [](const TCHAR* Value) { if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(TEXT("visex.Body.MetaHuman.Face"))) { V->Set(Value, ECVF_SetByConsole); } };
+			Add(0.6f, [Face] { Face(TEXT("CTRL_expressions_eyeBlinkL=1,CTRL_expressions_eyeBlinkR=1")); });
+			Add(1.5f, [this] { HiShot(TEXT("07_portrait_blink")); });
+			Add(0.6f, [Face] { Face(TEXT("off")); });
+		}
+	}
+	Add(0.6f, [this] { if (AVisexPhotoMode* P = Photo()) { P->SetHudVisible(true); P->Close(); } });
+	if (bCloseOnly) { Add(3.f, Quit); return; }
+	// Start: she walks off under the camera move (from behind), stands at its end, then is walked on
+	// along her own heading and shot from the front three-quarter by a camera of the tour's
+	Add(6.f, [D] { D->OnItemChosen(AVisexMenuDirector::ItemStart); });
+	Add(4.f, [this, State] { State(TEXT("walk-off")); HiShot(TEXT("11_walk_behind")); });
+	Add(10.f, [this, State] { State(TEXT("end of Start")); HiShot(TEXT("12_start_end")); });
+	Add(1.f, [this] { if (const ACharacter* C = Her()) { WalkYaw = C->GetActorRotation().Yaw; WalkFor = 4.f; } });
+	Add(2.f, [this]
+	{
+		ACharacter* C = Her();
+		APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+		if (!C || !PC) { return; }
+		if (!SideCam) { SideCam = GetWorld()->SpawnActor<ACameraActor>(); }
+		const FVector At = C->GetActorLocation() + C->GetActorForwardVector() * 30.f + FVector(0.f, 0.f, -14.f);   // where she is a few frames on
+		const FVector Loc = At + C->GetActorForwardVector().RotateAngleAxis(35.f, FVector::UpVector) * 480.f + FVector(0.f, 0.f, -20.f);
+		SideCam->SetActorLocationAndRotation(Loc, (At - Loc).Rotation());
+		SideCam->GetCameraComponent()->SetFieldOfView(40.f);
+		SideCam->GetCameraComponent()->SetConstraintAspectRatio(false);
+		PC->SetViewTarget(SideCam);
+	});
+	Add(0.15f, [this] { HiShot(TEXT("13_walk_front")); });
+	Add(0.6f, [this] { if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0)) { PC->SetViewTarget(Her()); } WalkYaw = 1e9f; });
+	Add(2.f, Quit);
 }

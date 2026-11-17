@@ -1,4 +1,5 @@
 #include "VisexBodyProfile.h"
+#include "VisexMHBody.h"
 
 #define LOCTEXT_NAMESPACE "VisexBody"
 
@@ -213,6 +214,11 @@ int32 FVisexBodyProfile::OutfitIndex(FName Name)
 {
 	const int32 I = Outfits().IndexOfByPredicate([Name](const FVisexOutfit& O) { return O.Name == Name; });
 	return I == INDEX_NONE || Outfits()[I].bLocked ? 0 : I;
+}
+
+bool FVisexBodyProfile::OutfitLocked(int32 Index)
+{
+	return !Outfits().IsValidIndex(Index) || Outfits()[Index].bLocked || !UVisexMHBodyComponent::Wears(Outfits()[Index].Name);
 }
 
 #undef LOCTEXT_NAMESPACE

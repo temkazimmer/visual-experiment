@@ -1,4 +1,5 @@
 #include "VisexFootMeter.h"
+#include "VisexMHBody.h"
 #include "visex.h"
 #include "VisexBodyComponent.h"
 #include "Components/SceneCaptureComponent2D.h"
@@ -58,13 +59,30 @@ float FVisexFootMeter::GapAt(ACharacter* Her, const FVector& P, float Ref, FStri
 
 void FVisexFootMeter::Tick(ACharacter* Her, float Dt)
 {
-	USkeletalMeshComponent* Mesh = Her ? Her->GetMesh() : nullptr;
+	USkeletalMeshComponent* Mesh = UVisexMHBodyComponent::FeetMesh(Her);
 	if (!Mesh || Dt <= 0.f)
 	{
 		return;
 	}
 	Clock += Dt;
 	LastHer = Her;
+	// visex.Body.MetaHuman swaps the body on screen: measure the feet that are drawn
+	if (RefMesh != Mesh)
+	{
+		RefMesh = Mesh;
+		RefHeel = -1.f;
+	}
+	if (UVisexMHBodyComponent::ShownBody(Her))
+	{
+		if (RefHeel < 0.f && UVisexMHBodyComponent::SoleHeights(Her, RefHeel, RefBall))
+		{
+			Log(FString::Printf(TEXT("VisexFeet: sole reference (MetaHuman body): heel (foot bone) %.2f cm, ball %.2f cm over the sole"), RefHeel, RefBall));
+		}
+		if (RefHeel < 0.f)
+		{
+			return;   // its first pose is not in yet
+		}
+	}
 	if (RefHeel < 0.f)
 	{
 		// the body reshape scales the foot (ankle to sole) by Feet (VisexBodyComponent)
@@ -242,7 +260,7 @@ void FVisexFootMeter::SetPhase(const FString& Name)
 
 void FVisexFootMeter::Shoot(UWorld* World, ACharacter* Her, const FString& Name, int32 Index)
 {
-	USkeletalMeshComponent* Mesh = Her ? Her->GetMesh() : nullptr;
+	USkeletalMeshComponent* Mesh = UVisexMHBodyComponent::FeetMesh(Her);
 	if (!World || !Mesh)
 	{
 		return;
@@ -305,7 +323,7 @@ void FVisexFootMeter::Shoot(UWorld* World, ACharacter* Her, const FString& Name,
 
 void FVisexFootMeter::LogGround(ACharacter* Her) const
 {
-	const USkeletalMeshComponent* Mesh = Her->GetMesh();
+	const USkeletalMeshComponent* Mesh = UVisexMHBodyComponent::FeetMesh(Her);
 	const UCharacterMovementComponent* Move = Her->GetCharacterMovement();
 	const float Half = Her->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
 	const FVector At = Her->GetActorLocation();
@@ -328,7 +346,7 @@ void FVisexFootMeter::LogGround(ACharacter* Her) const
 void FVisexFootMeter::SoleGaps(ACharacter* Her, float Out[2])
 {
 	Out[0] = Out[1] = 99.f;
-	USkeletalMeshComponent* Mesh = Her->GetMesh();
+	USkeletalMeshComponent* Mesh = UVisexMHBodyComponent::FeetMesh(Her);
 	FSkeletalMeshRenderData* RD = Mesh ? Mesh->GetSkeletalMeshRenderData() : nullptr;
 	if (!RD || RD->LODRenderData.Num() == 0)
 	{

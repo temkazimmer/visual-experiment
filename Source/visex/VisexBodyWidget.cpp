@@ -1,4 +1,5 @@
 #include "VisexBodyWidget.h"
+#include "VisexMHBody.h"
 
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
@@ -196,6 +197,7 @@ void UVisexBodyWidget::Show(const FVisexCharacterView& View)
 	HintText->SetText(bWardrobe ? WardrobeHint : Hint);
 	TabBar->SetVisibility(bWardrobe ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 	TitleGap->SetVisibility(bWardrobe ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	TabText[BodyTabs - 1]->SetVisibility(UVisexMHBodyComponent::HairTab() ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	for (int32 t = 0; t < BodyTabs; ++t)
 	{
 		TabText[t]->SetRenderOpacity(View.Tab == t ? 1.f : IdleOpacity);
@@ -276,10 +278,11 @@ void UVisexBodyWidget::Show(const FVisexCharacterView& View)
 	for (int32 i = 0; i < Outfits.Num(); ++i)
 	{
 		FRow& R = DressRows[i];
-		R.Value->SetText(Outfits[i].bLocked ? LOCTEXT("Locked", "LOCKED")
+		const bool bLocked = FVisexBodyProfile::OutfitLocked(i);
+		R.Value->SetText(bLocked ? LOCTEXT("Locked", "LOCKED")
 			: i == Worn ? LOCTEXT("Worn", "WORN") : (i == Trying ? LOCTEXT("Trying", "TRYING ON") : FText::GetEmpty()));
 		Mark(R, bWardrobe && Here == i);
-		if (Outfits[i].bLocked && !(bWardrobe && Here == i))
+		if (bLocked && !(bWardrobe && Here == i))
 		{
 			R.Label->SetRenderOpacity(IdleOpacity * 0.8f);   // readable, a step back from the rest
 			R.Value->SetRenderOpacity(IdleOpacity * 0.8f);

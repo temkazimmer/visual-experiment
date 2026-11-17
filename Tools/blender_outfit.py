@@ -39,6 +39,8 @@ args = sys.argv[sys.argv.index("--") + 1:]
 SRC, OUT_DIR = args[0], args[1]
 PREVIEW = args[2] if len(args) > 2 and not args[2].startswith("--") else None
 ONLY = next((a.split("=", 1)[1].split(",") for a in args if a.startswith("--only=")), None)
+# --body=mh: SRC is the assembled MetaHuman body (Tools/mh_skin_export.py), not android_skin.fbx
+MH = next((a.split("=", 1)[1] for a in args if a.startswith("--body=")), "android") == "mh"
 os.makedirs(OUT_DIR, exist_ok=True)
 
 SLOTS = ["Sheer", "Lace", "Net", "Satin", "Latex", "Trim", "Nylon", "Binding", "Tartan", "Jersey"]
@@ -49,6 +51,8 @@ bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.fbx(filepath=SRC)
 arm = next(o for o in bpy.data.objects if o.type == "ARMATURE")
 skin = next(o for o in bpy.data.objects if o.type == "MESH")
+if MH:
+    exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "mh_outfit_body.py")).read())
 for m in skin.modifiers:
     if m.type == "ARMATURE":
         m.show_viewport = False
@@ -108,6 +112,9 @@ DESIGN = {k: w for k, w in (("BustUp", 0.80), ("BustApart", 1.097), ("GlutesUp",
                                          ("BustBounceL_Up", 0.65), ("BustBounceR_Up", 0.65)) if k in DELTAS}
 for k, w in DESIGN.items():
     X = X + DELTAS[k] * w
+# the MetaHuman body is built at the default sliders and its morphs are relative to that: they take no
+# part in the design above, the garment only carries them (finalize)
+MH_MORPHS = mh_morph_deltas() if MH and "--mh-morphs" not in args else {}
 _dm = bpy.data.meshes.new("design")
 _dm.from_pydata(X.tolist(), [], T.tolist())
 _dm.update()
@@ -162,6 +169,10 @@ NECK = G("neck")
 LEGS = G("thigh", "calf", "foot", "ball", "toe_0")
 wT, wTN, wTNT = G("pelvis", "spine", "clavicle"), G("pelvis", "spine", "clavicle", "neck"), G("pelvis", "spine", "clavicle", "neck", "thigh")
 wU = G("upperarm")
+if MH:   # helper joints: wrist_* is arm, ankle_* leg; clavicle_pec and clavicle_scap are chest and back
+    ARMS = ARMS + G("wrist") - G("clavicle_pec", "clavicle_scap")
+    UPPERARM = UPPERARM + G("wrist")
+    LEGS = LEGS + G("ankle")
 
 # ---- landmarks (cm, rest pose) --------------------------------------------------------------
 LM = dict(
@@ -198,7 +209,7 @@ def frame(direction, s, yaw, pitch):
 
 
 # the bust is wherever the Bust morph moves the skin: apex and extent per side
-_bd = np.linalg.norm(DELTAS["BustUp"], axis=1)
+_bd = mh_bust() if MH else np.linalg.norm(DELTAS["BustUp"], axis=1)
 ANCHOR, CUP = {}, {}
 for s in (1, -1):
     mk = (_bd > 0.25 * _bd.max()) & (LAT * s > 0)
@@ -213,6 +224,8 @@ LM["fold"] = LM["bust"] - CUP[1]["dn"] * 0.92
 print("bust", ANCHOR[1].round(1), {k: round(float(v), 1) for k, v in CUP[1].items()})
 m_ = (ALAT < 1.2) & (Z > 60) & (Z < PEL[2]) & (LEGS + wT > 0.5)
 LM["crotch_skin"] = Z[m_].min()
+if MH:   # this body's inner thighs meet on the centre line below the crotch: take skin that faces down
+    LM["crotch_skin"] = Z[(ALAT < 1.5) & (Z > 60) & (Z < PEL[2]) & (NRM[:, 2] < -0.7)].min()
 m_ = (np.abs(Z - (PEL[2] - 6)) < 0.8) & (G("pelvis", "spine", "thigh") > 0.5)
 LM["hip_skin"] = ALAT[m_].max()
 print("landmarks", {k: round(float(v), 1) for k, v in LM.items()})
@@ -367,7 +380,6 @@ def region(val, offset, slot, rim=None, pipe=None, pipe_r=0.18, min_loop=10.0, l
                 bm.faces.new(poly)
             except ValueError:
                 pass
-    loops = edge_loops(bm, min_loop, srcof) if (pipe or bind) else []
     # true distance from every vertex to the cut edge, for the seam/piping normal (UVSeam.x)
     bpts = []
     for e in bm.edges:
@@ -383,13 +395,30 @@ def region(val, offset, slot, rim=None, pipe=None, pipe_r=0.18, min_loop=10.0, l
         edist = [min(ek.find(v.co)[2], NO_SEAM - 0.01) for v in bm.verts]    # < NO_SEAM marks fabric
     else:
         edist = [NO_SEAM - 0.01] * len(bm.verts)
+    drop = {}
+    if MH:
+        # a hem that crosses a crease sits down to the height that stays out of the folding skin
+        # (mh_safe_height) for its first 0.9 cm, easing back up to the panel's own height by 1.8
+        safe = mh_safe_height()
+        for i, v in enumerate(bm.verts):
+            if edist[i] >= 1.8:
+                continue
+            a_, b_, t_ = srcof[v]
+            h = offset + (ll[a_] + (ll[b_] - ll[a_]) * t_ if ll else 0.0)
+            u = min(1.0, (1.8 - edist[i]) / 0.9)
+            d = (h - max(MH_HEM_MIN, min(h, safe[a_] + (safe[b_] - safe[a_]) * t_))) * u * u * (3.0 - 2.0 * u)
+            if d > 1e-4:
+                v.co -= nrm[v] * d
+                drop[v] = d
+        MH_DROPPED.append((slot, offset, len(drop), max(drop.values()) if drop else 0.0))
+    loops = edge_loops(bm, min_loop, srcof) if (pipe or bind) else []
     if rim if rim is not None else slot in OPAQUE:
         inner = {}
         for e in [e for e in bm.edges if e.is_boundary]:
             a, b = e.verts
             for v in (a, b):
                 if v not in inner:
-                    inner[v] = bm.verts.new(v.co - nrm[v] * max(0.0, offset - 0.03))
+                    inner[v] = bm.verts.new(v.co - nrm[v] * max(0.0, offset - drop.get(v, 0.0) - 0.03))
                     src.append(srcof[v])
                     edist.append(0.0)
             bm.faces.new((a, b, inner[b], inner[a]))
@@ -947,6 +976,8 @@ def catsuit_set(variant=None):
                                 (Vector((0, 0, 0)), left_v, (0.3, W - bar, 0.35))):   # the prong across the middle
             clip(c + dv, fwd_v, along, size)
     wrist = np.minimum((0.62 - HANDS) * 25.0, (HANDS - 0.22) * 25.0)                 # cuff bands
+    if MH and os.environ.get("MH_DEBUG"):
+        mh_arm_along("l"); mh_arm_along("r")
     region(where(UPPERARM > 0.5, wrist), 0.5, "Latex", bind=("Latex", 0.5), min_loop=6.0)
     if not kit:
         region(band(top - 1.5, 3.0, UPPERARM < 0.3), 0.5, "Latex", bind=("Latex", 0.5))    # collar
@@ -1619,6 +1650,15 @@ OUTFITS = {"Noir": noir, "Garter": garter_set, "Cocoa": cocoa, "Fishnet": fishne
 # Outfit Kit (Tools/outfit_kit, Docs/OUTFIT_KIT.md): each OutfitKit/<Name>/ drawn in Figma builds as "Kit<Name>"
 exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "outfit_kit", "kit_build.py")).read())
 CLOTH = {"Skirt"}                                # simulated in UE: the default body's morphs baked into the rest shape
+if "--kit-ref" in args:    # the drawn body's landmarks, for carrying kit shapes to another body (--body=mh)
+    import json
+    _ref = kit_profile(np.load(os.path.join(_KIT, "views", "tpose.npy")).astype(float))
+    json.dump(_ref, open(os.path.join(_KIT, "views", "ref_profile.json"), "w"), indent=1)
+    print("kit ref", {n: round(z, 1) for n, z in zip(_ref["names"], _ref["z"])}, "half-width", np.round(_ref["hw"], 1).tolist())
+    sys.exit(0)
+if MH and "--mh-morphs" in args:    # the shape sliders' morph deltas for this body (Tools/mh_morphs.py), no outfit built
+    exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "mh_morph_build.py")).read())
+    sys.exit(0)
 
 
 # ---- assemble: one mesh, weights, shape keys, garment UVs ------------------------------------------
@@ -1787,6 +1827,8 @@ def _blur(a, iters):
 
 _soft = sum(np.linalg.norm(DELTAS[k], axis=1) / max(np.linalg.norm(DELTAS[k], axis=1).max(), 1e-6) * g
             for k, g in (("BustUp", 1.6), ("GlutesUp", 1.6), ("Fat", 1.0)) if k in DELTAS)
+if MH:
+    _soft = np.zeros(nv)       # no morphs to read soft tissue from; the fit solve is not run on this body
 SOFT = np.clip(_blur(np.clip(_soft, 0, 1), 30), 0, 1)      # 1 on breast, glute and belly tissue, 0 on bone
 SKIN_FIT = {}        # outfit name -> {morph: per-skin-vertex delta, world cm}
 
@@ -1946,16 +1988,31 @@ def finalize(ob):
             if w > 1e-4:
                 vgs[g].add((i,), w, "REPLACE")
 
-    dl = {kname: sum(DL[idx3[:, k]] * w3[:, k, None] for k in range(3)) * ex["m"][:, None] for kname, DL in DELTAS.items()}
+    dl = {kname: sum(DL[idx3[:, k]] * w3[:, k, None] for k in range(3)) * ex["m"][:, None] for kname, DL in (MH_MORPHS if MH else DELTAS).items()}
     if strands is not None:
         dl = {k: _along_strands(v, *strands) for k, v in dl.items()}
     oc = clear_skin(oc, idx3, w3, SEAM_OF[ob.name][:, 0] < NO_SEAM, dl)     # fabric panels only
+    if MH:
+        for slot_, off_, n_, d_ in MH_DROPPED:
+            print("mh hems: %s panel at %.2f cm, %d vertices sat down, by %.2f cm at most" % (slot_, off_, n_, d_))
+        MH_DROPPED.clear()
+        mh_poke_sim(name, oc, src, top, tw, SEAM_OF[ob.name][:, 0])
     fit = FIT_OF.pop(ob.name, None)
     if FIT and fit and name not in CLOTH:
         fit_outfit(name, fit, oc, idx3, w3, dl, SEAM_OF[ob.name][:, 0] < NO_SEAM)
     if name in CLOTH:                                          # a cloth sim gets no body morphs:
         om.vertices.foreach_set("co", oc.ravel())              # keep the default body baked in
         dl = {}
+    if MH and dl:    # each body morph on the fabric: no edge may tear (a vertex left behind by its neighbours)
+        ge = np.empty(len(om.edges) * 2, int)
+        om.edges.foreach_get("vertices", ge)
+        ge = ge.reshape(-1, 2)
+        l0 = np.linalg.norm(oc[ge[:, 0]] - oc[ge[:, 1]], axis=1)
+        ok = l0 > 0.25
+        worst = {k: max(float((np.linalg.norm((oc + d * w)[ge[:, 0]] - (oc + d * w)[ge[:, 1]], axis=1)[ok] / l0[ok]).max()) for w in (-1.0, 1.0))
+                 for k, d in dl.items()}
+        print("mh morphs on %s: worst edge stretch at weight -1 / +1:" % name, {k: round(v, 2) for k, v in worst.items() if "Bounce" not in k and "Sway" not in k},
+              "jiggle", round(max(v for k, v in worst.items() if "Bounce" in k or "Sway" in k), 2))
     rest = oc - sum(dl[k] * w for k, w in DESIGN.items() if k in dl)    # designed on the default body
     om.vertices.foreach_set("co", rest.ravel())
     ob.shape_key_add(name="Basis", from_mix=False)
@@ -2066,6 +2123,8 @@ for name, build in OUTFITS.items():
             cam.rotation_euler = (tgt - cam.location).to_track_quat("-Z", "Y").to_euler()
             scn.render.filepath = os.path.join(PREVIEW, "%s_%s.png" % (name, label))
             bpy.ops.render.render(write_still=True)
+    if MH:   # no fit morphs on this body: the skin under opaque fabric is masked out in its material
+        mh_cover_mask(name, FIT_OF[ob.name]["covers"])
     finalize(ob)
     ob.modifiers.new("Armature", "ARMATURE").object = arm
     bpy.ops.object.select_all(action="DESELECT")

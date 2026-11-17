@@ -2808,13 +2808,21 @@ void AVisexMenuDirector::TickStudio(float DeltaSeconds)
 void AVisexMenuDirector::JoinChannel1(APawn* Pawn)
 {
 	// she joins channel 1 (and keeps 0), clothes included, which can change while a page is open
-	TArray<UPrimitiveComponent*> Parts;
-	Pawn->GetComponents(Parts);
-	for (UPrimitiveComponent* P : Parts)
+	// The MetaHuman body is an actor of its own attached to her (body, face, grooms, garment): it took her
+	// channels when it was bound, before a page was ever opened, so it has to join here too or the page's
+	// lights miss it and she stands dark under the dimmed sun.
+	TArray<AActor*> Actors;
+	Pawn->GetAttachedActors(Actors, true, true);
+	Actors.Add(Pawn);
+	for (AActor* A : Actors)
 	{
-		if (!P->LightingChannels.bChannel1)
+		TInlineComponentArray<UPrimitiveComponent*> Parts(A);
+		for (UPrimitiveComponent* P : Parts)
 		{
-			P->SetLightingChannels(true, true, P->LightingChannels.bChannel2);
+			if (!P->LightingChannels.bChannel1)
+			{
+				P->SetLightingChannels(true, true, P->LightingChannels.bChannel2);
+			}
 		}
 	}
 }

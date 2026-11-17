@@ -2,6 +2,7 @@
 
 #include "VisexAnimInstance.h"
 #include "VisexShellComponent.h"
+#include "VisexMHBody.h"
 #include "ChaosClothAsset/ClothAsset.h"
 #include "ChaosClothAsset/ClothComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -68,6 +69,8 @@ void UVisexBodyComponent::BeginPlay()
 		Load();
 	}
 	Apply();
+	// visex.Body.MetaHuman: the MetaHuman body that can stand in for the skin (nothing until the cvar is 1)
+	UVisexMHBodyComponent::Ensure(GetOwner());
 }
 
 void UVisexBodyComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -301,7 +304,7 @@ void UVisexBodyComponent::SetOutfit(FName Outfit)
 {
 	// a locked costume can be looked at in the wardrobe, not worn
 	const int32 I = FVisexBodyProfile::Outfits().IndexOfByPredicate([Outfit](const FVisexOutfit& O) { return O.Name == Outfit; });
-	if (I != INDEX_NONE && FVisexBodyProfile::Outfits()[I].bLocked)
+	if (I != INDEX_NONE && FVisexBodyProfile::OutfitLocked(I))
 	{
 		return;
 	}
@@ -356,6 +359,9 @@ void UVisexBodyComponent::SetHair(FName Hair)
 
 void UVisexBodyComponent::ApplyOutfit()
 {
+	// as the MetaHuman body she wears only what is cut on it, and never nothing: a save that
+	// names another outfit (or none) wears the Silversuit, and the wardrobe shows that
+	Profile.Outfit = UVisexMHBodyComponent::Worn(Profile.Outfit);
 	USkeletalMeshComponent* Mesh = Body();
 	const UWorld* World = GetWorld();
 	if (!Mesh || !World || !World->IsGameWorld()
