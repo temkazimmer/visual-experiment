@@ -893,8 +893,8 @@ private:
 	float ArrivalInFrame = -1.f;    // ArrivalClock when she first came into the menu camera's frame
 	float PanelInAlpha = 1.f;       // the panel's fade-in; input waits for 1
 	int32 ArrivalQueued = 0;        // pressed while she finished walking: 1 Confirm, 2 ToggleMenu
-	FVector PlantAt[2];             // the planted foot's spot on the ground, per foot
-	FVector LastFoot[2];
+	FVector PlantAt[2] = {FVector::ZeroVector, FVector::ZeroVector};           // the planted foot's spot on the ground, per foot
+	FVector LastFoot[2] = {FVector::ZeroVector, FVector::ZeroVector};
 	float PlantFor[2] = {0.f, 0.f};
 	bool bPlanted[2] = {false, false};
 	float SkateMax = 0.f, SkateSum = 0.f;
@@ -981,7 +981,7 @@ private:
 	 *  about her planted foot, so steering never slides a foot on the ground. */
 	void TurnAboutPlanted(float NewYaw, float Natural = 0.f, int32 Pivot = -1);   // Pivot: that foot, not the stillest
 	int32 ClipPlantedFoot(class UAnimSequence* Clip, float T);   // the foot standing still in the clip, or -1
-	FVector FootWas[2];
+	FVector FootWas[2] = {FVector::ZeroVector, FVector::ZeroVector};
 	uint64 FootFrame = 0;        // the frame FootWas was read on
 	float TurnRawWas = 0.f;      // the turn clip's own yaw (unscaled) as last applied
 	UPROPERTY(Transient) TObjectPtr<class UAnimMontage> TurnMontage;
@@ -989,6 +989,10 @@ private:
 	UPROPERTY(Transient) TObjectPtr<class UAnimMontage> WalkMontage;
 	float WalkClipSpeed = 126.5f;   // cm/s, the clip's own root motion (measured when it starts)
 	float WalkClipIdle = 0.f;       // seconds she has been all but still on a menu walk
+	// the walk clip is a root-motion clip: while it plays, her anim ignores root motion (the capsule
+	// moves her), or its zeroed translation held her still on the Start walk-off; then restored
+	bool bWalkRootOff = false;
+	uint8 WalkRootMode = 3;         // ERootMotionMode to restore (RootMotionFromMontagesOnly)
 	FString MotionName;
 	double MotionStart = -1.0;
 	FTimerHandle MotionTimer;

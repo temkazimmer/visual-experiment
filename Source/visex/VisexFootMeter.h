@@ -21,6 +21,9 @@ struct FVisexFootMeter
 	void SetPhase(const FString& Name);
 	/** Frame Index (0..3) of the strip Name; the strip is written once frame 3 is in. */
 	void Shoot(UWorld* World, ACharacter* Her, const FString& Name, int32 Index);
+	/** The next walking touch-down: a world-fixed close-up of that foot, four frames across its
+	 *  stance (a sliding foot moves against the sand), saved as Saved/QA/fp_stance_<Name>.jpg. */
+	void ArmStance(const FString& Name) { StanceName = Name; bStanceArmed = true; }
 
 private:
 	struct FPoint { bool bDown = false; FVector At = FVector::ZeroVector; float Drift = 0.f; };
@@ -48,7 +51,7 @@ private:
 	TWeakObjectPtr<ASceneCapture2D> Capture;
 	TWeakObjectPtr<ACharacter> LastHer;
 	TWeakObjectPtr<class USkeletalMeshComponent> RefMesh;   // the mesh the sole reference was taken from
-	FVector LastH[2], LastB[2];   // last frame's heel and ball: a foot sweeping along is in the air
+	FVector LastH[2] = {FVector::ZeroVector, FVector::ZeroVector}, LastB[2] = {FVector::ZeroVector, FVector::ZeroVector};   // last frame's heel and ball: a foot sweeping along is in the air
 	bool bHaveLast = false;
 	/** Where her mesh origin and capsule sit against the surfaces under her (the base float). */
 	void LogGround(ACharacter* Her) const;
@@ -60,6 +63,14 @@ private:
 	float StillMin[2] = {99.f, 99.f}, StillMax[2] = {-99.f, -99.f}, StillSpeed = 0.f;
 	int32 StillN = 0;
 
+	FString StanceName;
+	bool bStanceArmed = false;
+	int32 StanceSide = -1, StanceShots = 0;
+	float StanceT0 = 0.f;
+	FVector StanceLook = FVector::ZeroVector, StanceEye = FVector::ZeroVector;
+	TWeakObjectPtr<ASceneCapture2D> StanceCap;
+	TArray<FColor> StanceStrip;
+	void StanceFrame(ACharacter* Her);
 	void EndStep(int32 Side);
 	float GapAt(ACharacter* Her, const FVector& P, float Ref, FString* Surface) const;
 };

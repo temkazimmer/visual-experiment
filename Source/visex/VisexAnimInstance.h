@@ -15,6 +15,38 @@
  * Being the last step before skinning, it works for every animation, montage and
  * photo-mode pose, and the shell (Leader Pose) follows for free.
  */
+/** One evaluated frame of her feet and legs, for the jitter tour (-visexjitter). World space, cm.
+ *  Everything comes from the one evaluation, so the tracks line up frame for frame. */
+struct FVisexFootDebug
+{
+	uint64 Serial = 0;
+	float Dt = 0.f;
+	FVector Pelvis = FVector::ZeroVector, PelvisGraph = FVector::ZeroVector;   // final; as the graph left it
+	float PelvisFix = 0.f, PelvisDrop = 0.f, PinGate = 0.f, Moving = 0.f;
+	struct FLeg
+	{
+		FVector Hip = FVector::ZeroVector, Knee = FVector::ZeroVector, Foot = FVector::ZeroVector, Ball = FVector::ZeroVector;   // final
+		FVector HipGraph = FVector::ZeroVector;   // the hip as the graph left it
+		FVector FootGraph = FVector::ZeroVector, FootLayers = FVector::ZeroVector, FootPin = FVector::ZeroVector;   // after the graph, the layers, the pin
+		FVector PinWant = FVector::ZeroVector, PlantWant = FVector::ZeroVector;   // the two IK targets
+		FVector TraceAt = FVector::ZeroVector, Normal = FVector::UpVector;       // the plant trace's hit
+		bool bGround = false;
+		float SoleUnder = 0.f, Gap = 0.f, PlantW = 0.f, PlantAsk = 0.f, PlantFix = 0.f;
+		float PinW = 0.f, HeelW = 0.f, BallW = 0.f, HeelSpeed = 0.f, BallSpeed = 0.f, PinHold = 0.f, PinHeld = 0.f;
+		float Extension = 0.f;   // hip to ankle over thigh + calf
+		float LengthOff = 0.f;   // cm the graph's thigh or calf was off its reference length
+		// the knee after each step of the frame: the graph, catwalk, alive, toes, reshape, contact,
+		// limits, steady head, pin, plant
+		static constexpr int32 Stages = 10;
+		FVector KneeAt[Stages] = {FVector::ZeroVector, FVector::ZeroVector, FVector::ZeroVector, FVector::ZeroVector, FVector::ZeroVector,
+			FVector::ZeroVector, FVector::ZeroVector, FVector::ZeroVector, FVector::ZeroVector, FVector::ZeroVector};
+	} Leg[2];
+};
+/** Asks the proxy animating Mesh (a USkeletalMeshComponent) to publish its frames; nullptr stops it. */
+VISEX_API void VisexFootDebugFor(const void* Mesh);
+/** The newest published frame; false until there is one. */
+VISEX_API bool VisexFootDebugRead(FVisexFootDebug& Out);
+
 struct FVisexAnimProxy : public FAnimInstanceProxy
 {
 	FVisexAnimProxy() = default;
@@ -22,6 +54,8 @@ struct FVisexAnimProxy : public FAnimInstanceProxy
 
 	virtual void PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeconds) override;
 	virtual bool Evaluate_WithRoot(FPoseContext& Output, FAnimNode_Base* InRootNode) override;
+	virtual void PreEvaluateAnimation(UAnimInstance* InAnimInstance) override;   // her transform after this frame's move
+	virtual void Initialize(UAnimInstance* InAnimInstance) override;              // the pin starts clean
 
 private:
 	void Reshape(FCompactPose& Pose) const;
@@ -33,6 +67,9 @@ private:
 	/** Last of all: planted soles onto the visible sand (visex.Plant). */
 	void Plant(FCompactPose& Pose);
 	void PlantGround(UAnimInstance* Instance);   // game thread: the traces
+	void LegLengths(FCompactPose& Pose);          // the graph's legs back to their bone lengths
+	void PinFrom(const FCompactPose& Pose);       // the graph's feet, before the layers
+	void Pin(FCompactPose& Pose);                 // planted feet back under the layers' moves
 
 public:
 	virtual void PostUpdate(UAnimInstance* InAnimInstance) const override;
@@ -94,6 +131,11 @@ private:
 	float PlantMoving = 0.f;          // 0 standing, 1 walking (by speed)
 	bool bGround[2] = {false, false};
 	float GroundZ[2] = {0.f, 0.f};
+	// the ground under each foot as a plane (component space): the trace's hit and the slope there
+	FVector GroundP[2] = {FVector::ZeroVector, FVector::ZeroVector};
+	FVector2D GroundSlope[2] = {FVector2D::ZeroVector, FVector2D::ZeroVector};
+	FVector SoleOff[2] = {FVector::ZeroVector, FVector::ZeroVector};   // each foot's sole point from its foot bone, last frame
+	float GroundUnder(int32 F, const FVector& P) const;
 	FVector SoleAt[2] = {FVector::ZeroVector, FVector::ZeroVector}; // each foot's lowest sole point last frame
 	float PlantFix[2] = {0.f, 0.f};   // cm each ankle moves up, eased
 	float PelvisFix = 0.f;            // cm the pelvis drops so a leg can reach, eased
@@ -104,7 +146,59 @@ private:
 	// what the plant pass did this frame, for the footprints' mounds (copied to the instance in PostUpdate)
 	float OutGap[2] = {1e4f, 1e4f};   // cm between the planted sole and the sand, component space
 	float OutPlant[2] = {0.f, 0.f};   // how planted each foot is, 0..1
+
+	// The pin: the layers' change to each foot (where they put it vs where the graph had it),
+	// frozen in world space while the graph's foot stands still, so they can't slide it
+	float PinOn = 1.f;                // the cvar
+	bool bPinFrom = false, bPinLast = false;
+	// every pin member starts zeroed: FVector's default constructor leaves garbage, and a NaN
+	// anchor never recovered (Shipping 0622 hung her upside down)
+	FTransform PinGraph[2] = {FTransform::Identity, FTransform::Identity};   // the graph's feet, component space, this frame
+	FVector PinBall[2] = {FVector::ZeroVector, FVector::ZeroVector};        // the graph's balls, component space, this frame
+	FVector PinLastHeel[2] = {FVector::ZeroVector, FVector::ZeroVector}, PinLastBall[2] = {FVector::ZeroVector, FVector::ZeroVector};   // last frame's, world
+	FVector PinDelta[2] = {FVector::ZeroVector, FVector::ZeroVector};   // the layers' move, world
+	FQuat PinTurn[2] = {FQuat::Identity, FQuat::Identity};              // the layers' turn, world
+	float PinW[2] = {0.f, 0.f};       // how still the graph's foot stands, 0..1
+	FTransform EvalX = FTransform::Identity;   // the mesh's world transform as it is evaluated (after the move)
+	float PinSpeed[2][2] = {{0.f, 0.f}, {0.f, 0.f}};   // the graph's heel and ball, world cm/s
+	FVector PinAnchor[2][2] = {{FVector::ZeroVector, FVector::ZeroVector}, {FVector::ZeroVector, FVector::ZeroVector}};   // pin 2: where each planted heel and ball stays, world
+	bool bPinSeeded[2] = {false, false};   // the foot's anchors, delta and turn were set from its pose since the last reset
+	float PinRefZ[2] = {-1.f, -1.f};  // heel (ankle) and ball over the sole, ref pose
+	// pin log: per stance, how far the graph's and the final contact point slid
+	float PinStance[2] = {0.f, 0.f}, PinGraphDrift[2] = {0.f, 0.f}, PinOutDrift[2] = {0.f, 0.f};
+	FVector PinGraphStart[2][2] = {{FVector::ZeroVector, FVector::ZeroVector}, {FVector::ZeroVector, FVector::ZeroVector}};   // per foot: heel, ball
+	FVector PinOutStart[2][2] = {{FVector::ZeroVector, FVector::ZeroVector}, {FVector::ZeroVector, FVector::ZeroVector}};
+	bool bPinDown[2][2] = {{false, false}, {false, false}};
+	// the gate (visex.Pin.Gate): off in the air and while she turns on the spot; the hold lets go gently
+	bool bPinAir = false;
+	float PinYawRate = 0.f, PinCapSpeed = 0.f, PinLastYaw = 0.f, PinGate = 1.f;
+	bool bPinYaw = false;
+	FVector PinApplied[2] = {FVector::ZeroVector, FVector::ZeroVector};   // world cm, after the release slew
+	float PinHeld[2] = {0.f, 0.f};    // seconds each foot has stood held
+	// resets: a new mesh (outfit, body), a teleport or cut, a new instance; and the safety's count
+	const UObject* PinMesh = nullptr;
+	int32 PinBones = 0;
+	FVector PinLastX = FVector::ZeroVector;
+	bool bPinLastX = false;
+	int32 PinSkips = 0;
+	void PinReset();
+	// each knee's hinge axis in its thigh's frame (the calf's reference Z), zero when unknown: the
+	// bend plane for a leg too straight to show one (FShaper::ReachLeg). Set with PinRefZ
+	FVector LegPole[2] = {FVector::ZeroVector, FVector::ZeroVector};
+	bool bSteady = true;   // visex.Feet.Steady
+	// the jitter tour's frame (FVisexFootDebug): filled only for the mesh it asked for
+	FVisexFootDebug Dbg;
+	const void* DbgMesh = nullptr;
+	bool bDbg = false;
+	FVector GroundAt[2] = {FVector::ZeroVector, FVector::ZeroVector}, GroundN[2] = {FVector::UpVector, FVector::UpVector};   // the plant trace's hit, world
+	void DebugOut(FCompactPose& Pose);
+	void DebugKnees(FCompactPose& Pose, int32 Stage);
 };
+
+/** The pin's numbers since the last reset, for the tours: [0] largest hold (cm), [1] largest
+ *  one-frame change of the hold (cm), [2] straightest leg the hold asked for (reach over leg
+ *  length, only where it straightened past the layers), [3] frames clamped at visex.Pin.Max. */
+VISEX_API void VisexPinStats(float Out[4], bool bReset);
 
 UCLASS(Transient, Blueprintable)
 class VISEX_API UVisexAnimInstance : public UAnimInstance

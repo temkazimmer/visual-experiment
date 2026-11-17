@@ -4,6 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "VisexFootMeter.h"
 #include "VisexMHSpikes.h"
+#include "VisexJitterMeter.h"
 #include "VisexQATour.generated.h"
 
 /**
@@ -32,6 +33,9 @@ private:
 	float Clock = 0.f;
 	bool bCoverLogged = false;
 	float WalkFor = 0.f;
+	// -visexpin's third-person drive: camera-relative stick (x forward, y right) and a turn on the spot (deg/s)
+	FVector2D Drive = FVector2D::ZeroVector;
+	float Spin = 0.f;
 	int32 ShotCount = 0;
 	int32 AfterPoses = INDEX_NONE;
 	bool bBuilt = false;
@@ -43,6 +47,7 @@ private:
 	/** -visexfeet: only the menu's walks (arrival, Body, Wardrobe, photo), her planted steps
 	 *  measured and her feet shot in close-up strips (VisexFootMeter.h). */
 	void BuildFeet();
+	void BuildLayers();   // -visexlayers: the menu walks once per layer switched off, then pinned
 	/** -visexgaps [-visexcvar=name=value]: her soles' gap to the sand while she stands still, at
 	 *  the menu lean and in the idle after Start, with one cvar set against the default. */
 	void BuildGaps();
@@ -100,6 +105,21 @@ private:
 	void ApplyCvarArg();
 	bool bSpikes = false;
 	FVisexMHSpikes Spikes;
+	void BuildPin();   // -visexpin: the pin under the sit, third-person play, photo poses and the Body turn, pin 2 / gated / 0
+	void PinPhase(const FString& Name);
+	/** -visexjitter: she stands in the idle on uneven spots of the level (and a flat one) through
+	 *  its weight shifts; her legs' jitter per spot as a table, exit code 3 above the limit.
+	 *  Options: -visexjitterspots=name:x:y:z:yaw;...  -visexjittersecs=40  -visexjitterhitch (an
+	 *  uneven frame time)  -visexjitterfilm=<spot> -visexjitterfilmfrom=<s> -visexjitterfilmsecs=<s>
+	 *  (4K frames of her legs)  -visexjitterscan (lists the ground around her instead)
+	 *  -visexcvars=name=value,name=value */
+	void BuildJitter();
+	void JitterScan();
+	bool JitterPlace(const FVector& At, float Yaw);
+	FVisexJitterMeter Jitter;
+	bool bJitter = false, bHitch = false, bFilming = false;
+	FString FilmSpot, FilmName;
+	float FilmFrom = 0.f, FilmSecs = 0.f, JitterSpotClock = 0.f;
 	bool bFeet = false;
 	bool bFilm = false;          // -visexfilm: every frame to Saved/QA/film
 	int32 FeetFrames = 0;
