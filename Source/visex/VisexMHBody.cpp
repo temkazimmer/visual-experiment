@@ -196,9 +196,11 @@ float FVisexMHBodyProxy::SoleZ(const USkeletalMesh* Mesh, const FVector& Foot, c
 	}
 	if (Low > 1e8f)
 	{
-		// no vertex data on the CPU (a cooked build): the ball joint rides 2.15 cm over the sole
-		Low = Ball.Z - 2.15f;
-		UE_LOG(LogVisexMH, Warning, TEXT("VisexMH: no CPU vertices for %s, sole taken %.2f cm under the ball joint"), *GetNameSafe(Mesh), 2.15f);
+		// no vertex data on the CPU (a build with r.FreeSkeletalMeshBuffers 1; the default keeps them,
+		// cooked too): the ball joint rides 1.15 cm over the sole on the body as assembled (the feet
+		// meter's "sole reference (MetaHuman body)" line; 2.15 was the Creator preview's and 1 cm off)
+		Low = Ball.Z - 1.15f;
+		UE_LOG(LogVisexMH, Warning, TEXT("VisexMH: no CPU vertices for %s, sole taken %.2f cm under the ball joint"), *GetNameSafe(Mesh), 1.15f);
 	}
 	return Low;
 }
