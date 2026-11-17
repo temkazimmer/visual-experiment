@@ -18,7 +18,6 @@
 #include "HAL/IConsoleManager.h"
 #include "Rendering/SkeletalMeshRenderData.h"
 #include "TwoBoneIK.h"
-#include "Components/CapsuleComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogVisexMH, Log, All);
 
@@ -83,9 +82,6 @@ static TAutoConsoleVariable<int32> CVarVisexMHHair(
 	TEXT("visex.Body.MetaHuman.Hair"), 1,
 	TEXT("1: the MetaHuman head wears its own hair, the groom assembled into the Blueprint (Tema, stage 5). 0: our card hairstyle from the Hair tab, fitted to this skull (stage 4). 2: no hair at all, to measure what the hair costs."));
 
-static TAutoConsoleVariable<int32> CVarVisexMHHairRest(
-	TEXT("visex.Body.MetaHuman.HairRest"), 1,
-	TEXT("1: with her head under knee height (the floor poses) the groom's simulation is off (r.HairStrands.Simulation 0) and the hair keeps its combed shape instead of falling through her arms into the sand. 0: always simulated."));
 static TAutoConsoleVariable<FString> CVarVisexMHFace(
 	TEXT("visex.Body.MetaHuman.Face"), TEXT(""),
 	TEXT("Debug: face rig curves on the MetaHuman face, \"name=value,name=value\" (e.g. CTRL_expressions_eyeBlinkL=1,CTRL_expressions_eyeBlinkR=1). Empty or \"off\": the face's own animation."));
@@ -674,7 +670,6 @@ void UVisexMHBodyComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 		ApplyOutfit();
 		ApplyDebug();
 		ApplyHair();   // after ApplyDebug: it may have bound a re-made Body
-		ApplyHairRest(true);
 		ApplyFace();
 		ApplyShape();
 		ApplyMorphs();
@@ -960,7 +955,6 @@ void UVisexMHBodyComponent::Hide()
 	FaceMesh = nullptr;
 	HideDriver(false);
 	bShown = false;
-	ApplyHairRest(false);   // the simulation back on: the switch is the engine's, not this body's
 }
 
 void UVisexMHBodyComponent::HideDriver(bool bHide)
@@ -1132,47 +1126,6 @@ void UVisexMHHairComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 {
 	Refit();   // the attach parent (the Body) is a tick prerequisite: its head is this frame's
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-}
-
-void UVisexMHBodyComponent::ApplyHairRest(bool bFigureShown)
-{
-	const ACharacter* Her = Cast<ACharacter>(GetOwner());
-	const USkeletalMeshComponent* Driver = Her ? Her->GetMesh() : nullptr;
-	bool bRest = false;
-	if (bFigureShown && Driver && CVarVisexMHHairRest.GetValueOnGameThread() != 0 && CVarVisexMHHair.GetValueOnGameThread() == 1)
-	{
-		// her head over the ground she is on: 23 cm in FeetUp and LegLift, 77 sitting on the sand
-		// (Mermaid), 140 and more standing. Off under 50, on again over 62, so a breath cannot flip it
-		const float Up = Driver->GetSocketLocation(TEXT("head")).Z - (Her->GetActorLocation().Z - Her->GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
-		bRest = bHairResting ? Up < 62.f : Up < 50.f;
-	}
-	IConsoleVariable* Sim = IConsoleManager::Get().FindConsoleVariable(TEXT("r.HairStrands.Simulation"));
-	if (bRest != bHairResting)
-	{
-		bHairResting = bRest;
-		HairRestIn = 0;
-		if (bRest && Figure)
-		{
-			// switched off as it is, the strands stay where the fall has thrown them: the simulation is put
-			// back to the combed shape first (the groom's own ResetSimulation, by name: no module dependency)
-			// and stopped a few frames later, once the solver has taken the reset
-			TInlineComponentArray<UPrimitiveComponent*> Prims(Figure);
-			for (UPrimitiveComponent* Prim : Prims)
-			{
-				if (UFunction* Reset = Prim->FindFunction(TEXT("ResetSimulation"))) { Prim->ProcessEvent(Reset, nullptr); }
-			}
-			HairRestIn = 4;
-		}
-		else if (Sim)
-		{
-			Sim->Set(1, ECVF_SetByCode);
-		}
-		UE_LOG(LogVisexMH, Display, TEXT("VisexMH: hair simulation %s"), bRest ? TEXT("off, her head is near the ground") : TEXT("on"));
-	}
-	if (HairRestIn > 0 && --HairRestIn == 0 && Sim)
-	{
-		Sim->Set(0, ECVF_SetByCode);
-	}
 }
 
 void UVisexMHBodyComponent::ClearHair()

@@ -173,13 +173,6 @@ private:
 	/** Wears the driver's hairstyle on the MetaHuman head (UVisexMHHairComponent) and hides the
 	 *  preset's hair groom; brows, lashes and fuzz stay. */
 	void ApplyHair();
-	/** The groom's strands are simulated and collide with nothing: with her head on the ground (the
-	 *  floor poses) they fell through her arms and spread in the sand. Under knee height the hair
-	 *  simulation is switched off and the groom keeps its combed shape on her head; standing and
-	 *  sitting it runs as before. */
-	void ApplyHairRest(bool bFigureShown);
-	bool bHairResting = false;
-	int32 HairRestIn = 0;   // frames until the simulation stops, after its reset
 	void ClearHair();
 	/** Drives face rig curves from visex.Body.MetaHuman.Face (a debug look at expressions). */
 	void ApplyFace();
